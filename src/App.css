@@ -562,6 +562,77 @@
   flex-wrap: wrap;
 }
 
+.display-panel-header {
+  align-items: flex-start;
+}
+
+.edit-display-wrap {
+  position: relative;
+}
+
+.edit-display-link {
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 0.82rem;
+  font-weight: 600;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+}
+
+.edit-display-link:hover {
+  color: #1e40af;
+}
+
+.edit-display-dropdown {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  width: min(340px, 88vw);
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  box-shadow: 0 12px 26px rgba(15, 23, 42, 0.16);
+  padding: 0.68rem;
+  z-index: 45;
+}
+
+.edit-display-dropdown p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.edit-display-dropdown ul {
+  list-style: none;
+  margin: 0.56rem 0;
+  padding: 0;
+  max-height: 220px;
+  overflow: auto;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.edit-display-dropdown li label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.79rem;
+  color: #334155;
+}
+
+.edit-display-dropdown li em {
+  color: #64748b;
+  font-style: normal;
+}
+
+.edit-display-dropdown small {
+  color: #64748b;
+  font-size: 0.72rem;
+}
+
 .primary-button,
 .secondary-button {
   border: 1px solid transparent;
@@ -861,6 +932,20 @@ tbody tr:last-of-type td {
   gap: 0.6rem;
 }
 
+.submenu-card-link {
+  text-decoration: none;
+  transition:
+    border-color 160ms ease,
+    box-shadow 160ms ease,
+    transform 160ms ease;
+}
+
+.submenu-card-link:hover {
+  border-color: #93c5fd;
+  box-shadow: 0 8px 20px rgba(15, 23, 42, 0.08);
+  transform: translateY(-1px);
+}
+
 .submenu-card-header {
   display: flex;
   justify-content: space-between;
@@ -879,6 +964,13 @@ tbody tr:last-of-type td {
   color: #475569;
   font-size: 0.82rem;
   line-height: 1.42;
+}
+
+.submenu-card-origin {
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
 }
 
 .build-status {
@@ -948,6 +1040,138 @@ tbody tr:last-of-type td {
   color: #166534;
   font-size: 0.79rem;
   font-weight: 600;
+}
+
+.link-button {
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+}
+
+.state-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+
+.compact-button {
+  padding: 0.42rem 0.6rem;
+  font-size: 0.76rem;
+}
+
+.workflow-chip-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.workflow-chip {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background-color: #f8fafc;
+  color: #334155;
+  font-size: 0.73rem;
+  font-weight: 700;
+  padding: 0.24rem 0.56rem;
+}
+
+.workflow-track {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.workflow-step {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 600;
+  padding: 0.5rem 0.62rem;
+}
+
+.workflow-step.complete {
+  border-color: #bfdbfe;
+  background-color: #eff6ff;
+}
+
+.workflow-step.active {
+  border-color: #3b82f6;
+  background-color: #dbeafe;
+  color: #1d4ed8;
+}
+
+.detail-grid {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.62rem;
+}
+
+.detail-grid div {
+  border: 1px solid #e2e8f0;
+  border-radius: 9px;
+  padding: 0.55rem;
+}
+
+.detail-grid dt {
+  color: #64748b;
+  font-size: 0.74rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.detail-grid dd {
+  margin: 0.28rem 0 0;
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.clickable-row {
+  cursor: pointer;
+}
+
+.clickable-row:hover td {
+  background-color: #eff6ff;
+}
+
+.clickable-row:focus-visible {
+  outline: 2px solid #3b82f6;
+  outline-offset: -2px;
+}
+
+.call-number-text {
+  color: #1d4ed8;
+  font-size: 0.82rem;
+}
+
+.dispatch-info-cell {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.dispatch-info-meta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.dispatch-info-meta small {
+  color: #64748b;
+  font-size: 0.72rem;
 }
 
 .branding-preview {
@@ -1082,6 +1306,11 @@ tbody tr:last-of-type td {
     left: 0;
     right: auto;
   }
+
+  .edit-display-dropdown {
+    left: 0;
+    right: auto;
+  }
 }
 
 @media (max-width: 820px) {
@@ -1123,10 +1352,6 @@ tbody tr:last-of-type td {
   .search-field {
     min-width: 0;
     flex: 1;
-  }
-
-  .topbar-right .icon-button {
-    display: none;
   }
 
   .breadcrumb {

@@ -27,19 +27,22 @@ import {
   DASHBOARD_ALERTS,
   DASHBOARD_PRIORITY_LINKS,
   DASHBOARD_STATS,
-  DISPATCH_ACTIVITY,
-  DISPATCH_ALERTS,
-  DISPATCH_STATS,
-  DISPATCH_TABLE_COLUMNS,
-  DISPATCH_TABLE_ROWS,
-  DISPATCH_UNIT_STATUSES,
+  DEFAULT_DISPATCH_WORKFLOW_STATES,
+  HYDRANT_ADMIN_TABLE_ROWS,
+  INCIDENT_CALLS,
+  INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
   SUBMENU_PLACEHOLDER_NOTES,
   getDefaultPathForRole,
+  getDisplayCardOptions,
+  getIncidentCallDetail,
+  getMainMenuById,
   getMainMenuByPath,
   getSubmenuByPath,
+  getSubmenuForPath,
   getVisibleMenus,
   isPathAdminOnly,
+  type DisplayCardOption,
   type MainMenu,
   type MainMenuId,
   type NavSubmenu,
@@ -69,6 +72,8 @@ interface DashboardPageProps {
 
 interface RouteResolverProps {
   role: UserRole;
+  workflowStates: string[];
+  onSaveWorkflowStates: (nextStates: string[]) => void;
 }
 
 interface MainMenuLandingPageProps {
@@ -80,7 +85,30 @@ interface SubmenuPlaceholderPageProps {
   submenu: NavSubmenu;
 }
 
+interface IncidentsListPageProps {
+  workflowStates: string[];
+}
+
+interface IncidentCallDetailPageProps {
+  callNumber: string;
+  workflowStates: string[];
+}
+
+interface MenuDisplayCardsProps {
+  menu: MainMenu;
+  role: UserRole;
+}
+
+interface CustomizationPageProps {
+  workflowStates: string[];
+  onSaveWorkflowStates: (nextStates: string[]) => void;
+}
+
+type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
+
 const SESSION_STORAGE_KEY = "stationboss-mimic-session";
+const DISPLAY_CARD_STORAGE_KEY = "stationboss-mimic-display-cards";
+const WORKFLOW_STATE_STORAGE_KEY = "stationboss-mimic-workflow-states";
 
 const EMPTY_SESSION: SessionState = {
   isAuthenticated: false,
@@ -88,6 +116,41 @@ const EMPTY_SESSION: SessionState = {
   unit: "",
   role: "user",
 };
+
+function normalizePath(pathname: string): string {
+  if (pathname === "/") {
+    return pathname;
+  }
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+function toToneClass(tone: Tone): string {
+  return `tone tone-${tone}`;
+}
+
+function toneFromState(state: string): Tone {
+  const normalized = state.trim().toLowerCase();
+  if (normalized.includes("clear")) {
+    return "positive";
+  }
+  if (normalized.includes("transport")) {
+    return "neutral";
+  }
+  if (normalized.includes("scene")) {
+    return "warning";
+  }
+  if (normalized.includes("enroute") || normalized.includes("dispatched")) {
+    return "warning";
+  }
+  return "neutral";
+}
+
+function dedupeAndCleanStates(states: string[]): string[] {
+  const cleaned = states
+    .map((state) => state.trim())
+    .filter((state) => state.length > 0);
+  return Array.from(new Set(cleaned));
+}
 
 function readSession(): SessionState {
   if (typeof window === "undefined") {
@@ -129,15 +192,62 @@ function writeSession(session: SessionState): void {
   window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
-function normalizePath(pathname: string): string {
-  if (pathname === "/") {
-    return pathname;
+function readDisplayCardConfig(): DisplayCardConfig {
+  if (typeof window === "undefined") {
+    return {};
   }
-  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+
+  const rawValue = window.localStorage.getItem(DISPLAY_CARD_STORAGE_KEY);
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as DisplayCardConfig;
+    if (parsed && typeof parsed === "object") {
+      return parsed;
+    }
+  } catch {
+    return {};
+  }
+
+  return {};
 }
 
-function toToneClass(tone: Tone): string {
-  return `tone tone-${tone}`;
+function writeDisplayCardConfig(config: DisplayCardConfig): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(DISPLAY_CARD_STORAGE_KEY, JSON.stringify(config));
+}
+
+function readWorkflowStates(): string[] {
+  if (typeof window === "undefined") {
+    return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+  }
+
+  const rawValue = window.localStorage.getItem(WORKFLOW_STATE_STORAGE_KEY);
+  if (!rawValue) {
+    return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue);
+    if (!Array.isArray(parsed)) {
+      return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+    }
+    const cleaned = dedupeAndCleanStates(parsed.filter((item) => typeof item === "string"));
+    return cleaned.length ? cleaned : [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+  } catch {
+    return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+  }
+}
+
+function writeWorkflowStates(states: string[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(WORKFLOW_STATE_STORAGE_KEY, JSON.stringify(states));
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
@@ -166,15 +276,14 @@ function AuthPage({ onLogin }: AuthPageProps) {
           <Shield size={16} />
           <span>Station Boss Prototype</span>
         </div>
-        <h1>Station operations workspace with role-based access</h1>
+        <h1>Incident-focused workspace with mapping and admin controls</h1>
         <p>
-          Version 2 uses your new condensed menu structure and includes a
-          built-out Dispatches module under Incidents. All additional submenus
-          are connected and ready for incremental build-out.
+          This phase adds a clickable incident call workflow, per-menu card display
+          customization, and configurable dispatch states in Admin Functions.
         </p>
         <ul className="brand-feature-list">
           <li>Simple login with Admin and User roles</li>
-          <li>User role can access all modules except Admin Functions</li>
+          <li>User role restricted only from Admin Functions</li>
           <li>Settings menu includes profile, display, and logout actions</li>
         </ul>
       </section>
@@ -185,7 +294,7 @@ function AuthPage({ onLogin }: AuthPageProps) {
             <ShieldCheck size={24} />
             <div>
               <h2>Sign in to Station Boss</h2>
-              <p>Simple login mode is enabled for this prototype.</p>
+              <p>Simple login mode remains active for this prototype.</p>
             </div>
           </div>
 
@@ -263,7 +372,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   const [expandedMenus, setExpandedMenus] = useState<Record<MainMenuId, boolean>>(
     () =>
       Object.fromEntries(
-        MAIN_MENUS.map((menu) => [menu.id, menu.id === "incidents"]),
+        MAIN_MENUS.map((menu) => [menu.id, menu.id === "incidentsMapping"]),
       ) as Record<MainMenuId, boolean>,
   );
 
@@ -278,7 +387,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     [location.pathname],
   );
   const activeSubmenu = useMemo(
-    () => getSubmenuByPath(location.pathname),
+    () => getSubmenuForPath(location.pathname),
     [location.pathname],
   );
   const dateLabel = useMemo(
@@ -301,6 +410,12 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     }
     if (path === "/access-denied") {
       return { primary: "Access Denied", secondary: null };
+    }
+    if (path.startsWith("/incidents-mapping/incidents/")) {
+      return {
+        primary: "Incidents / Mapping",
+        secondary: decodeURIComponent(path.replace("/incidents-mapping/incidents/", "")),
+      };
     }
     if (!activeMenu) {
       return { primary: "Dashboard", secondary: null };
@@ -516,14 +631,164 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   );
 }
 
+function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
+  const [editorOpen, setEditorOpen] = useState(false);
+  const [displayConfig, setDisplayConfig] = useState<DisplayCardConfig>(() =>
+    readDisplayCardConfig(),
+  );
+
+  const defaultCards = useMemo(
+    () =>
+      menu.submenus.filter((submenu) => role === "admin" || !submenu.adminOnly),
+    [menu, role],
+  );
+  const defaultPathSet = useMemo(
+    () => new Set(defaultCards.map((submenu) => submenu.path)),
+    [defaultCards],
+  );
+  const selectableOptions = useMemo(() => getDisplayCardOptions(role), [role]);
+  const selectableMap = useMemo(
+    () =>
+      new Map(selectableOptions.map((option) => [option.path, option])),
+    [selectableOptions],
+  );
+
+  const extraCardPaths = displayConfig[menu.id] ?? [];
+  const extraCards = extraCardPaths
+    .map((path) => selectableMap.get(path))
+    .filter(
+      (card): card is DisplayCardOption =>
+        Boolean(card) && !defaultPathSet.has(card.path),
+    );
+
+  const cards: DisplayCardOption[] = [
+    ...defaultCards.map((submenu) => ({
+      ...submenu,
+      parentMenuId: menu.id,
+      parentMenuTitle: menu.title,
+    })),
+    ...extraCards,
+  ];
+
+  const updateMenuCardSelection = (path: string) => {
+    if (defaultPathSet.has(path)) {
+      return;
+    }
+
+    setDisplayConfig((previous) => {
+      const current = previous[menu.id] ?? [];
+      const next = current.includes(path)
+        ? current.filter((item) => item !== path)
+        : [...current, path];
+      const normalized: DisplayCardConfig = {
+        ...previous,
+        [menu.id]: next,
+      };
+
+      if (next.length === 0) {
+        delete normalized[menu.id];
+      }
+
+      writeDisplayCardConfig(normalized);
+      return normalized;
+    });
+  };
+
+  return (
+    <section className="panel">
+      <div className="panel-header display-panel-header">
+        <div>
+          <h2>Submenu Cards</h2>
+          <p className="panel-caption">
+            Click a card to open that submenu directly.
+          </p>
+        </div>
+
+        <div className="edit-display-wrap">
+          <button
+            type="button"
+            className="edit-display-link"
+            onClick={() => setEditorOpen((previous) => !previous)}
+          >
+            Edit display
+          </button>
+
+          {editorOpen ? (
+            <div className="edit-display-dropdown">
+              <p>Choose extra submenu cards to show on this screen.</p>
+              <ul>
+                {selectableOptions.map((option) => {
+                  const isDefault = defaultPathSet.has(option.path);
+                  const isChecked =
+                    isDefault || (displayConfig[menu.id] ?? []).includes(option.path);
+                  return (
+                    <li key={option.path}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={isChecked}
+                          disabled={isDefault}
+                          onChange={() => updateMenuCardSelection(option.path)}
+                        />
+                        <span>
+                          {option.label}{" "}
+                          <em>({option.parentMenuTitle})</em>
+                        </span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+              <small>
+                Default submenu cards for this menu stay pinned and cannot be
+                removed.
+              </small>
+            </div>
+          ) : null}
+        </div>
+      </div>
+
+      {cards.length > 0 ? (
+        <section className="submenu-card-grid">
+          {cards.map((card) => (
+            <NavLink key={`${menu.id}-${card.path}`} to={card.path} className="submenu-card submenu-card-link">
+              <div className="submenu-card-header">
+                <h2>{card.label}</h2>
+                <span
+                  className={`build-status ${
+                    card.isBuilt ? "build-ready" : "build-planned"
+                  }`}
+                >
+                  {card.isBuilt ? "Built" : "Scaffolded"}
+                </span>
+              </div>
+              <p>{card.summary}</p>
+              <span className="submenu-card-origin">
+                {card.parentMenuTitle}
+              </span>
+            </NavLink>
+          ))}
+        </section>
+      ) : (
+        <p className="panel-description">
+          This menu currently has no default submenu cards. Use{" "}
+          <strong>Edit display</strong> to add cards from other menus.
+        </p>
+      )}
+    </section>
+  );
+}
+
 function DashboardPage({ role }: DashboardPageProps) {
+  const dashboardMenu = getMainMenuById("dashboard");
+
   return (
     <section className="page-section">
       <header className="page-header">
         <div>
           <h1>Dashboard</h1>
           <p>
-            Current status across dispatch activity, readiness, and high-priority
+            Current status across call activity, readiness, and high-priority
             updates.
           </p>
         </div>
@@ -531,8 +796,8 @@ function DashboardPage({ role }: DashboardPageProps) {
           <NavLink className="secondary-button button-link" to="/calendar/events">
             Open Calendar
           </NavLink>
-          <NavLink className="primary-button button-link" to="/incidents/dispatches">
-            Open Dispatches
+          <NavLink className="primary-button button-link" to="/incidents-mapping/incidents">
+            Open Incidents
           </NavLink>
         </div>
       </header>
@@ -554,7 +819,7 @@ function DashboardPage({ role }: DashboardPageProps) {
             <span className="panel-caption">
               {role === "admin"
                 ? "Admin-level links included"
-                : "Admin-only links will show access denial"}
+                : "Admin-only links will route to access denied"}
             </span>
           </div>
           <ul className="dashboard-shortcut-list">
@@ -590,33 +855,41 @@ function DashboardPage({ role }: DashboardPageProps) {
           </ul>
         </article>
       </section>
+
+      {dashboardMenu ? <MenuDisplayCards menu={dashboardMenu} role={role} /> : null}
     </section>
   );
 }
 
-function DispatchesPage() {
+function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
+  const navigate = useNavigate();
+
+  const openCallDetail = (callNumber: string) => {
+    navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
+  };
+
   return (
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Incidents | Dispatches</h1>
+          <h1>Incidents / Mapping | Incidents</h1>
           <p>
-            Primary dispatch workspace with live call queue, unit status, and
-            incident alerts.
+            Click any call row to open full incident details, map view, apparatus,
+            and dispatch notes.
           </p>
         </div>
         <div className="header-actions">
           <button type="button" className="secondary-button">
-            Export Dispatch Log
+            Export Call Queue
           </button>
           <button type="button" className="primary-button">
-            Create Dispatch
+            Create Incident
           </button>
         </div>
       </header>
 
       <section className="stat-grid">
-        {DISPATCH_STATS.map((stat) => (
+        {INCIDENT_QUEUE_STATS.map((stat) => (
           <article key={stat.label} className="stat-card">
             <p>{stat.label}</p>
             <strong>{stat.value}</strong>
@@ -625,51 +898,207 @@ function DispatchesPage() {
         ))}
       </section>
 
-      <section className="panel-grid two-column">
+      <section className="panel-grid">
         <article className="panel">
           <div className="panel-header">
-            <h2>Active Dispatch Queue</h2>
-            <span className="panel-caption">Live call board</span>
+            <h2>Incident Calls</h2>
+            <span className="panel-caption">
+              Fields shown: Call # and associated Dispatch Information
+            </span>
           </div>
           <div className="table-wrapper">
             <table>
               <thead>
                 <tr>
-                  {DISPATCH_TABLE_COLUMNS.map((column) => (
-                    <th key={column}>{column}</th>
-                  ))}
+                  <th>Call #</th>
+                  <th>Dispatch Information</th>
                 </tr>
               </thead>
               <tbody>
-                {DISPATCH_TABLE_ROWS.map((row) => (
-                  <tr key={row.join("-")}>
-                    {row.map((cell) => (
-                      <td key={cell}>{cell}</td>
-                    ))}
+                {INCIDENT_CALLS.map((call) => (
+                  <tr
+                    key={call.callNumber}
+                    className="clickable-row"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openCallDetail(call.callNumber)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openCallDetail(call.callNumber);
+                      }
+                    }}
+                  >
+                    <td>
+                      <strong className="call-number-text">{call.callNumber}</strong>
+                    </td>
+                    <td>
+                      <div className="dispatch-info-cell">
+                        <span>{call.dispatchInfo}</span>
+                        <div className="dispatch-info-meta">
+                          <span className={toToneClass(toneFromState(call.currentState))}>
+                            {call.currentState}
+                          </span>
+                          <small>Updated {call.lastUpdated}</small>
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          <p className="panel-description">
+            Future API integration will update these calls and notes in real-time as
+            the dispatch center enters new information.
+          </p>
+        </article>
+      </section>
+
+      <section className="panel-grid two-column">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Configured Workflow States</h2>
+            <span className="panel-caption">Admin customizable</span>
+          </div>
+          <ul className="workflow-chip-list">
+            {workflowStates.map((state) => (
+              <li key={state} className="workflow-chip">
+                {state}
+              </li>
+            ))}
+          </ul>
         </article>
 
         <article className="panel">
           <div className="panel-header">
-            <h2>Unit Status</h2>
-            <span className="panel-caption">Current assignments</span>
+            <h2>Next Build Focus</h2>
           </div>
-          <ul className="unit-status-list">
-            {DISPATCH_UNIT_STATUSES.map((entry) => (
-              <li key={`${entry.unit}-${entry.assignment}`}>
-                <div>
-                  <strong>{entry.unit}</strong>
-                  <p>
-                    {entry.type} | Assignment: {entry.assignment}
-                  </p>
-                </div>
-                <span className={toToneClass(entry.tone)}>{entry.status}</span>
-              </li>
-            ))}
+          <ul className="activity-list">
+            <li>Dispatch center API ingestion for automatic incident updates</li>
+            <li>Map marker overlays tied to incident and hydrant data</li>
+            <li>Role-level permissions for create/edit call operations</li>
+            <li>Audit history for incident and note updates</li>
+          </ul>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+function IncidentCallDetailPage({
+  callNumber,
+  workflowStates,
+}: IncidentCallDetailPageProps) {
+  const detail = getIncidentCallDetail(callNumber);
+  const normalizedStates = workflowStates.length
+    ? workflowStates
+    : [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+
+  if (!detail) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Incident not found</h1>
+            <p>No incident record was found for call {callNumber}.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link" to="/incidents-mapping/incidents">
+              Back to Incidents
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
+
+  const activeWorkflowIndex = normalizedStates.findIndex(
+    (state) => state.toLowerCase() === detail.currentState.toLowerCase(),
+  );
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>{detail.callNumber}</h1>
+          <p>{detail.dispatchInfo}</p>
+        </div>
+        <div className="header-actions">
+          <NavLink className="secondary-button button-link" to="/incidents-mapping/incidents">
+            Back to Incidents
+          </NavLink>
+          <button type="button" className="primary-button">
+            Add Note
+          </button>
+        </div>
+      </header>
+
+      <section className="panel-grid two-column">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Call Information</h2>
+            <span className={toToneClass(toneFromState(detail.currentState))}>
+              {detail.currentState}
+            </span>
+          </div>
+          <dl className="detail-grid">
+            <div>
+              <dt>Incident Type</dt>
+              <dd>{detail.incidentType}</dd>
+            </div>
+            <div>
+              <dt>Priority</dt>
+              <dd>{detail.priority}</dd>
+            </div>
+            <div>
+              <dt>Address</dt>
+              <dd>{detail.address}</dd>
+            </div>
+            <div>
+              <dt>Map Reference</dt>
+              <dd>{detail.mapReference}</dd>
+            </div>
+            <div>
+              <dt>Reported By</dt>
+              <dd>{detail.reportedBy}</dd>
+            </div>
+            <div>
+              <dt>Callback Number</dt>
+              <dd>{detail.callbackNumber}</dd>
+            </div>
+            <div>
+              <dt>Received At</dt>
+              <dd>{detail.receivedAt}</dd>
+            </div>
+            <div>
+              <dt>Last Updated</dt>
+              <dd>{detail.lastUpdated}</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Dispatch Workflow</h2>
+            <span className="panel-caption">Configured in Admin Functions</span>
+          </div>
+          <ul className="workflow-track">
+            {normalizedStates.map((state, index) => {
+              const isActive = index === activeWorkflowIndex;
+              const isComplete =
+                activeWorkflowIndex >= 0 && index <= activeWorkflowIndex;
+              return (
+                <li
+                  key={`${detail.callNumber}-${state}`}
+                  className={`workflow-step ${isActive ? "active" : ""} ${
+                    isComplete ? "complete" : ""
+                  }`}
+                >
+                  <span>{state}</span>
+                </li>
+              );
+            })}
           </ul>
         </article>
       </section>
@@ -677,71 +1106,67 @@ function DispatchesPage() {
       <section className="panel-grid two-column">
         <article className="panel">
           <div className="panel-header">
-            <h2>Map View (Dispatch Zone)</h2>
-            <span className="panel-caption">UI placeholder for map integration</span>
+            <h2>Live Map</h2>
+            <span className="panel-caption">Prepared for GIS/API integration</span>
           </div>
           <div className="dispatch-map-placeholder">
             <p>
-              This map pane is prepared for future dispatch center API and GIS
-              integration.
+              Live map surface for this incident. Future integration will stream
+              unit locations, route updates, hydrants, and map markers in real-time.
             </p>
             <ul>
-              <li>Incident markers by priority and response state</li>
-              <li>Unit movement overlays and hydrant proximity</li>
-              <li>Boundary layers for first-due and mutual aid zones</li>
+              <li>Current incident pin: {detail.address}</li>
+              <li>Nearest hydrants and out-of-service hydrant warnings</li>
+              <li>Map marker overlays from Incident / Mapping settings</li>
             </ul>
           </div>
         </article>
 
         <article className="panel">
           <div className="panel-header">
-            <h2>Dispatch Alerts</h2>
-            <span className="panel-caption">Critical watch list</span>
+            <h2>Apparatus Responding</h2>
+            <span className="panel-caption">Live response assignment view</span>
           </div>
-          <ul className="timeline-list">
-            {DISPATCH_ALERTS.map((alert) => (
-              <li key={`${alert.title}-${alert.time}`}>
+          <ul className="unit-status-list">
+            {detail.apparatus.map((item) => (
+              <li key={`${detail.callNumber}-${item.unit}`}>
                 <div>
-                  <strong>{alert.title}</strong>
-                  <p>{alert.detail}</p>
+                  <strong>
+                    {item.unit} ({item.unitType})
+                  </strong>
+                  <p>
+                    Crew: {item.crew} | ETA: {item.eta}
+                  </p>
                 </div>
-                <span className={toToneClass(alert.tone)}>{alert.time}</span>
+                <span className={toToneClass(toneFromState(item.status))}>
+                  {item.status}
+                </span>
               </li>
             ))}
           </ul>
         </article>
       </section>
 
-      <section className="panel-grid two-column">
+      <section className="panel-grid">
         <article className="panel">
           <div className="panel-header">
-            <h2>Dispatch Activity</h2>
-            <span className="panel-caption">Latest updates</span>
+            <h2>Dispatch Notes</h2>
+            <span className="panel-caption">
+              Future API updates will append notes automatically
+            </span>
           </div>
-          <ul className="activity-list">
-            {DISPATCH_ACTIVITY.map((item) => (
-              <li key={item}>{item}</li>
+          <ul className="timeline-list">
+            {detail.dispatchNotes.map((note) => (
+              <li key={`${detail.callNumber}-${note.time}-${note.source}`}>
+                <div>
+                  <strong>
+                    {note.time} | {note.source}
+                  </strong>
+                  <p>{note.text}</p>
+                </div>
+              </li>
             ))}
           </ul>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Integration Notes</h2>
-            <span className="panel-caption">Next technical milestone</span>
-          </div>
-          <div className="integration-note">
-            <p>
-              This module is structured to receive live dispatch center data via
-              API in a later phase.
-            </p>
-            <ol>
-              <li>Create inbound endpoint mappings for call and unit payloads.</li>
-              <li>Authenticate and validate inbound CAD relay requests.</li>
-              <li>Normalize incident types to your in-app category schema.</li>
-              <li>Stream status updates into this queue and map in real-time.</li>
-            </ol>
-          </div>
         </article>
       </section>
     </section>
@@ -749,10 +1174,6 @@ function DispatchesPage() {
 }
 
 function MainMenuLandingPage({ menu, role }: MainMenuLandingPageProps) {
-  const visibleSubmenus = menu.submenus.filter(
-    (submenu) => role === "admin" || !submenu.adminOnly,
-  );
-
   return (
     <section className="page-section">
       <header className="page-header">
@@ -762,37 +1183,7 @@ function MainMenuLandingPage({ menu, role }: MainMenuLandingPageProps) {
         </div>
       </header>
 
-      {visibleSubmenus.length ? (
-        <section className="submenu-card-grid">
-          {visibleSubmenus.map((submenu) => (
-            <article key={submenu.path} className="submenu-card">
-              <div className="submenu-card-header">
-                <h2>{submenu.label}</h2>
-                <span
-                  className={`build-status ${
-                    submenu.isBuilt ? "build-ready" : "build-planned"
-                  }`}
-                >
-                  {submenu.isBuilt ? "Built" : "Scaffolded"}
-                </span>
-              </div>
-              <p>{submenu.summary}</p>
-              <NavLink className="secondary-button button-link compact" to={submenu.path}>
-                Open submenu
-              </NavLink>
-            </article>
-          ))}
-        </section>
-      ) : (
-        <section className="panel-grid">
-          <article className="panel">
-            <p className="panel-description">
-              This module currently has no submenu and can be expanded directly
-              on this page as requirements evolve.
-            </p>
-          </article>
-        </section>
-      )}
+      <MenuDisplayCards menu={menu} role={role} />
     </section>
   );
 }
@@ -814,7 +1205,7 @@ function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
           </div>
           <p className="panel-description">
             {submenu.isBuilt
-              ? "This submenu includes an initial functional UI."
+              ? "This submenu includes an initial UI implementation."
               : "This submenu route is connected with a scaffold placeholder and is ready for detailed build-out."}
           </p>
         </article>
@@ -834,15 +1225,23 @@ function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
   );
 }
 
-function TrainingPage() {
+function HydrantsAdminPage() {
+  const [fileName, setFileName] = useState("No file selected");
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const handleUpload = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatusMessage("CSV upload staged in prototype mode. Parsing comes next.");
+  };
+
   return (
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Training</h1>
+          <h1>Admin Functions | Hydrants</h1>
           <p>
-            Training currently has no submenu and can be expanded with course
-            tracking, simulator records, and completion workflows.
+            Mass upload hydrants via CSV and maintain hydrant placement manually on
+            the map.
           </p>
         </div>
       </header>
@@ -850,40 +1249,134 @@ function TrainingPage() {
       <section className="panel-grid two-column">
         <article className="panel">
           <div className="panel-header">
-            <h2>Suggested Training Features</h2>
+            <h2>CSV Upload</h2>
           </div>
-          <ul className="activity-list">
-            <li>Training calendar and attendance capture</li>
-            <li>Skill sign-off workflows by rank and role</li>
-            <li>Certification-linked training recommendations</li>
-            <li>Document and scenario library for drills</li>
-          </ul>
+          <form className="settings-form" onSubmit={handleUpload}>
+            <label htmlFor="hydrant-upload">Hydrant CSV File</label>
+            <input
+              id="hydrant-upload"
+              type="file"
+              accept=".csv,text/csv"
+              onChange={(event) =>
+                setFileName(event.target.files?.[0]?.name ?? "No file selected")
+              }
+            />
+            <p className="field-hint">Selected file: {fileName}</p>
+            <button type="submit" className="primary-button">
+              Upload CSV
+            </button>
+            {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
+          </form>
         </article>
 
         <article className="panel">
           <div className="panel-header">
-            <h2>Current Mode</h2>
+            <h2>Hydrant Map Editing</h2>
           </div>
-          <p className="panel-description">
-            UI scaffold only. Ready for detailed requirements and field mapping.
-          </p>
+          <div className="dispatch-map-placeholder">
+            <p>
+              Hydrant map editor placeholder. This screen will support manual pin
+              placement and hydrant attribute editing.
+            </p>
+            <ul>
+              <li>Drag hydrant markers to adjust map location</li>
+              <li>Update flow rate, status, and service notes</li>
+              <li>Sync map marker overlays for incident response</li>
+            </ul>
+          </div>
+        </article>
+      </section>
+
+      <section className="panel-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Hydrant Records</h2>
+          </div>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Hydrant ID</th>
+                  <th>Status</th>
+                  <th>Zone</th>
+                  <th>Last Inspection</th>
+                  <th>Flow Rate</th>
+                </tr>
+              </thead>
+              <tbody>
+                {HYDRANT_ADMIN_TABLE_ROWS.map((row) => (
+                  <tr key={row.hydrantId}>
+                    <td>{row.hydrantId}</td>
+                    <td>{row.status}</td>
+                    <td>{row.zone}</td>
+                    <td>{row.lastInspection}</td>
+                    <td>{row.flowRate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </article>
       </section>
     </section>
   );
 }
 
-function CustomizationPage() {
+function CustomizationPage({
+  workflowStates,
+  onSaveWorkflowStates,
+}: CustomizationPageProps) {
   const [organizationName, setOrganizationName] = useState("CIFPD");
   const [primaryColor, setPrimaryColor] = useState("#1d4ed8");
   const [accentColor, setAccentColor] = useState("#0891b2");
   const [logoFileName, setLogoFileName] = useState("No file selected");
+  const [workflowDraft, setWorkflowDraft] = useState<string[]>(() => [...workflowStates]);
+  const [newState, setNewState] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+
+  const updateWorkflowState = (index: number, value: string) => {
+    setWorkflowDraft((previous) =>
+      previous.map((state, currentIndex) =>
+        currentIndex === index ? value : state,
+      ),
+    );
+  };
+
+  const removeWorkflowState = (index: number) => {
+    setWorkflowDraft((previous) =>
+      previous.filter((_, currentIndex) => currentIndex !== index),
+    );
+  };
+
+  const addWorkflowState = () => {
+    const trimmed = newState.trim();
+    if (!trimmed) {
+      return;
+    }
+    setWorkflowDraft((previous) => [...previous, trimmed]);
+    setNewState("");
+  };
+
+  const resetWorkflowStates = () => {
+    setWorkflowDraft([...DEFAULT_DISPATCH_WORKFLOW_STATES]);
+  };
 
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    const normalizedStates = dedupeAndCleanStates(workflowDraft);
+
+    if (!normalizedStates.length) {
+      setErrorMessage("Add at least one workflow state before saving.");
+      setSavedMessage("");
+      return;
+    }
+
+    onSaveWorkflowStates(normalizedStates);
+    setWorkflowDraft(normalizedStates);
+    setErrorMessage("");
     setSavedMessage(
-      "Customization preferences saved locally in this prototype view.",
+      "Customization saved. Dispatch workflow states updated successfully.",
     );
   };
 
@@ -893,18 +1386,17 @@ function CustomizationPage() {
         <div>
           <h1>Admin Functions | Customization</h1>
           <p>
-            Configure branding options so agencies can upload a logo and choose
-            color themes.
+            Configure branding and dispatch workflow states for organization setup.
           </p>
         </div>
       </header>
 
-      <section className="panel-grid two-column">
+      <form className="panel-grid two-column" onSubmit={handleSave}>
         <article className="panel">
           <div className="panel-header">
             <h2>Branding Controls</h2>
           </div>
-          <form className="settings-form" onSubmit={handleSave}>
+          <div className="settings-form">
             <label htmlFor="org-name">Organization Name</label>
             <input
               id="org-name"
@@ -919,9 +1411,7 @@ function CustomizationPage() {
               type="file"
               accept="image/*"
               onChange={(event) =>
-                setLogoFileName(
-                  event.target.files?.[0]?.name ?? "No file selected",
-                )
+                setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
               }
             />
             <p className="field-hint">Selected file: {logoFileName}</p>
@@ -941,12 +1431,55 @@ function CustomizationPage() {
               value={accentColor}
               onChange={(event) => setAccentColor(event.target.value)}
             />
+          </div>
+        </article>
 
-            <button type="submit" className="primary-button">
-              Save Customization
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Dispatch Workflow States</h2>
+            <button type="button" className="link-button" onClick={resetWorkflowStates}>
+              Reset to default
             </button>
-            {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
-          </form>
+          </div>
+
+          <div className="settings-form">
+            {workflowDraft.map((state, index) => (
+              <div key={`${state}-${index}`} className="state-edit-row">
+                <input
+                  type="text"
+                  value={state}
+                  onChange={(event) => updateWorkflowState(index, event.target.value)}
+                />
+                <button
+                  type="button"
+                  className="secondary-button compact-button"
+                  onClick={() => removeWorkflowState(index)}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+
+            <div className="state-edit-row">
+              <input
+                type="text"
+                value={newState}
+                placeholder="Add new workflow state"
+                onChange={(event) => setNewState(event.target.value)}
+              />
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={addWorkflowState}
+              >
+                Add
+              </button>
+            </div>
+
+            <small className="field-hint">
+              Standard states: {DEFAULT_DISPATCH_WORKFLOW_STATES.join(", ")}
+            </small>
+          </div>
         </article>
 
         <article className="panel">
@@ -963,12 +1496,32 @@ function CustomizationPage() {
               <span>{organizationName || "Organization Name"}</span>
             </div>
             <p>
-              Preview only. In a future phase this will persist to organization
-              settings and update the full application theme.
+              Branding preview only. Future backend integration will persist these
+              choices per organization.
             </p>
+            <ul className="workflow-chip-list">
+              {workflowDraft.map((state) => (
+                <li key={`preview-${state}`} className="workflow-chip">
+                  {state}
+                </li>
+              ))}
+            </ul>
           </div>
         </article>
-      </section>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Save Configuration</h2>
+          </div>
+          <div className="settings-form">
+            <button type="submit" className="primary-button">
+              Save Customization
+            </button>
+            {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
+            {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+          </div>
+        </article>
+      </form>
     </section>
   );
 }
@@ -1129,7 +1682,11 @@ function NotFoundPage() {
   );
 }
 
-function RouteResolver({ role }: RouteResolverProps) {
+function RouteResolver({
+  role,
+  workflowStates,
+  onSaveWorkflowStates,
+}: RouteResolverProps) {
   const location = useLocation();
   const path = normalizePath(location.pathname);
 
@@ -1149,6 +1706,19 @@ function RouteResolver({ role }: RouteResolverProps) {
     return <AccessDeniedPage />;
   }
 
+  if (path === "/incidents") {
+    return <Navigate to="/incidents-mapping" replace />;
+  }
+  if (path === "/incidents/dispatches") {
+    return <Navigate to="/incidents-mapping/incidents" replace />;
+  }
+  if (path === "/incidents/map-view") {
+    return <Navigate to="/incidents-mapping/map-view" replace />;
+  }
+  if (path === "/incidents/hydrants") {
+    return <Navigate to="/admin-functions/hydrants" replace />;
+  }
+
   if (role === "user" && isPathAdminOnly(path)) {
     return <Navigate to="/access-denied" replace />;
   }
@@ -1157,16 +1727,33 @@ function RouteResolver({ role }: RouteResolverProps) {
     return <DashboardPage role={role} />;
   }
 
-  if (path === "/training") {
-    return <TrainingPage />;
+  if (path === "/incidents-mapping/incidents") {
+    return <IncidentsListPage workflowStates={workflowStates} />;
   }
 
-  if (path === "/incidents/dispatches") {
-    return <DispatchesPage />;
+  if (path.startsWith("/incidents-mapping/incidents/")) {
+    const callNumber = decodeURIComponent(
+      path.replace("/incidents-mapping/incidents/", ""),
+    );
+    return (
+      <IncidentCallDetailPage
+        callNumber={callNumber}
+        workflowStates={workflowStates}
+      />
+    );
+  }
+
+  if (path === "/admin-functions/hydrants") {
+    return <HydrantsAdminPage />;
   }
 
   if (path === "/admin-functions/customization") {
-    return <CustomizationPage />;
+    return (
+      <CustomizationPage
+        workflowStates={workflowStates}
+        onSaveWorkflowStates={onSaveWorkflowStates}
+      />
+    );
   }
 
   const menu = getMainMenuByPath(path);
@@ -1184,6 +1771,9 @@ function RouteResolver({ role }: RouteResolverProps) {
 
 function App() {
   const [session, setSession] = useState<SessionState>(() => readSession());
+  const [workflowStates, setWorkflowStates] = useState<string[]>(() =>
+    readWorkflowStates(),
+  );
 
   const handleLogin = (username: string, unit: string, role: UserRole) => {
     const nextSession: SessionState = {
@@ -1199,6 +1789,15 @@ function App() {
   const handleLogout = () => {
     setSession(EMPTY_SESSION);
     writeSession(EMPTY_SESSION);
+  };
+
+  const handleSaveWorkflowStates = (nextStates: string[]) => {
+    const normalized = dedupeAndCleanStates(nextStates);
+    if (!normalized.length) {
+      return;
+    }
+    setWorkflowStates(normalized);
+    writeWorkflowStates(normalized);
   };
 
   return (
@@ -1225,7 +1824,16 @@ function App() {
             )
           }
         >
-          <Route path="*" element={<RouteResolver role={session.role} />} />
+          <Route
+            path="*"
+            element={
+              <RouteResolver
+                role={session.role}
+                workflowStates={workflowStates}
+                onSaveWorkflowStates={handleSaveWorkflowStates}
+              />
+            }
+          />
         </Route>
       </Routes>
     </BrowserRouter>
