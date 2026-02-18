@@ -10,7 +10,6 @@ import {
   MessageSquare,
   NotebookText,
   RadioTower,
-  ShieldAlert,
   Users,
   Wrench,
   type LucideIcon,
