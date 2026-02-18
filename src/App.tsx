@@ -643,23 +643,26 @@ function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
     [menu, role],
   );
   const defaultPathSet = useMemo(
-    () => new Set(defaultCards.map((submenu) => submenu.path)),
+    () => new Set<string>(defaultCards.map((submenu) => submenu.path)),
     [defaultCards],
   );
   const selectableOptions = useMemo(() => getDisplayCardOptions(role), [role]);
   const selectableMap = useMemo(
-    () =>
-      new Map(selectableOptions.map((option) => [option.path, option])),
+    () => new Map<string, DisplayCardOption>(selectableOptions.map((option) => [option.path, option])),
     [selectableOptions],
   );
 
   const extraCardPaths = displayConfig[menu.id] ?? [];
-  const extraCards = extraCardPaths
-    .map((path) => selectableMap.get(path))
-    .filter(
-      (card): card is DisplayCardOption =>
-        Boolean(card) && !defaultPathSet.has(card.path),
-    );
+  const extraCards = extraCardPaths.reduce<DisplayCardOption[]>(
+    (cardsAccumulator, path) => {
+      const card = selectableMap.get(path);
+      if (card && !defaultPathSet.has(card.path)) {
+        cardsAccumulator.push(card);
+      }
+      return cardsAccumulator;
+    },
+    [],
+  );
 
   const cards: DisplayCardOption[] = [
     ...defaultCards.map((submenu) => ({
