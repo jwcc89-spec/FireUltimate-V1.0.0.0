@@ -37,7 +37,6 @@ import {
   SUBMENU_PLACEHOLDER_NOTES,
   getDefaultPathForRole,
   getMainMenuByPath,
-  getMenuSummary,
   getSubmenuByPath,
   getVisibleMenus,
   isPathAdminOnly,
