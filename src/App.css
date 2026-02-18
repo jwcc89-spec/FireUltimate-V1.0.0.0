@@ -104,6 +104,35 @@
   color: #334155;
 }
 
+.role-selector {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem;
+}
+
+.role-choice {
+  border: 1px solid #cbd5e1;
+  background-color: #f8fafc;
+  color: #334155;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding: 0.55rem 0.45rem;
+  cursor: pointer;
+}
+
+.role-choice.active {
+  background-color: #dbeafe;
+  border-color: #3b82f6;
+  color: #1d4ed8;
+}
+
+.role-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+}
+
 .auth-form input {
   width: 100%;
   border: 1px solid #cbd5e1;
@@ -317,6 +346,16 @@
   justify-content: flex-end;
 }
 
+.button-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.button-link.compact {
+  padding: 0.38rem 0.62rem;
+}
+
 .breadcrumb {
   display: inline-flex;
   align-items: center;
@@ -397,6 +436,73 @@
   font-size: 0.72rem;
   color: #64748b;
   line-height: 1.25;
+}
+
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  border: 1px solid transparent;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0.22rem 0.5rem;
+}
+
+.role-user {
+  background-color: #e0e7ff;
+  border-color: #c7d2fe;
+  color: #3730a3;
+}
+
+.role-admin {
+  background-color: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
+}
+
+.settings-wrap {
+  position: relative;
+}
+
+.settings-dropdown {
+  position: absolute;
+  top: calc(100% + 0.45rem);
+  right: 0;
+  min-width: 210px;
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  padding: 0.3rem;
+  z-index: 40;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.settings-dropdown-item {
+  border: 0;
+  width: 100%;
+  background: transparent;
+  border-radius: 8px;
+  color: #334155;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.5rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.settings-dropdown-item:hover {
+  background-color: #f1f5f9;
+}
+
+.settings-logout {
+  color: #b91c1c;
 }
 
 .ghost-button {
@@ -664,6 +770,211 @@ tbody tr:last-of-type td {
   line-height: 1.45;
 }
 
+.dashboard-shortcut-list,
+.unit-status-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.dashboard-shortcut-list li,
+.unit-status-list li {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.62rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.6rem;
+}
+
+.dashboard-shortcut-list strong,
+.unit-status-list strong {
+  color: #0f172a;
+  display: block;
+  font-size: 0.84rem;
+}
+
+.dashboard-shortcut-list p,
+.unit-status-list p {
+  margin: 0.2rem 0 0;
+  color: #475569;
+  font-size: 0.79rem;
+  line-height: 1.4;
+}
+
+.dispatch-map-placeholder {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  padding: 0.85rem;
+  background:
+    radial-gradient(circle at 14% 22%, rgba(37, 99, 235, 0.14), transparent 30%),
+    radial-gradient(circle at 82% 76%, rgba(14, 116, 144, 0.16), transparent 40%),
+    #f8fafc;
+}
+
+.dispatch-map-placeholder p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.84rem;
+}
+
+.dispatch-map-placeholder ul {
+  margin: 0.7rem 0 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.34rem;
+  color: #334155;
+  font-size: 0.79rem;
+}
+
+.integration-note p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.84rem;
+  line-height: 1.45;
+}
+
+.integration-note ol {
+  margin: 0.7rem 0 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+  color: #334155;
+  font-size: 0.79rem;
+}
+
+.submenu-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: 0.75rem;
+}
+
+.submenu-card {
+  border: 1px solid #dbe2ec;
+  border-radius: 12px;
+  background-color: #ffffff;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.submenu-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.submenu-card-header h2 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.95rem;
+}
+
+.submenu-card p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.42;
+}
+
+.build-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  padding: 0.18rem 0.5rem;
+  white-space: nowrap;
+}
+
+.build-ready {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.build-planned {
+  background-color: #e2e8f0;
+  color: #334155;
+}
+
+.settings-form {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.settings-form label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.settings-form input,
+.settings-form select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.settings-form input[type="color"] {
+  height: 40px;
+  padding: 0.2rem;
+}
+
+.settings-form input:focus,
+.settings-form select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  outline: none;
+  background-color: #ffffff;
+}
+
+.field-hint {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.76rem;
+}
+
+.save-message {
+  margin: 0;
+  color: #166534;
+  font-size: 0.79rem;
+  font-weight: 600;
+}
+
+.branding-preview {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  padding: 0.75rem;
+  background-color: #f8fafc;
+}
+
+.branding-preview-banner {
+  border-radius: 8px;
+  min-height: 84px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.branding-preview p {
+  margin: 0.62rem 0 0;
+  color: #475569;
+  font-size: 0.82rem;
+  line-height: 1.42;
+}
+
 .tone {
   display: inline-flex;
   align-items: center;
@@ -742,6 +1053,10 @@ tbody tr:last-of-type td {
   .user-pill {
     display: none;
   }
+
+  .role-badge {
+    display: none;
+  }
 }
 
 @media (max-width: 900px) {
@@ -761,6 +1076,11 @@ tbody tr:last-of-type td {
 
   .topbar-right {
     justify-content: flex-start;
+  }
+
+  .settings-dropdown {
+    left: 0;
+    right: auto;
   }
 }
 

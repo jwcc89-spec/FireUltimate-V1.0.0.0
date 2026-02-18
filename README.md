@@ -1,24 +1,32 @@
-# StationBoss Mimic (Web v1 Prototype)
+# StationBoss Mimic (Web Prototype)
 
-React + TypeScript prototype that mirrors the StationBoss command layout with:
+React + TypeScript prototype with the condensed menu structure and role-based
+navigation.
 
-- Auth screen (`/auth`)
-- Full primary module UIs:
+## Current capabilities
+
+- Auth screen (`/auth`) with simple login mode
+- Admin/User role selection at login
+- User role has access to all modules except **Admin Functions**
+- Sidebar structure:
   - Dashboard
-  - Certifications
-  - Checklists
-  - Daily Logs
-  - Dispatches
-  - Equipment
-  - Events
-  - Fuel Logs
-  - Incidents
-  - Maintenance
-  - Meetings
-  - Messages
-  - Personnel
-  - Vendors
-- Linked submenu routes for each module (scaffolded placeholders for future build-out)
+  - Incidents (Dispatches, Hydrants, Map View)
+  - Reporting (NEIRS, EMS)
+  - Personnel (Schedule, Certifications)
+  - Apparatus (Units, Equipment List, Fuel Logs, Maintenance Logs, Mileage Logs)
+  - Calendar (Events, Meetings)
+  - File Center (Checklists, Daily Logs, E-Forms, Medical Supplies, Water Logs, Vendors, Resources)
+  - Fire Prevention (Fire Investigations, Pre-Plans, Inspections, Permits, Properties, Smoke Alarms)
+  - Training
+  - Admin Functions (Scheduling, Overtime Hiring, Personnel Management, Point Tracker, Manage Groups, Expiration Tracker, Reports, Customization)
+  - Messaging (View Messages, Create Message)
+- Built-out module page:
+  - Incidents -> Dispatches
+- Settings gear menu (top right):
+  - Profile Management
+  - Edit My Display
+  - Logout
+- Admin Functions -> Customization page scaffold (logo upload + color controls)
 
 ## Run locally
 
@@ -35,5 +43,6 @@ npm run build
 
 ## Notes
 
-- This v1 is UI-first and intended as a strong starting point for API integration.
-- Navigation and route structure are organized to support future mobile expansion.
+- This version is UI-first and uses fake sample data.
+- Dispatch center API integration is planned for a future phase.
+- Navigation structure is organized to support future mobile app expansion.
