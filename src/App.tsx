@@ -432,7 +432,7 @@ function AuthPage({ onLogin }: AuthPageProps) {
     event.preventDefault();
 
     if (!username.trim() || !unit.trim() || !securePin.trim()) {
-      setErrorMessage("Please provide username, unit, and secure pin.");
+      setErrorMessage("Please provide fire department, username, and password.");
       return;
     }
 
@@ -445,7 +445,7 @@ function AuthPage({ onLogin }: AuthPageProps) {
       <section className="auth-brand-panel">
         <div className="brand-pill">
           <Shield size={16} />
-          <span>Station Boss Prototype</span>
+          <span>Fire Ultimate Prototype</span>
         </div>
         <h1>Incident-focused workspace with mapping and admin controls</h1>
         <p>
@@ -464,40 +464,40 @@ function AuthPage({ onLogin }: AuthPageProps) {
           <div className="auth-form-header">
             <ShieldCheck size={24} />
             <div>
-              <h2>Sign in to Station Boss</h2>
+              <h2>Sign in to Fire Ultimate</h2>
               <p>Simple login mode remains active for this prototype.</p>
             </div>
           </div>
 
-          <label htmlFor="username">Username</label>
+          <label htmlFor="username">Fire Department</label>
           <input
             id="username"
             name="username"
             type="text"
-            autoComplete="username"
+            autoComplete="organization"
             placeholder="CIFPD"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
           />
 
-          <label htmlFor="unit">Unit</label>
+          <label htmlFor="unit">Username</label>
           <input
             id="unit"
             name="unit"
             type="text"
-            inputMode="numeric"
-            placeholder="100"
+            autoComplete="username"
+            placeholder="chief.jones"
             value={unit}
             onChange={(event) => setUnit(event.target.value)}
           />
 
-          <label htmlFor="pin">Secure Pin</label>
+          <label htmlFor="pin">Password</label>
           <input
             id="pin"
             name="pin"
             type="password"
             autoComplete="current-password"
-            placeholder="3799"
+            placeholder="••••••••"
             value={securePin}
             onChange={(event) => setSecurePin(event.target.value)}
           />
@@ -540,11 +540,8 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [expandedMenus, setExpandedMenus] = useState<Record<MainMenuId, boolean>>(
-    () =>
-      Object.fromEntries(
-        MAIN_MENUS.map((menu) => [menu.id, menu.id === "incidentsMapping"]),
-      ) as Record<MainMenuId, boolean>,
+  const [expandedMenuId, setExpandedMenuId] = useState<MainMenuId | null>(
+    "incidentsMapping",
   );
 
   const location = useLocation();
@@ -602,6 +599,8 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     setSettingsOpen(false);
   };
 
+  const expandedMenuForRender = activeMenu?.id ?? expandedMenuId;
+
   const handleLogout = () => {
     onLogout();
     setSettingsOpen(false);
@@ -625,7 +624,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             <Shield size={18} />
           </div>
           <div>
-            <strong>Station Boss</strong>
+            <strong>Fire Ultimate</strong>
             <span>Fire Department Software</span>
           </div>
         </div>
@@ -640,7 +639,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               (submenu) => session.role === "admin" || !submenu.adminOnly,
             );
             const hasSubmenus = visibleSubmenus.length > 0;
-            const isExpanded = hasSubmenus && (expandedMenus[menu.id] || isMenuRoute);
+            const isExpanded = hasSubmenus && menu.id === expandedMenuForRender;
 
             return (
               <section
@@ -655,7 +654,10 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                         isActive || isMenuRoute ? "active" : ""
                       }`
                     }
-                    onClick={handleNavClick}
+                    onClick={() => {
+                      setExpandedMenuId(menu.id);
+                      handleNavClick();
+                    }}
                   >
                     <Icon size={16} />
                     <span>{menu.title}</span>
@@ -667,10 +669,9 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                       className={`module-toggle ${isExpanded ? "expanded" : ""}`}
                       aria-label={`Toggle ${menu.title} submenu`}
                       onClick={() =>
-                        setExpandedMenus((previous) => ({
-                          ...previous,
-                          [menu.id]: !isExpanded,
-                        }))
+                        setExpandedMenuId((previous) =>
+                          previous === menu.id ? null : menu.id,
+                        )
                       }
                     >
                       <ChevronDown size={16} />
@@ -687,7 +688,10 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                         className={({ isActive }) =>
                           `submenu-link ${isActive ? "active" : ""}`
                         }
-                        onClick={handleNavClick}
+                        onClick={() => {
+                          setExpandedMenuId(menu.id);
+                          handleNavClick();
+                        }}
                       >
                         {submenu.label}
                       </NavLink>
@@ -745,9 +749,9 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             <div className="user-pill">
               <UserRound size={15} />
               <div>
-                <strong>{session.username}</strong>
+                <strong>{session.unit}</strong>
                 <span>
-                  Unit {session.unit} | {dateLabel}
+                  Fire Dept {session.username} | {dateLabel}
                 </span>
               </div>
             </div>

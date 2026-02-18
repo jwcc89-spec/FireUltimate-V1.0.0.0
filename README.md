@@ -1,4 +1,4 @@
-# StationBoss Mimic (Web Prototype)
+# Fire Ultimate (Web Prototype)
 
 React + TypeScript prototype with the condensed menu structure and role-based
 navigation.
