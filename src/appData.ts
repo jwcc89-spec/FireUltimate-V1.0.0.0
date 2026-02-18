@@ -30,11 +30,29 @@ export type MainMenuId =
 
 export type Tone = "positive" | "warning" | "critical" | "neutral";
 
+export type IncidentStatId =
+  | "openCalls"
+  | "averageTurnout"
+  | "averageTravel"
+  | "awaitingClosure";
+
+export type IncidentCallFieldId =
+  | "incidentType"
+  | "priority"
+  | "address"
+  | "assignedUnits"
+  | "status"
+  | "lastUpdated";
+
 export interface DashboardStat {
   label: string;
   value: string;
   detail: string;
   tone: Tone;
+}
+
+export interface IncidentQueueStat extends DashboardStat {
+  id: IncidentStatId;
 }
 
 export interface AlertItem {
@@ -69,9 +87,14 @@ export interface DisplayCardOption extends NavSubmenu {
 
 export interface IncidentCallSummary {
   callNumber: string;
-  dispatchInfo: string;
+  incidentType: string;
+  priority: string;
+  address: string;
+  assignedUnits: string;
   currentState: string;
   lastUpdated: string;
+  receivedAt: string;
+  dispatchInfo: string;
 }
 
 export interface DispatchNote {
@@ -95,9 +118,26 @@ export interface IncidentCallDetail extends IncidentCallSummary {
   mapReference: string;
   reportedBy: string;
   callbackNumber: string;
-  receivedAt: string;
   apparatus: RespondingApparatus[];
   dispatchNotes: DispatchNote[];
+}
+
+export interface IncidentCallFieldOption {
+  id: IncidentCallFieldId;
+  label: string;
+  description: string;
+}
+
+export interface IncidentDisplaySettings {
+  hiddenStatIds: IncidentStatId[];
+  callFieldOrder: IncidentCallFieldId[];
+}
+
+export interface DispatchParsingPreviewRow {
+  receivedAt: string;
+  callNumber: string;
+  rawMessage: string;
+  parsedSummary: string;
 }
 
 export const DEFAULT_DISPATCH_WORKFLOW_STATES = [
@@ -107,6 +147,15 @@ export const DEFAULT_DISPATCH_WORKFLOW_STATES = [
   "Transport",
   "Cleared",
 ] as const;
+
+export const DEFAULT_INCIDENT_CALL_FIELD_ORDER: IncidentCallFieldId[] = [
+  "incidentType",
+  "priority",
+  "address",
+  "assignedUnits",
+  "status",
+  "lastUpdated",
+];
 
 export const MAIN_MENUS: MainMenu[] = [
   {
@@ -533,26 +582,30 @@ export const DASHBOARD_PRIORITY_LINKS: Array<{
   },
 ];
 
-export const INCIDENT_QUEUE_STATS: DashboardStat[] = [
+export const INCIDENT_QUEUE_STATS: IncidentQueueStat[] = [
   {
+    id: "openCalls",
     label: "Open Calls",
     value: "14",
     detail: "5 currently in active response",
     tone: "warning",
   },
   {
+    id: "averageTurnout",
     label: "Average Turnout",
     value: "01:42",
     detail: "Improved by 9 seconds",
     tone: "positive",
   },
   {
+    id: "averageTravel",
     label: "Average Travel",
     value: "05:08",
     detail: "Within operational target",
     tone: "positive",
   },
   {
+    id: "awaitingClosure",
     label: "Calls Awaiting Closure",
     value: "3",
     detail: "Pending final state and notes",
@@ -560,20 +613,54 @@ export const INCIDENT_QUEUE_STATS: DashboardStat[] = [
   },
 ];
 
+export const INCIDENT_CALL_FIELD_OPTIONS: IncidentCallFieldOption[] = [
+  {
+    id: "incidentType",
+    label: "Incident Type",
+    description: "Type/classification of the dispatch call.",
+  },
+  {
+    id: "priority",
+    label: "Priority",
+    description: "Priority level assigned by dispatch.",
+  },
+  {
+    id: "address",
+    label: "Address",
+    description: "Incident location/address.",
+  },
+  {
+    id: "assignedUnits",
+    label: "Assigned Units",
+    description: "Units currently assigned to this call.",
+  },
+  {
+    id: "status",
+    label: "Status",
+    description: "Current workflow state for the incident.",
+  },
+  {
+    id: "lastUpdated",
+    label: "Last Updated",
+    description: "Most recent update timestamp for this call.",
+  },
+];
+
 export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
   {
     callNumber: "D-260218-101",
-    dispatchInfo:
-      "Medical | 412 River St | Engine 2, Medic 4 | Priority 2",
-    currentState: "Enroute",
-    lastUpdated: "2m ago",
     incidentType: "Medical Emergency",
     priority: "Priority 2",
     address: "412 River St",
+    assignedUnits: "Engine 2, Medic 4",
+    currentState: "Enroute",
+    lastUpdated: "2m ago",
+    receivedAt: "09:11",
+    dispatchInfo:
+      "Medical Emergency | Priority 2 | 412 River St | Engine 2, Medic 4",
     mapReference: "Grid B4",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0144",
-    receivedAt: "09:11",
     apparatus: [
       {
         unit: "Engine 2",
@@ -610,17 +697,17 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
   },
   {
     callNumber: "D-260218-099",
-    dispatchInfo:
-      "Alarm Activation | 95 Oak Ave | Engine 1, Ladder 6 | Priority 3",
-    currentState: "On scene",
-    lastUpdated: "5m ago",
     incidentType: "Automatic Alarm",
     priority: "Priority 3",
     address: "95 Oak Ave",
+    assignedUnits: "Engine 1, Ladder 6",
+    currentState: "On scene",
+    lastUpdated: "5m ago",
+    receivedAt: "08:56",
+    dispatchInfo: "Automatic Alarm | Priority 3 | 95 Oak Ave | Engine 1, Ladder 6",
     mapReference: "Grid C2",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0170",
-    receivedAt: "08:56",
     apparatus: [
       {
         unit: "Engine 1",
@@ -657,16 +744,18 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
   },
   {
     callNumber: "D-260218-094",
-    dispatchInfo: "MVC | Hwy 62 MM 17 | Rescue 3, Medic 2 | Priority 2",
-    currentState: "Transport",
-    lastUpdated: "8m ago",
     incidentType: "Motor Vehicle Collision",
     priority: "Priority 2",
     address: "Hwy 62 MM 17",
+    assignedUnits: "Rescue 3, Medic 2",
+    currentState: "Transport",
+    lastUpdated: "8m ago",
+    receivedAt: "08:31",
+    dispatchInfo:
+      "Motor Vehicle Collision | Priority 2 | Hwy 62 MM 17 | Rescue 3, Medic 2",
     mapReference: "Grid E1",
     reportedBy: "State Dispatch",
     callbackNumber: "(555) 0126",
-    receivedAt: "08:31",
     apparatus: [
       {
         unit: "Rescue 3",
@@ -703,16 +792,17 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
   },
   {
     callNumber: "D-260218-089",
-    dispatchInfo: "Lift Assist | 311 Aspen Ct | Engine 5 | Priority 4",
-    currentState: "Cleared",
-    lastUpdated: "18m ago",
     incidentType: "Lift Assist",
     priority: "Priority 4",
     address: "311 Aspen Ct",
+    assignedUnits: "Engine 5",
+    currentState: "Cleared",
+    lastUpdated: "18m ago",
+    receivedAt: "08:02",
+    dispatchInfo: "Lift Assist | Priority 4 | 311 Aspen Ct | Engine 5",
     mapReference: "Grid A5",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0182",
-    receivedAt: "08:02",
     apparatus: [
       {
         unit: "Engine 5",
@@ -742,17 +832,18 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
   },
   {
     callNumber: "D-260218-082",
-    dispatchInfo:
-      "Structure Fire | 16 Harbor Ln | 2 Alarm Assignment | Priority 1",
-    currentState: "On scene",
-    lastUpdated: "1m ago",
     incidentType: "Structure Fire",
     priority: "Priority 1",
     address: "16 Harbor Ln",
+    assignedUnits: "Engine 1, Engine 7, Ladder 6, Medic 4",
+    currentState: "On scene",
+    lastUpdated: "1m ago",
+    receivedAt: "07:41",
+    dispatchInfo:
+      "Structure Fire | Priority 1 | 16 Harbor Ln | Engine 1, Engine 7, Ladder 6, Medic 4",
     mapReference: "Grid D3",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0102",
-    receivedAt: "07:41",
     apparatus: [
       {
         unit: "Engine 1",
@@ -809,11 +900,16 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
 ];
 
 export const INCIDENT_CALLS: IncidentCallSummary[] = INCIDENT_CALL_DETAILS.map(
-  ({ callNumber, dispatchInfo, currentState, lastUpdated }) => ({
-    callNumber,
-    dispatchInfo,
-    currentState,
-    lastUpdated,
+  (call) => ({
+    callNumber: call.callNumber,
+    incidentType: call.incidentType,
+    priority: call.priority,
+    address: call.address,
+    assignedUnits: call.assignedUnits,
+    currentState: call.currentState,
+    lastUpdated: call.lastUpdated,
+    receivedAt: call.receivedAt,
+    dispatchInfo: call.dispatchInfo,
   }),
 );
 
@@ -847,6 +943,33 @@ export const HYDRANT_ADMIN_TABLE_ROWS: Array<{
   },
 ];
 
+export const DISPATCH_PARSING_PREVIEW: DispatchParsingPreviewRow[] = [
+  {
+    receivedAt: "09:11:02",
+    callNumber: "D-260218-101",
+    rawMessage:
+      "CAD|CALL=D-260218-101|TYPE=MEDICAL|PRIORITY=2|ADDR=412 River St|UNITS=E2,M4",
+    parsedSummary:
+      "Medical Emergency | Priority 2 | 412 River St | Engine 2, Medic 4",
+  },
+  {
+    receivedAt: "08:56:47",
+    callNumber: "D-260218-099",
+    rawMessage:
+      "CAD|CALL=D-260218-099|TYPE=ALARM|PRIORITY=3|ADDR=95 Oak Ave|UNITS=E1,L6",
+    parsedSummary:
+      "Automatic Alarm | Priority 3 | 95 Oak Ave | Engine 1, Ladder 6",
+  },
+  {
+    receivedAt: "07:41:31",
+    callNumber: "D-260218-082",
+    rawMessage:
+      "CAD|CALL=D-260218-082|TYPE=STRUCT FIRE|PRIORITY=1|ADDR=16 Harbor Ln|UNITS=E1,E7,L6,M4",
+    parsedSummary:
+      "Structure Fire | Priority 1 | 16 Harbor Ln | Engine 1, Engine 7, Ladder 6, Medic 4",
+  },
+];
+
 export const SUBMENU_PLACEHOLDER_NOTES: string[] = [
   "Route wiring is complete and ready for full module implementation.",
   "Data model, create/edit flows, and permissions can be layered next.",
@@ -872,6 +995,8 @@ const DISPLAY_CARDS: DisplayCardOption[] = MAIN_MENUS.flatMap((menu) =>
     parentMenuTitle: menu.title,
   })),
 );
+
+export const ALL_SUBMENU_PATHS = DISPLAY_CARDS.map((submenu) => submenu.path);
 
 export function getVisibleMenus(role: UserRole): MainMenu[] {
   if (role === "admin") {
@@ -904,17 +1029,9 @@ export function getSubmenuForPath(pathname: string): NavSubmenu | undefined {
   if (exact) {
     return exact;
   }
-
   return DISPLAY_CARDS.find((submenu) =>
     normalizedPath.startsWith(`${submenu.path}/`),
   );
-}
-
-export function getDisplayCardOptionByPath(
-  path: string,
-): DisplayCardOption | undefined {
-  const normalizedPath = normalizePath(path);
-  return DISPLAY_CARDS.find((card) => card.path === normalizedPath);
 }
 
 export function getDisplayCardOptions(role: UserRole): DisplayCardOption[] {

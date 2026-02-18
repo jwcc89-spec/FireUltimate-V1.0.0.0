@@ -24,12 +24,16 @@ import {
 } from "react-router-dom";
 import "./App.css";
 import {
+  ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
   DASHBOARD_PRIORITY_LINKS,
   DASHBOARD_STATS,
   DEFAULT_DISPATCH_WORKFLOW_STATES,
+  DEFAULT_INCIDENT_CALL_FIELD_ORDER,
+  DISPATCH_PARSING_PREVIEW,
   HYDRANT_ADMIN_TABLE_ROWS,
   INCIDENT_CALLS,
+  INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
   SUBMENU_PLACEHOLDER_NOTES,
@@ -43,6 +47,9 @@ import {
   getVisibleMenus,
   isPathAdminOnly,
   type DisplayCardOption,
+  type IncidentCallFieldId,
+  type IncidentDisplaySettings,
+  type IncidentStatId,
   type MainMenu,
   type MainMenuId,
   type NavSubmenu,
@@ -68,17 +75,23 @@ interface ShellLayoutProps {
 
 interface DashboardPageProps {
   role: UserRole;
+  submenuVisibility: SubmenuVisibilityMap;
 }
 
 interface RouteResolverProps {
   role: UserRole;
   workflowStates: string[];
   onSaveWorkflowStates: (nextStates: string[]) => void;
+  incidentDisplaySettings: IncidentDisplaySettings;
+  onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
+  submenuVisibility: SubmenuVisibilityMap;
+  onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
 }
 
 interface MainMenuLandingPageProps {
   menu: MainMenu;
   role: UserRole;
+  submenuVisibility: SubmenuVisibilityMap;
 }
 
 interface SubmenuPlaceholderPageProps {
@@ -87,28 +100,36 @@ interface SubmenuPlaceholderPageProps {
 
 interface IncidentsListPageProps {
   workflowStates: string[];
+  incidentDisplaySettings: IncidentDisplaySettings;
 }
 
 interface IncidentCallDetailPageProps {
   callNumber: string;
-  workflowStates: string[];
 }
 
 interface MenuDisplayCardsProps {
   menu: MainMenu;
   role: UserRole;
+  submenuVisibility: SubmenuVisibilityMap;
 }
 
 interface CustomizationPageProps {
   workflowStates: string[];
   onSaveWorkflowStates: (nextStates: string[]) => void;
+  incidentDisplaySettings: IncidentDisplaySettings;
+  onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
+  submenuVisibility: SubmenuVisibilityMap;
+  onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
 }
 
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
+type SubmenuVisibilityMap = Record<string, boolean>;
 
 const SESSION_STORAGE_KEY = "stationboss-mimic-session";
 const DISPLAY_CARD_STORAGE_KEY = "stationboss-mimic-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "stationboss-mimic-workflow-states";
+const INCIDENT_DISPLAY_STORAGE_KEY = "stationboss-mimic-incident-display";
+const SUBMENU_VISIBILITY_STORAGE_KEY = "stationboss-mimic-submenu-visibility";
 
 const EMPTY_SESSION: SessionState = {
   isAuthenticated: false,
@@ -116,6 +137,13 @@ const EMPTY_SESSION: SessionState = {
   unit: "",
   role: "user",
 };
+
+const VALID_STAT_IDS = new Set<IncidentStatId>(
+  INCIDENT_QUEUE_STATS.map((stat) => stat.id),
+);
+const VALID_CALL_FIELD_IDS = new Set<IncidentCallFieldId>(
+  INCIDENT_CALL_FIELD_OPTIONS.map((field) => field.id),
+);
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -145,11 +173,69 @@ function toneFromState(state: string): Tone {
   return "neutral";
 }
 
-function dedupeAndCleanStates(states: string[]): string[] {
-  const cleaned = states
-    .map((state) => state.trim())
-    .filter((state) => state.length > 0);
+function dedupeAndCleanStrings(values: string[]): string[] {
+  const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
   return Array.from(new Set(cleaned));
+}
+
+function dedupeCallFieldOrder(values: IncidentCallFieldId[]): IncidentCallFieldId[] {
+  const seen = new Set<IncidentCallFieldId>();
+  const order: IncidentCallFieldId[] = [];
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      order.push(value);
+    }
+  }
+  return order;
+}
+
+function dedupeIncidentStatIds(values: IncidentStatId[]): IncidentStatId[] {
+  const seen = new Set<IncidentStatId>();
+  const ids: IncidentStatId[] = [];
+  for (const value of values) {
+    if (!seen.has(value)) {
+      seen.add(value);
+      ids.push(value);
+    }
+  }
+  return ids;
+}
+
+function getDefaultSubmenuVisibilityMap(): SubmenuVisibilityMap {
+  return Object.fromEntries(ALL_SUBMENU_PATHS.map((path) => [path, true]));
+}
+
+function getDefaultIncidentDisplaySettings(): IncidentDisplaySettings {
+  return {
+    hiddenStatIds: [],
+    callFieldOrder: [...DEFAULT_INCIDENT_CALL_FIELD_ORDER],
+  };
+}
+
+function normalizeIncidentDisplaySettings(
+  settings: Partial<IncidentDisplaySettings> | null | undefined,
+): IncidentDisplaySettings {
+  const defaultSettings = getDefaultIncidentDisplaySettings();
+  if (!settings) {
+    return defaultSettings;
+  }
+
+  const hiddenStatIds = Array.isArray(settings.hiddenStatIds)
+    ? (settings.hiddenStatIds.filter((id) => VALID_STAT_IDS.has(id)) as IncidentStatId[])
+    : [];
+  const callFieldOrder = Array.isArray(settings.callFieldOrder)
+    ? dedupeCallFieldOrder(
+        settings.callFieldOrder.filter((id) => VALID_CALL_FIELD_IDS.has(id)) as IncidentCallFieldId[],
+      )
+    : [...defaultSettings.callFieldOrder];
+
+  return {
+    hiddenStatIds: dedupeIncidentStatIds(hiddenStatIds),
+    callFieldOrder: callFieldOrder.length
+      ? callFieldOrder
+      : [...defaultSettings.callFieldOrder],
+  };
 }
 
 function readSession(): SessionState {
@@ -236,7 +322,9 @@ function readWorkflowStates(): string[] {
     if (!Array.isArray(parsed)) {
       return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
     }
-    const cleaned = dedupeAndCleanStates(parsed.filter((item) => typeof item === "string"));
+    const cleaned = dedupeAndCleanStrings(
+      parsed.filter((item) => typeof item === "string"),
+    );
     return cleaned.length ? cleaned : [...DEFAULT_DISPATCH_WORKFLOW_STATES];
   } catch {
     return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
@@ -248,6 +336,89 @@ function writeWorkflowStates(states: string[]): void {
     return;
   }
   window.localStorage.setItem(WORKFLOW_STATE_STORAGE_KEY, JSON.stringify(states));
+}
+
+function readIncidentDisplaySettings(): IncidentDisplaySettings {
+  if (typeof window === "undefined") {
+    return getDefaultIncidentDisplaySettings();
+  }
+
+  const rawValue = window.localStorage.getItem(INCIDENT_DISPLAY_STORAGE_KEY);
+  if (!rawValue) {
+    return getDefaultIncidentDisplaySettings();
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<IncidentDisplaySettings>;
+    return normalizeIncidentDisplaySettings(parsed);
+  } catch {
+    return getDefaultIncidentDisplaySettings();
+  }
+}
+
+function writeIncidentDisplaySettings(settings: IncidentDisplaySettings): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(INCIDENT_DISPLAY_STORAGE_KEY, JSON.stringify(settings));
+}
+
+function readSubmenuVisibility(): SubmenuVisibilityMap {
+  const defaults = getDefaultSubmenuVisibilityMap();
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+
+  const rawValue = window.localStorage.getItem(SUBMENU_VISIBILITY_STORAGE_KEY);
+  if (!rawValue) {
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") {
+      return defaults;
+    }
+    const next = { ...defaults };
+    for (const path of ALL_SUBMENU_PATHS) {
+      const value = parsed[path];
+      if (typeof value === "boolean") {
+        next[path] = value;
+      }
+    }
+    return next;
+  } catch {
+    return defaults;
+  }
+}
+
+function writeSubmenuVisibility(next: SubmenuVisibilityMap): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(SUBMENU_VISIBILITY_STORAGE_KEY, JSON.stringify(next));
+}
+
+function getCallFieldValue(
+  call: (typeof INCIDENT_CALLS)[number],
+  fieldId: IncidentCallFieldId,
+): string {
+  switch (fieldId) {
+    case "incidentType":
+      return call.incidentType;
+    case "priority":
+      return call.priority;
+    case "address":
+      return call.address;
+    case "assignedUnits":
+      return call.assignedUnits;
+    case "status":
+      return call.currentState;
+    case "lastUpdated":
+      return call.lastUpdated;
+    default:
+      return "";
+  }
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
@@ -278,8 +449,8 @@ function AuthPage({ onLogin }: AuthPageProps) {
         </div>
         <h1>Incident-focused workspace with mapping and admin controls</h1>
         <p>
-          This phase adds a clickable incident call workflow, per-menu card display
-          customization, and configurable dispatch states in Admin Functions.
+          This phase adds deeper incident customization, parsing setup previews,
+          and an updated incident detail page layout.
         </p>
         <ul className="brand-feature-list">
           <li>Simple login with Admin and User roles</li>
@@ -631,7 +802,11 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   );
 }
 
-function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
+function MenuDisplayCards({
+  menu,
+  role,
+  submenuVisibility,
+}: MenuDisplayCardsProps) {
   const [editorOpen, setEditorOpen] = useState(false);
   const [displayConfig, setDisplayConfig] = useState<DisplayCardConfig>(() =>
     readDisplayCardConfig(),
@@ -639,16 +814,29 @@ function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
 
   const defaultCards = useMemo(
     () =>
-      menu.submenus.filter((submenu) => role === "admin" || !submenu.adminOnly),
-    [menu, role],
+      menu.submenus.filter(
+        (submenu) =>
+          (role === "admin" || !submenu.adminOnly) &&
+          submenuVisibility[submenu.path] !== false,
+      ),
+    [menu, role, submenuVisibility],
   );
   const defaultPathSet = useMemo(
     () => new Set<string>(defaultCards.map((submenu) => submenu.path)),
     [defaultCards],
   );
-  const selectableOptions = useMemo(() => getDisplayCardOptions(role), [role]);
+  const selectableOptions = useMemo(
+    () =>
+      getDisplayCardOptions(role).filter(
+        (option) => submenuVisibility[option.path] !== false,
+      ),
+    [role, submenuVisibility],
+  );
   const selectableMap = useMemo(
-    () => new Map<string, DisplayCardOption>(selectableOptions.map((option) => [option.path, option])),
+    () =>
+      new Map<string, DisplayCardOption>(
+        selectableOptions.map((option) => [option.path, option]),
+      ),
     [selectableOptions],
   );
 
@@ -734,8 +922,7 @@ function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
                           onChange={() => updateMenuCardSelection(option.path)}
                         />
                         <span>
-                          {option.label}{" "}
-                          <em>({option.parentMenuTitle})</em>
+                          {option.label} <em>({option.parentMenuTitle})</em>
                         </span>
                       </label>
                     </li>
@@ -754,7 +941,11 @@ function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
       {cards.length > 0 ? (
         <section className="submenu-card-grid">
           {cards.map((card) => (
-            <NavLink key={`${menu.id}-${card.path}`} to={card.path} className="submenu-card submenu-card-link">
+            <NavLink
+              key={`${menu.id}-${card.path}`}
+              to={card.path}
+              className="submenu-card submenu-card-link"
+            >
               <div className="submenu-card-header">
                 <h2>{card.label}</h2>
                 <span
@@ -766,15 +957,13 @@ function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
                 </span>
               </div>
               <p>{card.summary}</p>
-              <span className="submenu-card-origin">
-                {card.parentMenuTitle}
-              </span>
+              <span className="submenu-card-origin">{card.parentMenuTitle}</span>
             </NavLink>
           ))}
         </section>
       ) : (
         <p className="panel-description">
-          This menu currently has no default submenu cards. Use{" "}
+          This menu currently has no visible submenu cards. Use{" "}
           <strong>Edit display</strong> to add cards from other menus.
         </p>
       )}
@@ -782,7 +971,7 @@ function MenuDisplayCards({ menu, role }: MenuDisplayCardsProps) {
   );
 }
 
-function DashboardPage({ role }: DashboardPageProps) {
+function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
 
   return (
@@ -859,13 +1048,42 @@ function DashboardPage({ role }: DashboardPageProps) {
         </article>
       </section>
 
-      {dashboardMenu ? <MenuDisplayCards menu={dashboardMenu} role={role} /> : null}
+      {dashboardMenu ? (
+        <MenuDisplayCards
+          menu={dashboardMenu}
+          role={role}
+          submenuVisibility={submenuVisibility}
+        />
+      ) : null}
     </section>
   );
 }
 
-function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
+function IncidentsListPage({
+  workflowStates,
+  incidentDisplaySettings,
+}: IncidentsListPageProps) {
   const navigate = useNavigate();
+
+  const visibleStats = INCIDENT_QUEUE_STATS.filter(
+    (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
+  );
+  const visibleCallFieldOrder = dedupeCallFieldOrder(
+    incidentDisplaySettings.callFieldOrder.filter((fieldId) =>
+      VALID_CALL_FIELD_IDS.has(fieldId),
+    ),
+  );
+  const callFieldOrder =
+    visibleCallFieldOrder.length > 0
+      ? visibleCallFieldOrder
+      : [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
+  const fieldLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        INCIDENT_CALL_FIELD_OPTIONS.map((field) => [field.id, field.label]),
+      ) as Record<IncidentCallFieldId, string>,
+    [],
+  );
 
   const openCallDetail = (callNumber: string) => {
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
@@ -877,8 +1095,8 @@ function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
         <div>
           <h1>Incidents / Mapping | Incidents</h1>
           <p>
-            Click any call row to open full incident details, map view, apparatus,
-            and dispatch notes.
+            Click any call row to open full incident details with call
+            information, map, apparatus, and dispatch notes.
           </p>
         </div>
         <div className="header-actions">
@@ -891,15 +1109,25 @@ function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
         </div>
       </header>
 
-      <section className="stat-grid">
-        {INCIDENT_QUEUE_STATS.map((stat) => (
-          <article key={stat.label} className="stat-card">
-            <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
-            <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+      {visibleStats.length > 0 ? (
+        <section className="stat-grid">
+          {visibleStats.map((stat) => (
+            <article key={stat.id} className="stat-card">
+              <p>{stat.label}</p>
+              <strong>{stat.value}</strong>
+              <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+            </article>
+          ))}
+        </section>
+      ) : (
+        <section className="panel-grid">
+          <article className="panel">
+            <p className="panel-description">
+              All incident stat cards are currently hidden by customization.
+            </p>
           </article>
-        ))}
-      </section>
+        </section>
+      )}
 
       <section className="panel-grid">
         <article className="panel">
@@ -937,13 +1165,12 @@ function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
                     </td>
                     <td>
                       <div className="dispatch-info-cell">
-                        <span>{call.dispatchInfo}</span>
-                        <div className="dispatch-info-meta">
-                          <span className={toToneClass(toneFromState(call.currentState))}>
-                            {call.currentState}
-                          </span>
-                          <small>Updated {call.lastUpdated}</small>
-                        </div>
+                        {callFieldOrder.map((fieldId) => (
+                          <p key={`${call.callNumber}-${fieldId}`} className="dispatch-info-line">
+                            <strong>{fieldLabelById[fieldId]}:</strong>{" "}
+                            <span>{getCallFieldValue(call, fieldId)}</span>
+                          </p>
+                        ))}
                       </div>
                     </td>
                   </tr>
@@ -953,7 +1180,7 @@ function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
           </div>
           <p className="panel-description">
             Future API integration will update these calls and notes in real-time as
-            the dispatch center enters new information.
+            dispatch centers enter new information.
           </p>
         </article>
       </section>
@@ -989,14 +1216,9 @@ function IncidentsListPage({ workflowStates }: IncidentsListPageProps) {
   );
 }
 
-function IncidentCallDetailPage({
-  callNumber,
-  workflowStates,
-}: IncidentCallDetailPageProps) {
+function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
   const detail = getIncidentCallDetail(callNumber);
-  const normalizedStates = workflowStates.length
-    ? workflowStates
-    : [...DEFAULT_DISPATCH_WORKFLOW_STATES];
+  const [callInfoExpanded, setCallInfoExpanded] = useState(false);
 
   if (!detail) {
     return (
@@ -1016,10 +1238,6 @@ function IncidentCallDetailPage({
     );
   }
 
-  const activeWorkflowIndex = normalizedStates.findIndex(
-    (state) => state.toLowerCase() === detail.currentState.toLowerCase(),
-  );
-
   return (
     <section className="page-section">
       <header className="page-header">
@@ -1037,109 +1255,74 @@ function IncidentCallDetailPage({
         </div>
       </header>
 
-      <section className="panel-grid two-column">
+      <section className="panel-grid">
         <article className="panel">
-          <div className="panel-header">
-            <h2>Call Information</h2>
-            <span className={toToneClass(toneFromState(detail.currentState))}>
-              {detail.currentState}
-            </span>
-          </div>
-          <dl className="detail-grid">
-            <div>
-              <dt>Incident Type</dt>
-              <dd>{detail.incidentType}</dd>
+          <button
+            type="button"
+            className="call-info-toggle"
+            onClick={() => setCallInfoExpanded((previous) => !previous)}
+          >
+            <div className="call-info-line">
+              <strong>Time of Call: {detail.receivedAt}</strong>
+              <span>Address: {detail.address}</span>
             </div>
-            <div>
-              <dt>Priority</dt>
-              <dd>{detail.priority}</dd>
-            </div>
-            <div>
-              <dt>Address</dt>
-              <dd>{detail.address}</dd>
-            </div>
-            <div>
-              <dt>Map Reference</dt>
-              <dd>{detail.mapReference}</dd>
-            </div>
-            <div>
-              <dt>Reported By</dt>
-              <dd>{detail.reportedBy}</dd>
-            </div>
-            <div>
-              <dt>Callback Number</dt>
-              <dd>{detail.callbackNumber}</dd>
-            </div>
-            <div>
-              <dt>Received At</dt>
-              <dd>{detail.receivedAt}</dd>
-            </div>
-            <div>
-              <dt>Last Updated</dt>
-              <dd>{detail.lastUpdated}</dd>
-            </div>
-          </dl>
-        </article>
+            <ChevronDown
+              size={16}
+              className={`call-info-chevron ${callInfoExpanded ? "open" : ""}`}
+            />
+          </button>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Dispatch Workflow</h2>
-            <span className="panel-caption">Configured in Admin Functions</span>
-          </div>
-          <ul className="workflow-track">
-            {normalizedStates.map((state, index) => {
-              const isActive = index === activeWorkflowIndex;
-              const isComplete =
-                activeWorkflowIndex >= 0 && index <= activeWorkflowIndex;
-              return (
-                <li
-                  key={`${detail.callNumber}-${state}`}
-                  className={`workflow-step ${isActive ? "active" : ""} ${
-                    isComplete ? "complete" : ""
-                  }`}
-                >
-                  <span>{state}</span>
-                </li>
-              );
-            })}
-          </ul>
+          {callInfoExpanded ? (
+            <dl className="detail-grid">
+              <div>
+                <dt>Incident Type</dt>
+                <dd>{detail.incidentType}</dd>
+              </div>
+              <div>
+                <dt>Priority</dt>
+                <dd>{detail.priority}</dd>
+              </div>
+              <div>
+                <dt>Assigned Units</dt>
+                <dd>{detail.assignedUnits}</dd>
+              </div>
+              <div>
+                <dt>Current Status</dt>
+                <dd>{detail.currentState}</dd>
+              </div>
+              <div>
+                <dt>Map Reference</dt>
+                <dd>{detail.mapReference}</dd>
+              </div>
+              <div>
+                <dt>Reported By</dt>
+                <dd>{detail.reportedBy}</dd>
+              </div>
+              <div>
+                <dt>Callback Number</dt>
+                <dd>{detail.callbackNumber}</dd>
+              </div>
+              <div>
+                <dt>Last Updated</dt>
+                <dd>{detail.lastUpdated}</dd>
+              </div>
+            </dl>
+          ) : null}
         </article>
       </section>
 
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Live Map</h2>
-            <span className="panel-caption">Prepared for GIS/API integration</span>
-          </div>
-          <div className="dispatch-map-placeholder">
-            <p>
-              Live map surface for this incident. Future integration will stream
-              unit locations, route updates, hydrants, and map markers in real-time.
-            </p>
-            <ul>
-              <li>Current incident pin: {detail.address}</li>
-              <li>Nearest hydrants and out-of-service hydrant warnings</li>
-              <li>Map marker overlays from Incident / Mapping settings</li>
-            </ul>
-          </div>
-        </article>
-
+      <section className="panel-grid incident-detail-split">
         <article className="panel">
           <div className="panel-header">
             <h2>Apparatus Responding</h2>
-            <span className="panel-caption">Live response assignment view</span>
+            <span className="panel-caption">Unit, personnel, and response status</span>
           </div>
           <ul className="unit-status-list">
             {detail.apparatus.map((item) => (
               <li key={`${detail.callNumber}-${item.unit}`}>
                 <div>
-                  <strong>
-                    {item.unit} ({item.unitType})
-                  </strong>
-                  <p>
-                    Crew: {item.crew} | ETA: {item.eta}
-                  </p>
+                  <strong>{item.unit}</strong>
+                  <p># Personnel: {item.crew}</p>
                 </div>
                 <span className={toToneClass(toneFromState(item.status))}>
                   {item.status}
@@ -1147,6 +1330,24 @@ function IncidentCallDetailPage({
               </li>
             ))}
           </ul>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Live Map</h2>
+            <span className="panel-caption">Prepared for GIS/API integration</span>
+          </div>
+          <div className="dispatch-map-placeholder map-large">
+            <p>
+              Live map surface for this incident. Future integration will stream
+              unit locations, route updates, hydrants, and map markers in real-time.
+            </p>
+            <ul>
+              <li>Current incident pin: {detail.address}</li>
+              <li>Nearest hydrants and out-of-service hydrant warnings</li>
+              <li>Map marker overlays from Incidents / Mapping settings</li>
+            </ul>
+          </div>
         </article>
       </section>
 
@@ -1176,7 +1377,11 @@ function IncidentCallDetailPage({
   );
 }
 
-function MainMenuLandingPage({ menu, role }: MainMenuLandingPageProps) {
+function MainMenuLandingPage({
+  menu,
+  role,
+  submenuVisibility,
+}: MainMenuLandingPageProps) {
   return (
     <section className="page-section">
       <header className="page-header">
@@ -1186,7 +1391,7 @@ function MainMenuLandingPage({ menu, role }: MainMenuLandingPageProps) {
         </div>
       </header>
 
-      <MenuDisplayCards menu={menu} role={role} />
+      <MenuDisplayCards menu={menu} role={role} submenuVisibility={submenuVisibility} />
     </section>
   );
 }
@@ -1328,6 +1533,10 @@ function HydrantsAdminPage() {
 function CustomizationPage({
   workflowStates,
   onSaveWorkflowStates,
+  incidentDisplaySettings,
+  onSaveIncidentDisplaySettings,
+  submenuVisibility,
+  onSaveSubmenuVisibility,
 }: CustomizationPageProps) {
   const [organizationName, setOrganizationName] = useState("CIFPD");
   const [primaryColor, setPrimaryColor] = useState("#1d4ed8");
@@ -1335,8 +1544,28 @@ function CustomizationPage({
   const [logoFileName, setLogoFileName] = useState("No file selected");
   const [workflowDraft, setWorkflowDraft] = useState<string[]>(() => [...workflowStates]);
   const [newState, setNewState] = useState("");
+  const [incidentSettingsDraft, setIncidentSettingsDraft] =
+    useState<IncidentDisplaySettings>(() => ({
+      hiddenStatIds: [...incidentDisplaySettings.hiddenStatIds],
+      callFieldOrder: [...incidentDisplaySettings.callFieldOrder],
+    }));
+  const [submenuVisibilityDraft, setSubmenuVisibilityDraft] =
+    useState<SubmenuVisibilityMap>(() => ({ ...submenuVisibility }));
+  const [selectedParsingCall, setSelectedParsingCall] = useState(
+    DISPATCH_PARSING_PREVIEW[0]?.callNumber ?? "",
+  );
   const [savedMessage, setSavedMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+
+  const visibleCallFieldOrder = dedupeCallFieldOrder(
+    incidentSettingsDraft.callFieldOrder.filter((fieldId) =>
+      VALID_CALL_FIELD_IDS.has(fieldId),
+    ),
+  );
+
+  const parsingRow =
+    DISPATCH_PARSING_PREVIEW.find((row) => row.callNumber === selectedParsingCall) ??
+    DISPATCH_PARSING_PREVIEW[0];
 
   const updateWorkflowState = (index: number, value: string) => {
     setWorkflowDraft((previous) =>
@@ -1365,21 +1594,107 @@ function CustomizationPage({
     setWorkflowDraft([...DEFAULT_DISPATCH_WORKFLOW_STATES]);
   };
 
+  const toggleIncidentStatVisibility = (statId: IncidentStatId) => {
+    setIncidentSettingsDraft((previous) => {
+      const hidden = previous.hiddenStatIds.includes(statId)
+        ? previous.hiddenStatIds.filter((id) => id !== statId)
+        : [...previous.hiddenStatIds, statId];
+      return {
+        ...previous,
+        hiddenStatIds: hidden,
+      };
+    });
+  };
+
+  const toggleCallFieldVisibility = (fieldId: IncidentCallFieldId) => {
+    setIncidentSettingsDraft((previous) => {
+      const isVisible = previous.callFieldOrder.includes(fieldId);
+      if (isVisible) {
+        return {
+          ...previous,
+          callFieldOrder: previous.callFieldOrder.filter((id) => id !== fieldId),
+        };
+      }
+      return {
+        ...previous,
+        callFieldOrder: [...previous.callFieldOrder, fieldId],
+      };
+    });
+  };
+
+  const moveCallField = (fieldId: IncidentCallFieldId, direction: "up" | "down") => {
+    setIncidentSettingsDraft((previous) => {
+      const currentIndex = previous.callFieldOrder.indexOf(fieldId);
+      if (currentIndex < 0) {
+        return previous;
+      }
+
+      const swapIndex =
+        direction === "up" ? currentIndex - 1 : currentIndex + 1;
+      if (swapIndex < 0 || swapIndex >= previous.callFieldOrder.length) {
+        return previous;
+      }
+
+      const nextOrder = [...previous.callFieldOrder];
+      const currentValue = nextOrder[currentIndex];
+      nextOrder[currentIndex] = nextOrder[swapIndex];
+      nextOrder[swapIndex] = currentValue;
+      return {
+        ...previous,
+        callFieldOrder: nextOrder,
+      };
+    });
+  };
+
+  const toggleSubmenuVisibility = (path: string) => {
+    setSubmenuVisibilityDraft((previous) => ({
+      ...previous,
+      [path]: previous[path] !== false ? false : true,
+    }));
+  };
+
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const normalizedStates = dedupeAndCleanStates(workflowDraft);
 
+    const normalizedStates = dedupeAndCleanStrings(workflowDraft);
     if (!normalizedStates.length) {
-      setErrorMessage("Add at least one workflow state before saving.");
       setSavedMessage("");
+      setErrorMessage("Add at least one dispatch workflow state before saving.");
       return;
     }
 
+    const normalizedCallFieldOrder = dedupeCallFieldOrder(
+      incidentSettingsDraft.callFieldOrder.filter((fieldId) =>
+        VALID_CALL_FIELD_IDS.has(fieldId),
+      ),
+    );
+    if (!normalizedCallFieldOrder.length) {
+      setSavedMessage("");
+      setErrorMessage("Keep at least one visible incident call field.");
+      return;
+    }
+
+    const normalizedIncidentSettings: IncidentDisplaySettings = {
+      hiddenStatIds: incidentSettingsDraft.hiddenStatIds.filter((id) =>
+        VALID_STAT_IDS.has(id),
+      ),
+      callFieldOrder: normalizedCallFieldOrder,
+    };
+
+    const normalizedSubmenuVisibility = {
+      ...getDefaultSubmenuVisibilityMap(),
+      ...submenuVisibilityDraft,
+    };
+
     onSaveWorkflowStates(normalizedStates);
-    setWorkflowDraft(normalizedStates);
+    onSaveIncidentDisplaySettings(normalizedIncidentSettings);
+    onSaveSubmenuVisibility(normalizedSubmenuVisibility);
+
+    setIncidentSettingsDraft(normalizedIncidentSettings);
+    setSubmenuVisibilityDraft(normalizedSubmenuVisibility);
     setErrorMessage("");
     setSavedMessage(
-      "Customization saved. Dispatch workflow states updated successfully.",
+      "Customization saved. Incident display, submenu visibility, and workflow states updated.",
     );
   };
 
@@ -1389,141 +1704,313 @@ function CustomizationPage({
         <div>
           <h1>Admin Functions | Customization</h1>
           <p>
-            Configure branding and dispatch workflow states for organization setup.
+            Configure branding, incident display controls, submenu visibility, and
+            parsing setup.
           </p>
         </div>
       </header>
 
-      <form className="panel-grid two-column" onSubmit={handleSave}>
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Branding Controls</h2>
-          </div>
-          <div className="settings-form">
-            <label htmlFor="org-name">Organization Name</label>
-            <input
-              id="org-name"
-              type="text"
-              value={organizationName}
-              onChange={(event) => setOrganizationName(event.target.value)}
-            />
+      <form className="panel-grid" onSubmit={handleSave}>
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Branding Controls</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="org-name">Organization Name</label>
+              <input
+                id="org-name"
+                type="text"
+                value={organizationName}
+                onChange={(event) => setOrganizationName(event.target.value)}
+              />
 
-            <label htmlFor="logo-upload">Organization Logo</label>
-            <input
-              id="logo-upload"
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
-              }
-            />
-            <p className="field-hint">Selected file: {logoFileName}</p>
+              <label htmlFor="logo-upload">Organization Logo</label>
+              <input
+                id="logo-upload"
+                type="file"
+                accept="image/*"
+                onChange={(event) =>
+                  setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
+                }
+              />
+              <p className="field-hint">Selected file: {logoFileName}</p>
 
-            <label htmlFor="primary-color">Primary Color</label>
-            <input
-              id="primary-color"
-              type="color"
-              value={primaryColor}
-              onChange={(event) => setPrimaryColor(event.target.value)}
-            />
+              <label htmlFor="primary-color">Primary Color</label>
+              <input
+                id="primary-color"
+                type="color"
+                value={primaryColor}
+                onChange={(event) => setPrimaryColor(event.target.value)}
+              />
 
-            <label htmlFor="accent-color">Accent Color</label>
-            <input
-              id="accent-color"
-              type="color"
-              value={accentColor}
-              onChange={(event) => setAccentColor(event.target.value)}
-            />
-          </div>
-        </article>
+              <label htmlFor="accent-color">Accent Color</label>
+              <input
+                id="accent-color"
+                type="color"
+                value={accentColor}
+                onChange={(event) => setAccentColor(event.target.value)}
+              />
+            </div>
+          </article>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Dispatch Workflow States</h2>
-            <button type="button" className="link-button" onClick={resetWorkflowStates}>
-              Reset to default
-            </button>
-          </div>
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Dispatch Workflow States</h2>
+              <button type="button" className="link-button" onClick={resetWorkflowStates}>
+                Reset to default
+              </button>
+            </div>
+            <div className="settings-form">
+              {workflowDraft.map((state, index) => (
+                <div key={`${state}-${index}`} className="state-edit-row">
+                  <input
+                    type="text"
+                    value={state}
+                    onChange={(event) => updateWorkflowState(index, event.target.value)}
+                  />
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={() => removeWorkflowState(index)}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
 
-          <div className="settings-form">
-            {workflowDraft.map((state, index) => (
-              <div key={`${state}-${index}`} className="state-edit-row">
+              <div className="state-edit-row">
                 <input
                   type="text"
-                  value={state}
-                  onChange={(event) => updateWorkflowState(index, event.target.value)}
+                  value={newState}
+                  placeholder="Add new workflow state"
+                  onChange={(event) => setNewState(event.target.value)}
                 />
                 <button
                   type="button"
                   className="secondary-button compact-button"
-                  onClick={() => removeWorkflowState(index)}
+                  onClick={addWorkflowState}
                 >
-                  Remove
+                  Add
                 </button>
               </div>
-            ))}
 
-            <div className="state-edit-row">
-              <input
-                type="text"
-                value={newState}
-                placeholder="Add new workflow state"
-                onChange={(event) => setNewState(event.target.value)}
-              />
-              <button
-                type="button"
-                className="secondary-button compact-button"
-                onClick={addWorkflowState}
-              >
-                Add
-              </button>
+              <small className="field-hint">
+                Standard states: {DEFAULT_DISPATCH_WORKFLOW_STATES.join(", ")}
+              </small>
             </div>
+          </article>
+        </section>
 
-            <small className="field-hint">
-              Standard states: {DEFAULT_DISPATCH_WORKFLOW_STATES.join(", ")}
-            </small>
-          </div>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Preview</h2>
-          </div>
-          <div className="branding-preview">
-            <div
-              className="branding-preview-banner"
-              style={{
-                background: `linear-gradient(120deg, ${primaryColor} 0%, ${accentColor} 100%)`,
-              }}
-            >
-              <span>{organizationName || "Organization Name"}</span>
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Incidents Display Settings</h2>
             </div>
-            <p>
-              Branding preview only. Future backend integration will persist these
-              choices per organization.
-            </p>
-            <ul className="workflow-chip-list">
-              {workflowDraft.map((state) => (
-                <li key={`preview-${state}`} className="workflow-chip">
-                  {state}
-                </li>
+            <div className="settings-form">
+              <label>Incident stat boxes (show/hide)</label>
+              <ul className="settings-list">
+                {INCIDENT_QUEUE_STATS.map((stat) => {
+                  const isHidden = incidentSettingsDraft.hiddenStatIds.includes(stat.id);
+                  return (
+                    <li key={stat.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={!isHidden}
+                          onChange={() => toggleIncidentStatVisibility(stat.id)}
+                        />
+                        <span>{stat.label}</span>
+                      </label>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Incident Call Field Visibility & Row Order</h2>
+            </div>
+            <div className="settings-form">
+              <ul className="settings-list field-order-list">
+                {INCIDENT_CALL_FIELD_OPTIONS.map((field) => {
+                  const orderIndex = visibleCallFieldOrder.indexOf(field.id);
+                  const isVisible = orderIndex >= 0;
+                  return (
+                    <li key={field.id}>
+                      <div className="field-order-row">
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={isVisible}
+                            onChange={() => toggleCallFieldVisibility(field.id)}
+                          />
+                          <span>{field.label}</span>
+                        </label>
+                        <div className="field-order-controls">
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            disabled={!isVisible || orderIndex === 0}
+                            onClick={() => moveCallField(field.id, "up")}
+                          >
+                            Up
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            disabled={
+                              !isVisible ||
+                              orderIndex === visibleCallFieldOrder.length - 1
+                            }
+                            onClick={() => moveCallField(field.id, "down")}
+                          >
+                            Down
+                          </button>
+                        </div>
+                      </div>
+                      <small>{field.description}</small>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          </article>
+        </section>
+
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Submenu Display Settings</h2>
+            </div>
+            <div className="settings-form">
+              <p className="field-hint">
+                Each submenu has a visibility setting to control whether it appears
+                in menu card displays and Edit Display selections.
+              </p>
+              {MAIN_MENUS.filter((menu) => menu.submenus.length > 0).map((menu) => (
+                <div key={`submenu-settings-${menu.id}`} className="submenu-settings-group">
+                  <h3>{menu.title}</h3>
+                  <ul className="settings-list">
+                    {menu.submenus.map((submenu) => (
+                      <li key={`${menu.id}-${submenu.path}`}>
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={submenuVisibilityDraft[submenu.path] !== false}
+                            onChange={() => toggleSubmenuVisibility(submenu.path)}
+                          />
+                          <span>{submenu.label}</span>
+                        </label>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               ))}
-            </ul>
-          </div>
-        </article>
+            </div>
+          </article>
 
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Save Configuration</h2>
-          </div>
-          <div className="settings-form">
-            <button type="submit" className="primary-button">
-              Save Customization
-            </button>
-            {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
-            {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
-          </div>
-        </article>
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Parsing Setup</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="parsing-call-select">Dispatch feed preview call</label>
+              <select
+                id="parsing-call-select"
+                value={selectedParsingCall}
+                onChange={(event) => setSelectedParsingCall(event.target.value)}
+              >
+                {DISPATCH_PARSING_PREVIEW.map((row) => (
+                  <option key={row.callNumber} value={row.callNumber}>
+                    {row.callNumber}
+                  </option>
+                ))}
+              </select>
+
+              {parsingRow ? (
+                <div className="parsing-preview">
+                  <p>
+                    <strong>Received:</strong> {parsingRow.receivedAt}
+                  </p>
+                  <p>
+                    <strong>Parsed:</strong> {parsingRow.parsedSummary}
+                  </p>
+                  <p>
+                    <strong>Raw:</strong>
+                  </p>
+                  <pre>{parsingRow.rawMessage}</pre>
+                </div>
+              ) : null}
+
+              <label>Incoming calls from dispatch</label>
+              <div className="table-wrapper">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Received</th>
+                      <th>Call #</th>
+                      <th>Parsed Summary</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {DISPATCH_PARSING_PREVIEW.map((row) => (
+                      <tr key={`parse-${row.callNumber}`}>
+                        <td>{row.receivedAt}</td>
+                        <td>{row.callNumber}</td>
+                        <td>{row.parsedSummary}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </article>
+        </section>
+
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Preview</h2>
+            </div>
+            <div className="branding-preview">
+              <div
+                className="branding-preview-banner"
+                style={{
+                  background: `linear-gradient(120deg, ${primaryColor} 0%, ${accentColor} 100%)`,
+                }}
+              >
+                <span>{organizationName || "Organization Name"}</span>
+              </div>
+              <p>
+                Branding preview only. Future backend integration will persist
+                these choices per organization.
+              </p>
+              <ul className="workflow-chip-list">
+                {workflowDraft.map((state) => (
+                  <li key={`preview-${state}`} className="workflow-chip">
+                    {state}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Save Configuration</h2>
+            </div>
+            <div className="settings-form">
+              <button type="submit" className="primary-button">
+                Save Customization
+              </button>
+              {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
+              {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+            </div>
+          </article>
+        </section>
       </form>
     </section>
   );
@@ -1689,6 +2176,10 @@ function RouteResolver({
   role,
   workflowStates,
   onSaveWorkflowStates,
+  incidentDisplaySettings,
+  onSaveIncidentDisplaySettings,
+  submenuVisibility,
+  onSaveSubmenuVisibility,
 }: RouteResolverProps) {
   const location = useLocation();
   const path = normalizePath(location.pathname);
@@ -1727,23 +2218,23 @@ function RouteResolver({
   }
 
   if (path === "/dashboard") {
-    return <DashboardPage role={role} />;
+    return <DashboardPage role={role} submenuVisibility={submenuVisibility} />;
   }
 
   if (path === "/incidents-mapping/incidents") {
-    return <IncidentsListPage workflowStates={workflowStates} />;
+    return (
+      <IncidentsListPage
+        workflowStates={workflowStates}
+        incidentDisplaySettings={incidentDisplaySettings}
+      />
+    );
   }
 
   if (path.startsWith("/incidents-mapping/incidents/")) {
     const callNumber = decodeURIComponent(
       path.replace("/incidents-mapping/incidents/", ""),
     );
-    return (
-      <IncidentCallDetailPage
-        callNumber={callNumber}
-        workflowStates={workflowStates}
-      />
-    );
+    return <IncidentCallDetailPage callNumber={callNumber} />;
   }
 
   if (path === "/admin-functions/hydrants") {
@@ -1755,13 +2246,23 @@ function RouteResolver({
       <CustomizationPage
         workflowStates={workflowStates}
         onSaveWorkflowStates={onSaveWorkflowStates}
+        incidentDisplaySettings={incidentDisplaySettings}
+        onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
+        submenuVisibility={submenuVisibility}
+        onSaveSubmenuVisibility={onSaveSubmenuVisibility}
       />
     );
   }
 
   const menu = getMainMenuByPath(path);
   if (menu && path === menu.path) {
-    return <MainMenuLandingPage menu={menu} role={role} />;
+    return (
+      <MainMenuLandingPage
+        menu={menu}
+        role={role}
+        submenuVisibility={submenuVisibility}
+      />
+    );
   }
 
   const submenu = getSubmenuByPath(path);
@@ -1776,6 +2277,11 @@ function App() {
   const [session, setSession] = useState<SessionState>(() => readSession());
   const [workflowStates, setWorkflowStates] = useState<string[]>(() =>
     readWorkflowStates(),
+  );
+  const [incidentDisplaySettings, setIncidentDisplaySettings] =
+    useState<IncidentDisplaySettings>(() => readIncidentDisplaySettings());
+  const [submenuVisibility, setSubmenuVisibility] = useState<SubmenuVisibilityMap>(
+    () => readSubmenuVisibility(),
   );
 
   const handleLogin = (username: string, unit: string, role: UserRole) => {
@@ -1795,12 +2301,32 @@ function App() {
   };
 
   const handleSaveWorkflowStates = (nextStates: string[]) => {
-    const normalized = dedupeAndCleanStates(nextStates);
+    const normalized = dedupeAndCleanStrings(nextStates);
     if (!normalized.length) {
       return;
     }
     setWorkflowStates(normalized);
     writeWorkflowStates(normalized);
+  };
+
+  const handleSaveIncidentDisplaySettings = (
+    nextSettings: IncidentDisplaySettings,
+  ) => {
+    const normalized = normalizeIncidentDisplaySettings(nextSettings);
+    if (!normalized.callFieldOrder.length) {
+      return;
+    }
+    setIncidentDisplaySettings(normalized);
+    writeIncidentDisplaySettings(normalized);
+  };
+
+  const handleSaveSubmenuVisibility = (nextVisibility: SubmenuVisibilityMap) => {
+    const normalized = {
+      ...getDefaultSubmenuVisibilityMap(),
+      ...nextVisibility,
+    };
+    setSubmenuVisibility(normalized);
+    writeSubmenuVisibility(normalized);
   };
 
   return (
@@ -1834,6 +2360,10 @@ function App() {
                 role={session.role}
                 workflowStates={workflowStates}
                 onSaveWorkflowStates={handleSaveWorkflowStates}
+                incidentDisplaySettings={incidentDisplaySettings}
+                onSaveIncidentDisplaySettings={handleSaveIncidentDisplaySettings}
+                submenuVisibility={submenuVisibility}
+                onSaveSubmenuVisibility={handleSaveSubmenuVisibility}
               />
             }
           />
