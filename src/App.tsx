@@ -1,4 +1,4 @@
-import { type FormEvent, useEffect, useMemo, useState } from "react";
+import { type FormEvent, useMemo, useState } from "react";
 import {
   Bell,
   ChevronDown,
@@ -231,20 +231,6 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     [],
   );
 
-  useEffect(() => {
-    setMobileNavOpen(false);
-    if (!activeModule) {
-      return;
-    }
-
-    setExpandedModules((previousValue) => {
-      if (previousValue[activeModule.id]) {
-        return previousValue;
-      }
-      return { ...previousValue, [activeModule.id]: true };
-    });
-  }, [activeModule, location.pathname]);
-
   const breadcrumbSecondary =
     activeSubmenuLabel && activeSubmenuLabel !== activeModule?.title
       ? activeSubmenuLabel
@@ -278,7 +264,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             const isModuleRoute =
               location.pathname === module.path ||
               location.pathname.startsWith(`${module.path}/`);
-            const isExpanded = expandedModules[module.id] ?? isModuleRoute;
+            const isExpanded = expandedModules[module.id] || isModuleRoute;
 
             return (
               <section
@@ -293,6 +279,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                         isActive || isModuleRoute ? "active" : ""
                       }`
                     }
+                    onClick={() => setMobileNavOpen(false)}
                   >
                     <Icon size={16} />
                     <span>{module.title}</span>
@@ -321,6 +308,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                       className={({ isActive }) =>
                         `submenu-link ${isActive ? "active" : ""}`
                       }
+                      onClick={() => setMobileNavOpen(false)}
                     >
                       {submenu.label}
                     </NavLink>
