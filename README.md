@@ -27,6 +27,7 @@ navigation.
     - live map placeholder
     - apparatus responding
     - dispatch notes
+  - Reporting -> NEIRS (report queue, validation summary, monthly export builder)
   - Admin Functions -> Hydrants
 - Settings gear menu (top right):
   - Profile Management

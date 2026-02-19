@@ -208,7 +208,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "NEIRS",
         path: "/reporting/neirs",
         summary: "Incident reporting aligned to NEIRS data structure.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "EMS",

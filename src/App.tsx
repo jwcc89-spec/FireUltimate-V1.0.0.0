@@ -1,4 +1,13 @@
-import { type FormEvent, type ReactNode, useMemo, useState } from "react";
+import {
+  type CSSProperties,
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import {
   Bell,
   ChevronDown,
@@ -213,6 +222,78 @@ const VALID_STAT_IDS = new Set<IncidentStatId>(
 const VALID_CALL_FIELD_IDS = new Set<IncidentCallFieldId>(
   INCIDENT_CALL_FIELD_OPTIONS.map((field) => field.id),
 );
+const MIN_CALL_FIELD_WIDTH = 100;
+const MAX_CALL_FIELD_WIDTH = 560;
+const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
+  incidentType: 180,
+  priority: 120,
+  address: 360,
+  assignedUnits: 230,
+  status: 130,
+  lastUpdated: 140,
+};
+
+interface NeirsQueueRow {
+  incidentNumber: string;
+  incidentType: string;
+  incidentDate: string;
+  preparer: string;
+  status: string;
+  dueDate: string;
+}
+
+const NEIRS_QUEUE_ROWS: NeirsQueueRow[] = [
+  {
+    incidentNumber: "F26-00231",
+    incidentType: "Structure Fire",
+    incidentDate: "02/15/2026 18:41",
+    preparer: "Chief Jones",
+    status: "Draft",
+    dueDate: "02/19/2026",
+  },
+  {
+    incidentNumber: "F26-00234",
+    incidentType: "Medical Assist",
+    incidentDate: "02/16/2026 09:12",
+    preparer: "Capt. Ramirez",
+    status: "Ready to Submit",
+    dueDate: "02/20/2026",
+  },
+  {
+    incidentNumber: "F26-00237",
+    incidentType: "Vehicle Fire",
+    incidentDate: "02/17/2026 22:08",
+    preparer: "Lt. Walker",
+    status: "Needs Review",
+    dueDate: "02/21/2026",
+  },
+  {
+    incidentNumber: "F26-00240",
+    incidentType: "Alarm Activation",
+    incidentDate: "02/18/2026 04:27",
+    preparer: "FF Daniels",
+    status: "Submitted",
+    dueDate: "02/22/2026",
+  },
+];
+
+const NEIRS_VALIDATION_CHECKS: { label: string; detail: string; tone: Tone }[] = [
+  {
+    label: "Narrative completion",
+    detail: "2 reports need full narrative text before submission.",
+    tone: "critical",
+  },
+  {
+    label: "Unit assignments",
+    detail: "1 report has missing assisting unit records.",
+    tone: "warning",
+  },
+  {
+    label: "Location confidence",
+    detail: "Address and geo fields validated for all submitted reports.",
+    tone: "positive",
+  },
+];
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -238,6 +319,20 @@ function toneFromState(state: string): Tone {
   }
   if (normalized.includes("enroute") || normalized.includes("dispatched")) {
     return "warning";
+  }
+  return "neutral";
+}
+
+function toneFromNeirsStatus(status: string): Tone {
+  const normalized = status.trim().toLowerCase();
+  if (normalized.includes("submitted") || normalized.includes("ready")) {
+    return "positive";
+  }
+  if (normalized.includes("review")) {
+    return "warning";
+  }
+  if (normalized.includes("draft") || normalized.includes("missing")) {
+    return "critical";
   }
   return "neutral";
 }
@@ -1174,6 +1269,14 @@ function IncidentsListPage({
   const navigate = useNavigate();
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
+  const [callFieldWidths, setCallFieldWidths] = useState<Record<IncidentCallFieldId, number>>(
+    () => ({ ...DEFAULT_CALL_FIELD_WIDTHS }),
+  );
+  const activeResizeField = useRef<{
+    fieldId: IncidentCallFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const visibleStats = INCIDENT_QUEUE_STATS.filter(
     (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
@@ -1198,6 +1301,47 @@ function IncidentsListPage({
   const openCallDetail = (callNumber: string) => {
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
   };
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_CALL_FIELD_WIDTH,
+        Math.max(MIN_CALL_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+
+      setCallFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return {
+          ...previous,
+          [activeResize.fieldId]: nextWidth,
+        };
+      });
+    };
+
+    const stopResize = () => {
+      if (!activeResizeField.current) {
+        return;
+      }
+      activeResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
 
   const saveCallFieldOrder = (nextOrder: IncidentCallFieldId[]) => {
     onSaveIncidentDisplaySettings({
@@ -1228,6 +1372,33 @@ function IncidentsListPage({
     setDragFieldId(null);
     setIsFieldEditorOpen(false);
   };
+
+  const startFieldResize = (
+    fieldId: IncidentCallFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth: callFieldWidths[fieldId] ?? DEFAULT_CALL_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+
+  const dispatchGridStyle = useMemo(
+    () =>
+      ({
+        "--dispatch-grid-columns": callFieldOrder
+          .map((fieldId) => {
+            const width = callFieldWidths[fieldId] ?? DEFAULT_CALL_FIELD_WIDTHS[fieldId];
+            return `minmax(${MIN_CALL_FIELD_WIDTH}px, ${width}px)`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [callFieldOrder, callFieldWidths],
+  );
 
   return (
     <section className="page-section">
@@ -1323,13 +1494,28 @@ function IncidentsListPage({
                 <tr>
                   <th>Call #</th>
                   <th>
-                    <div className="dispatch-grid-line dispatch-grid-header">
-                      {callFieldOrder.map((fieldId) => (
+                    <div
+                      className="dispatch-grid-line dispatch-grid-header"
+                      style={dispatchGridStyle}
+                    >
+                      {callFieldOrder.map((fieldId, index) => (
                         <span
                           key={`header-${fieldId}`}
-                          className={`dispatch-field dispatch-field-${fieldId}`}
+                          className={`dispatch-field dispatch-field-${fieldId} dispatch-header-field`}
                         >
-                          {fieldLabelById[fieldId]}
+                          <span className="dispatch-header-label">{fieldLabelById[fieldId]}</span>
+                          {index < callFieldOrder.length - 1 ? (
+                            <span
+                              className="dispatch-column-resizer"
+                              role="separator"
+                              aria-label={`Resize ${fieldLabelById[fieldId]} column`}
+                              aria-orientation="vertical"
+                              onPointerDown={(event) => startFieldResize(fieldId, event)}
+                              title={`Drag to resize ${fieldLabelById[fieldId]}`}
+                            >
+                              |
+                            </span>
+                          ) : null}
                         </span>
                       ))}
                     </div>
@@ -1356,7 +1542,7 @@ function IncidentsListPage({
                     </td>
                     <td>
                       <div className="dispatch-info-cell">
-                        <div className="dispatch-grid-line">
+                        <div className="dispatch-grid-line" style={dispatchGridStyle}>
                           {callFieldOrder.map((fieldId) => (
                             <span
                               key={`${call.callNumber}-${fieldId}`}
@@ -1598,6 +1784,154 @@ function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
               <li key={note}>{note}</li>
             ))}
           </ul>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+function NeirsReportingPage() {
+  const [reportingMonth, setReportingMonth] = useState("2026-02");
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const openReports = NEIRS_QUEUE_ROWS.filter((row) => row.status !== "Submitted").length;
+  const readyToSubmit = NEIRS_QUEUE_ROWS.filter(
+    (row) => row.status === "Ready to Submit",
+  ).length;
+  const submittedReports = NEIRS_QUEUE_ROWS.filter(
+    (row) => row.status === "Submitted",
+  ).length;
+
+  const handlePrepareExport = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatusMessage(
+      `NEIRS export package for ${reportingMonth} prepared in prototype mode.`,
+    );
+  };
+
+  const getValidationToneLabel = (tone: Tone): string => {
+    if (tone === "positive") {
+      return "OK";
+    }
+    if (tone === "warning") {
+      return "Review";
+    }
+    return "Action";
+  };
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>Reporting | NEIRS</h1>
+          <p>
+            Manage incident report completion, validation checks, and monthly NEIRS
+            export preparation.
+          </p>
+        </div>
+        <div className="header-actions">
+          <button type="button" className="secondary-button">
+            Run Validation
+          </button>
+          <button type="button" className="primary-button">
+            Start NEIRS Report
+          </button>
+        </div>
+      </header>
+
+      <section className="stat-grid">
+        <article className="stat-card">
+          <p>Open Reports</p>
+          <strong>{openReports}</strong>
+          <span className={toToneClass("warning")}>Needs completion/review</span>
+        </article>
+        <article className="stat-card">
+          <p>Ready to Submit</p>
+          <strong>{readyToSubmit}</strong>
+          <span className={toToneClass("positive")}>Ready for agency review</span>
+        </article>
+        <article className="stat-card">
+          <p>Submitted</p>
+          <strong>{submittedReports}</strong>
+          <span className={toToneClass("neutral")}>Already transmitted</span>
+        </article>
+      </section>
+
+      <section className="panel-grid two-column">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Monthly Export Builder</h2>
+          </div>
+          <form className="settings-form" onSubmit={handlePrepareExport}>
+            <label htmlFor="neirs-month">Reporting Month</label>
+            <input
+              id="neirs-month"
+              type="month"
+              value={reportingMonth}
+              onChange={(event) => setReportingMonth(event.target.value)}
+            />
+            <button type="submit" className="primary-button">
+              Prepare Export Package
+            </button>
+            {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
+          </form>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Validation Summary</h2>
+          </div>
+          <ul className="timeline-list">
+            {NEIRS_VALIDATION_CHECKS.map((check) => (
+              <li key={check.label}>
+                <div>
+                  <strong>{check.label}</strong>
+                  <p>{check.detail}</p>
+                </div>
+                <span className={toToneClass(check.tone)}>
+                  {getValidationToneLabel(check.tone)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </article>
+      </section>
+
+      <section className="panel-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Incident Report Queue</h2>
+          </div>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Incident #</th>
+                  <th>Incident Type</th>
+                  <th>Incident Date</th>
+                  <th>Preparer</th>
+                  <th>Status</th>
+                  <th>Due Date</th>
+                </tr>
+              </thead>
+              <tbody>
+                {NEIRS_QUEUE_ROWS.map((row) => (
+                  <tr key={row.incidentNumber}>
+                    <td>{row.incidentNumber}</td>
+                    <td>{row.incidentType}</td>
+                    <td>{row.incidentDate}</td>
+                    <td>{row.preparer}</td>
+                    <td>
+                      <span className={toToneClass(toneFromNeirsStatus(row.status))}>
+                        {row.status}
+                      </span>
+                    </td>
+                    <td>{row.dueDate}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </article>
       </section>
     </section>
@@ -2405,6 +2739,10 @@ function RouteResolver({
       path.replace("/incidents-mapping/incidents/", ""),
     );
     return <IncidentCallDetailPage callNumber={callNumber} />;
+  }
+
+  if (path === "/reporting/neirs") {
+    return <NeirsReportingPage />;
   }
 
   if (path === "/admin-functions/hydrants") {

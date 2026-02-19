@@ -1223,7 +1223,11 @@ tbody tr:last-of-type td {
 
 .dispatch-grid-line {
   display: grid;
-  grid-template-columns: minmax(150px, 1.15fr) minmax(110px, 0.78fr) minmax(220px, 1.45fr) minmax(210px, 1.3fr) minmax(110px, 0.78fr) minmax(110px, 0.78fr);
+  grid-template-columns: var(
+    --dispatch-grid-columns,
+    minmax(150px, 1.15fr) minmax(110px, 0.78fr) minmax(220px, 1.45fr) minmax(210px, 1.3fr)
+      minmax(110px, 0.78fr) minmax(110px, 0.78fr)
+  );
   gap: 0.46rem;
   align-items: center;
 }
@@ -1238,6 +1242,42 @@ tbody tr:last-of-type td {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.dispatch-header-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  min-width: 0;
+  overflow: visible;
+}
+
+.dispatch-header-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dispatch-column-resizer {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 10px;
+  color: #94a3b8;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.dispatch-column-resizer:hover {
+  color: #1d4ed8;
+}
+
+.dispatch-column-resizer:active {
+  color: #1e40af;
 }
 
 .dispatch-field-status {
@@ -1304,6 +1344,11 @@ tbody tr:last-of-type td {
   height: 2px;
   border-radius: 999px;
   background-color: #64748b;
+}
+
+body.resizing-dispatch-columns {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .dispatch-info-line {
