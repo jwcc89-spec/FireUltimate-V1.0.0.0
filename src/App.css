@@ -1087,6 +1087,10 @@ tbody tr:last-of-type td {
   resize: vertical;
 }
 
+.neris-multiselect {
+  min-height: 130px;
+}
+
 .settings-form input[type="color"] {
   height: 40px;
   padding: 0.2rem;

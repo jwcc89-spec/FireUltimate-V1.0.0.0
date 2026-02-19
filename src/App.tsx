@@ -1887,6 +1887,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       callNumber,
       incidentType: detail?.incidentType,
       receivedAt: detail?.receivedAt,
+      address: detail?.address,
     }),
   );
   const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
@@ -2002,6 +2003,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
     const error = sectionErrors[field.id];
     const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
+    const selectedValues = value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
 
     return (
       <div key={field.id} className={wrapperClassName}>
@@ -2023,10 +2028,17 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         {(field.inputKind === "text" ||
           field.inputKind === "date" ||
           field.inputKind === "time" ||
+          field.inputKind === "datetime" ||
           field.inputKind === "readonly") ? (
           <input
             id={inputId}
-            type={field.inputKind === "readonly" ? "text" : field.inputKind}
+            type={
+              field.inputKind === "readonly"
+                ? "text"
+                : field.inputKind === "datetime"
+                  ? "datetime-local"
+                  : field.inputKind
+            }
             step={field.inputKind === "time" ? 1 : undefined}
             readOnly={field.inputKind === "readonly"}
             value={value}
@@ -2049,6 +2061,31 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
             ))}
           </select>
         ) : null}
+
+        {field.inputKind === "multiselect" ? (
+          <select
+            id={inputId}
+            multiple
+            className="neris-multiselect"
+            value={selectedValues}
+            onChange={(event) =>
+              updateFieldValue(
+                field.id,
+                Array.from(event.target.selectedOptions)
+                  .map((option) => option.value)
+                  .join(","),
+              )
+            }
+          >
+            {options.map((option) => (
+              <option key={`${field.id}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+
+        {field.helperText ? <small className="field-hint">{field.helperText}</small> : null}
 
         {field.maxLength ? (
           <small className="field-hint">
