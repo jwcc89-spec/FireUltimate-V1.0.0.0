@@ -90,6 +90,7 @@ export interface IncidentCallSummary {
   incidentType: string;
   priority: string;
   address: string;
+  stillDistrict: string;
   assignedUnits: string;
   currentState: string;
   lastUpdated: string;
@@ -99,7 +100,6 @@ export interface IncidentCallSummary {
 
 export interface DispatchNote {
   time: string;
-  source: string;
   text: string;
 }
 
@@ -651,13 +651,14 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     callNumber: "D-260218-101",
     incidentType: "Medical Emergency",
     priority: "Priority 2",
-    address: "412 River St",
+    address: "412 River St, River City, ST",
+    stillDistrict: "Still District 2",
     assignedUnits: "Engine 2, Medic 4",
     currentState: "Enroute",
     lastUpdated: "2m ago",
-    receivedAt: "09:11",
+    receivedAt: "09:11:02",
     dispatchInfo:
-      "Medical Emergency | Priority 2 | 412 River St | Engine 2, Medic 4",
+      "Medical Emergency | Priority 2 | 412 River St, River City, ST | Engine 2, Medic 4",
     mapReference: "Grid B4",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0144",
@@ -679,18 +680,15 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     ],
     dispatchNotes: [
       {
-        time: "09:11",
-        source: "Dispatch",
+        time: "09:11:02",
         text: "Patient experiencing chest pain and shortness of breath.",
       },
       {
-        time: "09:12",
-        source: "Dispatch",
+        time: "09:12:20",
         text: "Caller reports patient is conscious and seated in front room.",
       },
       {
-        time: "09:13",
-        source: "Engine 2",
+        time: "09:13:47",
         text: "Engine 2 enroute with 4 personnel.",
       },
     ],
@@ -699,12 +697,14 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     callNumber: "D-260218-099",
     incidentType: "Automatic Alarm",
     priority: "Priority 3",
-    address: "95 Oak Ave",
+    address: "95 Oak Ave, River City, ST",
+    stillDistrict: "Still District 1",
     assignedUnits: "Engine 1, Ladder 6",
     currentState: "On scene",
     lastUpdated: "5m ago",
-    receivedAt: "08:56",
-    dispatchInfo: "Automatic Alarm | Priority 3 | 95 Oak Ave | Engine 1, Ladder 6",
+    receivedAt: "08:56:47",
+    dispatchInfo:
+      "Automatic Alarm | Priority 3 | 95 Oak Ave, River City, ST | Engine 1, Ladder 6",
     mapReference: "Grid C2",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0170",
@@ -726,18 +726,15 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     ],
     dispatchNotes: [
       {
-        time: "08:56",
-        source: "Dispatch",
+        time: "08:56:47",
         text: "Commercial fire alarm activation at side entrance panel.",
       },
       {
-        time: "09:00",
-        source: "Ladder 6",
+        time: "09:00:11",
         text: "Ladder 6 on scene conducting size-up.",
       },
       {
-        time: "09:04",
-        source: "Dispatch",
+        time: "09:04:55",
         text: "Alarm company reports potential false activation but unconfirmed.",
       },
     ],
@@ -746,13 +743,14 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     callNumber: "D-260218-094",
     incidentType: "Motor Vehicle Collision",
     priority: "Priority 2",
-    address: "Hwy 62 MM 17",
+    address: "Hwy 62 MM 17, River County, ST",
+    stillDistrict: "Still District 4",
     assignedUnits: "Rescue 3, Medic 2",
     currentState: "Transport",
     lastUpdated: "8m ago",
-    receivedAt: "08:31",
+    receivedAt: "08:31:19",
     dispatchInfo:
-      "Motor Vehicle Collision | Priority 2 | Hwy 62 MM 17 | Rescue 3, Medic 2",
+      "Motor Vehicle Collision | Priority 2 | Hwy 62 MM 17, River County, ST | Rescue 3, Medic 2",
     mapReference: "Grid E1",
     reportedBy: "State Dispatch",
     callbackNumber: "(555) 0126",
@@ -774,18 +772,15 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     ],
     dispatchNotes: [
       {
-        time: "08:31",
-        source: "Dispatch",
+        time: "08:31:19",
         text: "Two-vehicle MVC reported in median with possible entrapment.",
       },
       {
-        time: "08:36",
-        source: "Rescue 3",
+        time: "08:36:44",
         text: "One patient extricated and transferred to Medic 2.",
       },
       {
-        time: "08:43",
-        source: "Dispatch",
+        time: "08:43:08",
         text: "Traffic control requested from law enforcement.",
       },
     ],
@@ -794,12 +789,13 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     callNumber: "D-260218-089",
     incidentType: "Lift Assist",
     priority: "Priority 4",
-    address: "311 Aspen Ct",
+    address: "311 Aspen Ct, River City, ST",
+    stillDistrict: "Still District 3",
     assignedUnits: "Engine 5",
     currentState: "Cleared",
     lastUpdated: "18m ago",
-    receivedAt: "08:02",
-    dispatchInfo: "Lift Assist | Priority 4 | 311 Aspen Ct | Engine 5",
+    receivedAt: "08:02:14",
+    dispatchInfo: "Lift Assist | Priority 4 | 311 Aspen Ct, River City, ST | Engine 5",
     mapReference: "Grid A5",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0182",
@@ -814,18 +810,15 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     ],
     dispatchNotes: [
       {
-        time: "08:02",
-        source: "Dispatch",
+        time: "08:02:14",
         text: "Resident requested non-injury lift assist.",
       },
       {
-        time: "08:10",
-        source: "Engine 5",
+        time: "08:10:28",
         text: "Patient assisted and no additional care requested.",
       },
       {
-        time: "08:14",
-        source: "Engine 5",
+        time: "08:14:53",
         text: "Engine 5 cleared and returning to service.",
       },
     ],
@@ -834,13 +827,14 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     callNumber: "D-260218-082",
     incidentType: "Structure Fire",
     priority: "Priority 1",
-    address: "16 Harbor Ln",
+    address: "16 Harbor Ln, River City, ST",
+    stillDistrict: "Still District 5",
     assignedUnits: "Engine 1, Engine 7, Ladder 6, Medic 4",
     currentState: "On scene",
     lastUpdated: "1m ago",
-    receivedAt: "07:41",
+    receivedAt: "07:41:31",
     dispatchInfo:
-      "Structure Fire | Priority 1 | 16 Harbor Ln | Engine 1, Engine 7, Ladder 6, Medic 4",
+      "Structure Fire | Priority 1 | 16 Harbor Ln, River City, ST | Engine 1, Engine 7, Ladder 6, Medic 4",
     mapReference: "Grid D3",
     reportedBy: "Dispatch Center",
     callbackNumber: "(555) 0102",
@@ -876,23 +870,19 @@ export const INCIDENT_CALL_DETAILS: IncidentCallDetail[] = [
     ],
     dispatchNotes: [
       {
-        time: "07:41",
-        source: "Dispatch",
+        time: "07:41:31",
         text: "Multiple callers reporting visible flames from roof line.",
       },
       {
-        time: "07:46",
-        source: "Command",
+        time: "07:46:12",
         text: "Upgraded to second alarm assignment, defensive strategy.",
       },
       {
-        time: "07:52",
-        source: "Dispatch",
+        time: "07:52:40",
         text: "Utility company notified for emergency shutoff.",
       },
       {
-        time: "07:59",
-        source: "Command",
+        time: "07:59:06",
         text: "Primary search complete, no occupants located.",
       },
     ],
@@ -905,6 +895,7 @@ export const INCIDENT_CALLS: IncidentCallSummary[] = INCIDENT_CALL_DETAILS.map(
     incidentType: call.incidentType,
     priority: call.priority,
     address: call.address,
+    stillDistrict: call.stillDistrict,
     assignedUnits: call.assignedUnits,
     currentState: call.currentState,
     lastUpdated: call.lastUpdated,

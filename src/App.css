@@ -713,6 +713,49 @@
   margin-bottom: 0.72rem;
 }
 
+.collapsible-panel-header {
+  align-items: center;
+  margin-bottom: 0;
+}
+
+.collapsible-toggle {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  text-align: left;
+  padding: 0;
+  cursor: pointer;
+}
+
+.collapsible-toggle h2 {
+  margin: 0;
+}
+
+.collapsible-action {
+  display: inline-flex;
+  align-items: center;
+}
+
+.collapsible-icon {
+  color: #64748b;
+  transition: transform 160ms ease;
+}
+
+.collapsible-icon.open {
+  transform: rotate(180deg);
+}
+
+.collapsible-panel-body {
+  margin-top: 0.72rem;
+  display: grid;
+  gap: 0.62rem;
+}
+
 .panel-header h2 {
   margin: 0;
   font-size: 0.98rem;
@@ -1175,6 +1218,14 @@ tbody tr:last-of-type td {
   font-size: 0.77rem;
 }
 
+.dispatch-info-condensed {
+  margin: 0;
+  color: #334155;
+  font-size: 0.79rem;
+  line-height: 1.32;
+  white-space: normal;
+}
+
 .dispatch-info-meta {
   display: inline-flex;
   align-items: center;
@@ -1324,6 +1375,23 @@ tbody tr:last-of-type td {
   font-size: 0.74rem;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.apparatus-personnel {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.dispatch-note-line {
+  margin: 0;
+  color: #334155;
+  font-size: 0.81rem;
+  line-height: 1.42;
+}
+
+.dispatch-note-line strong {
+  color: #0f172a;
+  font-size: 0.8rem;
 }
 
 .branding-preview {

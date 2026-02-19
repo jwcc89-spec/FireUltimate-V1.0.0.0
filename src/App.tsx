@@ -1,4 +1,4 @@
-import { type FormEvent, useMemo, useState } from "react";
+import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import {
   Bell,
   ChevronDown,
@@ -99,7 +99,6 @@ interface SubmenuPlaceholderPageProps {
 }
 
 interface IncidentsListPageProps {
-  workflowStates: string[];
   incidentDisplaySettings: IncidentDisplaySettings;
 }
 
@@ -120,6 +119,13 @@ interface CustomizationPageProps {
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   submenuVisibility: SubmenuVisibilityMap;
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
+}
+
+interface CustomizationSectionProps {
+  title: string;
+  children: ReactNode;
+  action?: ReactNode;
+  defaultOpen?: boolean;
 }
 
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
@@ -1063,10 +1069,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   );
 }
 
-function IncidentsListPage({
-  workflowStates,
-  incidentDisplaySettings,
-}: IncidentsListPageProps) {
+function IncidentsListPage({ incidentDisplaySettings }: IncidentsListPageProps) {
   const navigate = useNavigate();
 
   const visibleStats = INCIDENT_QUEUE_STATS.filter(
@@ -1088,6 +1091,9 @@ function IncidentsListPage({
       ) as Record<IncidentCallFieldId, string>,
     [],
   );
+  const callFieldHeaderLabel = callFieldOrder
+    .map((fieldId) => fieldLabelById[fieldId])
+    .join(" | ");
 
   const openCallDetail = (callNumber: string) => {
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
@@ -1138,7 +1144,7 @@ function IncidentsListPage({
           <div className="panel-header">
             <h2>Incident Calls</h2>
             <span className="panel-caption">
-              Fields shown: Call # and associated Dispatch Information
+              Condensed view for rapid incident scanning
             </span>
           </div>
           <div className="table-wrapper">
@@ -1146,7 +1152,7 @@ function IncidentsListPage({
               <thead>
                 <tr>
                   <th>Call #</th>
-                  <th>Dispatch Information</th>
+                  <th>{callFieldHeaderLabel}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1169,12 +1175,11 @@ function IncidentsListPage({
                     </td>
                     <td>
                       <div className="dispatch-info-cell">
-                        {callFieldOrder.map((fieldId) => (
-                          <p key={`${call.callNumber}-${fieldId}`} className="dispatch-info-line">
-                            <strong>{fieldLabelById[fieldId]}:</strong>{" "}
-                            <span>{getCallFieldValue(call, fieldId)}</span>
-                          </p>
-                        ))}
+                        <p className="dispatch-info-condensed">
+                          {callFieldOrder
+                            .map((fieldId) => getCallFieldValue(call, fieldId))
+                            .join(" | ")}
+                        </p>
                       </div>
                     </td>
                   </tr>
@@ -1186,34 +1191,6 @@ function IncidentsListPage({
             Future API integration will update these calls and notes in real-time as
             dispatch centers enter new information.
           </p>
-        </article>
-      </section>
-
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Configured Workflow States</h2>
-            <span className="panel-caption">Admin customizable</span>
-          </div>
-          <ul className="workflow-chip-list">
-            {workflowStates.map((state) => (
-              <li key={state} className="workflow-chip">
-                {state}
-              </li>
-            ))}
-          </ul>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Next Build Focus</h2>
-          </div>
-          <ul className="activity-list">
-            <li>Dispatch center API ingestion for automatic incident updates</li>
-            <li>Map marker overlays tied to incident and hydrant data</li>
-            <li>Role-level permissions for create/edit call operations</li>
-            <li>Audit history for incident and note updates</li>
-          </ul>
         </article>
       </section>
     </section>
@@ -1267,8 +1244,11 @@ function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
             onClick={() => setCallInfoExpanded((previous) => !previous)}
           >
             <div className="call-info-line">
-              <strong>Time of Call: {detail.receivedAt}</strong>
-              <span>Address: {detail.address}</span>
+              <strong>Incident Details:</strong>
+              <span>
+                Time of Dispatch {detail.receivedAt} | {detail.address} |{" "}
+                {detail.stillDistrict}
+              </span>
             </div>
             <ChevronDown
               size={16}
@@ -1289,6 +1269,10 @@ function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
               <div>
                 <dt>Assigned Units</dt>
                 <dd>{detail.assignedUnits}</dd>
+              </div>
+              <div>
+                <dt>Still District</dt>
+                <dd>{detail.stillDistrict}</dd>
               </div>
               <div>
                 <dt>Current Status</dt>
@@ -1319,14 +1303,15 @@ function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
         <article className="panel">
           <div className="panel-header">
             <h2>Apparatus Responding</h2>
-            <span className="panel-caption">Unit, personnel, and response status</span>
           </div>
           <ul className="unit-status-list">
             {detail.apparatus.map((item) => (
               <li key={`${detail.callNumber}-${item.unit}`}>
                 <div>
-                  <strong>{item.unit}</strong>
-                  <p># Personnel: {item.crew}</p>
+                  <strong>
+                    {item.unit}{" "}
+                    <span className="apparatus-personnel">({item.crew})</span>
+                  </strong>
                 </div>
                 <span className={toToneClass(toneFromState(item.status))}>
                   {item.status}
@@ -1365,13 +1350,10 @@ function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
           </div>
           <ul className="timeline-list">
             {detail.dispatchNotes.map((note) => (
-              <li key={`${detail.callNumber}-${note.time}-${note.source}`}>
-                <div>
-                  <strong>
-                    {note.time} | {note.source}
-                  </strong>
-                  <p>{note.text}</p>
-                </div>
+              <li key={`${detail.callNumber}-${note.time}-${note.text}`}>
+                <p className="dispatch-note-line">
+                  <strong>{note.time}</strong> | {note.text}
+                </p>
               </li>
             ))}
           </ul>
@@ -1531,6 +1513,36 @@ function HydrantsAdminPage() {
         </article>
       </section>
     </section>
+  );
+}
+
+function CustomizationSection({
+  title,
+  children,
+  action,
+  defaultOpen = true,
+}: CustomizationSectionProps) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
+
+  return (
+    <article className="panel collapsible-panel">
+      <div className="panel-header collapsible-panel-header">
+        <button
+          type="button"
+          className="collapsible-toggle"
+          onClick={() => setIsOpen((previous) => !previous)}
+          aria-expanded={isOpen}
+        >
+          <h2>{title}</h2>
+          <ChevronDown
+            size={16}
+            className={`collapsible-icon ${isOpen ? "open" : ""}`}
+          />
+        </button>
+        {action ? <div className="collapsible-action">{action}</div> : null}
+      </div>
+      {isOpen ? <div className="collapsible-panel-body">{children}</div> : null}
+    </article>
   );
 }
 
@@ -1716,10 +1728,7 @@ function CustomizationPage({
 
       <form className="panel-grid" onSubmit={handleSave}>
         <section className="panel-grid two-column">
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Branding Controls</h2>
-            </div>
+          <CustomizationSection title="Branding Controls">
             <div className="settings-form">
               <label htmlFor="org-name">Organization Name</label>
               <input
@@ -1756,15 +1765,16 @@ function CustomizationPage({
                 onChange={(event) => setAccentColor(event.target.value)}
               />
             </div>
-          </article>
+          </CustomizationSection>
 
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Dispatch Workflow States</h2>
+          <CustomizationSection
+            title="Dispatch Workflow States"
+            action={
               <button type="button" className="link-button" onClick={resetWorkflowStates}>
                 Reset to default
               </button>
-            </div>
+            }
+          >
             <div className="settings-form">
               {workflowDraft.map((state, index) => (
                 <div key={`${state}-${index}`} className="state-edit-row">
@@ -1803,14 +1813,11 @@ function CustomizationPage({
                 Standard states: {DEFAULT_DISPATCH_WORKFLOW_STATES.join(", ")}
               </small>
             </div>
-          </article>
+          </CustomizationSection>
         </section>
 
         <section className="panel-grid two-column">
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Incidents Display Settings</h2>
-            </div>
+          <CustomizationSection title="Incidents Display Settings">
             <div className="settings-form">
               <label>Incident stat boxes (show/hide)</label>
               <ul className="settings-list">
@@ -1831,12 +1838,9 @@ function CustomizationPage({
                 })}
               </ul>
             </div>
-          </article>
+          </CustomizationSection>
 
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Incident Call Field Visibility & Row Order</h2>
-            </div>
+          <CustomizationSection title="Incident Call Field Visibility & Row Order">
             <div className="settings-form">
               <ul className="settings-list field-order-list">
                 {INCIDENT_CALL_FIELD_OPTIONS.map((field) => {
@@ -1881,14 +1885,11 @@ function CustomizationPage({
                 })}
               </ul>
             </div>
-          </article>
+          </CustomizationSection>
         </section>
 
         <section className="panel-grid two-column">
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Submenu Display Settings</h2>
-            </div>
+          <CustomizationSection title="Submenu Display Settings">
             <div className="settings-form">
               <p className="field-hint">
                 Each submenu has a visibility setting to control whether it appears
@@ -1914,12 +1915,9 @@ function CustomizationPage({
                 </div>
               ))}
             </div>
-          </article>
+          </CustomizationSection>
 
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Parsing Setup</h2>
-            </div>
+          <CustomizationSection title="Parsing Setup">
             <div className="settings-form">
               <label htmlFor="parsing-call-select">Dispatch feed preview call</label>
               <select
@@ -1971,14 +1969,11 @@ function CustomizationPage({
                 </table>
               </div>
             </div>
-          </article>
+          </CustomizationSection>
         </section>
 
         <section className="panel-grid two-column">
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Preview</h2>
-            </div>
+          <CustomizationSection title="Preview">
             <div className="branding-preview">
               <div
                 className="branding-preview-banner"
@@ -2000,12 +1995,9 @@ function CustomizationPage({
                 ))}
               </ul>
             </div>
-          </article>
+          </CustomizationSection>
 
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Save Configuration</h2>
-            </div>
+          <CustomizationSection title="Save Configuration">
             <div className="settings-form">
               <button type="submit" className="primary-button">
                 Save Customization
@@ -2013,7 +2005,7 @@ function CustomizationPage({
               {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
               {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
             </div>
-          </article>
+          </CustomizationSection>
         </section>
       </form>
     </section>
@@ -2226,12 +2218,7 @@ function RouteResolver({
   }
 
   if (path === "/incidents-mapping/incidents") {
-    return (
-      <IncidentsListPage
-        workflowStates={workflowStates}
-        incidentDisplaySettings={incidentDisplaySettings}
-      />
-    );
+    return <IncidentsListPage incidentDisplaySettings={incidentDisplaySettings} />;
   }
 
   if (path.startsWith("/incidents-mapping/incidents/")) {
