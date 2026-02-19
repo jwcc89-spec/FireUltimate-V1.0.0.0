@@ -1387,18 +1387,14 @@ function IncidentsListPage({
     document.body.classList.add("resizing-dispatch-columns");
   };
 
-  const dispatchGridStyle = useMemo(
-    () =>
-      ({
-        "--dispatch-grid-columns": callFieldOrder
-          .map((fieldId) => {
-            const width = callFieldWidths[fieldId] ?? DEFAULT_CALL_FIELD_WIDTHS[fieldId];
-            return `minmax(${MIN_CALL_FIELD_WIDTH}px, ${width}px)`;
-          })
-          .join(" "),
-      }) as CSSProperties,
-    [callFieldOrder, callFieldWidths],
-  );
+  const dispatchGridStyle = {
+    "--dispatch-grid-columns": callFieldOrder
+      .map((fieldId) => {
+        const width = callFieldWidths[fieldId] ?? DEFAULT_CALL_FIELD_WIDTHS[fieldId];
+        return `minmax(${MIN_CALL_FIELD_WIDTH}px, ${width}px)`;
+      })
+      .join(" "),
+  } as CSSProperties;
 
   return (
     <section className="page-section">
