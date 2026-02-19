@@ -1107,6 +1107,14 @@ tbody tr:last-of-type td {
   font-size: 0.76rem;
 }
 
+.field-error {
+  display: block;
+  margin-top: 0.12rem;
+  color: #b91c1c;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
 .save-message {
   margin: 0;
   color: #166534;

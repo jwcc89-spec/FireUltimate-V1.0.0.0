@@ -28,6 +28,8 @@ navigation.
     - apparatus responding
     - dispatch notes
   - Reporting -> NERIS (incident report queue and incident-based report form scaffold)
+    - metadata-driven section/field config
+    - required/conditional validation and allowed-value checks
   - Admin Functions -> Hydrants
 - Settings gear menu (top right):
   - Profile Management

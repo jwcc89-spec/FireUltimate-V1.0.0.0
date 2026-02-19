@@ -65,6 +65,17 @@ import {
   type Tone,
   type UserRole,
 } from "./appData";
+import {
+  NERIS_FORM_SECTIONS,
+  createDefaultNerisFormValues,
+  getNerisFieldsForSection,
+  getNerisValueOptions,
+  isNerisFieldRequired,
+  validateNerisSection,
+  type NerisFieldMetadata,
+  type NerisFormValues,
+  type NerisSectionId,
+} from "./nerisMetadata";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -144,24 +155,6 @@ interface CustomizationSectionProps {
 
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
 type SubmenuVisibilityMap = Record<string, boolean>;
-type NerisSectionId =
-  | "core"
-  | "narrative"
-  | "location"
-  | "incidentTimes"
-  | "resources"
-  | "emergingHazards"
-  | "exposures"
-  | "riskReduction"
-  | "medical"
-  | "rescuesCasualties"
-  | "attachments";
-
-interface NerisSectionConfig {
-  id: NerisSectionId;
-  label: string;
-  helper: string;
-}
 
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
@@ -262,63 +255,6 @@ const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-089": "Draft",
   "D-260218-082": "Approved",
 };
-const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
-  {
-    id: "core",
-    label: "Core",
-    helper: "Complete the required baseline NERIS incident details.",
-  },
-  {
-    id: "narrative",
-    label: "Narrative",
-    helper: "Document final outcomes and notable response context.",
-  },
-  {
-    id: "location",
-    label: "Location",
-    helper: "Capture location precision and scene environment details.",
-  },
-  {
-    id: "incidentTimes",
-    label: "Incident Times",
-    helper: "Track lifecycle timestamps from dispatch through clearance.",
-  },
-  {
-    id: "resources",
-    label: "Resources",
-    helper: "Record units, apparatus, and mutual aid resource usage.",
-  },
-  {
-    id: "emergingHazards",
-    label: "Emerging Hazards",
-    helper: "Flag hazardous materials or hazards found on scene.",
-  },
-  {
-    id: "exposures",
-    label: "Exposures",
-    helper: "Document threatened structures, vehicles, or adjacent risk.",
-  },
-  {
-    id: "riskReduction",
-    label: "Risk Reduction",
-    helper: "Capture prevention/education items connected to this incident.",
-  },
-  {
-    id: "medical",
-    label: "Medical",
-    helper: "Document patient care and related medical observations.",
-  },
-  {
-    id: "rescuesCasualties",
-    label: "Rescues/Casualties",
-    helper: "Track rescues, injuries, and casualty outcomes.",
-  },
-  {
-    id: "attachments",
-    label: "Attachments",
-    helper: "Attach CAD notes, photos, diagrams, and supporting files.",
-  },
-];
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -1946,38 +1882,31 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   const [reportStatus, setReportStatus] = useState<string>(() =>
     getNerisReportStatus(callNumber),
   );
-  const [onsetDate, setOnsetDate] = useState("2026-02-18");
-  const [onsetTime, setOnsetTime] = useState(detail?.receivedAt ?? "15:30:13");
-  const [primaryIncidentType, setPrimaryIncidentType] = useState(
-    detail?.incidentType ?? "Medical Assist",
+  const [formValues, setFormValues] = useState<NerisFormValues>(() =>
+    createDefaultNerisFormValues({
+      callNumber,
+      incidentType: detail?.incidentType,
+      receivedAt: detail?.receivedAt,
+    }),
   );
-  const [additionalIncidentTypes, setAdditionalIncidentTypes] = useState("");
-  const [specialIncidentModifiers, setSpecialIncidentModifiers] = useState("");
-  const [dispatchRunNumber, setDispatchRunNumber] = useState(
-    detail?.callNumber.replace("D-", "") ?? "397",
-  );
-  const [initialDispatchCode, setInitialDispatchCode] = useState(
-    "AMB.UNRESP-BREATHING",
-  );
-  const [outcomeNarrative, setOutcomeNarrative] = useState("");
-  const [obstacleNarrative, setObstacleNarrative] = useState("");
-  const [sectionNotes, setSectionNotes] = useState<Partial<Record<NerisSectionId, string>>>(
-    {},
-  );
+  const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
   const [saveMessage, setSaveMessage] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [lastSavedAt, setLastSavedAt] = useState("Not saved");
 
   const currentSection =
     NERIS_FORM_SECTIONS.find((section) => section.id === activeSectionId) ??
     NERIS_FORM_SECTIONS[0];
+  const sectionFields = useMemo(
+    () => getNerisFieldsForSection(activeSectionId),
+    [activeSectionId],
+  );
   const sectionIndex = NERIS_FORM_SECTIONS.findIndex(
     (section) => section.id === activeSectionId,
   );
   const hasNextSection = sectionIndex < NERIS_FORM_SECTIONS.length - 1;
-  const primaryIncidentOptions = useMemo(
-    () =>
-      Array.from(new Set(INCIDENT_CALLS.map((call) => call.incidentType))).sort(
-        (left, right) => left.localeCompare(right),
-      ),
+  const reportStatusOptions = useMemo(
+    () => getNerisValueOptions("report_status"),
     [],
   );
 
@@ -1999,17 +1928,53 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     );
   }
 
+  const updateFieldValue = (fieldId: string, value: string) => {
+    setFormValues((previous) => ({
+      ...previous,
+      [fieldId]: value,
+    }));
+    setSectionErrors((previous) => {
+      if (!previous[fieldId]) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[fieldId];
+      return next;
+    });
+    setSaveMessage("");
+    setErrorMessage("");
+  };
+
+  const validateCurrentSection = (): boolean => {
+    const result = validateNerisSection(activeSectionId, formValues);
+    setSectionErrors(result.errors);
+    if (!result.isValid) {
+      setSaveMessage("");
+      setErrorMessage("Complete required fields before continuing.");
+    } else {
+      setErrorMessage("");
+    }
+    return result.isValid;
+  };
+
   const handleSaveDraft = () => {
+    if (!validateCurrentSection()) {
+      return;
+    }
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
     });
+    setLastSavedAt(savedAt);
     setSaveMessage(`Draft saved for ${detail.callNumber} at ${savedAt}.`);
   };
 
   const goToNextSection = () => {
+    if (!validateCurrentSection()) {
+      return;
+    }
     if (!hasNextSection) {
       return;
     }
@@ -2030,6 +1995,72 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     navigate("/reporting/neris");
   };
 
+  const renderNerisField = (field: NerisFieldMetadata) => {
+    const inputId = `neris-field-${field.id}`;
+    const value = formValues[field.id] ?? "";
+    const isRequired = isNerisFieldRequired(field, formValues);
+    const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
+    const error = sectionErrors[field.id];
+    const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
+
+    return (
+      <div key={field.id} className={wrapperClassName}>
+        <label htmlFor={inputId}>
+          {field.label}
+          {isRequired ? " *" : ""}
+        </label>
+
+        {field.inputKind === "textarea" ? (
+          <textarea
+            id={inputId}
+            rows={field.rows ?? 6}
+            value={value}
+            placeholder={field.placeholder}
+            onChange={(event) => updateFieldValue(field.id, event.target.value)}
+          />
+        ) : null}
+
+        {(field.inputKind === "text" ||
+          field.inputKind === "date" ||
+          field.inputKind === "time" ||
+          field.inputKind === "readonly") ? (
+          <input
+            id={inputId}
+            type={field.inputKind === "readonly" ? "text" : field.inputKind}
+            step={field.inputKind === "time" ? 1 : undefined}
+            readOnly={field.inputKind === "readonly"}
+            value={value}
+            placeholder={field.placeholder}
+            onChange={(event) => updateFieldValue(field.id, event.target.value)}
+          />
+        ) : null}
+
+        {field.inputKind === "select" ? (
+          <select
+            id={inputId}
+            value={value}
+            onChange={(event) => updateFieldValue(field.id, event.target.value)}
+          >
+            {!isRequired ? <option value="">Select an option</option> : null}
+            {options.map((option) => (
+              <option key={`${field.id}-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        ) : null}
+
+        {field.maxLength ? (
+          <small className="field-hint">
+            {value.length} / {field.maxLength} characters
+          </small>
+        ) : null}
+
+        {error ? <small className="field-error">{error}</small> : null}
+      </div>
+    );
+  };
+
   return (
     <section className="page-section">
       <header className="page-header">
@@ -2040,10 +2071,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           </p>
           <div className="neris-incident-meta">
             <span>
-              Incident date <strong>02/18/2026</strong>
+              Incident date <strong>{formValues.incident_onset_date || "Not set"}</strong>
             </span>
             <span>
-              Last saved <strong>1 minute ago</strong>
+              Last saved <strong>{lastSavedAt}</strong>
             </span>
             <span>
               Status{" "}
@@ -2069,11 +2100,11 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
             value={reportStatus}
             onChange={(event) => setReportStatus(event.target.value)}
           >
-            <option>Draft</option>
-            <option>In Review</option>
-            <option>Ready for Review</option>
-            <option>Approved</option>
-            <option>Submitted</option>
+            {reportStatusOptions.map((option) => (
+              <option key={`report-status-${option.value}`} value={option.value}>
+                {option.label}
+              </option>
+            ))}
           </select>
         </div>
       </header>
@@ -2103,142 +2134,12 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
             <h2>{currentSection.label}</h2>
           </div>
           <p className="panel-description">{currentSection.helper}</p>
-
-          {activeSectionId === "core" ? (
-            <div className="settings-form neris-field-grid">
-              <div>
-                <label htmlFor="neris-onset-date">Incident onset date *</label>
-                <input
-                  id="neris-onset-date"
-                  type="date"
-                  value={onsetDate}
-                  onChange={(event) => setOnsetDate(event.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="neris-onset-time">Incident onset time *</label>
-                <input
-                  id="neris-onset-time"
-                  type="time"
-                  step={1}
-                  value={onsetTime}
-                  onChange={(event) => setOnsetTime(event.target.value)}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="neris-incident-number">Incident number *</label>
-                <input id="neris-incident-number" type="text" value={detail.callNumber} readOnly />
-              </div>
-              <div>
-                <label htmlFor="neris-dispatch-run">Dispatch run number</label>
-                <input
-                  id="neris-dispatch-run"
-                  type="text"
-                  value={dispatchRunNumber}
-                  onChange={(event) => setDispatchRunNumber(event.target.value)}
-                />
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-primary-type">Primary incident type *</label>
-                <select
-                  id="neris-primary-type"
-                  value={primaryIncidentType}
-                  onChange={(event) => setPrimaryIncidentType(event.target.value)}
-                >
-                  {primaryIncidentOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-additional-types">Additional incident type(s)</label>
-                <input
-                  id="neris-additional-types"
-                  type="text"
-                  value={additionalIncidentTypes}
-                  placeholder="Select up to 2"
-                  onChange={(event) => setAdditionalIncidentTypes(event.target.value)}
-                />
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-special-modifiers">Special incident modifier(s)</label>
-                <input
-                  id="neris-special-modifiers"
-                  type="text"
-                  value={specialIncidentModifiers}
-                  onChange={(event) => setSpecialIncidentModifiers(event.target.value)}
-                />
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-dispatch-code">Initial dispatch code</label>
-                <input
-                  id="neris-dispatch-code"
-                  type="text"
-                  value={initialDispatchCode}
-                  onChange={(event) => setInitialDispatchCode(event.target.value)}
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {activeSectionId === "narrative" ? (
-            <div className="settings-form">
-              <label htmlFor="neris-outcome-narrative">
-                Describe the final outcomes of the incident.
-              </label>
-              <textarea
-                id="neris-outcome-narrative"
-                rows={7}
-                value={outcomeNarrative}
-                onChange={(event) => setOutcomeNarrative(event.target.value)}
-                placeholder="Enter outcome narrative..."
-              />
-              <small className="field-hint">{outcomeNarrative.length} / 100000 characters</small>
-
-              <label htmlFor="neris-obstacles-narrative">
-                Describe any obstacles that impacted the incident.
-              </label>
-              <textarea
-                id="neris-obstacles-narrative"
-                rows={7}
-                value={obstacleNarrative}
-                onChange={(event) => setObstacleNarrative(event.target.value)}
-                placeholder="Enter obstacle narrative..."
-              />
-              <small className="field-hint">{obstacleNarrative.length} / 100000 characters</small>
-            </div>
-          ) : null}
-
-          {activeSectionId !== "core" && activeSectionId !== "narrative" ? (
-            <div className="neris-section-placeholder">
-              <p>
-                {currentSection.label} field controls are being configured for the full
-                NERIS specification and admin-required field settings.
-              </p>
-              <label htmlFor={`neris-section-note-${activeSectionId}`}>Section notes</label>
-              <textarea
-                id={`neris-section-note-${activeSectionId}`}
-                rows={6}
-                value={sectionNotes[activeSectionId] ?? ""}
-                onChange={(event) =>
-                  setSectionNotes((previous) => ({
-                    ...previous,
-                    [activeSectionId]: event.target.value,
-                  }))
-                }
-                placeholder={`Enter ${currentSection.label.toLowerCase()} notes...`}
-              />
-            </div>
-          ) : null}
+          <div className="settings-form neris-field-grid">
+            {sectionFields.map((field) => renderNerisField(field))}
+          </div>
 
           {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
+          {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
 
           <div className="neris-form-actions">
             <button type="button" className="secondary-button compact-button" onClick={handleBack}>
@@ -3084,7 +2985,7 @@ function RouteResolver({
 
   if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
-    return <NerisReportFormPage callNumber={callNumber} />;
+    return <NerisReportFormPage key={callNumber} callNumber={callNumber} />;
   }
 
   if (path === "/admin-functions/hydrants") {
