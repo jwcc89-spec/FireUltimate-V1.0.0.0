@@ -1391,7 +1391,11 @@ function IncidentsListPage({
     "--dispatch-grid-columns": callFieldOrder
       .map((fieldId) => {
         const width = callFieldWidths[fieldId] ?? DEFAULT_CALL_FIELD_WIDTHS[fieldId];
-        return `minmax(${MIN_CALL_FIELD_WIDTH}px, ${width}px)`;
+        const clampedWidth = Math.min(
+          MAX_CALL_FIELD_WIDTH,
+          Math.max(MIN_CALL_FIELD_WIDTH, width),
+        );
+        return `${clampedWidth}px`;
       })
       .join(" "),
   } as CSSProperties;

@@ -1245,14 +1245,17 @@ tbody tr:last-of-type td {
 }
 
 .dispatch-header-field {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 0.34rem;
+  width: 100%;
   min-width: 0;
+  padding-right: 0.42rem;
   overflow: visible;
 }
 
 .dispatch-header-label {
+  flex: 1;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1260,10 +1263,14 @@ tbody tr:last-of-type td {
 }
 
 .dispatch-column-resizer {
-  display: inline-flex;
+  position: absolute;
+  right: -8px;
+  top: -6px;
+  bottom: -6px;
+  display: flex;
   align-items: center;
   justify-content: center;
-  width: 10px;
+  width: 16px;
   color: #94a3b8;
   cursor: col-resize;
   user-select: none;
