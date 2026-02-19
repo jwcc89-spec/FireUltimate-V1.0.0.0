@@ -1894,6 +1894,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState("Not saved");
+  const [fieldOptionFilters, setFieldOptionFilters] = useState<Record<string, string>>({});
 
   const currentSection =
     NERIS_FORM_SECTIONS.find((section) => section.id === activeSectionId) ??
@@ -2003,10 +2004,32 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
     const error = sectionErrors[field.id];
     const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
+    const normalizeOptionValue = (raw: string) =>
+      raw.includes("||")
+        ? raw
+        : raw
+            .split(":")
+            .map((segment) => segment.trim())
+            .join("||");
     const selectedValues = value
       .split(",")
       .map((entry) => entry.trim())
       .filter((entry) => entry.length > 0);
+    const normalizedSingleValue = normalizeOptionValue(value);
+    const normalizedSelectedValues = selectedValues.map((entry) => normalizeOptionValue(entry));
+    const shouldShowTypeahead =
+      (field.inputKind === "select" || field.inputKind === "multiselect") &&
+      options.length > 10;
+    const optionFilter = fieldOptionFilters[field.id] ?? "";
+    const normalizedFilter = optionFilter.trim().toLowerCase();
+    const filteredOptions =
+      shouldShowTypeahead && normalizedFilter
+        ? options.filter(
+            (option) =>
+              option.label.toLowerCase().includes(normalizedFilter) ||
+              option.value.toLowerCase().includes(normalizedFilter),
+          )
+        : options;
 
     return (
       <div key={field.id} className={wrapperClassName}>
@@ -2048,41 +2071,73 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         ) : null}
 
         {field.inputKind === "select" ? (
-          <select
-            id={inputId}
-            value={value}
-            onChange={(event) => updateFieldValue(field.id, event.target.value)}
-          >
-            {!isRequired ? <option value="">Select an option</option> : null}
-            {options.map((option) => (
-              <option key={`${field.id}-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <>
+            {shouldShowTypeahead ? (
+              <input
+                type="text"
+                className="field-typeahead-input"
+                value={optionFilter}
+                placeholder={`Filter ${field.label.toLowerCase()}...`}
+                onChange={(event) =>
+                  setFieldOptionFilters((previous) => ({
+                    ...previous,
+                    [field.id]: event.target.value,
+                  }))
+                }
+              />
+            ) : null}
+            <select
+              id={inputId}
+              value={normalizedSingleValue}
+              onChange={(event) => updateFieldValue(field.id, event.target.value)}
+            >
+              {!isRequired ? <option value="">Select an option</option> : null}
+              {filteredOptions.map((option) => (
+                <option key={`${field.id}-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </>
         ) : null}
 
         {field.inputKind === "multiselect" ? (
-          <select
-            id={inputId}
-            multiple
-            className="neris-multiselect"
-            value={selectedValues}
-            onChange={(event) =>
-              updateFieldValue(
-                field.id,
-                Array.from(event.target.selectedOptions)
-                  .map((option) => option.value)
-                  .join(","),
-              )
-            }
-          >
-            {options.map((option) => (
-              <option key={`${field.id}-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+          <>
+            {shouldShowTypeahead ? (
+              <input
+                type="text"
+                className="field-typeahead-input"
+                value={optionFilter}
+                placeholder={`Filter ${field.label.toLowerCase()}...`}
+                onChange={(event) =>
+                  setFieldOptionFilters((previous) => ({
+                    ...previous,
+                    [field.id]: event.target.value,
+                  }))
+                }
+              />
+            ) : null}
+            <select
+              id={inputId}
+              multiple
+              className="neris-multiselect"
+              value={normalizedSelectedValues}
+              onChange={(event) =>
+                updateFieldValue(
+                  field.id,
+                  Array.from(event.target.selectedOptions)
+                    .map((option) => option.value)
+                    .join(","),
+                )
+              }
+            >
+              {filteredOptions.map((option) => (
+                <option key={`${field.id}-${option.value}`} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </>
         ) : null}
 
         {field.helperText ? <small className="field-hint">{field.helperText}</small> : null}
