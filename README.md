@@ -43,6 +43,7 @@ navigation.
 ## Run locally
 
 ```bash
+nvm use
 npm install
 npm run dev
 ```
@@ -58,3 +59,4 @@ npm run build
 - This version is UI-first and uses fake sample data.
 - Dispatch center API integration is planned for a future phase.
 - Navigation structure is organized to support future mobile app expansion.
+- Node.js 20.19.0+ is required (`.nvmrc` is included for version pinning).
