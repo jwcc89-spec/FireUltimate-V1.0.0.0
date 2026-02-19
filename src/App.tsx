@@ -112,6 +112,10 @@ interface IncidentsListPageProps {
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
 }
 
+interface NerisReportFormPageProps {
+  callNumber: string;
+}
+
 interface IncidentCallDetailPageProps {
   callNumber: string;
 }
@@ -140,6 +144,24 @@ interface CustomizationSectionProps {
 
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
 type SubmenuVisibilityMap = Record<string, boolean>;
+type NerisSectionId =
+  | "core"
+  | "narrative"
+  | "location"
+  | "incidentTimes"
+  | "resources"
+  | "emergingHazards"
+  | "exposures"
+  | "riskReduction"
+  | "medical"
+  | "rescuesCasualties"
+  | "attachments";
+
+interface NerisSectionConfig {
+  id: NerisSectionId;
+  label: string;
+  helper: string;
+}
 
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
@@ -232,66 +254,69 @@ const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   status: 130,
   lastUpdated: 140,
 };
-
-interface NeirsQueueRow {
-  incidentNumber: string;
-  incidentType: string;
-  incidentDate: string;
-  preparer: string;
-  status: string;
-  dueDate: string;
-}
-
-const NEIRS_QUEUE_ROWS: NeirsQueueRow[] = [
+const NERIS_QUEUE_FIELD_ORDER: IncidentCallFieldId[] = [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
+const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
+  "D-260218-101": "In Review",
+  "D-260218-099": "Draft",
+  "D-260218-094": "Ready for Review",
+  "D-260218-089": "Draft",
+  "D-260218-082": "Approved",
+};
+const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
-    incidentNumber: "F26-00231",
-    incidentType: "Structure Fire",
-    incidentDate: "02/15/2026 18:41",
-    preparer: "Chief Jones",
-    status: "Draft",
-    dueDate: "02/19/2026",
+    id: "core",
+    label: "Core",
+    helper: "Complete the required baseline NERIS incident details.",
   },
   {
-    incidentNumber: "F26-00234",
-    incidentType: "Medical Assist",
-    incidentDate: "02/16/2026 09:12",
-    preparer: "Capt. Ramirez",
-    status: "Ready to Submit",
-    dueDate: "02/20/2026",
+    id: "narrative",
+    label: "Narrative",
+    helper: "Document final outcomes and notable response context.",
   },
   {
-    incidentNumber: "F26-00237",
-    incidentType: "Vehicle Fire",
-    incidentDate: "02/17/2026 22:08",
-    preparer: "Lt. Walker",
-    status: "Needs Review",
-    dueDate: "02/21/2026",
+    id: "location",
+    label: "Location",
+    helper: "Capture location precision and scene environment details.",
   },
   {
-    incidentNumber: "F26-00240",
-    incidentType: "Alarm Activation",
-    incidentDate: "02/18/2026 04:27",
-    preparer: "FF Daniels",
-    status: "Submitted",
-    dueDate: "02/22/2026",
-  },
-];
-
-const NEIRS_VALIDATION_CHECKS: { label: string; detail: string; tone: Tone }[] = [
-  {
-    label: "Narrative completion",
-    detail: "2 reports need full narrative text before submission.",
-    tone: "critical",
+    id: "incidentTimes",
+    label: "Incident Times",
+    helper: "Track lifecycle timestamps from dispatch through clearance.",
   },
   {
-    label: "Unit assignments",
-    detail: "1 report has missing assisting unit records.",
-    tone: "warning",
+    id: "resources",
+    label: "Resources",
+    helper: "Record units, apparatus, and mutual aid resource usage.",
   },
   {
-    label: "Location confidence",
-    detail: "Address and geo fields validated for all submitted reports.",
-    tone: "positive",
+    id: "emergingHazards",
+    label: "Emerging Hazards",
+    helper: "Flag hazardous materials or hazards found on scene.",
+  },
+  {
+    id: "exposures",
+    label: "Exposures",
+    helper: "Document threatened structures, vehicles, or adjacent risk.",
+  },
+  {
+    id: "riskReduction",
+    label: "Risk Reduction",
+    helper: "Capture prevention/education items connected to this incident.",
+  },
+  {
+    id: "medical",
+    label: "Medical",
+    helper: "Document patient care and related medical observations.",
+  },
+  {
+    id: "rescuesCasualties",
+    label: "Rescues/Casualties",
+    helper: "Track rescues, injuries, and casualty outcomes.",
+  },
+  {
+    id: "attachments",
+    label: "Attachments",
+    helper: "Attach CAD notes, photos, diagrams, and supporting files.",
   },
 ];
 
@@ -323,9 +348,13 @@ function toneFromState(state: string): Tone {
   return "neutral";
 }
 
-function toneFromNeirsStatus(status: string): Tone {
+function toneFromNerisStatus(status: string): Tone {
   const normalized = status.trim().toLowerCase();
-  if (normalized.includes("submitted") || normalized.includes("ready")) {
+  if (
+    normalized.includes("submitted") ||
+    normalized.includes("ready") ||
+    normalized.includes("approved")
+  ) {
     return "positive";
   }
   if (normalized.includes("review")) {
@@ -618,6 +647,20 @@ function getCallFieldValue(
     default:
       return "";
   }
+}
+
+function getNerisReportStatus(callNumber: string): string {
+  return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
+}
+
+function getNerisQueueFieldValue(
+  call: (typeof INCIDENT_CALLS)[number],
+  fieldId: IncidentCallFieldId,
+): string {
+  if (fieldId === "status") {
+    return getNerisReportStatus(call.callNumber);
+  }
+  return getCallFieldValue(call, fieldId);
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
@@ -1790,112 +1833,31 @@ function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
   );
 }
 
-function NeirsReportingPage() {
-  const [reportingMonth, setReportingMonth] = useState("2026-02");
-  const [statusMessage, setStatusMessage] = useState("");
+function NerisReportingPage() {
+  const navigate = useNavigate();
+  const fieldLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        INCIDENT_CALL_FIELD_OPTIONS.map((field) => [field.id, field.label]),
+      ) as Record<IncidentCallFieldId, string>,
+    [],
+  );
 
-  const openReports = NEIRS_QUEUE_ROWS.filter((row) => row.status !== "Submitted").length;
-  const readyToSubmit = NEIRS_QUEUE_ROWS.filter(
-    (row) => row.status === "Ready to Submit",
-  ).length;
-  const submittedReports = NEIRS_QUEUE_ROWS.filter(
-    (row) => row.status === "Submitted",
-  ).length;
-
-  const handlePrepareExport = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setStatusMessage(
-      `NEIRS export package for ${reportingMonth} prepared in prototype mode.`,
-    );
-  };
-
-  const getValidationToneLabel = (tone: Tone): string => {
-    if (tone === "positive") {
-      return "OK";
-    }
-    if (tone === "warning") {
-      return "Review";
-    }
-    return "Action";
+  const openNerisReport = (callNumber: string) => {
+    navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`);
   };
 
   return (
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Reporting | NEIRS</h1>
+          <h1>Reporting | NERIS</h1>
           <p>
-            Manage incident report completion, validation checks, and monthly NEIRS
-            export preparation.
+            Click any incident row to open the NERIS report form. This workflow will
+            support admin-required fields, review, and export/API submission.
           </p>
         </div>
-        <div className="header-actions">
-          <button type="button" className="secondary-button">
-            Run Validation
-          </button>
-          <button type="button" className="primary-button">
-            Start NEIRS Report
-          </button>
-        </div>
       </header>
-
-      <section className="stat-grid">
-        <article className="stat-card">
-          <p>Open Reports</p>
-          <strong>{openReports}</strong>
-          <span className={toToneClass("warning")}>Needs completion/review</span>
-        </article>
-        <article className="stat-card">
-          <p>Ready to Submit</p>
-          <strong>{readyToSubmit}</strong>
-          <span className={toToneClass("positive")}>Ready for agency review</span>
-        </article>
-        <article className="stat-card">
-          <p>Submitted</p>
-          <strong>{submittedReports}</strong>
-          <span className={toToneClass("neutral")}>Already transmitted</span>
-        </article>
-      </section>
-
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Monthly Export Builder</h2>
-          </div>
-          <form className="settings-form" onSubmit={handlePrepareExport}>
-            <label htmlFor="neirs-month">Reporting Month</label>
-            <input
-              id="neirs-month"
-              type="month"
-              value={reportingMonth}
-              onChange={(event) => setReportingMonth(event.target.value)}
-            />
-            <button type="submit" className="primary-button">
-              Prepare Export Package
-            </button>
-            {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
-          </form>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Validation Summary</h2>
-          </div>
-          <ul className="timeline-list">
-            {NEIRS_VALIDATION_CHECKS.map((check) => (
-              <li key={check.label}>
-                <div>
-                  <strong>{check.label}</strong>
-                  <p>{check.detail}</p>
-                </div>
-                <span className={toToneClass(check.tone)}>
-                  {getValidationToneLabel(check.tone)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </article>
-      </section>
 
       <section className="panel-grid">
         <article className="panel">
@@ -1907,30 +1869,396 @@ function NeirsReportingPage() {
               <thead>
                 <tr>
                   <th>Incident #</th>
-                  <th>Incident Type</th>
-                  <th>Incident Date</th>
-                  <th>Preparer</th>
-                  <th>Status</th>
-                  <th>Due Date</th>
+                  <th>
+                    <div className="dispatch-grid-line dispatch-grid-header">
+                      {NERIS_QUEUE_FIELD_ORDER.map((fieldId) => (
+                        <span
+                          key={`neris-header-${fieldId}`}
+                          className={`dispatch-field dispatch-field-${fieldId}`}
+                        >
+                          {fieldLabelById[fieldId]}
+                        </span>
+                      ))}
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
-                {NEIRS_QUEUE_ROWS.map((row) => (
-                  <tr key={row.incidentNumber}>
-                    <td>{row.incidentNumber}</td>
-                    <td>{row.incidentType}</td>
-                    <td>{row.incidentDate}</td>
-                    <td>{row.preparer}</td>
+                {INCIDENT_CALLS.map((call) => (
+                  <tr
+                    key={`neris-${call.callNumber}`}
+                    className="clickable-row"
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => openNerisReport(call.callNumber)}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter" || event.key === " ") {
+                        event.preventDefault();
+                        openNerisReport(call.callNumber);
+                      }
+                    }}
+                  >
                     <td>
-                      <span className={toToneClass(toneFromNeirsStatus(row.status))}>
-                        {row.status}
-                      </span>
+                      <strong className="call-number-text">{call.callNumber}</strong>
                     </td>
-                    <td>{row.dueDate}</td>
+                    <td>
+                      <div className="dispatch-info-cell">
+                        <div className="dispatch-grid-line">
+                          {NERIS_QUEUE_FIELD_ORDER.map((fieldId) => {
+                            const value = getNerisQueueFieldValue(call, fieldId);
+                            return (
+                              <span
+                                key={`neris-${call.callNumber}-${fieldId}`}
+                                className={`dispatch-field dispatch-field-${fieldId}`}
+                              >
+                                {fieldId === "status" ? (
+                                  <span className={toToneClass(toneFromNerisStatus(value))}>
+                                    {value}
+                                  </span>
+                                ) : (
+                                  value
+                                )}
+                              </span>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <p className="panel-description">
+            This queue mirrors the Incidents module layout while routing directly into
+            incident-specific NERIS forms.
+          </p>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
+  const navigate = useNavigate();
+  const detail = getIncidentCallDetail(callNumber);
+  const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
+  const [reportStatus, setReportStatus] = useState<string>(() =>
+    getNerisReportStatus(callNumber),
+  );
+  const [onsetDate, setOnsetDate] = useState("2026-02-18");
+  const [onsetTime, setOnsetTime] = useState(detail?.receivedAt ?? "15:30:13");
+  const [primaryIncidentType, setPrimaryIncidentType] = useState(
+    detail?.incidentType ?? "Medical Assist",
+  );
+  const [additionalIncidentTypes, setAdditionalIncidentTypes] = useState("");
+  const [specialIncidentModifiers, setSpecialIncidentModifiers] = useState("");
+  const [dispatchRunNumber, setDispatchRunNumber] = useState(
+    detail?.callNumber.replace("D-", "") ?? "397",
+  );
+  const [initialDispatchCode, setInitialDispatchCode] = useState(
+    "AMB.UNRESP-BREATHING",
+  );
+  const [outcomeNarrative, setOutcomeNarrative] = useState("");
+  const [obstacleNarrative, setObstacleNarrative] = useState("");
+  const [sectionNotes, setSectionNotes] = useState<Partial<Record<NerisSectionId, string>>>(
+    {},
+  );
+  const [saveMessage, setSaveMessage] = useState("");
+
+  const currentSection =
+    NERIS_FORM_SECTIONS.find((section) => section.id === activeSectionId) ??
+    NERIS_FORM_SECTIONS[0];
+  const sectionIndex = NERIS_FORM_SECTIONS.findIndex(
+    (section) => section.id === activeSectionId,
+  );
+  const hasNextSection = sectionIndex < NERIS_FORM_SECTIONS.length - 1;
+  const primaryIncidentOptions = useMemo(
+    () =>
+      Array.from(new Set(INCIDENT_CALLS.map((call) => call.incidentType))).sort(
+        (left, right) => left.localeCompare(right),
+      ),
+    [],
+  );
+
+  if (!detail) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>NERIS report not found</h1>
+            <p>No matching incident exists for report ID {callNumber}.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
+
+  const handleSaveDraft = () => {
+    const savedAt = new Date().toLocaleTimeString("en-US", {
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    });
+    setSaveMessage(`Draft saved for ${detail.callNumber} at ${savedAt}.`);
+  };
+
+  const goToNextSection = () => {
+    if (!hasNextSection) {
+      return;
+    }
+    const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
+    if (nextSection) {
+      setActiveSectionId(nextSection.id);
+    }
+  };
+
+  const handleBack = () => {
+    if (sectionIndex > 0) {
+      const previousSection = NERIS_FORM_SECTIONS[sectionIndex - 1];
+      if (previousSection) {
+        setActiveSectionId(previousSection.id);
+      }
+      return;
+    }
+    navigate("/reporting/neris");
+  };
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>{detail.callNumber}</h1>
+          <p>
+            <strong>{detail.incidentType}</strong> at {detail.address}
+          </p>
+          <div className="neris-incident-meta">
+            <span>
+              Incident date <strong>02/18/2026</strong>
+            </span>
+            <span>
+              Last saved <strong>1 minute ago</strong>
+            </span>
+            <span>
+              Status{" "}
+              <strong className={toToneClass(toneFromNerisStatus(reportStatus))}>
+                {reportStatus}
+              </strong>
+            </span>
+          </div>
+        </div>
+        <div className="header-actions">
+          <button type="button" className="secondary-button compact-button">
+            Import
+          </button>
+          <button type="button" className="secondary-button compact-button">
+            CAD notes
+          </button>
+          <button type="button" className="secondary-button compact-button">
+            Print
+          </button>
+          <select
+            className="neris-status-select"
+            aria-label="NERIS report status"
+            value={reportStatus}
+            onChange={(event) => setReportStatus(event.target.value)}
+          >
+            <option>Draft</option>
+            <option>In Review</option>
+            <option>Ready for Review</option>
+            <option>Approved</option>
+            <option>Submitted</option>
+          </select>
+        </div>
+      </header>
+
+      <section className="neris-report-layout">
+        <aside className="panel neris-sidebar">
+          <div className="neris-sidebar-header">
+            <h2>Fire Incidents</h2>
+            <p>NERIS sections</p>
+          </div>
+          <nav className="neris-section-nav" aria-label="NERIS section navigation">
+            {NERIS_FORM_SECTIONS.map((section) => (
+              <button
+                key={section.id}
+                type="button"
+                className={section.id === activeSectionId ? "active" : ""}
+                onClick={() => setActiveSectionId(section.id)}
+              >
+                {section.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+
+        <article className="panel neris-form-panel">
+          <div className="panel-header">
+            <h2>{currentSection.label}</h2>
+          </div>
+          <p className="panel-description">{currentSection.helper}</p>
+
+          {activeSectionId === "core" ? (
+            <div className="settings-form neris-field-grid">
+              <div>
+                <label htmlFor="neris-onset-date">Incident onset date *</label>
+                <input
+                  id="neris-onset-date"
+                  type="date"
+                  value={onsetDate}
+                  onChange={(event) => setOnsetDate(event.target.value)}
+                />
+              </div>
+              <div>
+                <label htmlFor="neris-onset-time">Incident onset time *</label>
+                <input
+                  id="neris-onset-time"
+                  type="time"
+                  step={1}
+                  value={onsetTime}
+                  onChange={(event) => setOnsetTime(event.target.value)}
+                />
+              </div>
+
+              <div>
+                <label htmlFor="neris-incident-number">Incident number *</label>
+                <input id="neris-incident-number" type="text" value={detail.callNumber} readOnly />
+              </div>
+              <div>
+                <label htmlFor="neris-dispatch-run">Dispatch run number</label>
+                <input
+                  id="neris-dispatch-run"
+                  type="text"
+                  value={dispatchRunNumber}
+                  onChange={(event) => setDispatchRunNumber(event.target.value)}
+                />
+              </div>
+
+              <div className="field-span-two">
+                <label htmlFor="neris-primary-type">Primary incident type *</label>
+                <select
+                  id="neris-primary-type"
+                  value={primaryIncidentType}
+                  onChange={(event) => setPrimaryIncidentType(event.target.value)}
+                >
+                  {primaryIncidentOptions.map((option) => (
+                    <option key={option} value={option}>
+                      {option}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="field-span-two">
+                <label htmlFor="neris-additional-types">Additional incident type(s)</label>
+                <input
+                  id="neris-additional-types"
+                  type="text"
+                  value={additionalIncidentTypes}
+                  placeholder="Select up to 2"
+                  onChange={(event) => setAdditionalIncidentTypes(event.target.value)}
+                />
+              </div>
+
+              <div className="field-span-two">
+                <label htmlFor="neris-special-modifiers">Special incident modifier(s)</label>
+                <input
+                  id="neris-special-modifiers"
+                  type="text"
+                  value={specialIncidentModifiers}
+                  onChange={(event) => setSpecialIncidentModifiers(event.target.value)}
+                />
+              </div>
+
+              <div className="field-span-two">
+                <label htmlFor="neris-dispatch-code">Initial dispatch code</label>
+                <input
+                  id="neris-dispatch-code"
+                  type="text"
+                  value={initialDispatchCode}
+                  onChange={(event) => setInitialDispatchCode(event.target.value)}
+                />
+              </div>
+            </div>
+          ) : null}
+
+          {activeSectionId === "narrative" ? (
+            <div className="settings-form">
+              <label htmlFor="neris-outcome-narrative">
+                Describe the final outcomes of the incident.
+              </label>
+              <textarea
+                id="neris-outcome-narrative"
+                rows={7}
+                value={outcomeNarrative}
+                onChange={(event) => setOutcomeNarrative(event.target.value)}
+                placeholder="Enter outcome narrative..."
+              />
+              <small className="field-hint">{outcomeNarrative.length} / 100000 characters</small>
+
+              <label htmlFor="neris-obstacles-narrative">
+                Describe any obstacles that impacted the incident.
+              </label>
+              <textarea
+                id="neris-obstacles-narrative"
+                rows={7}
+                value={obstacleNarrative}
+                onChange={(event) => setObstacleNarrative(event.target.value)}
+                placeholder="Enter obstacle narrative..."
+              />
+              <small className="field-hint">{obstacleNarrative.length} / 100000 characters</small>
+            </div>
+          ) : null}
+
+          {activeSectionId !== "core" && activeSectionId !== "narrative" ? (
+            <div className="neris-section-placeholder">
+              <p>
+                {currentSection.label} field controls are being configured for the full
+                NERIS specification and admin-required field settings.
+              </p>
+              <label htmlFor={`neris-section-note-${activeSectionId}`}>Section notes</label>
+              <textarea
+                id={`neris-section-note-${activeSectionId}`}
+                rows={6}
+                value={sectionNotes[activeSectionId] ?? ""}
+                onChange={(event) =>
+                  setSectionNotes((previous) => ({
+                    ...previous,
+                    [activeSectionId]: event.target.value,
+                  }))
+                }
+                placeholder={`Enter ${currentSection.label.toLowerCase()} notes...`}
+              />
+            </div>
+          ) : null}
+
+          {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
+
+          <div className="neris-form-actions">
+            <button type="button" className="secondary-button compact-button" onClick={handleBack}>
+              Back
+            </button>
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={handleSaveDraft}
+            >
+              Save
+            </button>
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={goToNextSection}
+              disabled={!hasNextSection}
+            >
+              Next
+            </button>
           </div>
         </article>
       </section>
@@ -2742,7 +3070,21 @@ function RouteResolver({
   }
 
   if (path === "/reporting/neirs") {
-    return <NeirsReportingPage />;
+    return <Navigate to="/reporting/neris" replace />;
+  }
+
+  if (path.startsWith("/reporting/neirs/")) {
+    const legacyReportId = decodeURIComponent(path.replace("/reporting/neirs/", ""));
+    return <Navigate to={`/reporting/neris/${encodeURIComponent(legacyReportId)}`} replace />;
+  }
+
+  if (path === "/reporting/neris") {
+    return <NerisReportingPage />;
+  }
+
+  if (path.startsWith("/reporting/neris/")) {
+    const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
+    return <NerisReportFormPage callNumber={callNumber} />;
   }
 
   if (path === "/admin-functions/hydrants") {

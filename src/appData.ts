@@ -205,9 +205,9 @@ export const MAIN_MENUS: MainMenu[] = [
     summary: "Agency reporting flows and export-ready compliance data.",
     submenus: [
       {
-        label: "NEIRS",
-        path: "/reporting/neirs",
-        summary: "Incident reporting aligned to NEIRS data structure.",
+        label: "NERIS",
+        path: "/reporting/neris",
+        summary: "Incident reporting aligned to NERIS data structure.",
         isBuilt: true,
       },
       {

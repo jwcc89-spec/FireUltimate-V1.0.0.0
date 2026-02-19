@@ -11,7 +11,7 @@ navigation.
 - Sidebar structure:
   - Dashboard
   - Incidents / Mapping (Incidents, Map View, Map Markers)
-  - Reporting (NEIRS, EMS)
+  - Reporting (NERIS, EMS)
   - Personnel (Schedule, Certifications)
   - Apparatus (Units, Equipment List, Fuel Logs, Maintenance Logs, Mileage Logs)
   - Calendar (Events, Meetings)
@@ -27,7 +27,7 @@ navigation.
     - live map placeholder
     - apparatus responding
     - dispatch notes
-  - Reporting -> NEIRS (report queue, validation summary, monthly export builder)
+  - Reporting -> NERIS (incident report queue and incident-based report form scaffold)
   - Admin Functions -> Hydrants
 - Settings gear menu (top right):
   - Profile Management

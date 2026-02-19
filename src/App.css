@@ -1075,13 +1075,26 @@ tbody tr:last-of-type td {
   font-size: 0.84rem;
 }
 
+.settings-form textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
 .settings-form input[type="color"] {
   height: 40px;
   padding: 0.2rem;
 }
 
 .settings-form input:focus,
-.settings-form select:focus {
+.settings-form select:focus,
+.settings-form textarea:focus {
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
   outline: none;
@@ -1488,6 +1501,148 @@ body.resizing-dispatch-columns {
   gap: 0.35rem;
 }
 
+.field-span-two {
+  grid-column: 1 / -1;
+}
+
+.neris-incident-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.44rem;
+}
+
+.neris-incident-meta span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  color: #334155;
+  font-size: 0.78rem;
+}
+
+.neris-status-select {
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  padding: 0.4rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.neris-status-select:focus {
+  border-color: #3b82f6;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.16);
+  outline: none;
+  background-color: #ffffff;
+}
+
+.neris-report-layout {
+  display: grid;
+  grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
+  gap: 0.78rem;
+  align-items: start;
+}
+
+.neris-sidebar {
+  padding: 0;
+  overflow: hidden;
+}
+
+.neris-sidebar-header {
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0.7rem 0.78rem;
+  background-color: #f8fafc;
+}
+
+.neris-sidebar-header h2 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.neris-sidebar-header p {
+  margin: 0.28rem 0 0;
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.neris-section-nav {
+  display: grid;
+}
+
+.neris-section-nav button {
+  border: 0;
+  border-bottom: 1px solid #eef2f7;
+  background-color: #ffffff;
+  color: #334155;
+  text-align: left;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.62rem 0.78rem;
+  cursor: pointer;
+}
+
+.neris-section-nav button:hover {
+  background-color: #f8fafc;
+}
+
+.neris-section-nav button.active {
+  color: #1d4ed8;
+  background-color: #eff6ff;
+  border-left: 3px solid #2563eb;
+  padding-left: calc(0.78rem - 3px);
+}
+
+.neris-form-panel {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.neris-field-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.neris-section-placeholder {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.72rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.neris-section-placeholder p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.neris-section-placeholder label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.neris-section-placeholder textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.neris-form-actions {
+  display: flex;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
 .submenu-settings-group {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
@@ -1662,6 +1817,10 @@ body.resizing-dispatch-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .neris-report-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .incident-detail-split {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -1742,6 +1901,10 @@ body.resizing-dispatch-columns {
 
   .page-header {
     flex-direction: column;
+  }
+
+  .neris-field-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .dispatch-grid-line {
