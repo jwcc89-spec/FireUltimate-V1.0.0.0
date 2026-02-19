@@ -1206,27 +1206,6 @@ function IncidentsListPage({
     });
   };
 
-  const moveFieldOrder = (
-    fieldId: IncidentCallFieldId,
-    direction: "up" | "down",
-  ) => {
-    const currentIndex = callFieldOrder.indexOf(fieldId);
-    if (currentIndex < 0) {
-      return;
-    }
-
-    const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
-    if (nextIndex < 0 || nextIndex >= callFieldOrder.length) {
-      return;
-    }
-
-    const nextOrder = [...callFieldOrder];
-    const currentValue = nextOrder[currentIndex];
-    nextOrder[currentIndex] = nextOrder[nextIndex];
-    nextOrder[nextIndex] = currentValue;
-    saveCallFieldOrder(nextOrder);
-  };
-
   const handleFieldDrop = (targetFieldId: IncidentCallFieldId) => {
     if (!dragFieldId || dragFieldId === targetFieldId) {
       return;
@@ -1243,6 +1222,11 @@ function IncidentsListPage({
     nextOrder.splice(toIndex, 0, dragFieldId);
     saveCallFieldOrder(nextOrder);
     setDragFieldId(null);
+  };
+
+  const handleSaveFieldEditor = () => {
+    setDragFieldId(null);
+    setIsFieldEditorOpen(false);
   };
 
   return (
@@ -1289,44 +1273,44 @@ function IncidentsListPage({
         <article className="panel">
           <div className="panel-header">
             <h2>Incidents</h2>
-            <button
-              type="button"
-              className="link-button"
-              onClick={() => setIsFieldEditorOpen((previous) => !previous)}
-            >
-              Edit
-            </button>
+            {isFieldEditorOpen ? (
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={handleSaveFieldEditor}
+              >
+                Save
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="link-button"
+                onClick={() => setIsFieldEditorOpen(true)}
+              >
+                Edit
+              </button>
+            )}
           </div>
           {isFieldEditorOpen ? (
             <div className="field-editor-panel">
-              <p>Drag rows to reorder incident summary fields.</p>
+              <p>Drag rows using the handle to reorder incident summary fields.</p>
               <ul className="drag-order-list">
-                {callFieldOrder.map((fieldId, index) => (
+                {callFieldOrder.map((fieldId) => (
                   <li
                     key={`order-${fieldId}`}
                     draggable
                     onDragStart={() => setDragFieldId(fieldId)}
+                    onDragEnd={() => setDragFieldId(null)}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => handleFieldDrop(fieldId)}
                   >
-                    <span>{fieldLabelById[fieldId]}</span>
-                    <div className="field-order-controls">
-                      <button
-                        type="button"
-                        className="secondary-button compact-button"
-                        disabled={index === 0}
-                        onClick={() => moveFieldOrder(fieldId, "up")}
-                      >
-                        Up
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button compact-button"
-                        disabled={index === callFieldOrder.length - 1}
-                        onClick={() => moveFieldOrder(fieldId, "down")}
-                      >
-                        Down
-                      </button>
+                    <div className="drag-order-row">
+                      <span>{fieldLabelById[fieldId]}</span>
+                      <span className="drag-handle" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
                     </div>
                   </li>
                 ))}

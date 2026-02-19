@@ -544,8 +544,10 @@
 }
 
 .customization-header {
+  position: -webkit-sticky;
   position: sticky;
   top: 0;
+  align-self: start;
   z-index: 12;
   background-color: #edf2f8;
   border-bottom: 1px solid #dbe2ec;
@@ -1277,6 +1279,33 @@ tbody tr:last-of-type td {
   cursor: grab;
 }
 
+.drag-order-list li:active {
+  cursor: grabbing;
+}
+
+.drag-order-row {
+  width: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.drag-handle {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  opacity: 0.72;
+}
+
+.drag-handle span {
+  display: block;
+  width: 12px;
+  height: 2px;
+  border-radius: 999px;
+  background-color: #64748b;
+}
+
 .dispatch-info-line {
   margin: 0;
   color: #334155;
@@ -1454,14 +1483,15 @@ tbody tr:last-of-type td {
   font-weight: 600;
 }
 
-.dispatch-note-line {
+.timeline-list .dispatch-note-line {
   margin: 0;
   color: #334155;
   font-size: 0.81rem;
   line-height: 1.42;
 }
 
-.dispatch-note-line strong {
+.timeline-list .dispatch-note-line strong {
+  display: inline;
   color: #0f172a;
   font-size: 0.8rem;
 }
