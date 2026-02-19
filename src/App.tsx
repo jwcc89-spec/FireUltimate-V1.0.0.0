@@ -100,6 +100,7 @@ interface SubmenuPlaceholderPageProps {
 
 interface IncidentsListPageProps {
   incidentDisplaySettings: IncidentDisplaySettings;
+  onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
 }
 
 interface IncidentCallDetailPageProps {
@@ -1069,8 +1070,13 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   );
 }
 
-function IncidentsListPage({ incidentDisplaySettings }: IncidentsListPageProps) {
+function IncidentsListPage({
+  incidentDisplaySettings,
+  onSaveIncidentDisplaySettings,
+}: IncidentsListPageProps) {
   const navigate = useNavigate();
+  const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
+  const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
 
   const visibleStats = INCIDENT_QUEUE_STATS.filter(
     (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
@@ -1091,12 +1097,55 @@ function IncidentsListPage({ incidentDisplaySettings }: IncidentsListPageProps) 
       ) as Record<IncidentCallFieldId, string>,
     [],
   );
-  const callFieldHeaderLabel = callFieldOrder
-    .map((fieldId) => fieldLabelById[fieldId])
-    .join(" | ");
 
   const openCallDetail = (callNumber: string) => {
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
+  };
+
+  const saveCallFieldOrder = (nextOrder: IncidentCallFieldId[]) => {
+    onSaveIncidentDisplaySettings({
+      ...incidentDisplaySettings,
+      callFieldOrder: nextOrder,
+    });
+  };
+
+  const moveFieldOrder = (
+    fieldId: IncidentCallFieldId,
+    direction: "up" | "down",
+  ) => {
+    const currentIndex = callFieldOrder.indexOf(fieldId);
+    if (currentIndex < 0) {
+      return;
+    }
+
+    const nextIndex = direction === "up" ? currentIndex - 1 : currentIndex + 1;
+    if (nextIndex < 0 || nextIndex >= callFieldOrder.length) {
+      return;
+    }
+
+    const nextOrder = [...callFieldOrder];
+    const currentValue = nextOrder[currentIndex];
+    nextOrder[currentIndex] = nextOrder[nextIndex];
+    nextOrder[nextIndex] = currentValue;
+    saveCallFieldOrder(nextOrder);
+  };
+
+  const handleFieldDrop = (targetFieldId: IncidentCallFieldId) => {
+    if (!dragFieldId || dragFieldId === targetFieldId) {
+      return;
+    }
+
+    const fromIndex = callFieldOrder.indexOf(dragFieldId);
+    const toIndex = callFieldOrder.indexOf(targetFieldId);
+    if (fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+
+    const nextOrder = [...callFieldOrder];
+    nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(toIndex, 0, dragFieldId);
+    saveCallFieldOrder(nextOrder);
+    setDragFieldId(null);
   };
 
   return (
@@ -1142,17 +1191,68 @@ function IncidentsListPage({ incidentDisplaySettings }: IncidentsListPageProps) 
       <section className="panel-grid">
         <article className="panel">
           <div className="panel-header">
-            <h2>Incident Calls</h2>
-            <span className="panel-caption">
-              Condensed view for rapid incident scanning
-            </span>
+            <h2>Incidents</h2>
+            <button
+              type="button"
+              className="link-button"
+              onClick={() => setIsFieldEditorOpen((previous) => !previous)}
+            >
+              Edit
+            </button>
           </div>
+          {isFieldEditorOpen ? (
+            <div className="field-editor-panel">
+              <p>Drag rows to reorder incident summary fields.</p>
+              <ul className="drag-order-list">
+                {callFieldOrder.map((fieldId, index) => (
+                  <li
+                    key={`order-${fieldId}`}
+                    draggable
+                    onDragStart={() => setDragFieldId(fieldId)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleFieldDrop(fieldId)}
+                  >
+                    <span>{fieldLabelById[fieldId]}</span>
+                    <div className="field-order-controls">
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        disabled={index === 0}
+                        onClick={() => moveFieldOrder(fieldId, "up")}
+                      >
+                        Up
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        disabled={index === callFieldOrder.length - 1}
+                        onClick={() => moveFieldOrder(fieldId, "down")}
+                      >
+                        Down
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
           <div className="table-wrapper">
             <table>
               <thead>
                 <tr>
                   <th>Call #</th>
-                  <th>{callFieldHeaderLabel}</th>
+                  <th>
+                    <div className="dispatch-grid-line dispatch-grid-header">
+                      {callFieldOrder.map((fieldId) => (
+                        <span
+                          key={`header-${fieldId}`}
+                          className={`dispatch-field dispatch-field-${fieldId}`}
+                        >
+                          {fieldLabelById[fieldId]}
+                        </span>
+                      ))}
+                    </div>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -1175,11 +1275,16 @@ function IncidentsListPage({ incidentDisplaySettings }: IncidentsListPageProps) 
                     </td>
                     <td>
                       <div className="dispatch-info-cell">
-                        <p className="dispatch-info-condensed">
-                          {callFieldOrder
-                            .map((fieldId) => getCallFieldValue(call, fieldId))
-                            .join(" | ")}
-                        </p>
+                        <div className="dispatch-grid-line">
+                          {callFieldOrder.map((fieldId) => (
+                            <span
+                              key={`${call.callNumber}-${fieldId}`}
+                              className={`dispatch-field dispatch-field-${fieldId}`}
+                            >
+                              {getCallFieldValue(call, fieldId)}
+                            </span>
+                          ))}
+                        </div>
                       </div>
                     </td>
                   </tr>
@@ -1246,8 +1351,7 @@ function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
             <div className="call-info-line">
               <strong>Incident Details:</strong>
               <span>
-                Time of Dispatch {detail.receivedAt} | {detail.address} |{" "}
-                {detail.stillDistrict}
+                {detail.receivedAt} | {detail.address} | {detail.stillDistrict}
               </span>
             </div>
             <ChevronDown
@@ -1520,7 +1624,7 @@ function CustomizationSection({
   title,
   children,
   action,
-  defaultOpen = true,
+  defaultOpen = false,
 }: CustomizationSectionProps) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
 
@@ -1716,297 +1820,286 @@ function CustomizationPage({
 
   return (
     <section className="page-section">
-      <header className="page-header">
-        <div>
-          <h1>Admin Functions | Customization</h1>
-          <p>
-            Configure branding, incident display controls, submenu visibility, and
-            parsing setup.
-          </p>
-        </div>
-      </header>
+      <form className="panel-grid customization-form" onSubmit={handleSave}>
+        <header className="page-header customization-header">
+          <div>
+            <h1>Admin Functions | Customization</h1>
+            <p>
+              Configure branding, incident display controls, submenu visibility,
+              and parsing setup.
+            </p>
+            {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
+            {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+          </div>
+          <div className="header-actions">
+            <button type="submit" className="primary-button">
+              Save Customization
+            </button>
+          </div>
+        </header>
 
-      <form className="panel-grid" onSubmit={handleSave}>
-        <section className="panel-grid two-column">
-          <CustomizationSection title="Branding Controls">
-            <div className="settings-form">
-              <label htmlFor="org-name">Organization Name</label>
-              <input
-                id="org-name"
-                type="text"
-                value={organizationName}
-                onChange={(event) => setOrganizationName(event.target.value)}
-              />
+        <CustomizationSection title="Branding Controls">
+          <div className="settings-form">
+            <label htmlFor="org-name">Organization Name</label>
+            <input
+              id="org-name"
+              type="text"
+              value={organizationName}
+              onChange={(event) => setOrganizationName(event.target.value)}
+            />
 
-              <label htmlFor="logo-upload">Organization Logo</label>
-              <input
-                id="logo-upload"
-                type="file"
-                accept="image/*"
-                onChange={(event) =>
-                  setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
-                }
-              />
-              <p className="field-hint">Selected file: {logoFileName}</p>
+            <label htmlFor="logo-upload">Organization Logo</label>
+            <input
+              id="logo-upload"
+              type="file"
+              accept="image/*"
+              onChange={(event) =>
+                setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
+              }
+            />
+            <p className="field-hint">Selected file: {logoFileName}</p>
 
-              <label htmlFor="primary-color">Primary Color</label>
-              <input
-                id="primary-color"
-                type="color"
-                value={primaryColor}
-                onChange={(event) => setPrimaryColor(event.target.value)}
-              />
+            <label htmlFor="primary-color">Primary Color</label>
+            <input
+              id="primary-color"
+              type="color"
+              value={primaryColor}
+              onChange={(event) => setPrimaryColor(event.target.value)}
+            />
 
-              <label htmlFor="accent-color">Accent Color</label>
-              <input
-                id="accent-color"
-                type="color"
-                value={accentColor}
-                onChange={(event) => setAccentColor(event.target.value)}
-              />
-            </div>
-          </CustomizationSection>
+            <label htmlFor="accent-color">Accent Color</label>
+            <input
+              id="accent-color"
+              type="color"
+              value={accentColor}
+              onChange={(event) => setAccentColor(event.target.value)}
+            />
+          </div>
+        </CustomizationSection>
 
-          <CustomizationSection
-            title="Dispatch Workflow States"
-            action={
-              <button type="button" className="link-button" onClick={resetWorkflowStates}>
-                Reset to default
-              </button>
-            }
-          >
-            <div className="settings-form">
-              {workflowDraft.map((state, index) => (
-                <div key={`${state}-${index}`} className="state-edit-row">
-                  <input
-                    type="text"
-                    value={state}
-                    onChange={(event) => updateWorkflowState(index, event.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={() => removeWorkflowState(index)}
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-
-              <div className="state-edit-row">
+        <CustomizationSection
+          title="Dispatch Workflow States"
+          action={
+            <button type="button" className="link-button" onClick={resetWorkflowStates}>
+              Reset to default
+            </button>
+          }
+        >
+          <div className="settings-form">
+            {workflowDraft.map((state, index) => (
+              <div key={`${state}-${index}`} className="state-edit-row">
                 <input
                   type="text"
-                  value={newState}
-                  placeholder="Add new workflow state"
-                  onChange={(event) => setNewState(event.target.value)}
+                  value={state}
+                  onChange={(event) => updateWorkflowState(index, event.target.value)}
                 />
                 <button
                   type="button"
                   className="secondary-button compact-button"
-                  onClick={addWorkflowState}
+                  onClick={() => removeWorkflowState(index)}
                 >
-                  Add
+                  Remove
                 </button>
               </div>
+            ))}
 
-              <small className="field-hint">
-                Standard states: {DEFAULT_DISPATCH_WORKFLOW_STATES.join(", ")}
-              </small>
+            <div className="state-edit-row">
+              <input
+                type="text"
+                value={newState}
+                placeholder="Add new workflow state"
+                onChange={(event) => setNewState(event.target.value)}
+              />
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={addWorkflowState}
+              >
+                Add
+              </button>
             </div>
-          </CustomizationSection>
-        </section>
 
-        <section className="panel-grid two-column">
-          <CustomizationSection title="Incidents Display Settings">
-            <div className="settings-form">
-              <label>Incident stat boxes (show/hide)</label>
-              <ul className="settings-list">
-                {INCIDENT_QUEUE_STATS.map((stat) => {
-                  const isHidden = incidentSettingsDraft.hiddenStatIds.includes(stat.id);
-                  return (
-                    <li key={stat.id}>
+            <small className="field-hint">
+              Standard states: {DEFAULT_DISPATCH_WORKFLOW_STATES.join(", ")}
+            </small>
+          </div>
+        </CustomizationSection>
+
+        <CustomizationSection title="Incidents Display Settings">
+          <div className="settings-form">
+            <label>Incident stat boxes (show/hide)</label>
+            <ul className="settings-list">
+              {INCIDENT_QUEUE_STATS.map((stat) => {
+                const isHidden = incidentSettingsDraft.hiddenStatIds.includes(stat.id);
+                return (
+                  <li key={stat.id}>
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={!isHidden}
+                        onChange={() => toggleIncidentStatVisibility(stat.id)}
+                      />
+                      <span>{stat.label}</span>
+                    </label>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </CustomizationSection>
+
+        <CustomizationSection title="Incident Call Field Visibility & Row Order">
+          <div className="settings-form">
+            <ul className="settings-list field-order-list">
+              {INCIDENT_CALL_FIELD_OPTIONS.map((field) => {
+                const orderIndex = visibleCallFieldOrder.indexOf(field.id);
+                const isVisible = orderIndex >= 0;
+                return (
+                  <li key={field.id}>
+                    <div className="field-order-row">
                       <label>
                         <input
                           type="checkbox"
-                          checked={!isHidden}
-                          onChange={() => toggleIncidentStatVisibility(stat.id)}
+                          checked={isVisible}
+                          onChange={() => toggleCallFieldVisibility(field.id)}
                         />
-                        <span>{stat.label}</span>
+                        <span>{field.label}</span>
+                      </label>
+                      <div className="field-order-controls">
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          disabled={!isVisible || orderIndex === 0}
+                          onClick={() => moveCallField(field.id, "up")}
+                        >
+                          Up
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          disabled={
+                            !isVisible ||
+                            orderIndex === visibleCallFieldOrder.length - 1
+                          }
+                          onClick={() => moveCallField(field.id, "down")}
+                        >
+                          Down
+                        </button>
+                      </div>
+                    </div>
+                    <small>{field.description}</small>
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        </CustomizationSection>
+
+        <CustomizationSection title="Submenu Display Settings">
+          <div className="settings-form">
+            <p className="field-hint">
+              Each submenu has a visibility setting to control whether it appears
+              in menu card displays and Edit Display selections.
+            </p>
+            {MAIN_MENUS.filter((menu) => menu.submenus.length > 0).map((menu) => (
+              <div key={`submenu-settings-${menu.id}`} className="submenu-settings-group">
+                <h3>{menu.title}</h3>
+                <ul className="settings-list">
+                  {menu.submenus.map((submenu) => (
+                    <li key={`${menu.id}-${submenu.path}`}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={submenuVisibilityDraft[submenu.path] !== false}
+                          onChange={() => toggleSubmenuVisibility(submenu.path)}
+                        />
+                        <span>{submenu.label}</span>
                       </label>
                     </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </CustomizationSection>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        </CustomizationSection>
 
-          <CustomizationSection title="Incident Call Field Visibility & Row Order">
-            <div className="settings-form">
-              <ul className="settings-list field-order-list">
-                {INCIDENT_CALL_FIELD_OPTIONS.map((field) => {
-                  const orderIndex = visibleCallFieldOrder.indexOf(field.id);
-                  const isVisible = orderIndex >= 0;
-                  return (
-                    <li key={field.id}>
-                      <div className="field-order-row">
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={isVisible}
-                            onChange={() => toggleCallFieldVisibility(field.id)}
-                          />
-                          <span>{field.label}</span>
-                        </label>
-                        <div className="field-order-controls">
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            disabled={!isVisible || orderIndex === 0}
-                            onClick={() => moveCallField(field.id, "up")}
-                          >
-                            Up
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            disabled={
-                              !isVisible ||
-                              orderIndex === visibleCallFieldOrder.length - 1
-                            }
-                            onClick={() => moveCallField(field.id, "down")}
-                          >
-                            Down
-                          </button>
-                        </div>
-                      </div>
-                      <small>{field.description}</small>
-                    </li>
-                  );
-                })}
-              </ul>
-            </div>
-          </CustomizationSection>
-        </section>
-
-        <section className="panel-grid two-column">
-          <CustomizationSection title="Submenu Display Settings">
-            <div className="settings-form">
-              <p className="field-hint">
-                Each submenu has a visibility setting to control whether it appears
-                in menu card displays and Edit Display selections.
-              </p>
-              {MAIN_MENUS.filter((menu) => menu.submenus.length > 0).map((menu) => (
-                <div key={`submenu-settings-${menu.id}`} className="submenu-settings-group">
-                  <h3>{menu.title}</h3>
-                  <ul className="settings-list">
-                    {menu.submenus.map((submenu) => (
-                      <li key={`${menu.id}-${submenu.path}`}>
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={submenuVisibilityDraft[submenu.path] !== false}
-                            onChange={() => toggleSubmenuVisibility(submenu.path)}
-                          />
-                          <span>{submenu.label}</span>
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
-                </div>
+        <CustomizationSection title="Parsing Setup">
+          <div className="settings-form">
+            <label htmlFor="parsing-call-select">Dispatch feed preview call</label>
+            <select
+              id="parsing-call-select"
+              value={selectedParsingCall}
+              onChange={(event) => setSelectedParsingCall(event.target.value)}
+            >
+              {DISPATCH_PARSING_PREVIEW.map((row) => (
+                <option key={row.callNumber} value={row.callNumber}>
+                  {row.callNumber}
+                </option>
               ))}
-            </div>
-          </CustomizationSection>
+            </select>
 
-          <CustomizationSection title="Parsing Setup">
-            <div className="settings-form">
-              <label htmlFor="parsing-call-select">Dispatch feed preview call</label>
-              <select
-                id="parsing-call-select"
-                value={selectedParsingCall}
-                onChange={(event) => setSelectedParsingCall(event.target.value)}
-              >
-                {DISPATCH_PARSING_PREVIEW.map((row) => (
-                  <option key={row.callNumber} value={row.callNumber}>
-                    {row.callNumber}
-                  </option>
-                ))}
-              </select>
+            {parsingRow ? (
+              <div className="parsing-preview">
+                <p>
+                  <strong>Received:</strong> {parsingRow.receivedAt}
+                </p>
+                <p>
+                  <strong>Parsed:</strong> {parsingRow.parsedSummary}
+                </p>
+                <p>
+                  <strong>Raw:</strong>
+                </p>
+                <pre>{parsingRow.rawMessage}</pre>
+              </div>
+            ) : null}
 
-              {parsingRow ? (
-                <div className="parsing-preview">
-                  <p>
-                    <strong>Received:</strong> {parsingRow.receivedAt}
-                  </p>
-                  <p>
-                    <strong>Parsed:</strong> {parsingRow.parsedSummary}
-                  </p>
-                  <p>
-                    <strong>Raw:</strong>
-                  </p>
-                  <pre>{parsingRow.rawMessage}</pre>
-                </div>
-              ) : null}
-
-              <label>Incoming calls from dispatch</label>
-              <div className="table-wrapper">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Received</th>
-                      <th>Call #</th>
-                      <th>Parsed Summary</th>
+            <label>Incoming calls from dispatch</label>
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Received</th>
+                    <th>Call #</th>
+                    <th>Parsed Summary</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {DISPATCH_PARSING_PREVIEW.map((row) => (
+                    <tr key={`parse-${row.callNumber}`}>
+                      <td>{row.receivedAt}</td>
+                      <td>{row.callNumber}</td>
+                      <td>{row.parsedSummary}</td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {DISPATCH_PARSING_PREVIEW.map((row) => (
-                      <tr key={`parse-${row.callNumber}`}>
-                        <td>{row.receivedAt}</td>
-                        <td>{row.callNumber}</td>
-                        <td>{row.parsedSummary}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
-          </CustomizationSection>
-        </section>
+          </div>
+        </CustomizationSection>
 
-        <section className="panel-grid two-column">
-          <CustomizationSection title="Preview">
-            <div className="branding-preview">
-              <div
-                className="branding-preview-banner"
-                style={{
-                  background: `linear-gradient(120deg, ${primaryColor} 0%, ${accentColor} 100%)`,
-                }}
-              >
-                <span>{organizationName || "Organization Name"}</span>
-              </div>
-              <p>
-                Branding preview only. Future backend integration will persist
-                these choices per organization.
-              </p>
-              <ul className="workflow-chip-list">
-                {workflowDraft.map((state) => (
-                  <li key={`preview-${state}`} className="workflow-chip">
-                    {state}
-                  </li>
-                ))}
-              </ul>
+        <CustomizationSection title="Preview">
+          <div className="branding-preview">
+            <div
+              className="branding-preview-banner"
+              style={{
+                background: `linear-gradient(120deg, ${primaryColor} 0%, ${accentColor} 100%)`,
+              }}
+            >
+              <span>{organizationName || "Organization Name"}</span>
             </div>
-          </CustomizationSection>
-
-          <CustomizationSection title="Save Configuration">
-            <div className="settings-form">
-              <button type="submit" className="primary-button">
-                Save Customization
-              </button>
-              {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
-              {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
-            </div>
-          </CustomizationSection>
-        </section>
+            <p>
+              Branding preview only. Future backend integration will persist
+              these choices per organization.
+            </p>
+            <ul className="workflow-chip-list">
+              {workflowDraft.map((state) => (
+                <li key={`preview-${state}`} className="workflow-chip">
+                  {state}
+                </li>
+              ))}
+            </ul>
+          </div>
+        </CustomizationSection>
       </form>
     </section>
   );
@@ -2218,7 +2311,12 @@ function RouteResolver({
   }
 
   if (path === "/incidents-mapping/incidents") {
-    return <IncidentsListPage incidentDisplaySettings={incidentDisplaySettings} />;
+    return (
+      <IncidentsListPage
+        incidentDisplaySettings={incidentDisplaySettings}
+        onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
+      />
+    );
   }
 
   if (path.startsWith("/incidents-mapping/incidents/")) {
