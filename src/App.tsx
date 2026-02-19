@@ -132,11 +132,73 @@ interface CustomizationSectionProps {
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
 type SubmenuVisibilityMap = Record<string, boolean>;
 
-const SESSION_STORAGE_KEY = "stationboss-mimic-session";
-const DISPLAY_CARD_STORAGE_KEY = "stationboss-mimic-display-cards";
-const WORKFLOW_STATE_STORAGE_KEY = "stationboss-mimic-workflow-states";
-const INCIDENT_DISPLAY_STORAGE_KEY = "stationboss-mimic-incident-display";
-const SUBMENU_VISIBILITY_STORAGE_KEY = "stationboss-mimic-submenu-visibility";
+const SESSION_STORAGE_KEY = "fire-ultimate-session";
+const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
+const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
+const INCIDENT_DISPLAY_STORAGE_KEY = "fire-ultimate-incident-display";
+const SUBMENU_VISIBILITY_STORAGE_KEY = "fire-ultimate-submenu-visibility";
+
+const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
+const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
+const LEGACY_WORKFLOW_STATE_STORAGE_KEYS = ["stationboss-mimic-workflow-states"] as const;
+const LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS = ["stationboss-mimic-incident-display"] as const;
+const LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS = [
+  "stationboss-mimic-submenu-visibility",
+] as const;
+
+function readStorageWithMigration(
+  storageKey: string,
+  legacyKeys: readonly string[],
+): string | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const currentValue = window.localStorage.getItem(storageKey);
+  if (currentValue !== null) {
+    for (const legacyKey of legacyKeys) {
+      window.localStorage.removeItem(legacyKey);
+    }
+    return currentValue;
+  }
+
+  for (const legacyKey of legacyKeys) {
+    const legacyValue = window.localStorage.getItem(legacyKey);
+    if (legacyValue !== null) {
+      window.localStorage.setItem(storageKey, legacyValue);
+      window.localStorage.removeItem(legacyKey);
+      return legacyValue;
+    }
+  }
+
+  return null;
+}
+
+function writeStorageValue(
+  storageKey: string,
+  legacyKeys: readonly string[],
+  value: string,
+): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.setItem(storageKey, value);
+  for (const legacyKey of legacyKeys) {
+    window.localStorage.removeItem(legacyKey);
+  }
+}
+
+function clearStorageValue(storageKey: string, legacyKeys: readonly string[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  window.localStorage.removeItem(storageKey);
+  for (const legacyKey of legacyKeys) {
+    window.localStorage.removeItem(legacyKey);
+  }
+}
 
 const EMPTY_SESSION: SessionState = {
   isAuthenticated: false,
@@ -250,7 +312,10 @@ function readSession(): SessionState {
     return EMPTY_SESSION;
   }
 
-  const rawValue = window.localStorage.getItem(SESSION_STORAGE_KEY);
+  const rawValue = readStorageWithMigration(
+    SESSION_STORAGE_KEY,
+    LEGACY_SESSION_STORAGE_KEYS,
+  );
   if (!rawValue) {
     return EMPTY_SESSION;
   }
@@ -278,11 +343,15 @@ function writeSession(session: SessionState): void {
   }
 
   if (!session.isAuthenticated) {
-    window.localStorage.removeItem(SESSION_STORAGE_KEY);
+    clearStorageValue(SESSION_STORAGE_KEY, LEGACY_SESSION_STORAGE_KEYS);
     return;
   }
 
-  window.localStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
+  writeStorageValue(
+    SESSION_STORAGE_KEY,
+    LEGACY_SESSION_STORAGE_KEYS,
+    JSON.stringify(session),
+  );
 }
 
 function readDisplayCardConfig(): DisplayCardConfig {
@@ -290,7 +359,10 @@ function readDisplayCardConfig(): DisplayCardConfig {
     return {};
   }
 
-  const rawValue = window.localStorage.getItem(DISPLAY_CARD_STORAGE_KEY);
+  const rawValue = readStorageWithMigration(
+    DISPLAY_CARD_STORAGE_KEY,
+    LEGACY_DISPLAY_CARD_STORAGE_KEYS,
+  );
   if (!rawValue) {
     return {};
   }
@@ -311,7 +383,11 @@ function writeDisplayCardConfig(config: DisplayCardConfig): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(DISPLAY_CARD_STORAGE_KEY, JSON.stringify(config));
+  writeStorageValue(
+    DISPLAY_CARD_STORAGE_KEY,
+    LEGACY_DISPLAY_CARD_STORAGE_KEYS,
+    JSON.stringify(config),
+  );
 }
 
 function readWorkflowStates(): string[] {
@@ -319,7 +395,10 @@ function readWorkflowStates(): string[] {
     return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
   }
 
-  const rawValue = window.localStorage.getItem(WORKFLOW_STATE_STORAGE_KEY);
+  const rawValue = readStorageWithMigration(
+    WORKFLOW_STATE_STORAGE_KEY,
+    LEGACY_WORKFLOW_STATE_STORAGE_KEYS,
+  );
   if (!rawValue) {
     return [...DEFAULT_DISPATCH_WORKFLOW_STATES];
   }
@@ -342,7 +421,11 @@ function writeWorkflowStates(states: string[]): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(WORKFLOW_STATE_STORAGE_KEY, JSON.stringify(states));
+  writeStorageValue(
+    WORKFLOW_STATE_STORAGE_KEY,
+    LEGACY_WORKFLOW_STATE_STORAGE_KEYS,
+    JSON.stringify(states),
+  );
 }
 
 function readIncidentDisplaySettings(): IncidentDisplaySettings {
@@ -350,7 +433,10 @@ function readIncidentDisplaySettings(): IncidentDisplaySettings {
     return getDefaultIncidentDisplaySettings();
   }
 
-  const rawValue = window.localStorage.getItem(INCIDENT_DISPLAY_STORAGE_KEY);
+  const rawValue = readStorageWithMigration(
+    INCIDENT_DISPLAY_STORAGE_KEY,
+    LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS,
+  );
   if (!rawValue) {
     return getDefaultIncidentDisplaySettings();
   }
@@ -367,7 +453,11 @@ function writeIncidentDisplaySettings(settings: IncidentDisplaySettings): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(INCIDENT_DISPLAY_STORAGE_KEY, JSON.stringify(settings));
+  writeStorageValue(
+    INCIDENT_DISPLAY_STORAGE_KEY,
+    LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS,
+    JSON.stringify(settings),
+  );
 }
 
 function readSubmenuVisibility(): SubmenuVisibilityMap {
@@ -376,7 +466,10 @@ function readSubmenuVisibility(): SubmenuVisibilityMap {
     return defaults;
   }
 
-  const rawValue = window.localStorage.getItem(SUBMENU_VISIBILITY_STORAGE_KEY);
+  const rawValue = readStorageWithMigration(
+    SUBMENU_VISIBILITY_STORAGE_KEY,
+    LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS,
+  );
   if (!rawValue) {
     return defaults;
   }
@@ -403,7 +496,11 @@ function writeSubmenuVisibility(next: SubmenuVisibilityMap): void {
   if (typeof window === "undefined") {
     return;
   }
-  window.localStorage.setItem(SUBMENU_VISIBILITY_STORAGE_KEY, JSON.stringify(next));
+  writeStorageValue(
+    SUBMENU_VISIBILITY_STORAGE_KEY,
+    LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS,
+    JSON.stringify(next),
+  );
 }
 
 function getCallFieldValue(
