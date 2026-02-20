@@ -162,7 +162,7 @@
 .shell-layout {
   min-height: 100vh;
   display: grid;
-  grid-template-columns: 316px minmax(0, 1fr);
+  grid-template-columns: var(--shell-sidebar-width, 316px) 8px minmax(0, 1fr);
   background-color: #edf2f8;
 }
 
@@ -181,6 +181,36 @@
   top: 0;
   overflow-y: auto;
   padding: 0.95rem 0.8rem 1rem;
+}
+
+.sidebar-resizer {
+  width: 8px;
+  cursor: col-resize;
+  position: relative;
+  background-color: transparent;
+}
+
+.sidebar-resizer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    to right,
+    transparent 0,
+    rgba(148, 163, 184, 0.26) 50%,
+    transparent 100%
+  );
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+
+.sidebar-resizer:hover::before {
+  opacity: 1;
+}
+
+body.resizing-shell-sidebar {
+  cursor: col-resize;
+  user-select: none;
 }
 
 .sidebar-brand {
@@ -217,7 +247,7 @@
 
 .nav-groups {
   display: grid;
-  gap: 0.45rem;
+  gap: 0.34rem;
 }
 
 .nav-module {
@@ -241,7 +271,7 @@
   display: inline-flex;
   align-items: center;
   gap: 0.6rem;
-  padding: 0.55rem 0.7rem;
+  padding: 0.42rem 0.68rem;
   color: #cbd5e1;
   border-radius: 10px;
   font-size: 0.88rem;
@@ -289,7 +319,7 @@
 .submenu-links {
   display: none;
   padding: 0 0.55rem 0.6rem 2.05rem;
-  gap: 0.35rem;
+  gap: 0.26rem;
 }
 
 .submenu-links.open {
@@ -299,7 +329,7 @@
 .submenu-link {
   font-size: 0.79rem;
   color: #a8b3c7;
-  padding: 0.28rem 0.45rem;
+  padding: 0.21rem 0.4rem;
   border-radius: 7px;
 }
 
@@ -1890,6 +1920,12 @@ body.resizing-dispatch-columns {
 .neris-sidebar {
   padding: 0;
   overflow: hidden;
+  position: sticky;
+  top: 0.65rem;
+  align-self: start;
+  max-height: calc(100vh - 1.3rem);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .neris-sidebar-header {
@@ -1912,6 +1948,7 @@ body.resizing-dispatch-columns {
 
 .neris-section-nav {
   display: grid;
+  overflow-y: auto;
 }
 
 .neris-section-nav button {
@@ -1948,11 +1985,11 @@ body.resizing-dispatch-columns {
 }
 
 .neris-core-field-heading {
-  font-size: 0.83rem;
+  font-size: 1.2rem;
   font-weight: 800;
   letter-spacing: 0.03em;
   color: #0f172a;
-  margin-top: 0.25rem;
+  margin-top: 0.32rem;
 }
 
 .neris-field-grid {
@@ -2129,6 +2166,10 @@ body.resizing-dispatch-columns {
     grid-template-columns: minmax(0, 1fr);
   }
 
+  .sidebar-resizer {
+    display: none;
+  }
+
   .sidebar {
     position: fixed;
     inset: 0 auto 0 0;
@@ -2175,6 +2216,12 @@ body.resizing-dispatch-columns {
 
   .neris-report-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-sidebar {
+    position: static;
+    top: auto;
+    max-height: none;
   }
 
   .incident-detail-split {

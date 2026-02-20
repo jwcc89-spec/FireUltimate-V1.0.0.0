@@ -1403,7 +1403,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
       operator: "equals",
       value: "YES",
     },
-    layout: "half",
+    layout: "full",
   },
   {
     id: "incident_displaced_cause",

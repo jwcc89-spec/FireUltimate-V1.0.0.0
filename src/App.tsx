@@ -162,6 +162,7 @@ const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
 const INCIDENT_DISPLAY_STORAGE_KEY = "fire-ultimate-incident-display";
 const SUBMENU_VISIBILITY_STORAGE_KEY = "fire-ultimate-submenu-visibility";
+const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -169,6 +170,9 @@ const LEGACY_WORKFLOW_STATE_STORAGE_KEYS = ["stationboss-mimic-workflow-states"]
 const LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS = ["stationboss-mimic-incident-display"] as const;
 const LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS = [
   "stationboss-mimic-submenu-visibility",
+] as const;
+const LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS = [
+  "stationboss-mimic-shell-sidebar-width",
 ] as const;
 
 function readStorageWithMigration(
@@ -240,6 +244,9 @@ const VALID_CALL_FIELD_IDS = new Set<IncidentCallFieldId>(
 );
 const MIN_CALL_FIELD_WIDTH = 100;
 const MAX_CALL_FIELD_WIDTH = 560;
+const DEFAULT_SHELL_SIDEBAR_WIDTH = 316;
+const MIN_SHELL_SIDEBAR_WIDTH = 220;
+const MAX_SHELL_SIDEBAR_WIDTH = 520;
 const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   incidentType: 180,
   priority: 120,
@@ -581,6 +588,42 @@ function writeSubmenuVisibility(next: SubmenuVisibilityMap): void {
   );
 }
 
+function readShellSidebarWidth(): number {
+  if (typeof window === "undefined") {
+    return DEFAULT_SHELL_SIDEBAR_WIDTH;
+  }
+  const rawValue = readStorageWithMigration(
+    SHELL_SIDEBAR_WIDTH_STORAGE_KEY,
+    LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS,
+  );
+  if (!rawValue) {
+    return DEFAULT_SHELL_SIDEBAR_WIDTH;
+  }
+  const parsedWidth = Number.parseInt(rawValue, 10);
+  if (Number.isNaN(parsedWidth)) {
+    return DEFAULT_SHELL_SIDEBAR_WIDTH;
+  }
+  return Math.min(
+    MAX_SHELL_SIDEBAR_WIDTH,
+    Math.max(MIN_SHELL_SIDEBAR_WIDTH, parsedWidth),
+  );
+}
+
+function writeShellSidebarWidth(width: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const clampedWidth = Math.min(
+    MAX_SHELL_SIDEBAR_WIDTH,
+    Math.max(MIN_SHELL_SIDEBAR_WIDTH, Math.round(width)),
+  );
+  writeStorageValue(
+    SHELL_SIDEBAR_WIDTH_STORAGE_KEY,
+    LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS,
+    String(clampedWidth),
+  );
+}
+
 function getCallFieldValue(
   call: (typeof INCIDENT_CALLS)[number],
   fieldId: IncidentCallFieldId,
@@ -736,9 +779,16 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
+    readShellSidebarWidth(),
+  );
   const [expandedMenuId, setExpandedMenuId] = useState<MainMenuId | null>(
     "incidentsMapping",
   );
+  const activeSidebarResize = useRef<{ startX: number; startWidth: number } | null>(
+    null,
+  );
+  const sidebarWidthRef = useRef(sidebarWidth);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -803,8 +853,60 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     navigate("/auth", { replace: true });
   };
 
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeSidebarResize.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_SHELL_SIDEBAR_WIDTH,
+        Math.max(MIN_SHELL_SIDEBAR_WIDTH, activeResize.startWidth + delta),
+      );
+      setSidebarWidth((previous) => (previous === nextWidth ? previous : nextWidth));
+    };
+
+    const stopResize = () => {
+      if (!activeSidebarResize.current) {
+        return;
+      }
+      activeSidebarResize.current = null;
+      document.body.classList.remove("resizing-shell-sidebar");
+      writeShellSidebarWidth(sidebarWidthRef.current);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-shell-sidebar");
+    };
+  }, []);
+
+  const startSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (mobileNavOpen) {
+      return;
+    }
+    event.preventDefault();
+    activeSidebarResize.current = {
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+    };
+    document.body.classList.add("resizing-shell-sidebar");
+  };
+
+  const shellLayoutStyle = {
+    "--shell-sidebar-width": `${sidebarWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="shell-layout">
+    <div className="shell-layout" style={shellLayoutStyle}>
       {mobileNavOpen ? (
         <button
           type="button"
@@ -899,6 +1001,14 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
           })}
         </nav>
       </aside>
+
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize main navigation sidebar"
+        onPointerDown={startSidebarResize}
+      />
 
       <div className="main-shell">
         <header className="topbar">
@@ -3041,6 +3151,12 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       field.id === "incident_people_present" &&
       field.inputKind === "select" &&
       field.optionsKey === "yes_no";
+    const isDisplacedNumberField =
+      field.id === "incident_displaced_number" && field.inputKind === "text";
+    const isDisplacementCauseField =
+      field.id === "incident_displaced_cause" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "displace_cause_incident";
     const isAidGivenQuestionField =
       field.id === "incident_has_aid" &&
       field.inputKind === "select" &&
@@ -3104,6 +3220,9 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       field.id === "incident_displaced_cause" &&
       (Number.isNaN(displacedNumberValue) || displacedNumberValue <= 0)
     ) {
+      return null;
+    }
+    if (isDisplacedNumberField && (formValues.incident_people_present ?? "") !== "YES") {
       return null;
     }
     if (isAidManagedHiddenField) {
@@ -3431,6 +3550,15 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
               placeholder="Select special incident modifier(s)"
               searchPlaceholder="Search special modifiers..."
             />
+          ) : isDisplacementCauseField ? (
+            <NerisFlatMultiOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder="Select displacement cause(s)"
+              searchPlaceholder="Search displacement causes..."
+            />
           ) : isActionsTakenField ? (
             <NerisGroupedOptionSelect
               inputId={inputId}
@@ -3566,15 +3694,11 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         </aside>
 
         <article className="panel neris-form-panel">
-          <div className="panel-header">
-            <h2
-              className={currentSection.id === "core" ? "neris-core-section-title" : undefined}
-            >
-              {currentSection.id === "core"
-                ? currentSection.label.toUpperCase()
-                : currentSection.label}
-            </h2>
-          </div>
+          {currentSection.id !== "core" ? (
+            <div className="panel-header">
+              <h2>{currentSection.label}</h2>
+            </div>
+          ) : null}
           {currentSection.id !== "core" ? (
             <p className="panel-description">{currentSection.helper}</p>
           ) : null}
