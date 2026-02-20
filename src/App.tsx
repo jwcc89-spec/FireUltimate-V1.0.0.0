@@ -432,9 +432,9 @@ function normalizeIncidentDisplaySettings(
 
 function getDefaultNerisExportSettings(): NerisExportSettings {
   return {
-    exportUrl: "",
+    exportUrl: "/api/neris/export",
     vendorCode: "",
-    vendorHeaderName: "X-NERIS-Vendor-Code",
+    vendorHeaderName: "X-NERIS-Entity-ID",
     secretKey: "",
     authHeaderName: "Authorization",
     authScheme: "Bearer",
@@ -3483,9 +3483,11 @@ function NerisReportFormPage({
   };
 
   const handleExportReport = async () => {
+    const defaultExportSettings = getDefaultNerisExportSettings();
     const exportUrl =
       nerisExportSettings.exportUrl.trim() ||
-      String(import.meta.env.VITE_NERIS_EXPORT_URL ?? "").trim();
+      String(import.meta.env.VITE_NERIS_EXPORT_URL ?? "").trim() ||
+      defaultExportSettings.exportUrl;
     const vendorCode =
       nerisExportSettings.vendorCode.trim() ||
       String(import.meta.env.VITE_NERIS_VENDOR_CODE ?? "").trim();
@@ -3495,20 +3497,22 @@ function NerisReportFormPage({
     const vendorHeaderName =
       nerisExportSettings.vendorHeaderName.trim() ||
       String(import.meta.env.VITE_NERIS_VENDOR_HEADER_NAME ?? "").trim() ||
-      "X-NERIS-Vendor-Code";
+      defaultExportSettings.vendorHeaderName;
     const authHeaderName =
       nerisExportSettings.authHeaderName.trim() ||
       String(import.meta.env.VITE_NERIS_AUTH_HEADER_NAME ?? "").trim() ||
-      "Authorization";
+      defaultExportSettings.authHeaderName;
     const authScheme =
       nerisExportSettings.authScheme.trim() ||
-      String(import.meta.env.VITE_NERIS_AUTH_SCHEME ?? "").trim();
+      String(import.meta.env.VITE_NERIS_AUTH_SCHEME ?? "").trim() ||
+      defaultExportSettings.authScheme;
     const contentType =
       nerisExportSettings.contentType.trim() ||
       String(import.meta.env.VITE_NERIS_CONTENT_TYPE ?? "").trim() ||
-      "application/json";
+      defaultExportSettings.contentType;
     const apiVersionHeaderName = nerisExportSettings.apiVersionHeaderName.trim();
     const apiVersionHeaderValue = nerisExportSettings.apiVersionHeaderValue.trim();
+    const isProxyRequest = exportUrl.startsWith("/api/neris/");
     if (!exportUrl) {
       setErrorMessage(
         "Export is not configured. Add Export URL in Admin Functions > Customization > NERIS Export Configuration.",
@@ -3528,6 +3532,18 @@ function NerisReportFormPage({
       exportedAt: new Date().toISOString(),
       source: "Fire Ultimate Prototype",
       formValues,
+      incidentSnapshot: {
+        incidentType: detail.incidentType,
+        address: detail.address,
+        receivedAt: detail.receivedAt,
+        assignedUnits: detail.assignedUnits,
+      },
+      integration: {
+        entityId: vendorCode,
+        contentType,
+        apiVersionHeaderName,
+        apiVersionHeaderValue,
+      },
       additionalAidEntries: additionalAidEntries.map((entry) => ({
         aidDirection: entry.aidDirection,
         aidType: entry.aidType,
@@ -3540,7 +3556,7 @@ function NerisReportFormPage({
     if (vendorCode && vendorHeaderName) {
       headers[vendorHeaderName] = vendorCode;
     }
-    if (secretKey) {
+    if (!isProxyRequest && secretKey) {
       headers[authHeaderName] = authScheme
         ? `${authScheme} ${secretKey}`
         : secretKey;
@@ -3574,14 +3590,30 @@ function NerisReportFormPage({
           }`,
         );
       }
+      let responseJson: Record<string, unknown> | null = null;
+      try {
+        responseJson = responseText
+          ? (JSON.parse(responseText) as Record<string, unknown>)
+          : null;
+      } catch {
+        responseJson = null;
+      }
       const exportedAt = new Date().toLocaleTimeString("en-US", {
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
         hour12: false,
       });
+      const nerisId =
+        typeof responseJson?.neris === "object" &&
+        responseJson.neris &&
+        typeof (responseJson.neris as Record<string, unknown>).neris_id === "string"
+          ? ((responseJson.neris as Record<string, unknown>).neris_id as string)
+          : "";
       setSaveMessage(
-        `Report export submitted for ${detail.callNumber} at ${exportedAt}.`,
+        nerisId
+          ? `Report export accepted for ${detail.callNumber} at ${exportedAt}. NERIS ID: ${nerisId}`
+          : `Report export submitted for ${detail.callNumber} at ${exportedAt}.`,
       );
     } catch (error) {
       const reason = error instanceof Error ? error.message : "Unknown export error.";
@@ -4930,7 +4962,8 @@ function CustomizationPage({
           <div className="settings-form">
             <p className="field-hint">
               Enter the API values needed for the Export button on NERIS reports.
-              These settings are stored in this browser only.
+              These settings are stored in this browser only. In proxy mode,
+              credentials should be set on the server in <code>.env.server</code>.
             </p>
 
             <label htmlFor="neris-export-url">Export URL (endpoint)</label>
@@ -4944,17 +4977,18 @@ function CustomizationPage({
               }
             />
 
-            <label htmlFor="neris-vendor-code">Vendor / Department code</label>
+            <label htmlFor="neris-vendor-code">NERIS Entity ID</label>
             <input
               id="neris-vendor-code"
               type="text"
+              placeholder="ex: 24027334"
               value={nerisExportSettingsDraft.vendorCode}
               onChange={(event) =>
                 updateNerisExportSetting("vendorCode", event.target.value)
               }
             />
 
-            <label htmlFor="neris-vendor-header">Vendor code header name</label>
+            <label htmlFor="neris-vendor-header">Entity ID header name</label>
             <input
               id="neris-vendor-header"
               type="text"
@@ -4964,7 +4998,7 @@ function CustomizationPage({
               }
             />
 
-            <label htmlFor="neris-secret-key">Secret key / API token</label>
+            <label htmlFor="neris-secret-key">Secret key / API token (direct mode only)</label>
             <input
               id="neris-secret-key"
               type="password"
@@ -4974,7 +5008,7 @@ function CustomizationPage({
               }
             />
 
-            <label htmlFor="neris-auth-header">Auth header name</label>
+            <label htmlFor="neris-auth-header">Auth header name (default from OpenAPI)</label>
             <input
               id="neris-auth-header"
               type="text"
@@ -4984,7 +5018,7 @@ function CustomizationPage({
               }
             />
 
-            <label htmlFor="neris-auth-scheme">Auth scheme prefix</label>
+            <label htmlFor="neris-auth-scheme">Auth scheme prefix (default from OpenAPI)</label>
             <input
               id="neris-auth-scheme"
               type="text"
@@ -4995,7 +5029,7 @@ function CustomizationPage({
               }
             />
 
-            <label htmlFor="neris-content-type">Content-Type</label>
+            <label htmlFor="neris-content-type">Content-Type (default from OpenAPI)</label>
             <input
               id="neris-content-type"
               type="text"
