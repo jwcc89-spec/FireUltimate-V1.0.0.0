@@ -2280,12 +2280,59 @@ function toDateTimeLocal(value: string | undefined, fallback: string): string {
   return fallback;
 }
 
+function extractAddressCode(segment: string | undefined): string {
+  if (!segment) {
+    return "";
+  }
+  const matches = segment.toUpperCase().match(/\b[A-Z]{2}\b/g);
+  return matches?.[matches.length - 1] ?? "";
+}
+
+function inferLocationStateAndCountry(address: string | undefined): {
+  locationState: string;
+  locationCountry: string;
+} {
+  const fallbackCountry = "US";
+  if (!address) {
+    return {
+      locationState: "",
+      locationCountry: fallbackCountry,
+    };
+  }
+
+  const segments = address
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  const stateOptionValues = new Set<string>(NERIS_VALUE_SETS.state.map((option) => option.value));
+  const countryOptionValues = new Set<string>(
+    NERIS_VALUE_SETS.country.map((option) => option.value),
+  );
+  const lastSegment = segments[segments.length - 1] ?? "";
+  const stateSegment = segments.length >= 4 ? (segments[segments.length - 2] ?? "") : lastSegment;
+  const countrySegment = segments.length >= 4 ? lastSegment : "";
+  const normalizedCountrySegment = countrySegment.trim().toUpperCase();
+  const countryCodeFromAddress =
+    normalizedCountrySegment === "USA" || normalizedCountrySegment === "UNITED STATES"
+      ? "US"
+      : extractAddressCode(countrySegment);
+  const stateCodeFromAddress = extractAddressCode(stateSegment);
+
+  return {
+    locationState: stateOptionValues.has(stateCodeFromAddress) ? stateCodeFromAddress : "",
+    locationCountry: countryOptionValues.has(countryCodeFromAddress)
+      ? countryCodeFromAddress
+      : fallbackCountry,
+  };
+}
+
 export function createDefaultNerisFormValues({
   callNumber,
   receivedAt,
   address,
 }: CreateNerisDefaultsInput): NerisFormValues {
   const dispatchDateTime = toDateTimeLocal(receivedAt, "2026-02-18T15:30:13");
+  const { locationState, locationCountry } = inferLocationStateAndCountry(address);
 
   return {
     incident_neris_id: `NERIS-${callNumber.replace(/[^A-Z0-9]/gi, "")}`,
@@ -2302,6 +2349,8 @@ export function createDefaultNerisFormValues({
     dispatch_center_id: "0000",
     dispatch_location_address: address ?? "",
     incident_location_address: address ?? "",
+    location_state: locationState,
+    location_country: locationCountry,
     initial_dispatch_code: "AMB.UNRESP-BREATHING",
     dispatch_determinate_code: "",
     dispatch_final_disposition: "",
