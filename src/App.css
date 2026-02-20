@@ -1113,6 +1113,7 @@ tbody tr:last-of-type td {
   justify-content: space-between;
   gap: 0.45rem;
   cursor: pointer;
+  min-height: 40px;
 }
 
 .neris-incident-type-select-trigger:focus {
@@ -1126,9 +1127,35 @@ tbody tr:last-of-type td {
   color: #64748b;
 }
 
+.neris-selected-pill-row {
+  display: flex;
+  align-items: center;
+  gap: 0.34rem;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  white-space: nowrap;
+  scrollbar-width: thin;
+}
+
+.neris-selected-pill {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.1rem 0.44rem;
+  white-space: nowrap;
+}
+
 .neris-incident-type-trigger-icon {
   color: #475569;
   transition: transform 0.14s ease;
+  flex-shrink: 0;
 }
 
 .neris-incident-type-trigger-icon.open {

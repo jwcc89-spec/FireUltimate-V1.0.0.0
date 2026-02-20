@@ -1287,7 +1287,6 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Special incident modifier(s)",
     inputKind: "multiselect",
     optionsKey: "incident_modifier",
-    helperText: "API-backed values from TypeSpecialModifierValue.",
     layout: "full",
   },
   {
