@@ -1109,7 +1109,7 @@ tbody tr:last-of-type td {
   font-size: 0.84rem;
   text-align: left;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 0.45rem;
   cursor: pointer;
@@ -1133,10 +1133,9 @@ tbody tr:last-of-type td {
   gap: 0.34rem;
   flex: 1;
   min-width: 0;
-  overflow-x: auto;
-  overflow-y: hidden;
-  white-space: nowrap;
-  scrollbar-width: thin;
+  flex-wrap: wrap;
+  overflow: visible;
+  white-space: normal;
 }
 
 .neris-selected-pill {
@@ -1156,6 +1155,7 @@ tbody tr:last-of-type td {
   color: #475569;
   transition: transform 0.14s ease;
   flex-shrink: 0;
+  margin-top: 0.12rem;
 }
 
 .neris-incident-type-trigger-icon.open {
@@ -1287,6 +1287,10 @@ tbody tr:last-of-type td {
   color: #0f172a;
 }
 
+.neris-incident-type-item-main {
+  padding-left: 1.16rem;
+}
+
 .neris-incident-type-group-button:hover,
 .neris-incident-type-subgroup-button:hover,
 .neris-incident-type-item:hover {
@@ -1324,6 +1328,33 @@ tbody tr:last-of-type td {
   padding: 0.65rem;
   color: #64748b;
   font-size: 0.78rem;
+}
+
+.neris-single-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.42rem;
+}
+
+.neris-single-choice-button {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background-color: #f8fafc;
+  color: #334155;
+  padding: 0.28rem 0.62rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.neris-single-choice-button:hover {
+  background-color: #eff6ff;
+}
+
+.neris-single-choice-button.selected {
+  border-color: #bfdbfe;
+  background-color: #eff6ff;
+  color: #1d4ed8;
 }
 
 .settings-form input[type="color"] {

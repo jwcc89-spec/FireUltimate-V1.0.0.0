@@ -2011,7 +2011,24 @@ function NerisGroupedOptionSelect({
     typeof maxSelections === "number" &&
     selectedValueSet.size >= maxSelections;
 
-  const groupedOptions = useMemo(() => {
+  interface GroupedLeafOption {
+    option: NerisValueOption;
+    leafLabel: string;
+  }
+
+  interface GroupedOptionCategory {
+    categoryKey: string;
+    categoryLabel: string;
+    optionCount: number;
+    directOptions: GroupedLeafOption[];
+    subgroups: Array<{
+      subgroupKey: string;
+      subgroupLabel: string;
+      options: GroupedLeafOption[];
+    }>;
+  }
+
+  const groupedOptions: GroupedOptionCategory[] = useMemo(() => {
     const filteredOptions = options.filter((option) => {
       if (!normalizedSearch) {
         return true;
@@ -2054,19 +2071,44 @@ function NerisGroupedOptionSelect({
       });
     }
 
-    return Array.from(categoryMap.entries()).map(([categoryKey, subgroupMap]) => ({
-      categoryKey,
-      categoryLabel: getNerisGroupedCategoryLabel(categoryKey, variant),
-      optionCount: Array.from(subgroupMap.values()).reduce(
-        (count, subgroupOptions) => count + subgroupOptions.length,
-        0,
-      ),
-      subgroups: Array.from(subgroupMap.entries()).map(([subgroupKey, subgroupOptions]) => ({
-        subgroupKey,
-        subgroupLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
-        options: subgroupOptions,
-      })),
-    }));
+    return Array.from(categoryMap.entries()).map(([categoryKey, subgroupMap]) => {
+      const directOptions: GroupedLeafOption[] = [];
+      const subgroups = Array.from(subgroupMap.entries()).reduce<
+        Array<{
+          subgroupKey: string;
+          subgroupLabel: string;
+          options: GroupedLeafOption[];
+        }>
+      >((groupAccumulator, [subgroupKey, subgroupOptions]) => {
+        if (variant === "actionTactic" && subgroupOptions.length === 1) {
+          const onlyOption = subgroupOptions[0];
+          if (onlyOption) {
+            directOptions.push({
+              option: onlyOption.option,
+              leafLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
+            });
+          }
+          return groupAccumulator;
+        }
+        groupAccumulator.push({
+          subgroupKey,
+          subgroupLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
+          options: subgroupOptions,
+        });
+        return groupAccumulator;
+      }, []);
+
+      return {
+        categoryKey,
+        categoryLabel: getNerisGroupedCategoryLabel(categoryKey, variant),
+        optionCount: Array.from(subgroupMap.values()).reduce(
+          (count, subgroupOptions) => count + subgroupOptions.length,
+          0,
+        ),
+        directOptions,
+        subgroups,
+      };
+    });
   }, [options, normalizedSearch, variant]);
 
   useEffect(() => {
@@ -2129,15 +2171,21 @@ function NerisGroupedOptionSelect({
         }}
       >
         {mode === "single" ? (
-          <span
-            className={
-              selectedOptions.length === 0 && placeholder && placeholder.length > 0
-                ? "neris-incident-type-placeholder"
-                : undefined
-            }
-          >
-            {selectedOption?.label ?? (placeholder && placeholder.length > 0 ? placeholder : "\u00A0")}
-          </span>
+          <div className="neris-selected-pill-row">
+            {selectedOption ? (
+              <span className="neris-selected-pill">{selectedOption.label}</span>
+            ) : (
+              <span
+                className={
+                  selectedOptions.length === 0 && placeholder && placeholder.length > 0
+                    ? "neris-incident-type-placeholder"
+                    : undefined
+                }
+              >
+                {placeholder && placeholder.length > 0 ? placeholder : "\u00A0"}
+              </span>
+            )}
+          </div>
         ) : (
           <div className="neris-selected-pill-row">
             {selectedOptions.length ? (
@@ -2212,8 +2260,68 @@ function NerisGroupedOptionSelect({
                       <strong>{category.optionCount}</strong>
                     </button>
 
-                    {!categoryCollapsed
-                      ? category.subgroups.map((subgroup) => {
+                    {!categoryCollapsed ? (
+                      <>
+                        {category.directOptions.length ? (
+                          <div className="neris-incident-type-item-list">
+                            {category.directOptions.map(({ option, leafLabel }) => {
+                              const isSelected =
+                                mode === "single"
+                                  ? option.value === normalizedSelectedValue
+                                  : selectedValueSet.has(option.value);
+                              const isDisabled =
+                                mode === "multi" &&
+                                typeof maxSelections === "number" &&
+                                selectedValueSet.size >= maxSelections &&
+                                !isSelected;
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  className={`neris-incident-type-item neris-incident-type-item-main${
+                                    isSelected ? " selected" : ""
+                                  }${isDisabled ? " disabled" : ""}`}
+                                  aria-selected={isSelected}
+                                  aria-disabled={isDisabled}
+                                  onClick={() => {
+                                    if (isDisabled) {
+                                      return;
+                                    }
+                                    if (mode === "single") {
+                                      onChange(option.value);
+                                      setIsOpen(false);
+                                      setSearchTerm("");
+                                      return;
+                                    }
+                                    const nextSelected = new Set(selectedValueSet);
+                                    if (nextSelected.has(option.value)) {
+                                      nextSelected.delete(option.value);
+                                    } else {
+                                      nextSelected.add(option.value);
+                                    }
+                                    const nextOrderedValues = options
+                                      .map((entry) => entry.value)
+                                      .filter((entryValue) => nextSelected.has(entryValue));
+                                    onChange(nextOrderedValues.join(","));
+                                  }}
+                                >
+                                  {showCheckboxes ? (
+                                    <span className="neris-incident-type-item-checkbox">
+                                      <input
+                                        type="checkbox"
+                                        tabIndex={-1}
+                                        readOnly
+                                        checked={isSelected}
+                                      />
+                                    </span>
+                                  ) : null}
+                                  <span>{leafLabel}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {category.subgroups.map((subgroup) => {
                           const subgroupCollapseKey = `${category.categoryKey}::${subgroup.subgroupKey}`;
                           const subgroupCollapsed =
                             normalizedSearch.length === 0 &&
@@ -2293,8 +2401,9 @@ function NerisGroupedOptionSelect({
                               ) : null}
                             </div>
                           );
-                        })
-                      : null}
+                        })}
+                      </>
+                    ) : null}
                   </section>
                 );
               })
@@ -2626,13 +2735,18 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       field.id === "special_incident_modifiers" &&
       field.inputKind === "multiselect" &&
       field.optionsKey === "incident_modifier";
+    const isNoActionReasonField =
+      field.id === "incident_noaction" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "no_action";
     const shouldShowTypeahead =
       (field.inputKind === "select" || field.inputKind === "multiselect") &&
       options.length > 10 &&
       !isPrimaryIncidentTypeField &&
       !isAdditionalIncidentTypesField &&
       !isActionsTakenField &&
-      !isSpecialIncidentModifiersField;
+      !isSpecialIncidentModifiersField &&
+      !isNoActionReasonField;
     const optionFilter = fieldOptionFilters[field.id] ?? "";
     const normalizedFilter = optionFilter.trim().toLowerCase();
     const filteredOptions =
@@ -2684,7 +2798,24 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         ) : null}
 
         {field.inputKind === "select" ? (
-          isPrimaryIncidentTypeField ? (
+          isNoActionReasonField ? (
+            <div className="neris-single-choice-row" role="group" aria-label={field.label}>
+              {options.map((option) => {
+                const isSelected = option.value === normalizedSingleValue;
+                return (
+                  <button
+                    key={`${field.id}-${option.value}`}
+                    type="button"
+                    className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                    aria-pressed={isSelected}
+                    onClick={() => updateFieldValue(field.id, option.value)}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : isPrimaryIncidentTypeField ? (
             <NerisGroupedOptionSelect
               inputId={inputId}
               value={normalizedSingleValue}
