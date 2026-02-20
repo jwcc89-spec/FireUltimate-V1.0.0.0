@@ -1305,7 +1305,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   {
     id: "incident_noaction",
     sectionId: "core",
-    label: "No action reason",
+    label: "No action reason category",
     inputKind: "select",
     optionsKey: "no_action",
     requiredIf: {
@@ -1376,42 +1376,24 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "half",
   },
   {
-    id: "dispatch_time_call_create",
+    id: "incident_people_present",
     sectionId: "core",
-    label: "Time call created",
-    inputKind: "datetime",
+    label: "Were there people present?",
+    inputKind: "select",
+    optionsKey: "yes_no",
     required: true,
-    layout: "half",
-  },
-  {
-    id: "dispatch_time_call_answering",
-    sectionId: "core",
-    label: "Time call answering",
-    inputKind: "datetime",
-    required: true,
-    layout: "half",
-  },
-  {
-    id: "dispatch_time_call_arrival",
-    sectionId: "core",
-    label: "Time call arrival",
-    inputKind: "datetime",
-    required: true,
-    layout: "half",
-  },
-  {
-    id: "time_incident_clear",
-    sectionId: "core",
-    label: "Time incident clear",
-    inputKind: "datetime",
     layout: "half",
   },
   {
     id: "incident_displaced_number",
     sectionId: "core",
-    label: "Displaced number",
+    label: "Number of people displaced",
     inputKind: "text",
-    required: true,
+    requiredIf: {
+      fieldId: "incident_people_present",
+      operator: "equals",
+      value: "YES",
+    },
     layout: "half",
   },
   {
@@ -1421,15 +1403,6 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     inputKind: "multiselect",
     optionsKey: "displace_cause_incident",
     layout: "half",
-  },
-  {
-    id: "dispatch_comment",
-    sectionId: "core",
-    label: "Dispatch comments",
-    inputKind: "textarea",
-    rows: 4,
-    maxLength: 100000,
-    layout: "full",
   },
   {
     id: "incident_aid_direction",
@@ -2197,6 +2170,11 @@ export function validateNerisSection(
   }
 
   if (sectionId === "core") {
+    const displacedNumber = (values.incident_displaced_number ?? "").trim();
+    if (displacedNumber && !/^\d+$/.test(displacedNumber)) {
+      errors.incident_displaced_number = "Number of people displaced must be a whole number.";
+    }
+
     const additionalIncidentTypes = (values.additional_incident_types ?? "")
       .split(",")
       .map((entry) => entry.trim())
@@ -2270,16 +2248,13 @@ export function createDefaultNerisFormValues({
     dispatch_determinate_code: "",
     dispatch_final_disposition: "",
     dispatch_automatic_alarm: "NO",
-    dispatch_time_call_create: dispatchDateTime,
-    dispatch_time_call_answering: dispatchDateTime,
-    dispatch_time_call_arrival: dispatchDateTime,
+    incident_people_present: "",
     incident_time_call_create: dispatchDateTime,
     incident_time_call_answered: dispatchDateTime,
     incident_time_call_arrival: dispatchDateTime,
     time_incident_clear: "",
-    incident_displaced_number: "0",
+    incident_displaced_number: "",
     incident_displaced_cause: "",
-    dispatch_comment: "",
     incident_aid_direction: "",
     incident_aid_type: "",
     incident_aid_department_name: "",

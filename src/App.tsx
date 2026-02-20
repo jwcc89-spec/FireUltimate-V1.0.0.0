@@ -1902,6 +1902,13 @@ const INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
   PUBSERV: "Public Service",
 };
 
+const CORE_SECTION_FIELD_HEADERS: Record<string, string> = {
+  incident_neris_id: "INCIDENT",
+  fd_neris_id: "DISPATCH",
+  incident_people_present: "PEOPLE / DISPLACEMENT",
+  incident_aid_direction: "AID GIVEN / RECEIVED",
+};
+
 function getNerisGroupedCategoryLabel(
   categoryKey: string,
   variant: NerisGroupedOptionVariant,
@@ -2638,28 +2645,58 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   }
 
   const updateFieldValue = (fieldId: string, value: string) => {
+    const sanitizedValue =
+      fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
     const shouldDisableNoAction =
-      fieldId === "incident_actions_taken" && value.trim().length > 0;
+      fieldId === "incident_actions_taken" && sanitizedValue.trim().length > 0;
+    const shouldClearDisplacementCause =
+      (fieldId === "incident_displaced_number" &&
+        (sanitizedValue.trim().length === 0 ||
+          Number.parseInt(sanitizedValue, 10) <= 0)) ||
+      (fieldId === "incident_people_present" && sanitizedValue === "NO");
     setFormValues((previous) => {
       const nextValues: NerisFormValues = {
         ...previous,
-        [fieldId]: value,
+        [fieldId]: sanitizedValue,
       };
       if (shouldDisableNoAction) {
         nextValues.incident_noaction = "";
+      }
+      if (shouldClearDisplacementCause) {
+        nextValues.incident_displaced_cause = "";
+      }
+      if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
+        nextValues.incident_displaced_number = "";
       }
       return nextValues;
     });
     setSectionErrors((previous) => {
       const hasPrimaryError = Boolean(previous[fieldId]);
       const hasNoActionError = shouldDisableNoAction && Boolean(previous.incident_noaction);
-      if (!hasPrimaryError && !hasNoActionError) {
+      const hasDisplacementCauseError =
+        shouldClearDisplacementCause && Boolean(previous.incident_displaced_cause);
+      const hasDisplacementNumberError =
+        fieldId === "incident_people_present" &&
+        sanitizedValue === "NO" &&
+        Boolean(previous.incident_displaced_number);
+      if (
+        !hasPrimaryError &&
+        !hasNoActionError &&
+        !hasDisplacementCauseError &&
+        !hasDisplacementNumberError
+      ) {
         return previous;
       }
       const next = { ...previous };
       delete next[fieldId];
       if (shouldDisableNoAction) {
         delete next.incident_noaction;
+      }
+      if (shouldClearDisplacementCause) {
+        delete next.incident_displaced_cause;
+      }
+      if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
+        delete next.incident_displaced_number;
       }
       return next;
     });
@@ -2717,7 +2754,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     navigate("/reporting/neris");
   };
 
-  const renderNerisField = (field: NerisFieldMetadata) => {
+  const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
     const inputId = `neris-field-${field.id}`;
     const value = formValues[field.id] ?? "";
     const isRequired = isNerisFieldRequired(field, formValues);
@@ -2752,7 +2789,21 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       field.id === "incident_noaction" &&
       field.inputKind === "select" &&
       field.optionsKey === "no_action";
+    const isAutomaticAlarmField =
+      field.id === "dispatch_automatic_alarm" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
+    const isPeoplePresentField =
+      field.id === "incident_people_present" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
     const isNoActionReasonDisabled = (formValues.incident_actions_taken ?? "").trim().length > 0;
+    const isSingleChoiceButtonField =
+      isNoActionReasonField || isAutomaticAlarmField || isPeoplePresentField;
+    const displacedNumberValue = Number.parseInt(
+      (formValues.incident_displaced_number ?? "").trim(),
+      10,
+    );
     const shouldShowTypeahead =
       (field.inputKind === "select" || field.inputKind === "multiselect") &&
       options.length > 10 &&
@@ -2772,8 +2823,15 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           )
         : options;
 
+    if (
+      field.id === "incident_displaced_cause" &&
+      (Number.isNaN(displacedNumberValue) || displacedNumberValue <= 0)
+    ) {
+      return null;
+    }
+
     return (
-      <div key={field.id} className={wrapperClassName}>
+      <div key={fieldKey} className={wrapperClassName}>
         <label htmlFor={inputId}>
           {field.label}
           {isRequired ? " *" : ""}
@@ -2812,26 +2870,29 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         ) : null}
 
         {field.inputKind === "select" ? (
-          isNoActionReasonField ? (
+          isSingleChoiceButtonField ? (
             <div
-              className={`neris-single-choice-row${isNoActionReasonDisabled ? " disabled" : ""}`}
+              className={`neris-single-choice-row${
+                isNoActionReasonField && isNoActionReasonDisabled ? " disabled" : ""
+              }`}
               role="group"
               aria-label={field.label}
-              aria-disabled={isNoActionReasonDisabled}
+              aria-disabled={isNoActionReasonField && isNoActionReasonDisabled}
             >
               {options.map((option) => {
                 const isSelected = option.value === normalizedSingleValue;
+                const isDisabled = isNoActionReasonField && isNoActionReasonDisabled;
                 return (
                   <button
                     key={`${field.id}-${option.value}`}
                     type="button"
                     className={`neris-single-choice-button${isSelected ? " selected" : ""}${
-                      isNoActionReasonDisabled ? " disabled" : ""
+                      isDisabled ? " disabled" : ""
                     }`}
                     aria-pressed={isSelected}
-                    disabled={isNoActionReasonDisabled}
+                    disabled={isDisabled}
                     onClick={() => {
-                      if (isNoActionReasonDisabled) {
+                      if (isDisabled) {
                         return;
                       }
                       updateFieldValue(field.id, option.value);
@@ -3043,11 +3104,32 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
         <article className="panel neris-form-panel">
           <div className="panel-header">
-            <h2>{currentSection.label}</h2>
+            <h2
+              className={currentSection.id === "core" ? "neris-core-section-title" : undefined}
+            >
+              {currentSection.id === "core"
+                ? currentSection.label.toUpperCase()
+                : currentSection.label}
+            </h2>
           </div>
-          <p className="panel-description">{currentSection.helper}</p>
+          {currentSection.id !== "core" ? (
+            <p className="panel-description">{currentSection.helper}</p>
+          ) : null}
           <div className="settings-form neris-field-grid">
-            {sectionFields.map((field) => renderNerisField(field))}
+            {sectionFields.flatMap((field) => {
+              const nodes: ReactNode[] = [];
+              const headingLabel =
+                activeSectionId === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
+              if (headingLabel) {
+                nodes.push(
+                  <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
+                    {headingLabel}
+                  </div>,
+                );
+              }
+              nodes.push(renderNerisField(field, `field-${field.id}`));
+              return nodes;
+            })}
           </div>
 
           {saveMessage ? <p className="save-message">{saveMessage}</p> : null}

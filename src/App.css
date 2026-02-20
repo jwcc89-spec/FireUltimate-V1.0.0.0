@@ -1894,6 +1894,19 @@ body.resizing-dispatch-columns {
   gap: 0.72rem;
 }
 
+.neris-core-section-title {
+  font-size: 1.14rem;
+  letter-spacing: 0.03em;
+}
+
+.neris-core-field-heading {
+  font-size: 0.83rem;
+  font-weight: 800;
+  letter-spacing: 0.03em;
+  color: #0f172a;
+  margin-top: 0.25rem;
+}
+
 .neris-field-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
