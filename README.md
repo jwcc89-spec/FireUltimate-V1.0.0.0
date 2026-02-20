@@ -71,17 +71,22 @@ cp .env.server.example .env.server
 
 2. Open `.env.server` and set values from your NERIS vendor account:
    - `NERIS_ENTITY_ID` (required)
-   - auth option A (recommended):
+   - auth option A (recommended for vendor integrations):
+     - `NERIS_GRANT_TYPE=client_credentials`
+     - `NERIS_CLIENT_ID`
+     - `NERIS_CLIENT_SECRET`
+   - auth option B (if NERIS specifically tells you to use password flow):
+     - `NERIS_GRANT_TYPE=password`
      - `NERIS_CLIENT_ID`
      - `NERIS_CLIENT_SECRET`
      - `NERIS_USERNAME`
      - `NERIS_PASSWORD`
-   - or auth option B:
+   - or auth option C:
      - `NERIS_STATIC_ACCESS_TOKEN`
 
 3. Keep OpenAPI defaults unless NERIS tells you otherwise:
-   - `NERIS_BASE_URL=https://api.neris.fsri.org/v1`
-   - `NERIS_GRANT_TYPE=password`
+   - `NERIS_BASE_URL=https://api.neris.fsri.org/v1` (or test: `https://api-test.neris.fsri.org/v1`)
+   - `NERIS_GRANT_TYPE=client_credentials`
 
 ### 2) Run both servers (2 terminals)
 

@@ -80,6 +80,7 @@ function parseLocationFromAddress(addressValue, fallbackState, fallbackCountry) 
 
 function getProxyConfig() {
   const baseUrl = trimValue(process.env.NERIS_BASE_URL) || DEFAULT_NERIS_BASE_URL;
+  const grantType = trimValue(process.env.NERIS_GRANT_TYPE) || "client_credentials";
   return {
     proxyPort: Number.parseInt(process.env.NERIS_PROXY_PORT || "", 10) || DEFAULT_PROXY_PORT,
     baseUrl,
@@ -90,7 +91,8 @@ function getProxyConfig() {
     clientSecret: trimValue(process.env.NERIS_CLIENT_SECRET),
     username: trimValue(process.env.NERIS_USERNAME),
     password: trimValue(process.env.NERIS_PASSWORD),
-    grantType: trimValue(process.env.NERIS_GRANT_TYPE) || "password",
+    grantType,
+    tokenScope: trimValue(process.env.NERIS_TOKEN_SCOPE),
     defaultEntityId: trimValue(process.env.NERIS_ENTITY_ID),
     defaultDepartmentNerisId: trimValue(process.env.NERIS_DEPARTMENT_NERIS_ID),
     defaultState: trimValue(process.env.NERIS_DEFAULT_STATE) || "NY",
@@ -123,16 +125,26 @@ async function getAccessToken(config) {
     return cachedAccessToken;
   }
 
-  if (!config.clientId || !config.clientSecret || !config.username || !config.password) {
+  if (!config.clientId || !config.clientSecret) {
     throw new Error(
-      "Missing server auth config. Set NERIS_CLIENT_ID, NERIS_CLIENT_SECRET, NERIS_USERNAME, and NERIS_PASSWORD in .env.server (or set NERIS_STATIC_ACCESS_TOKEN).",
+      "Missing server auth config. Set NERIS_CLIENT_ID and NERIS_CLIENT_SECRET in .env.server (or set NERIS_STATIC_ACCESS_TOKEN).",
+    );
+  }
+  if (config.grantType === "password" && (!config.username || !config.password)) {
+    throw new Error(
+      "Grant type password requires NERIS_USERNAME and NERIS_PASSWORD in .env.server.",
     );
   }
 
   const tokenBody = new URLSearchParams();
   tokenBody.set("grant_type", config.grantType);
-  tokenBody.set("username", config.username);
-  tokenBody.set("password", config.password);
+  if (config.grantType === "password") {
+    tokenBody.set("username", config.username);
+    tokenBody.set("password", config.password);
+  }
+  if (config.tokenScope) {
+    tokenBody.set("scope", config.tokenScope);
+  }
 
   const basicAuth = Buffer.from(`${config.clientId}:${config.clientSecret}`).toString(
     "base64",
@@ -348,10 +360,13 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
 
 app.get("/api/neris/health", (request, response) => {
   const config = getProxyConfig();
+  const requiresUserCredentials = config.grantType === "password";
   response.json({
     ok: true,
     proxyPort: config.proxyPort,
     baseUrl: config.baseUrl,
+    grantType: config.grantType,
+    requiresUserCredentials,
     createIncidentUrlPrefix: config.createIncidentUrlPrefix,
     usingStaticToken: Boolean(config.staticAccessToken),
     hasClientCredentials: Boolean(config.clientId && config.clientSecret),
