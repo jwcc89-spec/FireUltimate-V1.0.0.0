@@ -88,7 +88,7 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
     id: "narrative",
     label: "Narrative",
-    helper: "Document final outcomes and notable response context.",
+    helper: "",
   },
   {
     id: "location",
