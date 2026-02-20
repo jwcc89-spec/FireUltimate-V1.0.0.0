@@ -1918,16 +1918,27 @@ body.resizing-dispatch-columns {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
   gap: 0.78rem;
-  align-items: start;
+  align-items: stretch;
+  height: 100%;
+  min-height: 0;
+}
+
+.neris-report-page {
+  height: 100%;
+  min-height: 0;
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
 }
 
 .neris-sidebar {
   padding: 0;
   overflow: hidden;
   position: sticky;
-  top: 0.65rem;
+  top: 0;
   align-self: start;
-  max-height: calc(100vh - 1.3rem);
+  height: 100%;
+  max-height: none;
+  min-height: 0;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
 }
@@ -1981,6 +1992,8 @@ body.resizing-dispatch-columns {
 .neris-form-panel {
   display: grid;
   gap: 0.72rem;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .neris-core-section-title {
@@ -2225,7 +2238,17 @@ body.resizing-dispatch-columns {
   .neris-sidebar {
     position: static;
     top: auto;
-    max-height: none;
+    height: auto;
+    min-height: auto;
+  }
+
+  .neris-report-page {
+    height: auto;
+    overflow: visible;
+  }
+
+  .neris-form-panel {
+    overflow: visible;
   }
 
   .incident-detail-split {

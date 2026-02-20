@@ -1285,7 +1285,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
 
   return (
-    <section className="page-section">
+    <section className="page-section neris-report-page">
       <header className="page-header">
         <div>
           <h1>Dashboard</h1>
