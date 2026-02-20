@@ -576,6 +576,7 @@ const NERIS_ENUM_VALUES = {
     "RI",
     "SC",
     "SD",
+    "ST",
     "TN",
     "TX",
     "UM",
