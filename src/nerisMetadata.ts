@@ -2198,6 +2198,15 @@ export function validateNerisSection(
   }
 
   if (sectionId === "core") {
+    const additionalIncidentTypes = (values.additional_incident_types ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    if (additionalIncidentTypes.length > 2) {
+      errors.additional_incident_types =
+        "Additional incident types can include a maximum of 2 selections.";
+    }
+
     const actions = (values.incident_actions_taken ?? "").trim();
     const noAction = (values.incident_noaction ?? "").trim();
     if (actions && noAction) {
@@ -2236,47 +2245,11 @@ function toDateTimeLocal(value: string | undefined, fallback: string): string {
   return fallback;
 }
 
-function mapIncidentSummaryToNerisType(incidentType: string | undefined): string {
-  const normalized = (incidentType ?? "").trim().toLowerCase();
-  if (!normalized) {
-    return "MEDICAL||ILLNESS||SICK_CASE";
-  }
-
-  if (normalized.includes("convulsion") || normalized.includes("seizure")) {
-    return "MEDICAL||ILLNESS||CONVULSIONS_SEIZURES";
-  }
-  if (normalized.includes("medical")) {
-    return "MEDICAL||ILLNESS||SICK_CASE";
-  }
-  if (normalized.includes("structure fire")) {
-    return "FIRE||STRUCTURE_FIRE||STRUCTURAL_INVOLVEMENT_FIRE";
-  }
-  if (normalized.includes("vehicle fire")) {
-    return "FIRE||TRANSPORTATION_FIRE||VEHICLE_FIRE_PASSENGER";
-  }
-  if (normalized.includes("alarm")) {
-    return "PUBSERV||ALARMS_NONMED||FIRE_ALARM";
-  }
-  if (normalized.includes("smoke")) {
-    return "HAZSIT||INVESTIGATION||SMOKE_INVESTIGATION";
-  }
-
-  return "MEDICAL||ILLNESS||SICK_CASE";
-}
-
 export function createDefaultNerisFormValues({
   callNumber,
-  incidentType,
   receivedAt,
   address,
 }: CreateNerisDefaultsInput): NerisFormValues {
-  const incidentTypeValues = new Set<string>(
-    NERIS_VALUE_SETS.incident_type.map((option) => option.value),
-  );
-  const mappedIncidentType = mapIncidentSummaryToNerisType(incidentType);
-  const safeIncidentType = incidentTypeValues.has(mappedIncidentType)
-    ? mappedIncidentType
-    : "MEDICAL||ILLNESS||SICK_CASE";
   const dispatchDateTime = toDateTimeLocal(receivedAt, "2026-02-18T15:30:13");
 
   return {
@@ -2285,7 +2258,7 @@ export function createDefaultNerisFormValues({
     incident_onset_date: "2026-02-18",
     incident_onset_time: normalizeNerisTime(receivedAt),
     dispatch_internal_id: callNumber.replace(/^D-/, ""),
-    primary_incident_type: safeIncidentType,
+    primary_incident_type: "",
     additional_incident_types: "",
     special_incident_modifiers: "",
     incident_actions_taken: "",

@@ -1167,6 +1167,20 @@ tbody tr:last-of-type td {
   min-width: 0;
 }
 
+.neris-incident-type-selection-limit {
+  margin: 0;
+  padding: 0.26rem 0.58rem;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  color: #64748b;
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.neris-incident-type-selection-limit.reached {
+  color: #b45309;
+}
+
 .neris-incident-type-search-clear {
   border: 0;
   background: none;
@@ -1238,6 +1252,9 @@ tbody tr:last-of-type td {
 }
 
 .neris-incident-type-item {
+  display: flex;
+  align-items: center;
+  gap: 0.42rem;
   padding: 0.32rem 0.58rem 0.32rem 2rem;
   font-size: 0.79rem;
   color: #0f172a;
@@ -1253,6 +1270,26 @@ tbody tr:last-of-type td {
   background-color: #dbeafe;
   color: #1d4ed8;
   font-weight: 700;
+}
+
+.neris-incident-type-item.disabled {
+  opacity: 0.52;
+  cursor: not-allowed;
+}
+
+.neris-incident-type-item.disabled:hover {
+  background-color: transparent;
+}
+
+.neris-incident-type-item-checkbox {
+  display: inline-flex;
+  align-items: center;
+}
+
+.neris-incident-type-item-checkbox input {
+  margin: 0;
+  width: 14px;
+  height: 14px;
 }
 
 .neris-incident-type-empty {

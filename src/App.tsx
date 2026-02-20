@@ -1893,19 +1893,95 @@ function NerisReportingPage() {
   );
 }
 
-interface NerisPrimaryIncidentTypeSelectProps {
+type NerisGroupedOptionVariant = "incidentType" | "actionTactic";
+
+const INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
+  HAZSIT: "HazMat",
+  NOEMERG: "No Emergency",
+  LAWENFORCE: "Law Enforcement",
+};
+
+function getNerisGroupedCategoryLabel(
+  categoryKey: string,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (variant === "incidentType" && INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey]) {
+    return INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey];
+  }
+  return formatNerisEnumSegment(categoryKey);
+}
+
+function getNerisGroupedSubgroupKey(
+  categoryKey: string,
+  rawSubgroupKey: string | undefined,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (rawSubgroupKey) {
+    return rawSubgroupKey;
+  }
+  if (variant === "incidentType" && categoryKey === "LAWENFORCE") {
+    return "LAW_ENFORCEMENT_SUPPORT";
+  }
+  return "OTHER";
+}
+
+function getNerisGroupedSubgroupLabel(
+  categoryKey: string,
+  subgroupKey: string,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (
+    variant === "incidentType" &&
+    categoryKey === "LAWENFORCE" &&
+    subgroupKey === "LAW_ENFORCEMENT_SUPPORT"
+  ) {
+    return "Law Enforcement Support";
+  }
+  return formatNerisEnumSegment(subgroupKey);
+}
+
+function getNerisGroupedLeafLabel(
+  segments: string[],
+  option: NerisValueOption,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (segments.length > 2) {
+    return segments.slice(2).map(formatNerisEnumSegment).join(" / ");
+  }
+  if (segments.length === 2) {
+    return formatNerisEnumSegment(segments[1]);
+  }
+  if (variant === "incidentType" && segments[0] === "LAWENFORCE") {
+    return "Law Enforcement Support";
+  }
+  return option.label;
+}
+
+interface NerisGroupedOptionSelectProps {
   inputId: string;
   value: string;
   options: NerisValueOption[];
   onChange: (nextValue: string) => void;
+  mode: "single" | "multi";
+  variant: NerisGroupedOptionVariant;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  maxSelections?: number;
+  showCheckboxes?: boolean;
 }
 
-function NerisPrimaryIncidentTypeSelect({
+function NerisGroupedOptionSelect({
   inputId,
   value,
   options,
   onChange,
-}: NerisPrimaryIncidentTypeSelectProps) {
+  mode,
+  variant,
+  placeholder,
+  searchPlaceholder,
+  maxSelections,
+  showCheckboxes = false,
+}: NerisGroupedOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
@@ -1913,9 +1989,35 @@ function NerisPrimaryIncidentTypeSelect({
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
   const [collapsedSubgroups, setCollapsedSubgroups] = useState<Record<string, boolean>>({});
 
-  const normalizedSelectedValue = normalizeNerisEnumValue(value);
-  const selectedOption = options.find((option) => option.value === normalizedSelectedValue);
+  const normalizedSelectedValues = Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .map((entry) => normalizeNerisEnumValue(entry)),
+    ),
+  );
+  const normalizedSelectedValue = normalizedSelectedValues[0] ?? "";
+  const selectedValueSet = new Set<string>(normalizedSelectedValues);
+  const selectedOptions = normalizedSelectedValues
+    .map((selectedValue) => options.find((option) => option.value === selectedValue))
+    .filter((option): option is NerisValueOption => Boolean(option));
+  const selectedOption = selectedOptions[0];
   const normalizedSearch = searchTerm.trim().toLowerCase();
+  const selectionLimitReached =
+    mode === "multi" &&
+    typeof maxSelections === "number" &&
+    selectedValueSet.size >= maxSelections;
+
+  const triggerLabel =
+    mode === "single"
+      ? selectedOption?.label ?? (placeholder && placeholder.length > 0 ? placeholder : "\u00A0")
+      : selectedOptions.length === 0
+        ? (placeholder ?? "Select one or more options")
+        : selectedOptions.length <= 2
+          ? selectedOptions.map((option) => option.label).join(", ")
+          : `${selectedOptions.length} selected`;
 
   const groupedOptions = useMemo(() => {
     const filteredOptions = options.filter((option) => {
@@ -1938,11 +2040,8 @@ function NerisPrimaryIncidentTypeSelect({
         .map((segment) => segment.trim())
         .filter((segment) => segment.length > 0);
       const categoryKey = segments[0] ?? "UNCLASSIFIED";
-      const subgroupKey = segments[1] ?? "OTHER";
-      const leafLabel =
-        segments.length > 2
-          ? segments.slice(2).map(formatNerisEnumSegment).join(" / ")
-          : option.label;
+      const subgroupKey = getNerisGroupedSubgroupKey(categoryKey, segments[1], variant);
+      const leafLabel = getNerisGroupedLeafLabel(segments, option, variant);
       if (!categoryMap.has(categoryKey)) {
         categoryMap.set(categoryKey, new Map());
       }
@@ -1965,18 +2064,18 @@ function NerisPrimaryIncidentTypeSelect({
 
     return Array.from(categoryMap.entries()).map(([categoryKey, subgroupMap]) => ({
       categoryKey,
-      categoryLabel: formatNerisEnumSegment(categoryKey),
+      categoryLabel: getNerisGroupedCategoryLabel(categoryKey, variant),
       optionCount: Array.from(subgroupMap.values()).reduce(
         (count, subgroupOptions) => count + subgroupOptions.length,
         0,
       ),
       subgroups: Array.from(subgroupMap.entries()).map(([subgroupKey, subgroupOptions]) => ({
         subgroupKey,
-        subgroupLabel: formatNerisEnumSegment(subgroupKey),
+        subgroupLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
         options: subgroupOptions,
       })),
     }));
-  }, [options, normalizedSearch]);
+  }, [options, normalizedSearch, variant]);
 
   useEffect(() => {
     if (!isOpen) {
@@ -2028,8 +2127,14 @@ function NerisPrimaryIncidentTypeSelect({
           }
         }}
       >
-        <span className={selectedOption ? undefined : "neris-incident-type-placeholder"}>
-          {selectedOption?.label ?? "Select an incident type"}
+        <span
+          className={
+            selectedOptions.length === 0 && placeholder && placeholder.length > 0
+              ? "neris-incident-type-placeholder"
+              : undefined
+          }
+        >
+          {triggerLabel}
         </span>
         <ChevronDown
           size={15}
@@ -2045,7 +2150,7 @@ function NerisPrimaryIncidentTypeSelect({
               ref={searchInputRef}
               type="text"
               value={searchTerm}
-              placeholder="Search incident types..."
+              placeholder={searchPlaceholder ?? "Search options..."}
               onChange={(event) => setSearchTerm(event.target.value)}
             />
             {searchTerm ? (
@@ -2058,6 +2163,16 @@ function NerisPrimaryIncidentTypeSelect({
               </button>
             ) : null}
           </div>
+
+          {mode === "multi" && typeof maxSelections === "number" ? (
+            <p
+              className={`neris-incident-type-selection-limit${
+                selectionLimitReached ? " reached" : ""
+              }`}
+            >
+              Selected {selectedValueSet.size} of {maxSelections} allowed.
+            </p>
+          ) : null}
 
           <div className="neris-incident-type-options-scroll" role="listbox">
             {groupedOptions.length ? (
@@ -2104,20 +2219,52 @@ function NerisPrimaryIncidentTypeSelect({
                               {!subgroupCollapsed ? (
                                 <div className="neris-incident-type-item-list">
                                   {subgroup.options.map(({ option, leafLabel }) => {
-                                    const isSelected = option.value === normalizedSelectedValue;
+                                    const isSelected =
+                                      mode === "single"
+                                        ? option.value === normalizedSelectedValue
+                                        : selectedValueSet.has(option.value);
+                                    const isDisabled =
+                                      mode === "multi" &&
+                                      typeof maxSelections === "number" &&
+                                      selectedValueSet.size >= maxSelections &&
+                                      !isSelected;
                                     return (
                                       <button
                                         key={option.value}
                                         type="button"
-                                        className={`neris-incident-type-item${isSelected ? " selected" : ""}`}
+                                        className={`neris-incident-type-item${
+                                          isSelected ? " selected" : ""
+                                        }${isDisabled ? " disabled" : ""}`}
                                         aria-selected={isSelected}
+                                        aria-disabled={isDisabled}
                                         onClick={() => {
-                                          onChange(option.value);
-                                          setIsOpen(false);
-                                          setSearchTerm("");
+                                          if (isDisabled) {
+                                            return;
+                                          }
+                                          if (mode === "single") {
+                                            onChange(option.value);
+                                            setIsOpen(false);
+                                            setSearchTerm("");
+                                            return;
+                                          }
+                                          const nextSelected = new Set(selectedValueSet);
+                                          if (nextSelected.has(option.value)) {
+                                            nextSelected.delete(option.value);
+                                          } else {
+                                            nextSelected.add(option.value);
+                                          }
+                                          const nextOrderedValues = options
+                                            .map((entry) => entry.value)
+                                            .filter((entryValue) => nextSelected.has(entryValue));
+                                          onChange(nextOrderedValues.join(","));
                                         }}
                                       >
-                                        {leafLabel}
+                                        {showCheckboxes ? (
+                                          <span className="neris-incident-type-item-checkbox">
+                                            <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                                          </span>
+                                        ) : null}
+                                        <span>{leafLabel}</span>
                                       </button>
                                     );
                                   })}
@@ -2131,7 +2278,7 @@ function NerisPrimaryIncidentTypeSelect({
                 );
               })
             ) : (
-              <p className="neris-incident-type-empty">No incident types match your search.</p>
+              <p className="neris-incident-type-empty">No options match your search.</p>
             )}
           </div>
         </div>
@@ -2281,10 +2428,20 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       field.id === "primary_incident_type" &&
       field.inputKind === "select" &&
       field.optionsKey === "incident_type";
+    const isAdditionalIncidentTypesField =
+      field.id === "additional_incident_types" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "incident_type";
+    const isActionsTakenField =
+      field.id === "incident_actions_taken" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "action_tactic";
     const shouldShowTypeahead =
       (field.inputKind === "select" || field.inputKind === "multiselect") &&
       options.length > 10 &&
-      !isPrimaryIncidentTypeField;
+      !isPrimaryIncidentTypeField &&
+      !isAdditionalIncidentTypesField &&
+      !isActionsTakenField;
     const optionFilter = fieldOptionFilters[field.id] ?? "";
     const normalizedFilter = optionFilter.trim().toLowerCase();
     const filteredOptions =
@@ -2337,11 +2494,15 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
         {field.inputKind === "select" ? (
           isPrimaryIncidentTypeField ? (
-            <NerisPrimaryIncidentTypeSelect
+            <NerisGroupedOptionSelect
               inputId={inputId}
               value={normalizedSingleValue}
               options={options}
               onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="single"
+              variant="incidentType"
+              placeholder=""
+              searchPlaceholder="Search incident types..."
             />
           ) : (
             <>
@@ -2376,42 +2537,69 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         ) : null}
 
         {field.inputKind === "multiselect" ? (
-          <>
-            {shouldShowTypeahead ? (
-              <input
-                type="text"
-                className="field-typeahead-input"
-                value={optionFilter}
-                placeholder={`Filter ${field.label.toLowerCase()}...`}
+          isAdditionalIncidentTypesField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="multi"
+              variant="incidentType"
+              placeholder="Select up to 2 incident types"
+              searchPlaceholder="Search incident types..."
+              maxSelections={2}
+              showCheckboxes
+            />
+          ) : isActionsTakenField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="multi"
+              variant="actionTactic"
+              placeholder="Select action(s) taken"
+              searchPlaceholder="Search actions..."
+              showCheckboxes
+            />
+          ) : (
+            <>
+              {shouldShowTypeahead ? (
+                <input
+                  type="text"
+                  className="field-typeahead-input"
+                  value={optionFilter}
+                  placeholder={`Filter ${field.label.toLowerCase()}...`}
+                  onChange={(event) =>
+                    setFieldOptionFilters((previous) => ({
+                      ...previous,
+                      [field.id]: event.target.value,
+                    }))
+                  }
+                />
+              ) : null}
+              <select
+                id={inputId}
+                multiple
+                className="neris-multiselect"
+                value={normalizedSelectedValues}
                 onChange={(event) =>
-                  setFieldOptionFilters((previous) => ({
-                    ...previous,
-                    [field.id]: event.target.value,
-                  }))
+                  updateFieldValue(
+                    field.id,
+                    Array.from(event.target.selectedOptions)
+                      .map((option) => option.value)
+                      .join(","),
+                  )
                 }
-              />
-            ) : null}
-            <select
-              id={inputId}
-              multiple
-              className="neris-multiselect"
-              value={normalizedSelectedValues}
-              onChange={(event) =>
-                updateFieldValue(
-                  field.id,
-                  Array.from(event.target.selectedOptions)
-                    .map((option) => option.value)
-                    .join(","),
-                )
-              }
-            >
-              {filteredOptions.map((option) => (
-                <option key={`${field.id}-${option.value}`} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </>
+              >
+                {filteredOptions.map((option) => (
+                  <option key={`${field.id}-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )
         ) : null}
 
         {field.helperText ? <small className="field-hint">{field.helperText}</small> : null}
