@@ -365,6 +365,77 @@ function formatNerisEnumSegment(value: string): string {
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
+interface ParsedImportedLocationValues {
+  locationState: string;
+  locationCountry: string;
+  locationPostalCode: string;
+  locationCounty: string;
+}
+
+function parseImportedLocationValues(
+  address: string,
+  stateOptionValues: Set<string>,
+  countryOptionValues: Set<string>,
+  fallbackCounty?: string,
+): ParsedImportedLocationValues {
+  const trimmedAddress = address.trim();
+  if (!trimmedAddress || trimmedAddress === "No imported address available.") {
+    return {
+      locationState: "",
+      locationCountry: countryOptionValues.has("US") ? "US" : "",
+      locationPostalCode: "",
+      locationCounty: fallbackCounty?.trim() ?? "",
+    };
+  }
+
+  const segments = trimmedAddress
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  const postalMatch = trimmedAddress.match(/\b\d{5}(?:-\d{4})?\b/);
+  const locationPostalCode = postalMatch?.[0] ?? "";
+  const stateCandidates = Array.from(trimmedAddress.toUpperCase().matchAll(/\b[A-Z]{2}\b/g))
+    .map((match) => match[0] ?? "")
+    .filter((candidate) => candidate.length > 0);
+  const locationState =
+    [...stateCandidates].reverse().find((candidate) => stateOptionValues.has(candidate)) ?? "";
+
+  let locationCountry = countryOptionValues.has("US") ? "US" : "";
+  const lastSegment = segments[segments.length - 1]?.toUpperCase() ?? "";
+  if (lastSegment === "USA" || lastSegment === "UNITED STATES") {
+    locationCountry = countryOptionValues.has("US") ? "US" : "";
+  } else {
+    const countryCandidates = Array.from(lastSegment.matchAll(/\b[A-Z]{2}\b/g))
+      .map((match) => match[0] ?? "")
+      .filter((candidate) => candidate.length > 0);
+    const matchedCountry = countryCandidates.find((candidate) =>
+      countryOptionValues.has(candidate),
+    );
+    if (matchedCountry) {
+      locationCountry = matchedCountry;
+    }
+  }
+
+  let locationCounty = segments.find((segment) => /county/i.test(segment)) ?? "";
+  if (!locationCounty) {
+    locationCounty = fallbackCounty?.trim() ?? "";
+  }
+  if (!locationCounty && segments.length >= 2) {
+    locationCounty = segments[1] ?? "";
+  }
+  locationCounty = locationCounty
+    .replace(/\b\d{5}(?:-\d{4})?\b/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    locationState,
+    locationCountry,
+    locationPostalCode,
+    locationCounty,
+  };
+}
+
 function dedupeAndCleanStrings(values: string[]): string[] {
   const cleaned = values.map((value) => value.trim()).filter((value) => value.length > 0);
   return Array.from(new Set(cleaned));
@@ -3208,6 +3279,14 @@ function NerisReportFormPage({
       (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length >
       0,
   );
+  const locationStateOptionValues = useMemo(
+    () => new Set(getNerisValueOptions("state").map((option) => option.value)),
+    [],
+  );
+  const locationCountryOptionValues = useMemo(
+    () => new Set(getNerisValueOptions("country").map((option) => option.value)),
+    [],
+  );
 
   const primaryIncidentCategory = useMemo(() => {
     const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
@@ -3250,6 +3329,31 @@ function NerisReportFormPage({
     () => getNerisFieldsForSection(currentSection.id),
     [currentSection.id],
   );
+  const displayedSectionFields = useMemo(() => {
+    if (currentSection.id !== "location") {
+      return sectionFields;
+    }
+
+    const locationFieldOrder = new Map<string, number>([
+      ["location_state", 1],
+      ["location_country", 2],
+      ["location_postal_code", 3],
+      ["location_county", 4],
+      ["location_place_type", 5],
+      ["location_use_primary", 6],
+      ["location_use_secondary", 7],
+      ["location_vacancy_cause", 8],
+      ["location_direction_of_travel", 9],
+      ["location_cross_street_type", 10],
+      ["location_notes", 11],
+    ]);
+
+    return [...sectionFields].sort((left, right) => {
+      const leftOrder = locationFieldOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = locationFieldOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    });
+  }, [currentSection.id, sectionFields]);
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
@@ -3286,6 +3390,21 @@ function NerisReportFormPage({
     (formValues.dispatch_location_address ?? "").trim() ||
     detail?.address ||
     "No imported address available.";
+  const parsedImportedLocation = useMemo(
+    () =>
+      parseImportedLocationValues(
+        importedLocationAddress,
+        locationStateOptionValues,
+        locationCountryOptionValues,
+        detail?.stillDistrict,
+      ),
+    [
+      importedLocationAddress,
+      locationStateOptionValues,
+      locationCountryOptionValues,
+      detail?.stillDistrict,
+    ],
+  );
 
   if (!detail) {
     return (
@@ -3415,6 +3534,108 @@ function NerisReportFormPage({
       return next;
     });
     setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
+  useEffect(() => {
+    const locationUpdates: Partial<NerisFormValues> = {};
+    if (
+      (formValues.location_state ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationState
+    ) {
+      locationUpdates.location_state = parsedImportedLocation.locationState;
+    }
+    if (
+      (formValues.location_country ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationCountry
+    ) {
+      locationUpdates.location_country = parsedImportedLocation.locationCountry;
+    }
+    if (
+      (formValues.location_postal_code ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationPostalCode
+    ) {
+      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
+    }
+    if (
+      (formValues.location_county ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationCounty
+    ) {
+      locationUpdates.location_county = parsedImportedLocation.locationCounty;
+    }
+
+    if (Object.keys(locationUpdates).length === 0) {
+      return;
+    }
+
+    setFormValues((previous) => ({
+      ...previous,
+      ...locationUpdates,
+    }));
+  }, [
+    formValues.location_state,
+    formValues.location_country,
+    formValues.location_postal_code,
+    formValues.location_county,
+    parsedImportedLocation.locationState,
+    parsedImportedLocation.locationCountry,
+    parsedImportedLocation.locationPostalCode,
+    parsedImportedLocation.locationCounty,
+  ]);
+
+  const handlePullLocationFromImportedAddress = () => {
+    const locationUpdates: Partial<NerisFormValues> = {};
+    if (
+      parsedImportedLocation.locationState &&
+      parsedImportedLocation.locationState !== (formValues.location_state ?? "")
+    ) {
+      locationUpdates.location_state = parsedImportedLocation.locationState;
+    }
+    if (
+      parsedImportedLocation.locationCountry &&
+      parsedImportedLocation.locationCountry !== (formValues.location_country ?? "")
+    ) {
+      locationUpdates.location_country = parsedImportedLocation.locationCountry;
+    }
+    if (
+      parsedImportedLocation.locationPostalCode &&
+      parsedImportedLocation.locationPostalCode !== (formValues.location_postal_code ?? "")
+    ) {
+      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
+    }
+    if (
+      parsedImportedLocation.locationCounty &&
+      parsedImportedLocation.locationCounty !== (formValues.location_county ?? "")
+    ) {
+      locationUpdates.location_county = parsedImportedLocation.locationCounty;
+    }
+
+    if (Object.keys(locationUpdates).length === 0) {
+      setSaveMessage(
+        "No additional state, country, postal code, or county details were found to apply.",
+      );
+      setErrorMessage("");
+      return;
+    }
+
+    setFormValues((previous) => ({
+      ...previous,
+      ...locationUpdates,
+    }));
+    setSectionErrors((previous) => {
+      const next = { ...previous };
+      delete next.location_state;
+      delete next.location_country;
+      delete next.location_postal_code;
+      delete next.location_county;
+      return next;
+    });
+    setSaveMessage("Location details pulled from imported address.");
     setErrorMessage("");
     setValidationIssues([]);
     setValidationModal(null);
@@ -4419,7 +4640,7 @@ function NerisReportFormPage({
             <p className="panel-description">{currentSection.helper}</p>
           ) : null}
           <div className="settings-form neris-field-grid">
-            {sectionFields.flatMap((field) => {
+            {displayedSectionFields.flatMap((field) => {
               const nodes: ReactNode[] = [];
               const headingLabel =
                 currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
@@ -4430,7 +4651,7 @@ function NerisReportFormPage({
                   </div>,
                 );
               }
-              if (currentSection.id === "location" && field.id === "location_place_type") {
+              if (currentSection.id === "location" && field.id === "location_state") {
                 nodes.push(
                   <div
                     key="heading-location-usage"
@@ -4444,39 +4665,59 @@ function NerisReportFormPage({
                     key="location-imported-address"
                     className="field-span-two neris-imported-address-block"
                   >
-                    <label htmlFor="location-imported-address-box">Imported address</label>
+                    <div className="neris-imported-address-header">
+                      <label htmlFor="location-imported-address-box">Imported address</label>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button neris-imported-address-sync-button"
+                        onClick={handlePullLocationFromImportedAddress}
+                      >
+                        Pull location data
+                      </button>
+                    </div>
                     <div id="location-imported-address-box" className="neris-imported-address">
                       {importedLocationAddress}
                     </div>
                   </div>,
                 );
-                if (!showDirectionOfTravelField || !showCrossStreetTypeField) {
-                  nodes.push(
-                    <div
-                      key="location-optional-field-links"
-                      className="field-span-two neris-location-add-links"
+              }
+              if (currentSection.id === "location" && field.id === "location_direction_of_travel") {
+                nodes.push(
+                  <div
+                    key="location-direction-of-travel-link"
+                    className="field-span-two neris-location-add-links"
+                  >
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-expanded={showDirectionOfTravelField}
+                      onClick={() =>
+                        setShowDirectionOfTravelField((previous) => !previous)
+                      }
                     >
-                      {!showDirectionOfTravelField ? (
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => setShowDirectionOfTravelField(true)}
-                        >
-                          Add Direction of Travel
-                        </button>
-                      ) : null}
-                      {!showCrossStreetTypeField ? (
-                        <button
-                          type="button"
-                          className="link-button"
-                          onClick={() => setShowCrossStreetTypeField(true)}
-                        >
-                          Add Cross Street
-                        </button>
-                      ) : null}
-                    </div>,
-                  );
-                }
+                      Add Direction of Travel
+                    </button>
+                  </div>,
+                );
+              }
+              if (currentSection.id === "location" && field.id === "location_cross_street_type") {
+                nodes.push(
+                  <div
+                    key="location-cross-street-link"
+                    className="field-span-two neris-location-add-links"
+                  >
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-expanded={showCrossStreetTypeField}
+                      onClick={() =>
+                        setShowCrossStreetTypeField((previous) => !previous)
+                      }
+                    >
+                      Add Cross Street
+                    </button>
+                  </div>,
+                );
               }
               nodes.push(renderNerisField(field, `field-${field.id}`));
               return nodes;

@@ -2025,6 +2025,14 @@ body.resizing-dispatch-columns {
   gap: 0.34rem;
 }
 
+.neris-imported-address-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
 .neris-imported-address-block label {
   font-size: 0.82rem;
   font-weight: 700;
@@ -2046,6 +2054,10 @@ body.resizing-dispatch-columns {
   align-items: center;
   gap: 0.7rem;
   flex-wrap: wrap;
+}
+
+.neris-imported-address-sync-button {
+  width: auto;
 }
 
 .neris-field-grid {
@@ -2437,6 +2449,10 @@ body.resizing-dispatch-columns {
   .search-field {
     min-width: 0;
     flex: 1;
+  }
+
+  .neris-imported-address-sync-button {
+    width: auto;
   }
 
   .breadcrumb {
