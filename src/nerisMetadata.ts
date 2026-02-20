@@ -5,6 +5,7 @@ export type NerisSectionId =
   | "incidentTimes"
   | "resources"
   | "emergingHazards"
+  | "hazards"
   | "fire"
   | "exposures"
   | "riskReduction"
@@ -108,6 +109,11 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
     id: "emergingHazards",
     label: "Emerging Hazards",
     helper: "Flag hazardous materials or hazards found on scene.",
+  },
+  {
+    id: "hazards",
+    label: "Hazards",
+    helper: "Capture chemical and hazardous material incident details.",
   },
   {
     id: "fire",
@@ -1209,6 +1215,7 @@ const NERIS_SECTION_NOTE_IDS: NerisSectionId[] = [
   "incidentTimes",
   "resources",
   "emergingHazards",
+  "hazards",
   "fire",
   "exposures",
   "riskReduction",
@@ -1681,7 +1688,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "emerg_haz_disposition",
-    sectionId: "emergingHazards",
+    sectionId: "hazards",
     label: "Hazard disposition",
     inputKind: "select",
     optionsKey: "hazard_disposition",
@@ -1689,21 +1696,21 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "emerg_haz_evacuated_count",
-    sectionId: "emergingHazards",
+    sectionId: "hazards",
     label: "Evacuated occupants/businesses",
     inputKind: "text",
     layout: "half",
   },
   {
     id: "emerg_haz_chemical_name",
-    sectionId: "emergingHazards",
+    sectionId: "hazards",
     label: "Chemical name",
     inputKind: "text",
     layout: "half",
   },
   {
     id: "emerg_haz_chemical_dot",
-    sectionId: "emergingHazards",
+    sectionId: "hazards",
     label: "DOT hazard class",
     inputKind: "select",
     optionsKey: "hazard_dot",
@@ -1711,7 +1718,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "emerg_haz_chemical_unit",
-    sectionId: "emergingHazards",
+    sectionId: "hazards",
     label: "Chemical quantity unit",
     inputKind: "select",
     optionsKey: "hazard_unit",
@@ -1719,7 +1726,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "emerg_haz_chemical_source_target",
-    sectionId: "emergingHazards",
+    sectionId: "hazards",
     label: "Chemical source/target",
     inputKind: "select",
     optionsKey: "source_target",
@@ -2318,6 +2325,7 @@ export function createDefaultNerisFormValues({
     incidentTimes_notes: "",
     resources_notes: "",
     emergingHazards_notes: "",
+    hazards_notes: "",
     fire_notes: "",
     exposures_notes: "",
     riskReduction_notes: "",

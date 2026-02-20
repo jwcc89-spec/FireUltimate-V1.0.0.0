@@ -2193,6 +2193,37 @@ function getNerisGroupedLeafLabel(
   return option.label;
 }
 
+function getNerisGroupedSelectedLabel(
+  option: NerisValueOption,
+  variant: NerisGroupedOptionVariant,
+): string {
+  const segments = option.value
+    .split("||")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return option.label;
+  }
+
+  const categoryKey = segments[0] ?? "";
+  const categoryLabel = getNerisGroupedCategoryLabel(categoryKey, variant);
+  if (segments.length === 1) {
+    if (variant === "incidentType" && categoryKey === "LAWENFORCE") {
+      return "Law Enforcement Support";
+    }
+    return categoryLabel;
+  }
+
+  const subgroupKey = getNerisGroupedSubgroupKey(categoryKey, segments[1], variant);
+  const subgroupLabel = getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant);
+  if (segments.length === 2) {
+    return `${categoryLabel} / ${subgroupLabel}`;
+  }
+
+  const leafLabel = segments.slice(2).map(formatNerisEnumSegment).join(" / ");
+  return `${categoryLabel} / ${subgroupLabel} / ${leafLabel}`;
+}
+
 interface NerisGroupedOptionSelectProps {
   inputId: string;
   value: string;
@@ -2242,6 +2273,9 @@ function NerisGroupedOptionSelect({
     .map((selectedValue) => options.find((option) => option.value === selectedValue))
     .filter((option): option is NerisValueOption => Boolean(option));
   const selectedOption = selectedOptions[0];
+  const selectedOptionLabel = selectedOption
+    ? getNerisGroupedSelectedLabel(selectedOption, variant)
+    : "";
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const selectionLimitReached =
     mode === "multi" &&
@@ -2414,7 +2448,7 @@ function NerisGroupedOptionSelect({
         {mode === "single" ? (
           <div className="neris-selected-pill-row">
             {selectedOption ? (
-              <span className="neris-selected-pill">{selectedOption.label}</span>
+              <span className="neris-selected-pill">{selectedOptionLabel}</span>
             ) : (
               <span
                 className={
@@ -2432,7 +2466,7 @@ function NerisGroupedOptionSelect({
             {selectedOptions.length ? (
               selectedOptions.map((selected) => (
                 <span key={`${inputId}-${selected.value}`} className="neris-selected-pill">
-                  {selected.label}
+                  {getNerisGroupedSelectedLabel(selected, variant)}
                 </span>
               ))
             ) : (
@@ -3042,12 +3076,46 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     })),
   );
 
+  const primaryIncidentCategory = useMemo(() => {
+    const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
+      formValues.primary_incident_type ?? "",
+    );
+    return (
+      normalizedPrimaryIncidentType
+        .split("||")
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)[0] ?? ""
+    );
+  }, [formValues.primary_incident_type]);
+  const visibleNerisSections = useMemo(
+    () =>
+      NERIS_FORM_SECTIONS.filter((section) => {
+        if (section.id === "fire") {
+          return primaryIncidentCategory === "FIRE";
+        }
+        if (section.id === "medical") {
+          return primaryIncidentCategory === "MEDICAL";
+        }
+        if (section.id === "hazards") {
+          return (
+            primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
+          );
+        }
+        return true;
+      }),
+    [primaryIncidentCategory],
+  );
+  const activeVisibleSectionId =
+    visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
+    visibleNerisSections[0]?.id ??
+    "core";
   const currentSection =
-    NERIS_FORM_SECTIONS.find((section) => section.id === activeSectionId) ??
-    NERIS_FORM_SECTIONS[0];
+    visibleNerisSections.find((section) => section.id === activeVisibleSectionId) ??
+    visibleNerisSections[0] ??
+    NERIS_FORM_SECTIONS[0]!;
   const sectionFields = useMemo(
-    () => getNerisFieldsForSection(activeSectionId),
-    [activeSectionId],
+    () => getNerisFieldsForSection(currentSection.id),
+    [currentSection.id],
   );
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
@@ -3075,10 +3143,11 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       ) as Record<NerisSectionId, string>,
     [],
   );
-  const sectionIndex = NERIS_FORM_SECTIONS.findIndex(
-    (section) => section.id === activeSectionId,
+  const sectionIndex = visibleNerisSections.findIndex(
+    (section) => section.id === currentSection.id,
   );
-  const hasNextSection = sectionIndex < NERIS_FORM_SECTIONS.length - 1;
+  const hasNextSection =
+    sectionIndex >= 0 && sectionIndex < visibleNerisSections.length - 1;
 
   if (!detail) {
     return (
@@ -3323,7 +3392,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     setValidationIssues([]);
     setValidationModal(null);
     stampSavedAt("auto");
-    const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
+    const nextSection = visibleNerisSections[sectionIndex + 1];
     if (nextSection) {
       setActiveSectionId(nextSection.id);
     }
@@ -3331,7 +3400,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
   const handleBack = () => {
     if (sectionIndex > 0) {
-      const previousSection = NERIS_FORM_SECTIONS[sectionIndex - 1];
+      const previousSection = visibleNerisSections[sectionIndex - 1];
       if (previousSection) {
         setActiveSectionId(previousSection.id);
       }
@@ -4029,11 +4098,11 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
             <p>NERIS sections</p>
           </div>
           <nav className="neris-section-nav" aria-label="NERIS section navigation">
-            {NERIS_FORM_SECTIONS.map((section) => (
+            {visibleNerisSections.map((section) => (
               <button
                 key={section.id}
                 type="button"
-                className={section.id === activeSectionId ? "active" : ""}
+                className={section.id === currentSection.id ? "active" : ""}
                 onClick={() => setActiveSectionId(section.id)}
               >
                 {section.label}
@@ -4055,7 +4124,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
             {sectionFields.flatMap((field) => {
               const nodes: ReactNode[] = [];
               const headingLabel =
-                activeSectionId === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
+                currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
               if (headingLabel) {
                 nodes.push(
                   <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
