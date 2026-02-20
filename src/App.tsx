@@ -71,7 +71,6 @@ import {
   getNerisFieldsForSection,
   getNerisValueOptions,
   isNerisFieldRequired,
-  validateNerisSection,
   type NerisFieldMetadata,
   type NerisFormValues,
   type NerisSectionId,
@@ -3176,18 +3175,6 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     setErrorMessage("");
   };
 
-  const validateCurrentSection = (): boolean => {
-    const result = validateNerisSection(activeSectionId, formValues);
-    setSectionErrors(result.errors);
-    if (!result.isValid) {
-      setSaveMessage("");
-      setErrorMessage("Complete required fields before continuing.");
-    } else {
-      setErrorMessage("");
-    }
-    return result.isValid;
-  };
-
   const stampSavedAt = (mode: "manual" | "auto") => {
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -3214,19 +3201,17 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   };
 
   const handleSaveDraft = () => {
-    if (!validateCurrentSection()) {
-      return;
-    }
+    setSectionErrors({});
+    setErrorMessage("");
     stampSavedAt("manual");
   };
 
   const goToNextSection = () => {
-    if (!validateCurrentSection()) {
-      return;
-    }
     if (!hasNextSection) {
       return;
     }
+    setSectionErrors({});
+    setErrorMessage("");
     stampSavedAt("auto");
     const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
     if (nextSection) {
