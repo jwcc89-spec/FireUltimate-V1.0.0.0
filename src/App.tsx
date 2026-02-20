@@ -2719,6 +2719,7 @@ interface NerisFlatSingleOptionSelectProps {
   placeholder?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  isOptionDisabled?: (optionValue: string) => boolean;
 }
 
 function NerisFlatSingleOptionSelect({
@@ -2729,6 +2730,7 @@ function NerisFlatSingleOptionSelect({
   placeholder,
   searchPlaceholder,
   disabled = false,
+  isOptionDisabled,
 }: NerisFlatSingleOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -2830,13 +2832,20 @@ function NerisFlatSingleOptionSelect({
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = option.value === normalizedValue;
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}`}
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${
+                        optionDisabled ? " disabled" : ""
+                      }`}
                       aria-selected={isSelected}
+                      aria-disabled={optionDisabled}
                       onClick={() => {
+                        if (optionDisabled) {
+                          return;
+                        }
                         onChange(option.value);
                         setIsOpen(false);
                         setSearchTerm("");
@@ -3196,6 +3205,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       (formValues.incident_displaced_number ?? "").trim(),
       10,
     );
+    const selectedPrimaryAidDepartment = (formValues.incident_aid_department_name ?? "").trim();
+    const selectedAdditionalAidDepartments = additionalAidEntries
+      .map((entry) => entry.aidDepartment.trim())
+      .filter((entry) => entry.length > 0);
     const shouldShowTypeahead =
       (field.inputKind === "select" || field.inputKind === "multiselect") &&
       options.length > 10 &&
@@ -3232,7 +3245,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     return (
       <div key={fieldKey} className={wrapperClassName}>
         {!isAidGivenQuestionField ? (
-          <label htmlFor={inputId}>
+          <label
+            htmlFor={inputId}
+            className={isNoActionReasonField ? "neris-field-label-italic" : undefined}
+          >
             {field.label}
             {isRequired ? " *" : ""}
           </label>
@@ -3385,6 +3401,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                   }
                   placeholder="Select aid department"
                   searchPlaceholder="Search aid departments..."
+                  isOptionDisabled={(optionValue) =>
+                    optionValue !== selectedPrimaryAidDepartment &&
+                    selectedAdditionalAidDepartments.includes(optionValue)
+                  }
                 />
                 {sectionErrors.incident_aid_department_name ? (
                   <small className="field-error">{sectionErrors.incident_aid_department_name}</small>
@@ -3434,6 +3454,19 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                       }
                       placeholder="Select aid department"
                       searchPlaceholder="Search aid departments..."
+                      isOptionDisabled={(optionValue) => {
+                        if (optionValue === entry.aidDepartment) {
+                          return false;
+                        }
+                        if (selectedPrimaryAidDepartment === optionValue) {
+                          return true;
+                        }
+                        return additionalAidEntries.some(
+                          (candidateEntry, candidateIndex) =>
+                            candidateIndex !== entryIndex &&
+                            candidateEntry.aidDepartment.trim() === optionValue,
+                        );
+                      }}
                     />
                   </div>
                 ))}
@@ -3474,6 +3507,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                     disabled={isDisabled}
                     onClick={() => {
                       if (isDisabled) {
+                        return;
+                      }
+                      if (isNoActionReasonField && isSelected) {
+                        updateFieldValue(field.id, "");
                         return;
                       }
                       updateFieldValue(field.id, option.value);

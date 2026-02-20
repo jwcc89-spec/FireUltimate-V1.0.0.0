@@ -1472,6 +1472,10 @@ tbody tr:last-of-type td {
   font-size: 0.76rem;
 }
 
+.neris-field-label-italic {
+  font-style: italic;
+}
+
 .field-error {
   display: block;
   margin-top: 0.12rem;
