@@ -1914,6 +1914,11 @@ body.resizing-dispatch-columns {
   background-color: #ffffff;
 }
 
+.neris-status-pill {
+  display: inline-flex;
+  align-items: center;
+}
+
 .neris-report-layout {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
@@ -2044,6 +2049,34 @@ body.resizing-dispatch-columns {
   justify-content: flex-end;
   flex-wrap: wrap;
   gap: 0.45rem;
+}
+
+.validation-issue-list {
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  background-color: #fff7ed;
+  padding: 0.62rem 0.7rem;
+  display: grid;
+  gap: 0.38rem;
+}
+
+.validation-issue-list p {
+  margin: 0;
+  color: #9a3412;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.validation-issue-list ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.validation-issue-list li {
+  color: #9a3412;
+  font-size: 0.78rem;
 }
 
 .submenu-settings-group {

@@ -1330,6 +1330,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Automatic alarm",
     inputKind: "select",
     optionsKey: "yes_no",
+    required: true,
     layout: "half",
   },
   {
@@ -2297,7 +2298,7 @@ export function createDefaultNerisFormValues({
     initial_dispatch_code: "AMB.UNRESP-BREATHING",
     dispatch_determinate_code: "",
     dispatch_final_disposition: "",
-    dispatch_automatic_alarm: "NO",
+    dispatch_automatic_alarm: "",
     incident_people_present: "",
     incident_time_call_create: dispatchDateTime,
     incident_time_call_answered: dispatchDateTime,

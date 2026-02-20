@@ -71,6 +71,7 @@ import {
   getNerisFieldsForSection,
   getNerisValueOptions,
   isNerisFieldRequired,
+  validateNerisSection,
   type NerisFieldMetadata,
   type NerisFormValues,
   type NerisSectionId,
@@ -3007,13 +3008,14 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
   const [reportStatus, setReportStatus] = useState<string>(() =>
-    persistedDraft?.reportStatus ?? getNerisReportStatus(callNumber),
+    persistedDraft?.reportStatus ?? "Draft",
   );
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
   }));
   const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
+  const [validationIssues, setValidationIssues] = useState<string[]>([]);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState<string>(
@@ -3035,14 +3037,22 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     () => getNerisFieldsForSection(activeSectionId),
     [activeSectionId],
   );
+  const allNerisFields = useMemo(
+    () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
+    [],
+  );
+  const nerisFieldLabelById = useMemo(
+    () =>
+      Object.fromEntries(allNerisFields.map((field) => [field.id, field.label])) as Record<
+        string,
+        string
+      >,
+    [allNerisFields],
+  );
   const sectionIndex = NERIS_FORM_SECTIONS.findIndex(
     (section) => section.id === activeSectionId,
   );
   const hasNextSection = sectionIndex < NERIS_FORM_SECTIONS.length - 1;
-  const reportStatusOptions = useMemo(
-    () => getNerisValueOptions("report_status"),
-    [],
-  );
 
   if (!detail) {
     return (
@@ -3173,9 +3183,17 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     });
     setSaveMessage("");
     setErrorMessage("");
+    setValidationIssues([]);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
   };
 
-  const stampSavedAt = (mode: "manual" | "auto") => {
+  const stampSavedAt = (
+    mode: "manual" | "auto",
+    nextStatus: string = reportStatus,
+    messageOverride?: string,
+  ) => {
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
@@ -3184,7 +3202,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     });
     writeNerisDraft(callNumber, {
       formValues,
-      reportStatus,
+      reportStatus: nextStatus,
       lastSavedAt: savedAt,
       additionalAidEntries: additionalAidEntries.map((entry) => ({
         aidDirection: entry.aidDirection,
@@ -3192,17 +3210,65 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         aidDepartment: entry.aidDepartment,
       })),
     });
+    setReportStatus(nextStatus);
     setLastSavedAt(savedAt);
     setSaveMessage(
-      mode === "auto"
-        ? `Draft auto-saved for ${detail.callNumber} at ${savedAt}.`
-        : `Draft saved for ${detail.callNumber} at ${savedAt}.`,
+      messageOverride ??
+        (mode === "auto"
+          ? `Draft auto-saved for ${detail.callNumber} at ${savedAt}.`
+          : `Draft saved for ${detail.callNumber} at ${savedAt}.`),
+    );
+  };
+
+  const handleValidateForm = () => {
+    const mergedErrors: Record<string, string> = {};
+    for (const section of NERIS_FORM_SECTIONS) {
+      const validation = validateNerisSection(section.id, formValues);
+      Object.assign(mergedErrors, validation.errors);
+    }
+
+    setSectionErrors(mergedErrors);
+    const issueLabels = Array.from(
+      new Set(
+        Object.keys(mergedErrors).map(
+          (fieldId) => nerisFieldLabelById[fieldId] ?? fieldId,
+        ),
+      ),
+    );
+    setValidationIssues(issueLabels);
+
+    if (issueLabels.length > 0) {
+      writeNerisDraft(callNumber, {
+        formValues,
+        reportStatus: "Draft",
+        lastSavedAt,
+        additionalAidEntries: additionalAidEntries.map((entry) => ({
+          aidDirection: entry.aidDirection,
+          aidType: entry.aidType,
+          aidDepartment: entry.aidDepartment,
+        })),
+      });
+      setReportStatus("Draft");
+      setSaveMessage("");
+      setErrorMessage(
+        "Validation incomplete. Complete the required fields listed below.",
+      );
+      return;
+    }
+
+    setErrorMessage("");
+    setValidationIssues([]);
+    stampSavedAt(
+      "manual",
+      "In Review",
+      "Validation complete. Status updated to In Review.",
     );
   };
 
   const handleSaveDraft = () => {
     setSectionErrors({});
     setErrorMessage("");
+    setValidationIssues([]);
     stampSavedAt("manual");
   };
 
@@ -3212,6 +3278,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     }
     setSectionErrors({});
     setErrorMessage("");
+    setValidationIssues([]);
     stampSavedAt("auto");
     const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
     if (nextSection) {
@@ -3249,6 +3316,12 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           : entry,
       ),
     );
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
   };
 
   const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
@@ -3651,7 +3724,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                       if (isDisabled) {
                         return;
                       }
-                      if (isNoActionReasonField && isSelected) {
+                      if (
+                        (isNoActionReasonField || isAutomaticAlarmField) &&
+                        isSelected
+                      ) {
                         updateFieldValue(field.id, "");
                         return;
                       }
@@ -3837,18 +3913,16 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           <button type="button" className="secondary-button compact-button">
             Print
           </button>
-          <select
-            className="neris-status-select"
-            aria-label="NERIS report status"
-            value={reportStatus}
-            onChange={(event) => setReportStatus(event.target.value)}
+          <button
+            type="button"
+            className="secondary-button compact-button"
+            onClick={handleValidateForm}
           >
-            {reportStatusOptions.map((option) => (
-              <option key={`report-status-${option.value}`} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </select>
+            Validate
+          </button>
+          <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
+            {reportStatus}
+          </span>
         </div>
       </header>
 
@@ -3900,6 +3974,16 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
           {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+          {validationIssues.length ? (
+            <div className="validation-issue-list">
+              <p>Required fields to complete:</p>
+              <ul>
+                {validationIssues.map((fieldLabel) => (
+                  <li key={`validation-issue-${fieldLabel}`}>{fieldLabel}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="neris-form-actions">
             <button type="button" className="secondary-button compact-button" onClick={handleBack}>
