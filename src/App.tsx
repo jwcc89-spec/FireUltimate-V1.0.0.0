@@ -2987,7 +2987,8 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
     if (
       (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID")
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
+      (fieldId === "incident_aid_direction" && sanitizedValue === "GIVEN")
     ) {
       setAdditionalAidEntries([]);
     }
@@ -3058,10 +3059,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     return result.isValid;
   };
 
-  const handleSaveDraft = () => {
-    if (!validateCurrentSection()) {
-      return;
-    }
+  const stampSavedAt = (mode: "manual" | "auto") => {
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
@@ -3069,7 +3067,18 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       hour12: false,
     });
     setLastSavedAt(savedAt);
-    setSaveMessage(`Draft saved for ${detail.callNumber} at ${savedAt}.`);
+    setSaveMessage(
+      mode === "auto"
+        ? `Draft auto-saved for ${detail.callNumber} at ${savedAt}.`
+        : `Draft saved for ${detail.callNumber} at ${savedAt}.`,
+    );
+  };
+
+  const handleSaveDraft = () => {
+    if (!validateCurrentSection()) {
+      return;
+    }
+    stampSavedAt("manual");
   };
 
   const goToNextSection = () => {
@@ -3079,6 +3088,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     if (!hasNextSection) {
       return;
     }
+    stampSavedAt("auto");
     const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
     if (nextSection) {
       setActiveSectionId(nextSection.id);
@@ -3410,74 +3420,82 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                   <small className="field-error">{sectionErrors.incident_aid_department_name}</small>
                 ) : null}
 
-                {additionalAidEntries.map((entry, entryIndex) => (
-                  <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
-                    <label className="neris-aid-subfield-label">Aid direction</label>
-                    <div className="neris-single-choice-row" role="group" aria-label="Additional aid direction">
-                      {getNerisValueOptions("aid_direction").map((option) => {
-                        const isSelected = option.value === entry.aidDirection;
-                        return (
-                          <button
-                            key={`additional-aid-direction-${entryIndex}-${option.value}`}
-                            type="button"
-                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                            aria-pressed={isSelected}
-                            onClick={() =>
-                              updateAdditionalAidEntry(entryIndex, "aidDirection", option.value)
+                {(formValues.incident_aid_direction ?? "") === "RECEIVED" ? (
+                  <>
+                    {additionalAidEntries.map((entry, entryIndex) => (
+                      <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
+                        <label className="neris-aid-subfield-label">Aid direction</label>
+                        <div
+                          className="neris-single-choice-row"
+                          role="group"
+                          aria-label="Additional aid direction"
+                        >
+                          {getNerisValueOptions("aid_direction").map((option) => {
+                            const isSelected = option.value === entry.aidDirection;
+                            return (
+                              <button
+                                key={`additional-aid-direction-${entryIndex}-${option.value}`}
+                                type="button"
+                                className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  updateAdditionalAidEntry(entryIndex, "aidDirection", option.value)
+                                }
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <label className="neris-aid-subfield-label">Aid Type</label>
+                        <NerisFlatSingleOptionSelect
+                          inputId={`${inputId}-additional-aid-type-${entryIndex}`}
+                          value={entry.aidType}
+                          options={getNerisValueOptions("aid_type")}
+                          onChange={(nextValue) =>
+                            updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
+                          }
+                          placeholder="Select aid type"
+                          searchPlaceholder="Search aid types..."
+                        />
+
+                        <label className="neris-aid-subfield-label">Aid department name(s)</label>
+                        <NerisFlatSingleOptionSelect
+                          inputId={`${inputId}-additional-aid-department-${entryIndex}`}
+                          value={entry.aidDepartment}
+                          options={getNerisValueOptions("aid_department")}
+                          onChange={(nextValue) =>
+                            updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
+                          }
+                          placeholder="Select aid department"
+                          searchPlaceholder="Search aid departments..."
+                          isOptionDisabled={(optionValue) => {
+                            if (optionValue === entry.aidDepartment) {
+                              return false;
                             }
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
+                            if (selectedPrimaryAidDepartment === optionValue) {
+                              return true;
+                            }
+                            return additionalAidEntries.some(
+                              (candidateEntry, candidateIndex) =>
+                                candidateIndex !== entryIndex &&
+                                candidateEntry.aidDepartment.trim() === optionValue,
+                            );
+                          }}
+                        />
+                      </div>
+                    ))}
 
-                    <label className="neris-aid-subfield-label">Aid Type</label>
-                    <NerisFlatSingleOptionSelect
-                      inputId={`${inputId}-additional-aid-type-${entryIndex}`}
-                      value={entry.aidType}
-                      options={getNerisValueOptions("aid_type")}
-                      onChange={(nextValue) =>
-                        updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
-                      }
-                      placeholder="Select aid type"
-                      searchPlaceholder="Search aid types..."
-                    />
-
-                    <label className="neris-aid-subfield-label">Aid department name(s)</label>
-                    <NerisFlatSingleOptionSelect
-                      inputId={`${inputId}-additional-aid-department-${entryIndex}`}
-                      value={entry.aidDepartment}
-                      options={getNerisValueOptions("aid_department")}
-                      onChange={(nextValue) =>
-                        updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
-                      }
-                      placeholder="Select aid department"
-                      searchPlaceholder="Search aid departments..."
-                      isOptionDisabled={(optionValue) => {
-                        if (optionValue === entry.aidDepartment) {
-                          return false;
-                        }
-                        if (selectedPrimaryAidDepartment === optionValue) {
-                          return true;
-                        }
-                        return additionalAidEntries.some(
-                          (candidateEntry, candidateIndex) =>
-                            candidateIndex !== entryIndex &&
-                            candidateEntry.aidDepartment.trim() === optionValue,
-                        );
-                      }}
-                    />
-                  </div>
-                ))}
-
-                <button
-                  type="button"
-                  className="neris-link-button"
-                  onClick={addAdditionalAidEntry}
-                >
-                  Add Additional Aid
-                </button>
+                    <button
+                      type="button"
+                      className="neris-link-button"
+                      onClick={addAdditionalAidEntry}
+                    >
+                      Add Additional Aid
+                    </button>
+                  </>
+                ) : null}
               </div>
             ) : null}
           </div>
