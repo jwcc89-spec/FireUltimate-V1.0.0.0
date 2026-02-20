@@ -2638,16 +2638,29 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   }
 
   const updateFieldValue = (fieldId: string, value: string) => {
-    setFormValues((previous) => ({
-      ...previous,
-      [fieldId]: value,
-    }));
+    const shouldDisableNoAction =
+      fieldId === "incident_actions_taken" && value.trim().length > 0;
+    setFormValues((previous) => {
+      const nextValues: NerisFormValues = {
+        ...previous,
+        [fieldId]: value,
+      };
+      if (shouldDisableNoAction) {
+        nextValues.incident_noaction = "";
+      }
+      return nextValues;
+    });
     setSectionErrors((previous) => {
-      if (!previous[fieldId]) {
+      const hasPrimaryError = Boolean(previous[fieldId]);
+      const hasNoActionError = shouldDisableNoAction && Boolean(previous.incident_noaction);
+      if (!hasPrimaryError && !hasNoActionError) {
         return previous;
       }
       const next = { ...previous };
       delete next[fieldId];
+      if (shouldDisableNoAction) {
+        delete next.incident_noaction;
+      }
       return next;
     });
     setSaveMessage("");
@@ -2739,6 +2752,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       field.id === "incident_noaction" &&
       field.inputKind === "select" &&
       field.optionsKey === "no_action";
+    const isNoActionReasonDisabled = (formValues.incident_actions_taken ?? "").trim().length > 0;
     const shouldShowTypeahead =
       (field.inputKind === "select" || field.inputKind === "multiselect") &&
       options.length > 10 &&
@@ -2799,16 +2813,29 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
         {field.inputKind === "select" ? (
           isNoActionReasonField ? (
-            <div className="neris-single-choice-row" role="group" aria-label={field.label}>
+            <div
+              className={`neris-single-choice-row${isNoActionReasonDisabled ? " disabled" : ""}`}
+              role="group"
+              aria-label={field.label}
+              aria-disabled={isNoActionReasonDisabled}
+            >
               {options.map((option) => {
                 const isSelected = option.value === normalizedSingleValue;
                 return (
                   <button
                     key={`${field.id}-${option.value}`}
                     type="button"
-                    className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                    className={`neris-single-choice-button${isSelected ? " selected" : ""}${
+                      isNoActionReasonDisabled ? " disabled" : ""
+                    }`}
                     aria-pressed={isSelected}
-                    onClick={() => updateFieldValue(field.id, option.value)}
+                    disabled={isNoActionReasonDisabled}
+                    onClick={() => {
+                      if (isNoActionReasonDisabled) {
+                        return;
+                      }
+                      updateFieldValue(field.id, option.value);
+                    }}
                   >
                     {option.label}
                   </button>

@@ -1336,6 +1336,10 @@ tbody tr:last-of-type td {
   gap: 0.42rem;
 }
 
+.neris-single-choice-row.disabled {
+  opacity: 0.62;
+}
+
 .neris-single-choice-button {
   border: 1px solid #cbd5e1;
   border-radius: 999px;
@@ -1355,6 +1359,19 @@ tbody tr:last-of-type td {
   border-color: #bfdbfe;
   background-color: #eff6ff;
   color: #1d4ed8;
+}
+
+.neris-single-choice-button.disabled,
+.neris-single-choice-button:disabled {
+  border-color: #d1d5db;
+  background-color: #e5e7eb;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
+.neris-single-choice-button.disabled:hover,
+.neris-single-choice-button:disabled:hover {
+  background-color: #e5e7eb;
 }
 
 .settings-form input[type="color"] {
