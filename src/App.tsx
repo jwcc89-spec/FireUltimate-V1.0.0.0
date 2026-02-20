@@ -2121,7 +2121,7 @@ function NerisGroupedOptionSelect({
   }, [options, normalizedSearch, variant]);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
@@ -2131,20 +2131,14 @@ function NerisGroupedOptionSelect({
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen]);
+  }, [isOpen, disabled]);
 
   useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-    }
-  }, [disabled]);
-
-  useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || disabled) {
       return;
     }
     searchInputRef.current?.focus();
-  }, [isOpen]);
+  }, [isOpen, disabled]);
 
   const handleToggleCategory = (categoryKey: string) => {
     const currentlyCollapsed = collapsedCategories[categoryKey] !== false;
@@ -2230,7 +2224,7 @@ function NerisGroupedOptionSelect({
         />
       </button>
 
-      {isOpen ? (
+      {isOpen && !disabled ? (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
@@ -2483,7 +2477,7 @@ function NerisFlatMultiOptionSelect({
     : options;
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
@@ -2493,20 +2487,14 @@ function NerisFlatMultiOptionSelect({
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen]);
+  }, [isOpen, disabled]);
 
   useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-    }
-  }, [disabled]);
-
-  useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || disabled) {
       return;
     }
     searchInputRef.current?.focus();
-  }, [isOpen]);
+  }, [isOpen, disabled]);
 
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
@@ -2550,7 +2538,7 @@ function NerisFlatMultiOptionSelect({
         />
       </button>
 
-      {isOpen ? (
+      {isOpen && !disabled ? (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
@@ -2649,7 +2637,7 @@ function NerisFlatSingleOptionSelect({
     : options;
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
@@ -2659,20 +2647,14 @@ function NerisFlatSingleOptionSelect({
     };
     document.addEventListener("pointerdown", handlePointerDown);
     return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen]);
+  }, [isOpen, disabled]);
 
   useEffect(() => {
-    if (!isOpen) {
+    if (!isOpen || disabled) {
       return;
     }
     searchInputRef.current?.focus();
-  }, [isOpen]);
-
-  useEffect(() => {
-    if (disabled) {
-      setIsOpen(false);
-    }
-  }, [disabled]);
+  }, [isOpen, disabled]);
 
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
@@ -2712,7 +2694,7 @@ function NerisFlatSingleOptionSelect({
         />
       </button>
 
-      {isOpen ? (
+      {isOpen && !disabled ? (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
