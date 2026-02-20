@@ -702,7 +702,7 @@ function readNerisDraftStore(): Record<string, NerisStoredDraft> {
         reportStatus:
           typeof candidate.reportStatus === "string"
             ? candidate.reportStatus
-            : getNerisReportStatus(callNumber),
+            : NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft",
         lastSavedAt:
           typeof candidate.lastSavedAt === "string"
             ? candidate.lastSavedAt
@@ -761,6 +761,10 @@ function getCallFieldValue(
 }
 
 function getNerisReportStatus(callNumber: string): string {
+  const draftStatus = readNerisDraft(callNumber)?.reportStatus;
+  if (draftStatus) {
+    return draftStatus;
+  }
   return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
 }
 
@@ -2986,6 +2990,11 @@ interface AidEntry {
   aidDepartment: string;
 }
 
+interface ValidationModalState {
+  mode: "success" | "error";
+  issues: string[];
+}
+
 const EMPTY_AID_ENTRY: AidEntry = {
   aidDirection: "",
   aidType: "",
@@ -3016,6 +3025,9 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   }));
   const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
   const [validationIssues, setValidationIssues] = useState<string[]>([]);
+  const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
+    null,
+  );
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState<string>(
@@ -3048,6 +3060,20 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         string
       >,
     [allNerisFields],
+  );
+  const nerisFieldSectionById = useMemo(
+    () =>
+      Object.fromEntries(
+        allNerisFields.map((field) => [field.id, field.sectionId]),
+      ) as Record<string, NerisSectionId>,
+    [allNerisFields],
+  );
+  const nerisSectionLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        NERIS_FORM_SECTIONS.map((section) => [section.id, section.label.toUpperCase()]),
+      ) as Record<NerisSectionId, string>,
+    [],
   );
   const sectionIndex = NERIS_FORM_SECTIONS.findIndex(
     (section) => section.id === activeSectionId,
@@ -3184,6 +3210,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     setSaveMessage("");
     setErrorMessage("");
     setValidationIssues([]);
+    setValidationModal(null);
     if (reportStatus !== "Draft") {
       setReportStatus("Draft");
     }
@@ -3231,7 +3258,13 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     const issueLabels = Array.from(
       new Set(
         Object.keys(mergedErrors).map(
-          (fieldId) => nerisFieldLabelById[fieldId] ?? fieldId,
+          (fieldId) => {
+            const sectionId = nerisFieldSectionById[fieldId];
+            const sectionLabel = sectionId
+              ? nerisSectionLabelById[sectionId]
+              : "UNKNOWN";
+            return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
+          },
         ),
       ),
     );
@@ -3253,11 +3286,19 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       setErrorMessage(
         "Validation incomplete. Complete the required fields listed below.",
       );
+      setValidationModal({
+        mode: "error",
+        issues: issueLabels,
+      });
       return;
     }
 
     setErrorMessage("");
     setValidationIssues([]);
+    setValidationModal({
+      mode: "success",
+      issues: [],
+    });
     stampSavedAt(
       "manual",
       "In Review",
@@ -3269,6 +3310,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     setSectionErrors({});
     setErrorMessage("");
     setValidationIssues([]);
+    setValidationModal(null);
     stampSavedAt("manual");
   };
 
@@ -3279,6 +3321,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     setSectionErrors({});
     setErrorMessage("");
     setValidationIssues([]);
+    setValidationModal(null);
     stampSavedAt("auto");
     const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
     if (nextSection) {
@@ -3297,8 +3340,19 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     navigate("/reporting/neris");
   };
 
+  const handleValidationModalReturn = () => {
+    setValidationModal(null);
+    navigate("/reporting/neris");
+  };
+
+  const handleValidationModalFixIssues = () => {
+    setValidationModal(null);
+    setActiveSectionId("core");
+  };
+
   const addAdditionalAidEntry = () => {
     setAdditionalAidEntries((previous) => [...previous, { ...EMPTY_AID_ENTRY }]);
+    setValidationModal(null);
   };
 
   const updateAdditionalAidEntry = (
@@ -3319,6 +3373,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     setSaveMessage("");
     setErrorMessage("");
     setValidationIssues([]);
+    setValidationModal(null);
     if (reportStatus !== "Draft") {
       setReportStatus("Draft");
     }
@@ -3925,6 +3980,47 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           </span>
         </div>
       </header>
+
+      {validationModal ? (
+        <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="validation-modal panel">
+            {validationModal.mode === "success" ? (
+              <>
+                <h2>Report is now In Review</h2>
+                <p>Validation passed and the report status has been updated.</p>
+                <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={handleValidationModalReturn}
+                  >
+                    Return to Incidents
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2>Validation requires updates</h2>
+                <p>The following required fields still need values:</p>
+                <ul>
+                  {validationModal.issues.map((issue: string) => (
+                    <li key={`validation-modal-${issue}`}>{issue}</li>
+                  ))}
+                </ul>
+                <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={handleValidationModalFixIssues}
+                  >
+                    Fix issues now
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <section className="neris-report-layout">
         <aside className="panel neris-sidebar">

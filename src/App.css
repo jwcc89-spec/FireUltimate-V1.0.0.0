@@ -2079,6 +2079,53 @@ body.resizing-dispatch-columns {
   font-size: 0.78rem;
 }
 
+.validation-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background-color: rgba(15, 23, 42, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.validation-modal {
+  width: min(620px, 92vw);
+  max-height: min(78vh, 760px);
+  overflow: auto;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.validation-modal h2 {
+  margin: 0;
+  font-size: 1.02rem;
+  color: #0f172a;
+}
+
+.validation-modal p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.84rem;
+}
+
+.validation-modal ul {
+  margin: 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.22rem;
+}
+
+.validation-modal li {
+  color: #334155;
+  font-size: 0.8rem;
+}
+
+.validation-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+}
+
 .submenu-settings-group {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
