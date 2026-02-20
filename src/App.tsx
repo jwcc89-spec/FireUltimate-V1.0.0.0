@@ -3523,7 +3523,7 @@ function NerisReportFormPage({
 
     setValidationModal(null);
     setErrorMessage("");
-    setSaveMessage("");
+    setSaveMessage("Export in progress...");
     setIsExporting(true);
 
     const payload = {
@@ -3576,11 +3576,15 @@ function NerisReportFormPage({
       })),
     });
 
+    const requestController = new AbortController();
+    const timeoutId = window.setTimeout(() => requestController.abort(), 20_000);
+
     try {
       const response = await fetch(exportUrl, {
         method: "POST",
         headers,
         body: JSON.stringify(payload),
+        signal: requestController.signal,
       });
       const responseText = await response.text();
       if (!response.ok) {
@@ -3616,15 +3620,25 @@ function NerisReportFormPage({
           : `Report export submitted for ${detail.callNumber} at ${exportedAt}.`,
       );
     } catch (error) {
+      setSaveMessage("");
+      if (error instanceof DOMException && error.name === "AbortError") {
+        setErrorMessage(
+          "Export timed out after 20 seconds. If using local proxy, confirm `npm run proxy` is running, then retry.",
+        );
+        return;
+      }
       const reason = error instanceof Error ? error.message : "Unknown export error.";
       if (reason.includes("Failed to fetch")) {
         setErrorMessage(
-          "Export request could not reach the endpoint (network/CORS/proxy issue). Check backend proxy URL and server logs.",
+          isProxyRequest
+            ? "Export request could not reach local proxy. Start it with `npm run proxy`, then retry."
+            : "Export request could not reach the endpoint (network/CORS/proxy issue). Check endpoint URL and server logs.",
         );
       } else {
         setErrorMessage(reason);
       }
     } finally {
+      window.clearTimeout(timeoutId);
       setIsExporting(false);
     }
   };
@@ -4280,6 +4294,8 @@ function NerisReportFormPage({
               </strong>
             </span>
           </div>
+          {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
+          {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
         </div>
         <div className="header-actions">
           <button type="button" className="secondary-button compact-button">
@@ -4399,8 +4415,6 @@ function NerisReportFormPage({
             })}
           </div>
 
-          {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
-          {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
           {validationIssues.length ? (
             <div className="validation-issue-list">
               <p>Required fields to complete:</p>
