@@ -56,6 +56,120 @@ Build check:
 npm run build
 ```
 
+## NERIS export (test integration)
+
+This project now supports a **server-side proxy** so NERIS auth happens on the server
+instead of in the browser.
+
+### 1) Configure the proxy (server credentials)
+
+1. Copy server env template:
+
+```bash
+cp .env.server.example .env.server
+```
+
+2. Open `.env.server` and set values from your NERIS vendor account:
+   - `NERIS_ENTITY_ID` (required)
+   - auth option A (recommended for vendor integrations):
+     - `NERIS_GRANT_TYPE=client_credentials`
+     - `NERIS_CLIENT_ID`
+     - `NERIS_CLIENT_SECRET`
+   - auth option B (if NERIS specifically tells you to use password flow):
+     - `NERIS_GRANT_TYPE=password`
+     - `NERIS_CLIENT_ID`
+     - `NERIS_CLIENT_SECRET`
+     - `NERIS_USERNAME`
+     - `NERIS_PASSWORD`
+   - or auth option C:
+     - `NERIS_STATIC_ACCESS_TOKEN`
+
+3. Keep OpenAPI defaults unless NERIS tells you otherwise:
+   - `NERIS_BASE_URL=https://api.neris.fsri.org/v1` (or test: `https://api-test.neris.fsri.org/v1`)
+   - `NERIS_GRANT_TYPE=client_credentials`
+
+### 2) Run both servers (2 terminals)
+
+Terminal A:
+
+```bash
+npm run proxy
+```
+
+Terminal B:
+
+```bash
+npm run dev
+```
+
+### 3) Configure frontend export values (Admin UI)
+
+1. Sign in as Admin.
+2. Go to **Admin Functions -> Customization**.
+3. Open **NERIS Export Configuration**.
+4. Use these defaults (already set by default):
+   - Export URL: `/api/neris/export`
+   - Entity ID header: `X-NERIS-Entity-ID`
+   - Auth header: `Authorization`
+   - Auth scheme: `Bearer`
+   - Content-Type: `application/json`
+5. Enter your **NERIS Entity ID** in the `NERIS Entity ID` field.
+6. Click **Save Customization**.
+
+### 4) Send a test report export
+
+1. Open **Reporting -> NERIS**.
+2. Open an incident report.
+3. Fill these key fields at minimum:
+   - Department NERIS ID
+   - Incident number
+   - Primary incident type
+   - Dispatch/incident location
+4. Click **Export**.
+5. Check the result message:
+   - Success should include NERIS ID when accepted by API.
+   - Errors show NERIS validation details from the proxy/API response.
+
+### 5) Quick proxy health check (optional)
+
+```bash
+curl http://localhost:8787/api/neris/health
+```
+
+You should see JSON with `ok: true`.
+
+### 6) If export returns 403 Forbidden
+
+Run:
+
+```bash
+curl http://localhost:8787/api/neris/debug/entities
+```
+
+Then compare:
+- `submittedEntityId` in export error
+- vs `accessibleEntityIds` from debug endpoint
+
+If they do not match, use an entity ID your token can access.
+For many accounts this is in OpenAPI format such as `FD########` or `VN########`.
+
+If they do match and you still get 403:
+- your token may have read access (`/entity`) but not create permission (`/incident`), or
+- submitted department NERIS ID may be invalid/mismatched.
+
+Optional browser env fallback (legacy/testing only):
+
+1. Copy the sample env file:
+
+```bash
+cp .env.example .env.local
+```
+
+2. Set values in `.env.local` (`VITE_NERIS_EXPORT_URL`, `VITE_NERIS_VENDOR_CODE`, etc.).
+3. Restart `npm run dev`.
+
+> Security note: keep real secrets in `.env.server` (server side). Do not store production secrets in browser config fields.
+
 ## Notes
 
 - This version is UI-first and uses fake sample data.

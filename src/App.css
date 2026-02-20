@@ -1897,6 +1897,11 @@ body.resizing-dispatch-columns {
   font-size: 0.78rem;
 }
 
+.neris-header-feedback {
+  margin-top: 0.35rem;
+  max-width: 64ch;
+}
+
 .neris-status-select {
   border: 1px solid #cbd5e1;
   border-radius: 9px;
