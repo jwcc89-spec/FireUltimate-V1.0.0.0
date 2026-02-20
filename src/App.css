@@ -1123,6 +1123,14 @@ tbody tr:last-of-type td {
   background-color: #ffffff;
 }
 
+.neris-incident-type-select-trigger.disabled,
+.neris-incident-type-select-trigger:disabled {
+  background-color: #e5e7eb;
+  border-color: #d1d5db;
+  color: #6b7280;
+  cursor: not-allowed;
+}
+
 .neris-incident-type-placeholder {
   color: #64748b;
 }
@@ -1372,6 +1380,46 @@ tbody tr:last-of-type td {
 .neris-single-choice-button.disabled:hover,
 .neris-single-choice-button:disabled:hover {
   background-color: #e5e7eb;
+}
+
+.neris-aid-block {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.neris-aid-question {
+  display: grid;
+  gap: 0.42rem;
+}
+
+.neris-aid-question > label,
+.neris-aid-subfield-label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-additional-aid-entry {
+  border-top: 1px dashed #d1d5db;
+  padding-top: 0.58rem;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.neris-link-button {
+  border: 0;
+  background: none;
+  color: #2563eb;
+  font-size: 0.82rem;
+  font-weight: 700;
+  justify-self: start;
+  padding: 0;
+  cursor: pointer;
+}
+
+.neris-link-button:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
 }
 
 .settings-form input[type="color"] {
