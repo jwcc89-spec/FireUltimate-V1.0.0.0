@@ -1325,6 +1325,14 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "full",
   },
   {
+    id: "dispatch_automatic_alarm",
+    sectionId: "core",
+    label: "Automatic alarm",
+    inputKind: "select",
+    optionsKey: "yes_no",
+    layout: "half",
+  },
+  {
     id: "fd_neris_id",
     sectionId: "core",
     label: "Department NERIS ID",
@@ -1374,14 +1382,6 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "core",
     label: "Final disposition",
     inputKind: "text",
-    layout: "half",
-  },
-  {
-    id: "dispatch_automatic_alarm",
-    sectionId: "core",
-    label: "Automatic alarm",
-    inputKind: "select",
-    optionsKey: "yes_no",
     layout: "half",
   },
   {
