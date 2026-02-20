@@ -1260,6 +1260,14 @@ tbody tr:last-of-type td {
   color: #0f172a;
 }
 
+.neris-single-select-clear-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.24rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
 .neris-incident-type-options-scroll {
   max-height: 320px;
   overflow-y: auto;

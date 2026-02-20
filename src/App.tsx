@@ -2975,6 +2975,7 @@ interface NerisFlatSingleOptionSelectProps {
   searchPlaceholder?: string;
   disabled?: boolean;
   isOptionDisabled?: (optionValue: string) => boolean;
+  allowClear?: boolean;
 }
 
 function NerisFlatSingleOptionSelect({
@@ -2986,6 +2987,7 @@ function NerisFlatSingleOptionSelect({
   searchPlaceholder,
   disabled = false,
   isOptionDisabled,
+  allowClear = false,
 }: NerisFlatSingleOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -3082,6 +3084,21 @@ function NerisFlatSingleOptionSelect({
               </button>
             ) : null}
           </div>
+          {allowClear && normalizedValue ? (
+            <div className="neris-single-select-clear-row">
+              <button
+                type="button"
+                className="neris-incident-type-search-clear"
+                onClick={() => {
+                  onChange("");
+                  setIsOpen(false);
+                  setSearchTerm("");
+                }}
+              >
+                Clear selection
+              </button>
+            </div>
+          ) : null}
           <div className="neris-incident-type-options-scroll" role="listbox">
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
@@ -3174,7 +3191,6 @@ function NerisReportFormPage({
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
-  const [fieldOptionFilters, setFieldOptionFilters] = useState<Record<string, string>>({});
   const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
     (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
       aidDirection: entry.aidDirection,
@@ -3764,14 +3780,7 @@ function NerisReportFormPage({
     const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
     const error = sectionErrors[field.id];
     const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
-    const selectedValues = value
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
     const normalizedSingleValue = normalizeNerisEnumValue(value);
-    const normalizedSelectedValues = selectedValues.map((entry) =>
-      normalizeNerisEnumValue(entry),
-    );
     const isPrimaryIncidentTypeField =
       field.id === "primary_incident_type" &&
       field.inputKind === "select" &&
@@ -3849,25 +3858,6 @@ function NerisReportFormPage({
     const selectedAdditionalAidDepartments = additionalAidEntries
       .map((entry) => entry.aidDepartment.trim())
       .filter((entry) => entry.length > 0);
-    const shouldShowTypeahead =
-      (field.inputKind === "select" || field.inputKind === "multiselect") &&
-      options.length > 10 &&
-      !isPrimaryIncidentTypeField &&
-      !isAdditionalIncidentTypesField &&
-      !isActionsTakenField &&
-      !isSpecialIncidentModifiersField &&
-      !isNoActionReasonField &&
-      !isAidGivenQuestionField;
-    const optionFilter = fieldOptionFilters[field.id] ?? "";
-    const normalizedFilter = optionFilter.trim().toLowerCase();
-    const filteredOptions =
-      shouldShowTypeahead && normalizedFilter
-        ? options.filter(
-            (option) =>
-              option.label.toLowerCase().includes(normalizedFilter) ||
-              option.value.toLowerCase().includes(normalizedFilter),
-          )
-        : options;
 
     if (
       field.id === "incident_displaced_cause" &&
@@ -4184,34 +4174,15 @@ function NerisReportFormPage({
               searchPlaceholder="Search incident types..."
             />
           ) : (
-            <>
-              {shouldShowTypeahead ? (
-                <input
-                  type="text"
-                  className="field-typeahead-input"
-                  value={optionFilter}
-                  placeholder={`Filter ${field.label.toLowerCase()}...`}
-                  onChange={(event) =>
-                    setFieldOptionFilters((previous) => ({
-                      ...previous,
-                      [field.id]: event.target.value,
-                    }))
-                  }
-                />
-              ) : null}
-              <select
-                id={inputId}
-                value={normalizedSingleValue}
-                onChange={(event) => updateFieldValue(field.id, event.target.value)}
-              >
-                {!isRequired ? <option value="">Select an option</option> : null}
-                {filteredOptions.map((option) => (
-                  <option key={`${field.id}-${option.value}`} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </>
+            <NerisFlatSingleOptionSelect
+              inputId={inputId}
+              value={normalizedSingleValue}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder={`Select ${field.label.toLowerCase()}`}
+              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+              allowClear={!isRequired}
+            />
           )
         ) : null}
 
@@ -4261,42 +4232,14 @@ function NerisReportFormPage({
               disabled={isActionsTakenDisabled}
             />
           ) : (
-            <>
-              {shouldShowTypeahead ? (
-                <input
-                  type="text"
-                  className="field-typeahead-input"
-                  value={optionFilter}
-                  placeholder={`Filter ${field.label.toLowerCase()}...`}
-                  onChange={(event) =>
-                    setFieldOptionFilters((previous) => ({
-                      ...previous,
-                      [field.id]: event.target.value,
-                    }))
-                  }
-                />
-              ) : null}
-              <select
-                id={inputId}
-                multiple
-                className="neris-multiselect"
-                value={normalizedSelectedValues}
-                onChange={(event) =>
-                  updateFieldValue(
-                    field.id,
-                    Array.from(event.target.selectedOptions)
-                      .map((option) => option.value)
-                      .join(","),
-                  )
-                }
-              >
-                {filteredOptions.map((option) => (
-                  <option key={`${field.id}-${option.value}`} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </>
+            <NerisFlatMultiOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder={`Select ${field.label.toLowerCase()}`}
+              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+            />
           )
         ) : null}
 
