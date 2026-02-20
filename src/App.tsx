@@ -3611,10 +3611,30 @@ function NerisReportFormPage({
                 .filter((value): value is string => typeof value === "string")
                 .slice(0, 8)
             : [];
+          const submittedDepartmentNerisId =
+            typeof troubleshooting?.submittedDepartmentNerisId === "string"
+              ? troubleshooting.submittedDepartmentNerisId
+              : "";
+          const troubleshootingMessage =
+            typeof troubleshooting?.message === "string" ? troubleshooting.message : "";
           throw new Error(
             accessibleEntityIds.length
-              ? `Export denied (403). Submitted entity ID ${submittedEntityId} is not authorized for this token. Accessible entity IDs: ${accessibleEntityIds.join(", ")}`
-              : `Export denied (403). Submitted entity ID ${submittedEntityId} is not authorized for this token.`,
+              ? `Export denied (403). ${
+                  troubleshootingMessage ||
+                  `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
+                } Submitted entity ID: ${submittedEntityId}. ${
+                  submittedDepartmentNerisId
+                    ? `Submitted Department NERIS ID: ${submittedDepartmentNerisId}. `
+                    : ""
+                }Accessible entity IDs: ${accessibleEntityIds.join(", ")}`
+              : `Export denied (403). ${
+                  troubleshootingMessage ||
+                  `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
+                } Submitted entity ID: ${submittedEntityId}. ${
+                  submittedDepartmentNerisId
+                    ? `Submitted Department NERIS ID: ${submittedDepartmentNerisId}.`
+                    : ""
+                }`,
           );
         }
         throw new Error(

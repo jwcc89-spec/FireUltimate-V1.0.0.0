@@ -6,6 +6,8 @@ app.use(express.json({ limit: "4mb" }));
 const DEFAULT_NERIS_BASE_URL = "https://api.neris.fsri.org/v1";
 const DEFAULT_PROXY_PORT = 8787;
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
+const NERIS_ENTITY_ID_PATTERN = /^(FD|VN|FM|FA)\d{8}$/;
+const NERIS_DEPARTMENT_ID_PATTERN = /^FD\d{8}$/;
 
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
@@ -211,7 +213,7 @@ async function fetchAccessibleEntities(config, accessToken) {
   };
 }
 
-function buildIncidentPayload(exportRequestBody, config) {
+function buildIncidentPayload(exportRequestBody, config, entityId) {
   const body = exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
   const formValues =
     body.formValues && typeof body.formValues === "object" ? body.formValues : {};
@@ -224,14 +226,31 @@ function buildIncidentPayload(exportRequestBody, config) {
   const incidentNumber = trimValue(formValues.incident_internal_id) || callNumber;
   const dispatchIncidentNumber =
     trimValue(formValues.dispatch_internal_id) || incidentNumber || callNumber;
-  const departmentNerisId =
-    trimValue(formValues.fd_neris_id) || config.defaultDepartmentNerisId;
+  const reportDepartmentNerisId = trimValue(formValues.fd_neris_id);
+  const configDepartmentNerisId = trimValue(config.defaultDepartmentNerisId);
+  let departmentNerisId = NERIS_DEPARTMENT_ID_PATTERN.test(reportDepartmentNerisId)
+    ? reportDepartmentNerisId
+    : NERIS_DEPARTMENT_ID_PATTERN.test(configDepartmentNerisId)
+      ? configDepartmentNerisId
+      : "";
+  if (!departmentNerisId && entityId.startsWith("FD") && NERIS_DEPARTMENT_ID_PATTERN.test(entityId)) {
+    departmentNerisId = entityId;
+  }
   const primaryIncidentType = normalizeEnumValue(formValues.primary_incident_type);
 
+  if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
+    throw new Error(
+      `Invalid entity ID format (${entityId}). Expected FD########, VN########, FM########, or FA########.`,
+    );
+  }
   if (!departmentNerisId) {
     throw new Error(
-      "Missing department NERIS ID. Set field 'Department NERIS ID' in the report (or NERIS_DEPARTMENT_NERIS_ID on server).",
+      "Missing or invalid department NERIS ID. Use FD######## format in report field 'Department NERIS ID' (or set NERIS_DEPARTMENT_NERIS_ID on server).",
     );
+  }
+  if (entityId.startsWith("FD") && departmentNerisId !== entityId) {
+    // FD entity exports should post under the same fire department ID.
+    departmentNerisId = entityId;
   }
   if (!incidentNumber) {
     throw new Error("Missing incident number.");
@@ -384,7 +403,7 @@ app.post("/api/neris/export", async (request, response) => {
   }
 
   try {
-    const payload = buildIncidentPayload(request.body, config);
+    const payload = buildIncidentPayload(request.body, config, entityId);
     const accessToken = await getAccessToken(config);
 
     const nerisResponse = await fetch(
@@ -403,11 +422,19 @@ app.post("/api/neris/export", async (request, response) => {
     let troubleshooting = null;
     if (nerisResponse.status === 403) {
       const entitiesResult = await fetchAccessibleEntities(config, accessToken);
+      const submittedDepartmentNerisId =
+        payload?.base && typeof payload.base === "object"
+          ? trimValue(payload.base.department_neris_id)
+          : "";
+      const entityIsAccessible = entitiesResult.entityIds.includes(entityId);
       troubleshooting = {
-        message:
-          "403 usually means your token is valid but not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+        message: entityIsAccessible
+          ? "Token can list this entity, but create permission is denied. Confirm account role/enrollment allows incident creation for this entity."
+          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
+        submittedDepartmentNerisId,
+        entityIsAccessible,
       };
     }
     response.status(nerisResponse.status).json({

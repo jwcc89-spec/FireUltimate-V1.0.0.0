@@ -2298,7 +2298,7 @@ export function createDefaultNerisFormValues({
     special_incident_modifiers: "",
     incident_actions_taken: "",
     incident_noaction: "",
-    fd_neris_id: "FD-00000001",
+    fd_neris_id: "",
     dispatch_center_id: "0000",
     dispatch_location_address: address ?? "",
     incident_location_address: address ?? "",

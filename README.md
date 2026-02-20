@@ -148,6 +148,10 @@ Then compare:
 If they do not match, use an entity ID your token can access.
 For many accounts this is in OpenAPI format such as `FD########` or `VN########`.
 
+If they do match and you still get 403:
+- your token may have read access (`/entity`) but not create permission (`/incident`), or
+- submitted department NERIS ID may be invalid/mismatched.
+
 Optional browser env fallback (legacy/testing only):
 
 1. Copy the sample env file:
