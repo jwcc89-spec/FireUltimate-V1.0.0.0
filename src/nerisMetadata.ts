@@ -93,7 +93,7 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
     id: "location",
     label: "Location",
-    helper: "Capture location precision and scene environment details.",
+    helper: "",
   },
   {
     id: "incidentTimes",
