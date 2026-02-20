@@ -3064,6 +3064,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   );
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [isExporting, setIsExporting] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
@@ -3373,6 +3374,93 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       "In Review",
       "Validation complete. Status updated to In Review.",
     );
+  };
+
+  const handleExportReport = async () => {
+    const exportUrl = String(import.meta.env.VITE_NERIS_EXPORT_URL ?? "").trim();
+    const vendorCode = String(import.meta.env.VITE_NERIS_VENDOR_CODE ?? "").trim();
+    const secretKey = String(import.meta.env.VITE_NERIS_SECRET_KEY ?? "").trim();
+    if (!exportUrl) {
+      setErrorMessage(
+        "Export is not configured. Add VITE_NERIS_EXPORT_URL in .env.local, then restart the dev server.",
+      );
+      setSaveMessage("");
+      return;
+    }
+
+    setValidationModal(null);
+    setErrorMessage("");
+    setSaveMessage("");
+    setIsExporting(true);
+
+    const payload = {
+      callNumber: detail.callNumber,
+      reportStatus,
+      exportedAt: new Date().toISOString(),
+      source: "Fire Ultimate Prototype",
+      formValues,
+      additionalAidEntries: additionalAidEntries.map((entry) => ({
+        aidDirection: entry.aidDirection,
+        aidType: entry.aidType,
+        aidDepartment: entry.aidDepartment,
+      })),
+    };
+    const headers: Record<string, string> = {
+      "Content-Type": "application/json",
+    };
+    if (vendorCode) {
+      headers["X-NERIS-Vendor-Code"] = vendorCode;
+    }
+    if (secretKey) {
+      headers.Authorization = `Bearer ${secretKey}`;
+    }
+
+    writeNerisDraft(callNumber, {
+      formValues,
+      reportStatus,
+      lastSavedAt,
+      additionalAidEntries: additionalAidEntries.map((entry) => ({
+        aidDirection: entry.aidDirection,
+        aidType: entry.aidType,
+        aidDepartment: entry.aidDepartment,
+      })),
+    });
+
+    try {
+      const response = await fetch(exportUrl, {
+        method: "POST",
+        headers,
+        body: JSON.stringify(payload),
+      });
+      const responseText = await response.text();
+      if (!response.ok) {
+        throw new Error(
+          `Export failed (${response.status} ${response.statusText}). ${
+            responseText.slice(0, 280) || "No response details."
+          }`,
+        );
+      }
+      const exportedAt = new Date().toLocaleTimeString("en-US", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      });
+      setSaveMessage(
+        `Report export submitted for ${detail.callNumber} at ${exportedAt}.`,
+      );
+    } catch (error) {
+      const reason = error instanceof Error ? error.message : "Unknown export error.";
+      if (reason.includes("Failed to fetch")) {
+        setErrorMessage(
+          "Export request could not reach the endpoint (network/CORS/proxy issue). Check backend proxy URL and server logs.",
+        );
+      } else {
+        setErrorMessage(reason);
+      }
+    } finally {
+      setIsExporting(false);
+    }
   };
 
   const handleSaveDraft = () => {
@@ -4030,6 +4118,14 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         <div className="header-actions">
           <button type="button" className="secondary-button compact-button">
             Import
+          </button>
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={handleExportReport}
+            disabled={isExporting}
+          >
+            {isExporting ? "Exporting..." : "Export"}
           </button>
           <button type="button" className="secondary-button compact-button">
             CAD notes

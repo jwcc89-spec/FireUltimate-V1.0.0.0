@@ -56,6 +56,23 @@ Build check:
 npm run build
 ```
 
+## NERIS export (test integration)
+
+1. Copy the sample env file:
+
+```bash
+cp .env.example .env.local
+```
+
+2. Set these values in `.env.local`:
+   - `VITE_NERIS_EXPORT_URL` = your export endpoint (recommended: your backend proxy URL)
+   - `VITE_NERIS_VENDOR_CODE` = your test vendor/department code
+   - `VITE_NERIS_SECRET_KEY` = your test secret key
+3. Restart `npm run dev` after updating `.env.local`.
+4. Open a NERIS incident report and click **Export** (next to **Import**).
+
+> Important: this prototype is frontend-only. Secrets in `VITE_` variables are visible in the browser bundle. Use a backend proxy for production and keep real secrets server-side only.
+
 ## Notes
 
 - This version is UI-first and uses fake sample data.
