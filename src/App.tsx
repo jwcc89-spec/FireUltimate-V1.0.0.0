@@ -157,12 +157,26 @@ interface CustomizationSectionProps {
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
 type SubmenuVisibilityMap = Record<string, boolean>;
 
+interface NerisDraftAidEntry {
+  aidDirection: string;
+  aidType: string;
+  aidDepartment: string;
+}
+
+interface NerisStoredDraft {
+  formValues: NerisFormValues;
+  reportStatus: string;
+  lastSavedAt: string;
+  additionalAidEntries: NerisDraftAidEntry[];
+}
+
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
 const INCIDENT_DISPLAY_STORAGE_KEY = "fire-ultimate-incident-display";
 const SUBMENU_VISIBILITY_STORAGE_KEY = "fire-ultimate-submenu-visibility";
 const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
+const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -173,6 +187,9 @@ const LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS = [
 ] as const;
 const LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS = [
   "stationboss-mimic-shell-sidebar-width",
+] as const;
+const LEGACY_NERIS_DRAFT_STORAGE_KEYS = [
+  "stationboss-mimic-neris-drafts",
 ] as const;
 
 function readStorageWithMigration(
@@ -622,6 +639,103 @@ function writeShellSidebarWidth(width: number): void {
     LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS,
     String(clampedWidth),
   );
+}
+
+function readNerisDraftStore(): Record<string, NerisStoredDraft> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  const rawValue = readStorageWithMigration(
+    NERIS_DRAFT_STORAGE_KEY,
+    LEGACY_NERIS_DRAFT_STORAGE_KEYS,
+  );
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    const drafts: Record<string, NerisStoredDraft> = {};
+    for (const [callNumber, candidateValue] of Object.entries(parsed)) {
+      if (!candidateValue || typeof candidateValue !== "object") {
+        continue;
+      }
+      const candidate = candidateValue as Record<string, unknown>;
+      const formValuesCandidate = candidate.formValues;
+      if (!formValuesCandidate || typeof formValuesCandidate !== "object") {
+        continue;
+      }
+      const formValues: NerisFormValues = {};
+      for (const [fieldId, fieldValue] of Object.entries(
+        formValuesCandidate as Record<string, unknown>,
+      )) {
+        if (typeof fieldValue === "string") {
+          formValues[fieldId] = fieldValue;
+        }
+      }
+      const additionalAidEntries: NerisDraftAidEntry[] = Array.isArray(
+        candidate.additionalAidEntries,
+      )
+        ? candidate.additionalAidEntries.reduce<NerisDraftAidEntry[]>(
+            (entriesAccumulator, entryValue) => {
+              if (!entryValue || typeof entryValue !== "object") {
+                return entriesAccumulator;
+              }
+              const entry = entryValue as Record<string, unknown>;
+              entriesAccumulator.push({
+                aidDirection:
+                  typeof entry.aidDirection === "string" ? entry.aidDirection : "",
+                aidType: typeof entry.aidType === "string" ? entry.aidType : "",
+                aidDepartment:
+                  typeof entry.aidDepartment === "string" ? entry.aidDepartment : "",
+              });
+              return entriesAccumulator;
+            },
+            [],
+          )
+        : [];
+      drafts[callNumber] = {
+        formValues,
+        reportStatus:
+          typeof candidate.reportStatus === "string"
+            ? candidate.reportStatus
+            : getNerisReportStatus(callNumber),
+        lastSavedAt:
+          typeof candidate.lastSavedAt === "string"
+            ? candidate.lastSavedAt
+            : "Not saved",
+        additionalAidEntries,
+      };
+    }
+    return drafts;
+  } catch {
+    return {};
+  }
+}
+
+function writeNerisDraftStore(store: Record<string, NerisStoredDraft>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  writeStorageValue(
+    NERIS_DRAFT_STORAGE_KEY,
+    LEGACY_NERIS_DRAFT_STORAGE_KEYS,
+    JSON.stringify(store),
+  );
+}
+
+function readNerisDraft(callNumber: string): NerisStoredDraft | null {
+  const store = readNerisDraftStore();
+  return store[callNumber] ?? null;
+}
+
+function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
+  const store = readNerisDraftStore();
+  store[callNumber] = draft;
+  writeNerisDraftStore(store);
 }
 
 function getCallFieldValue(
@@ -2881,24 +2995,39 @@ const EMPTY_AID_ENTRY: AidEntry = {
 function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   const navigate = useNavigate();
   const detail = getIncidentCallDetail(callNumber);
+  const persistedDraft = useMemo(() => readNerisDraft(callNumber), [callNumber]);
+  const defaultFormValues = useMemo(
+    () =>
+      createDefaultNerisFormValues({
+        callNumber,
+        incidentType: detail?.incidentType,
+        receivedAt: detail?.receivedAt,
+        address: detail?.address,
+      }),
+    [callNumber, detail?.incidentType, detail?.receivedAt, detail?.address],
+  );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
   const [reportStatus, setReportStatus] = useState<string>(() =>
-    getNerisReportStatus(callNumber),
+    persistedDraft?.reportStatus ?? getNerisReportStatus(callNumber),
   );
-  const [formValues, setFormValues] = useState<NerisFormValues>(() =>
-    createDefaultNerisFormValues({
-      callNumber,
-      incidentType: detail?.incidentType,
-      receivedAt: detail?.receivedAt,
-      address: detail?.address,
-    }),
-  );
+  const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
+    ...defaultFormValues,
+    ...(persistedDraft?.formValues ?? {}),
+  }));
   const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [lastSavedAt, setLastSavedAt] = useState("Not saved");
+  const [lastSavedAt, setLastSavedAt] = useState<string>(
+    () => persistedDraft?.lastSavedAt ?? "Not saved",
+  );
   const [fieldOptionFilters, setFieldOptionFilters] = useState<Record<string, string>>({});
-  const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>([]);
+  const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
+    (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
+      aidDirection: entry.aidDirection,
+      aidType: entry.aidType,
+      aidDepartment: entry.aidDepartment,
+    })),
+  );
 
   const currentSection =
     NERIS_FORM_SECTIONS.find((section) => section.id === activeSectionId) ??
@@ -3065,6 +3194,16 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
+    });
+    writeNerisDraft(callNumber, {
+      formValues,
+      reportStatus,
+      lastSavedAt: savedAt,
+      additionalAidEntries: additionalAidEntries.map((entry) => ({
+        aidDirection: entry.aidDirection,
+        aidType: entry.aidType,
+        aidDepartment: entry.aidDepartment,
+      })),
     });
     setLastSavedAt(savedAt);
     setSaveMessage(
