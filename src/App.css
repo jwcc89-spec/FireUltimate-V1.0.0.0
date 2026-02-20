@@ -2020,6 +2020,34 @@ body.resizing-dispatch-columns {
   margin-top: 0.32rem;
 }
 
+.neris-imported-address-block {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.neris-imported-address-block label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-imported-address {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background-color: #e5e7eb;
+  color: #1f2937;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  padding: 0.56rem 0.65rem;
+}
+
+.neris-location-add-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
 .neris-field-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }

@@ -3198,6 +3198,16 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     })),
   );
+  const [showDirectionOfTravelField, setShowDirectionOfTravelField] = useState<boolean>(
+    () =>
+      (persistedDraft?.formValues.location_direction_of_travel ?? "").trim().length >
+      0,
+  );
+  const [showCrossStreetTypeField, setShowCrossStreetTypeField] = useState<boolean>(
+    () =>
+      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length >
+      0,
+  );
 
   const primaryIncidentCategory = useMemo(() => {
     const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
@@ -3271,6 +3281,11 @@ function NerisReportFormPage({
   );
   const hasNextSection =
     sectionIndex >= 0 && sectionIndex < visibleNerisSections.length - 1;
+  const importedLocationAddress =
+    (formValues.incident_location_address ?? "").trim() ||
+    (formValues.dispatch_location_address ?? "").trim() ||
+    detail?.address ||
+    "No imported address available.";
 
   if (!detail) {
     return (
@@ -3797,6 +3812,10 @@ function NerisReportFormPage({
       field.id === "special_incident_modifiers" &&
       field.inputKind === "multiselect" &&
       field.optionsKey === "incident_modifier";
+    const isLocationUseField =
+      (field.id === "location_use_primary" || field.id === "location_use_secondary") &&
+      field.inputKind === "select" &&
+      field.optionsKey === "location_use";
     const isNoActionReasonField =
       field.id === "incident_noaction" &&
       field.inputKind === "select" &&
@@ -3869,6 +3888,12 @@ function NerisReportFormPage({
       return null;
     }
     if (isAidManagedHiddenField) {
+      return null;
+    }
+    if (field.id === "location_direction_of_travel" && !showDirectionOfTravelField) {
+      return null;
+    }
+    if (field.id === "location_cross_street_type" && !showCrossStreetTypeField) {
       return null;
     }
 
@@ -4173,6 +4198,17 @@ function NerisReportFormPage({
               placeholder=""
               searchPlaceholder="Search incident types..."
             />
+          ) : isLocationUseField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={normalizedSingleValue}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="single"
+              variant="incidentType"
+              placeholder={`Select ${field.label.toLowerCase()}`}
+              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+            />
           ) : (
             <NerisFlatSingleOptionSelect
               inputId={inputId}
@@ -4374,12 +4410,12 @@ function NerisReportFormPage({
         </aside>
 
         <article className="panel neris-form-panel">
-          {currentSection.id !== "core" ? (
+          {currentSection.id !== "core" && currentSection.id !== "location" ? (
             <div className="panel-header">
               <h2>{currentSection.label}</h2>
             </div>
           ) : null}
-          {currentSection.id !== "core" ? (
+          {currentSection.id !== "core" && currentSection.helper.trim().length > 0 ? (
             <p className="panel-description">{currentSection.helper}</p>
           ) : null}
           <div className="settings-form neris-field-grid">
@@ -4393,6 +4429,54 @@ function NerisReportFormPage({
                     {headingLabel}
                   </div>,
                 );
+              }
+              if (currentSection.id === "location" && field.id === "location_place_type") {
+                nodes.push(
+                  <div
+                    key="heading-location-usage"
+                    className="field-span-two neris-core-field-heading"
+                  >
+                    LOCATION / USAGE
+                  </div>,
+                );
+                nodes.push(
+                  <div
+                    key="location-imported-address"
+                    className="field-span-two neris-imported-address-block"
+                  >
+                    <label htmlFor="location-imported-address-box">Imported address</label>
+                    <div id="location-imported-address-box" className="neris-imported-address">
+                      {importedLocationAddress}
+                    </div>
+                  </div>,
+                );
+                if (!showDirectionOfTravelField || !showCrossStreetTypeField) {
+                  nodes.push(
+                    <div
+                      key="location-optional-field-links"
+                      className="field-span-two neris-location-add-links"
+                    >
+                      {!showDirectionOfTravelField ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => setShowDirectionOfTravelField(true)}
+                        >
+                          Add Direction of Travel
+                        </button>
+                      ) : null}
+                      {!showCrossStreetTypeField ? (
+                        <button
+                          type="button"
+                          className="link-button"
+                          onClick={() => setShowCrossStreetTypeField(true)}
+                        >
+                          Add Cross Street
+                        </button>
+                      ) : null}
+                    </div>,
+                  );
+                }
               }
               nodes.push(renderNerisField(field, `field-${field.id}`));
               return nodes;
