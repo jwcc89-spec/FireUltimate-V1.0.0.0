@@ -3587,13 +3587,6 @@ function NerisReportFormPage({
         signal: requestController.signal,
       });
       const responseText = await response.text();
-      if (!response.ok) {
-        throw new Error(
-          `Export failed (${response.status} ${response.statusText}). ${
-            responseText.slice(0, 280) || "No response details."
-          }`,
-        );
-      }
       let responseJson: Record<string, unknown> | null = null;
       try {
         responseJson = responseText
@@ -3601,6 +3594,34 @@ function NerisReportFormPage({
           : null;
       } catch {
         responseJson = null;
+      }
+      if (!response.ok) {
+        if (response.status === 403) {
+          const submittedEntityId =
+            typeof responseJson?.submittedEntityId === "string"
+              ? responseJson.submittedEntityId
+              : "unknown";
+          const troubleshooting =
+            responseJson?.troubleshooting &&
+            typeof responseJson.troubleshooting === "object"
+              ? (responseJson.troubleshooting as Record<string, unknown>)
+              : null;
+          const accessibleEntityIds = Array.isArray(troubleshooting?.accessibleEntityIds)
+            ? (troubleshooting?.accessibleEntityIds as unknown[])
+                .filter((value): value is string => typeof value === "string")
+                .slice(0, 8)
+            : [];
+          throw new Error(
+            accessibleEntityIds.length
+              ? `Export denied (403). Submitted entity ID ${submittedEntityId} is not authorized for this token. Accessible entity IDs: ${accessibleEntityIds.join(", ")}`
+              : `Export denied (403). Submitted entity ID ${submittedEntityId} is not authorized for this token.`,
+          );
+        }
+        throw new Error(
+          `Export failed (${response.status} ${response.statusText}). ${
+            responseText.slice(0, 280) || "No response details."
+          }`,
+        );
       }
       const exportedAt = new Date().toLocaleTimeString("en-US", {
         hour: "2-digit",
@@ -4995,12 +5016,16 @@ function CustomizationPage({
             <input
               id="neris-vendor-code"
               type="text"
-              placeholder="ex: 24027334"
+              placeholder="ex: FD24160543"
               value={nerisExportSettingsDraft.vendorCode}
               onChange={(event) =>
                 updateNerisExportSetting("vendorCode", event.target.value)
               }
             />
+            <small className="field-hint">
+              OpenAPI format is usually <code>FD########</code> or{" "}
+              <code>VN########</code> (for example: FD24160543).
+            </small>
 
             <label htmlFor="neris-vendor-header">Entity ID header name</label>
             <input

@@ -179,6 +179,38 @@ async function getAccessToken(config) {
   return accessToken;
 }
 
+async function fetchAccessibleEntities(config, accessToken) {
+  const entitiesResponse = await fetch(`${config.baseUrl}/entity`, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const entitiesBody = await parseResponseBody(entitiesResponse);
+  if (!entitiesResponse.ok) {
+    return {
+      ok: false,
+      status: entitiesResponse.status,
+      statusText: entitiesResponse.statusText,
+      body: entitiesBody,
+      entityIds: [],
+    };
+  }
+  const entities = Array.isArray(entitiesBody?.entities) ? entitiesBody.entities : [];
+  const entityIds = entities
+    .map((entity) =>
+      entity && typeof entity === "object" ? trimValue(entity.neris_id) : "",
+    )
+    .filter((entityId) => entityId.length > 0);
+  return {
+    ok: true,
+    status: entitiesResponse.status,
+    statusText: entitiesResponse.statusText,
+    body: entitiesBody,
+    entityIds,
+  };
+}
+
 function buildIncidentPayload(exportRequestBody, config) {
   const body = exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
   const formValues =
@@ -310,6 +342,26 @@ app.get("/api/neris/health", (request, response) => {
   });
 });
 
+app.get("/api/neris/debug/entities", async (request, response) => {
+  const config = getProxyConfig();
+  try {
+    const accessToken = await getAccessToken(config);
+    const entitiesResult = await fetchAccessibleEntities(config, accessToken);
+    response.status(entitiesResult.status).json({
+      ok: entitiesResult.ok,
+      status: entitiesResult.status,
+      statusText: entitiesResult.statusText,
+      accessibleEntityIds: entitiesResult.entityIds,
+      neris: entitiesResult.body,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected proxy debug error.",
+    });
+  }
+});
+
 app.post("/api/neris/export", async (request, response) => {
   const config = getProxyConfig();
   const integration =
@@ -348,6 +400,16 @@ app.post("/api/neris/export", async (request, response) => {
     );
 
     const nerisResponseBody = await parseResponseBody(nerisResponse);
+    let troubleshooting = null;
+    if (nerisResponse.status === 403) {
+      const entitiesResult = await fetchAccessibleEntities(config, accessToken);
+      troubleshooting = {
+        message:
+          "403 usually means your token is valid but not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+        accessibleEntityIds: entitiesResult.entityIds,
+        entitiesLookupStatus: entitiesResult.status,
+      };
+    }
     response.status(nerisResponse.status).json({
       ok: nerisResponse.ok,
       status: nerisResponse.status,
@@ -355,6 +417,7 @@ app.post("/api/neris/export", async (request, response) => {
       neris: nerisResponseBody,
       submittedEntityId: entityId,
       submittedPayload: payload,
+      troubleshooting,
     });
   } catch (error) {
     response.status(500).json({

@@ -133,6 +133,21 @@ curl http://localhost:8787/api/neris/health
 
 You should see JSON with `ok: true`.
 
+### 6) If export returns 403 Forbidden
+
+Run:
+
+```bash
+curl http://localhost:8787/api/neris/debug/entities
+```
+
+Then compare:
+- `submittedEntityId` in export error
+- vs `accessibleEntityIds` from debug endpoint
+
+If they do not match, use an entity ID your token can access.
+For many accounts this is in OpenAPI format such as `FD########` or `VN########`.
+
 Optional browser env fallback (legacy/testing only):
 
 1. Copy the sample env file:
