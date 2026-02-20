@@ -1463,7 +1463,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   {
     id: "incident_aid_department_name",
     sectionId: "core",
-    label: "Aid department",
+    label: "Aid department name(s)",
     inputKind: "select",
     optionsKey: "aid_department",
     requiredIf: {

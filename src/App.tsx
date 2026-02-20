@@ -3256,7 +3256,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                   <small className="field-error">{sectionErrors.incident_aid_type}</small>
                 ) : null}
 
-                <label className="neris-aid-subfield-label">Aid Department</label>
+                <label className="neris-aid-subfield-label">Aid department name(s)</label>
                 <NerisFlatSingleOptionSelect
                   inputId={`${inputId}-aid-department`}
                   value={formValues.incident_aid_department_name ?? ""}
@@ -3305,7 +3305,7 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
                       searchPlaceholder="Search aid types..."
                     />
 
-                    <label className="neris-aid-subfield-label">Aid Department</label>
+                    <label className="neris-aid-subfield-label">Aid department name(s)</label>
                     <NerisFlatSingleOptionSelect
                       inputId={`${inputId}-additional-aid-department-${entryIndex}`}
                       value={entry.aidDepartment}
