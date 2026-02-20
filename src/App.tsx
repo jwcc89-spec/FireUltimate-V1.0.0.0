@@ -107,6 +107,8 @@ interface RouteResolverProps {
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   submenuVisibility: SubmenuVisibilityMap;
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
+  nerisExportSettings: NerisExportSettings;
+  onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
 }
 
 interface MainMenuLandingPageProps {
@@ -126,6 +128,7 @@ interface IncidentsListPageProps {
 
 interface NerisReportFormPageProps {
   callNumber: string;
+  nerisExportSettings: NerisExportSettings;
 }
 
 interface IncidentCallDetailPageProps {
@@ -145,6 +148,8 @@ interface CustomizationPageProps {
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   submenuVisibility: SubmenuVisibilityMap;
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
+  nerisExportSettings: NerisExportSettings;
+  onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
 }
 
 interface CustomizationSectionProps {
@@ -170,6 +175,18 @@ interface NerisStoredDraft {
   additionalAidEntries: NerisDraftAidEntry[];
 }
 
+interface NerisExportSettings {
+  exportUrl: string;
+  vendorCode: string;
+  vendorHeaderName: string;
+  secretKey: string;
+  authHeaderName: string;
+  authScheme: string;
+  contentType: string;
+  apiVersionHeaderName: string;
+  apiVersionHeaderValue: string;
+}
+
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
@@ -177,6 +194,7 @@ const INCIDENT_DISPLAY_STORAGE_KEY = "fire-ultimate-incident-display";
 const SUBMENU_VISIBILITY_STORAGE_KEY = "fire-ultimate-submenu-visibility";
 const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
 const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
+const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -190,6 +208,9 @@ const LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS = [
 ] as const;
 const LEGACY_NERIS_DRAFT_STORAGE_KEYS = [
   "stationboss-mimic-neris-drafts",
+] as const;
+const LEGACY_NERIS_EXPORT_SETTINGS_STORAGE_KEYS = [
+  "stationboss-mimic-neris-export-settings",
 ] as const;
 
 function readStorageWithMigration(
@@ -409,6 +430,55 @@ function normalizeIncidentDisplaySettings(
   };
 }
 
+function getDefaultNerisExportSettings(): NerisExportSettings {
+  return {
+    exportUrl: "",
+    vendorCode: "",
+    vendorHeaderName: "X-NERIS-Vendor-Code",
+    secretKey: "",
+    authHeaderName: "Authorization",
+    authScheme: "Bearer",
+    contentType: "application/json",
+    apiVersionHeaderName: "",
+    apiVersionHeaderValue: "",
+  };
+}
+
+function normalizeNerisExportSettings(
+  settings: Partial<NerisExportSettings> | null | undefined,
+): NerisExportSettings {
+  const defaults = getDefaultNerisExportSettings();
+  if (!settings) {
+    return defaults;
+  }
+  return {
+    exportUrl: typeof settings.exportUrl === "string" ? settings.exportUrl : defaults.exportUrl,
+    vendorCode:
+      typeof settings.vendorCode === "string" ? settings.vendorCode : defaults.vendorCode,
+    vendorHeaderName:
+      typeof settings.vendorHeaderName === "string"
+        ? settings.vendorHeaderName
+        : defaults.vendorHeaderName,
+    secretKey: typeof settings.secretKey === "string" ? settings.secretKey : defaults.secretKey,
+    authHeaderName:
+      typeof settings.authHeaderName === "string"
+        ? settings.authHeaderName
+        : defaults.authHeaderName,
+    authScheme:
+      typeof settings.authScheme === "string" ? settings.authScheme : defaults.authScheme,
+    contentType:
+      typeof settings.contentType === "string" ? settings.contentType : defaults.contentType,
+    apiVersionHeaderName:
+      typeof settings.apiVersionHeaderName === "string"
+        ? settings.apiVersionHeaderName
+        : defaults.apiVersionHeaderName,
+    apiVersionHeaderValue:
+      typeof settings.apiVersionHeaderValue === "string"
+        ? settings.apiVersionHeaderValue
+        : defaults.apiVersionHeaderValue,
+  };
+}
+
 function readSession(): SessionState {
   if (typeof window === "undefined") {
     return EMPTY_SESSION;
@@ -602,6 +672,39 @@ function writeSubmenuVisibility(next: SubmenuVisibilityMap): void {
     SUBMENU_VISIBILITY_STORAGE_KEY,
     LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS,
     JSON.stringify(next),
+  );
+}
+
+function readNerisExportSettings(): NerisExportSettings {
+  const defaults = getDefaultNerisExportSettings();
+  if (typeof window === "undefined") {
+    return defaults;
+  }
+
+  const rawValue = readStorageWithMigration(
+    NERIS_EXPORT_SETTINGS_STORAGE_KEY,
+    LEGACY_NERIS_EXPORT_SETTINGS_STORAGE_KEYS,
+  );
+  if (!rawValue) {
+    return defaults;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Partial<NerisExportSettings>;
+    return normalizeNerisExportSettings(parsed);
+  } catch {
+    return defaults;
+  }
+}
+
+function writeNerisExportSettings(settings: NerisExportSettings): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  writeStorageValue(
+    NERIS_EXPORT_SETTINGS_STORAGE_KEY,
+    LEGACY_NERIS_EXPORT_SETTINGS_STORAGE_KEYS,
+    JSON.stringify(normalizeNerisExportSettings(settings)),
   );
 }
 
@@ -3035,7 +3138,10 @@ const EMPTY_AID_ENTRY: AidEntry = {
   aidDepartment: "",
 };
 
-function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
+function NerisReportFormPage({
+  callNumber,
+  nerisExportSettings,
+}: NerisReportFormPageProps) {
   const navigate = useNavigate();
   const detail = getIncidentCallDetail(callNumber);
   const persistedDraft = useMemo(() => readNerisDraft(callNumber), [callNumber]);
@@ -3377,12 +3483,35 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   };
 
   const handleExportReport = async () => {
-    const exportUrl = String(import.meta.env.VITE_NERIS_EXPORT_URL ?? "").trim();
-    const vendorCode = String(import.meta.env.VITE_NERIS_VENDOR_CODE ?? "").trim();
-    const secretKey = String(import.meta.env.VITE_NERIS_SECRET_KEY ?? "").trim();
+    const exportUrl =
+      nerisExportSettings.exportUrl.trim() ||
+      String(import.meta.env.VITE_NERIS_EXPORT_URL ?? "").trim();
+    const vendorCode =
+      nerisExportSettings.vendorCode.trim() ||
+      String(import.meta.env.VITE_NERIS_VENDOR_CODE ?? "").trim();
+    const secretKey =
+      nerisExportSettings.secretKey.trim() ||
+      String(import.meta.env.VITE_NERIS_SECRET_KEY ?? "").trim();
+    const vendorHeaderName =
+      nerisExportSettings.vendorHeaderName.trim() ||
+      String(import.meta.env.VITE_NERIS_VENDOR_HEADER_NAME ?? "").trim() ||
+      "X-NERIS-Vendor-Code";
+    const authHeaderName =
+      nerisExportSettings.authHeaderName.trim() ||
+      String(import.meta.env.VITE_NERIS_AUTH_HEADER_NAME ?? "").trim() ||
+      "Authorization";
+    const authScheme =
+      nerisExportSettings.authScheme.trim() ||
+      String(import.meta.env.VITE_NERIS_AUTH_SCHEME ?? "").trim();
+    const contentType =
+      nerisExportSettings.contentType.trim() ||
+      String(import.meta.env.VITE_NERIS_CONTENT_TYPE ?? "").trim() ||
+      "application/json";
+    const apiVersionHeaderName = nerisExportSettings.apiVersionHeaderName.trim();
+    const apiVersionHeaderValue = nerisExportSettings.apiVersionHeaderValue.trim();
     if (!exportUrl) {
       setErrorMessage(
-        "Export is not configured. Add VITE_NERIS_EXPORT_URL in .env.local, then restart the dev server.",
+        "Export is not configured. Add Export URL in Admin Functions > Customization > NERIS Export Configuration.",
       );
       setSaveMessage("");
       return;
@@ -3406,13 +3535,18 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
       })),
     };
     const headers: Record<string, string> = {
-      "Content-Type": "application/json",
+      "Content-Type": contentType,
     };
-    if (vendorCode) {
-      headers["X-NERIS-Vendor-Code"] = vendorCode;
+    if (vendorCode && vendorHeaderName) {
+      headers[vendorHeaderName] = vendorCode;
     }
     if (secretKey) {
-      headers.Authorization = `Bearer ${secretKey}`;
+      headers[authHeaderName] = authScheme
+        ? `${authScheme} ${secretKey}`
+        : secretKey;
+    }
+    if (apiVersionHeaderName && apiVersionHeaderValue) {
+      headers[apiVersionHeaderName] = apiVersionHeaderValue;
     }
 
     writeNerisDraft(callNumber, {
@@ -4406,6 +4540,8 @@ function CustomizationPage({
   onSaveIncidentDisplaySettings,
   submenuVisibility,
   onSaveSubmenuVisibility,
+  nerisExportSettings,
+  onSaveNerisExportSettings,
 }: CustomizationPageProps) {
   const [organizationName, setOrganizationName] = useState("CIFPD");
   const [primaryColor, setPrimaryColor] = useState("#1d4ed8");
@@ -4420,6 +4556,9 @@ function CustomizationPage({
     }));
   const [submenuVisibilityDraft, setSubmenuVisibilityDraft] =
     useState<SubmenuVisibilityMap>(() => ({ ...submenuVisibility }));
+  const [nerisExportSettingsDraft, setNerisExportSettingsDraft] = useState<NerisExportSettings>(
+    () => ({ ...nerisExportSettings }),
+  );
   const [selectedParsingCall, setSelectedParsingCall] = useState(
     DISPATCH_PARSING_PREVIEW[0]?.callNumber ?? "",
   );
@@ -4522,6 +4661,16 @@ function CustomizationPage({
     }));
   };
 
+  const updateNerisExportSetting = (
+    field: keyof NerisExportSettings,
+    value: string,
+  ) => {
+    setNerisExportSettingsDraft((previous) => ({
+      ...previous,
+      [field]: value,
+    }));
+  };
+
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -4554,16 +4703,21 @@ function CustomizationPage({
       ...getDefaultSubmenuVisibilityMap(),
       ...submenuVisibilityDraft,
     };
+    const normalizedNerisExportSettings = normalizeNerisExportSettings(
+      nerisExportSettingsDraft,
+    );
 
     onSaveWorkflowStates(normalizedStates);
     onSaveIncidentDisplaySettings(normalizedIncidentSettings);
     onSaveSubmenuVisibility(normalizedSubmenuVisibility);
+    onSaveNerisExportSettings(normalizedNerisExportSettings);
 
     setIncidentSettingsDraft(normalizedIncidentSettings);
     setSubmenuVisibilityDraft(normalizedSubmenuVisibility);
+    setNerisExportSettingsDraft(normalizedNerisExportSettings);
     setErrorMessage("");
     setSavedMessage(
-      "Customization saved. Incident display, submenu visibility, and workflow states updated.",
+      "Customization saved. Incident display, submenu visibility, workflow states, and NERIS export settings updated.",
     );
   };
 
@@ -4575,7 +4729,7 @@ function CustomizationPage({
             <h1>Admin Functions | Customization</h1>
             <p>
               Configure branding, incident display controls, submenu visibility,
-              and parsing setup.
+              parsing setup, and NERIS export settings.
             </p>
             {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
             {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
@@ -4769,6 +4923,112 @@ function CustomizationPage({
                 </ul>
               </div>
             ))}
+          </div>
+        </CustomizationSection>
+
+        <CustomizationSection title="NERIS Export Configuration">
+          <div className="settings-form">
+            <p className="field-hint">
+              Enter the API values needed for the Export button on NERIS reports.
+              These settings are stored in this browser only.
+            </p>
+
+            <label htmlFor="neris-export-url">Export URL (endpoint)</label>
+            <input
+              id="neris-export-url"
+              type="text"
+              placeholder="https://..."
+              value={nerisExportSettingsDraft.exportUrl}
+              onChange={(event) =>
+                updateNerisExportSetting("exportUrl", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-vendor-code">Vendor / Department code</label>
+            <input
+              id="neris-vendor-code"
+              type="text"
+              value={nerisExportSettingsDraft.vendorCode}
+              onChange={(event) =>
+                updateNerisExportSetting("vendorCode", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-vendor-header">Vendor code header name</label>
+            <input
+              id="neris-vendor-header"
+              type="text"
+              value={nerisExportSettingsDraft.vendorHeaderName}
+              onChange={(event) =>
+                updateNerisExportSetting("vendorHeaderName", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-secret-key">Secret key / API token</label>
+            <input
+              id="neris-secret-key"
+              type="password"
+              value={nerisExportSettingsDraft.secretKey}
+              onChange={(event) =>
+                updateNerisExportSetting("secretKey", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-auth-header">Auth header name</label>
+            <input
+              id="neris-auth-header"
+              type="text"
+              value={nerisExportSettingsDraft.authHeaderName}
+              onChange={(event) =>
+                updateNerisExportSetting("authHeaderName", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-auth-scheme">Auth scheme prefix</label>
+            <input
+              id="neris-auth-scheme"
+              type="text"
+              placeholder="Bearer"
+              value={nerisExportSettingsDraft.authScheme}
+              onChange={(event) =>
+                updateNerisExportSetting("authScheme", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-content-type">Content-Type</label>
+            <input
+              id="neris-content-type"
+              type="text"
+              value={nerisExportSettingsDraft.contentType}
+              onChange={(event) =>
+                updateNerisExportSetting("contentType", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-version-header">API version header name (optional)</label>
+            <input
+              id="neris-version-header"
+              type="text"
+              value={nerisExportSettingsDraft.apiVersionHeaderName}
+              onChange={(event) =>
+                updateNerisExportSetting("apiVersionHeaderName", event.target.value)
+              }
+            />
+
+            <label htmlFor="neris-version-value">API version header value (optional)</label>
+            <input
+              id="neris-version-value"
+              type="text"
+              value={nerisExportSettingsDraft.apiVersionHeaderValue}
+              onChange={(event) =>
+                updateNerisExportSetting("apiVersionHeaderValue", event.target.value)
+              }
+            />
+
+            <small className="field-hint">
+              Security note: these values are local browser settings for prototype
+              testing. Production keys should be kept on a backend server.
+            </small>
           </div>
         </CustomizationSection>
 
@@ -5018,6 +5278,8 @@ function RouteResolver({
   onSaveIncidentDisplaySettings,
   submenuVisibility,
   onSaveSubmenuVisibility,
+  nerisExportSettings,
+  onSaveNerisExportSettings,
 }: RouteResolverProps) {
   const location = useLocation();
   const path = normalizePath(location.pathname);
@@ -5090,7 +5352,13 @@ function RouteResolver({
 
   if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
-    return <NerisReportFormPage key={callNumber} callNumber={callNumber} />;
+    return (
+      <NerisReportFormPage
+        key={callNumber}
+        callNumber={callNumber}
+        nerisExportSettings={nerisExportSettings}
+      />
+    );
   }
 
   if (path === "/admin-functions/hydrants") {
@@ -5106,6 +5374,8 @@ function RouteResolver({
         onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
         submenuVisibility={submenuVisibility}
         onSaveSubmenuVisibility={onSaveSubmenuVisibility}
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   }
@@ -5139,6 +5409,8 @@ function App() {
   const [submenuVisibility, setSubmenuVisibility] = useState<SubmenuVisibilityMap>(
     () => readSubmenuVisibility(),
   );
+  const [nerisExportSettings, setNerisExportSettings] =
+    useState<NerisExportSettings>(() => readNerisExportSettings());
 
   const handleLogin = (username: string, unit: string, role: UserRole) => {
     const nextSession: SessionState = {
@@ -5185,6 +5457,12 @@ function App() {
     writeSubmenuVisibility(normalized);
   };
 
+  const handleSaveNerisExportSettings = (nextSettings: NerisExportSettings) => {
+    const normalized = normalizeNerisExportSettings(nextSettings);
+    setNerisExportSettings(normalized);
+    writeNerisExportSettings(normalized);
+  };
+
   return (
     <BrowserRouter>
       <Routes>
@@ -5220,6 +5498,8 @@ function App() {
                 onSaveIncidentDisplaySettings={handleSaveIncidentDisplaySettings}
                 submenuVisibility={submenuVisibility}
                 onSaveSubmenuVisibility={handleSaveSubmenuVisibility}
+                nerisExportSettings={nerisExportSettings}
+                onSaveNerisExportSettings={handleSaveNerisExportSettings}
               />
             }
           />

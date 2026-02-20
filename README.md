@@ -58,20 +58,27 @@ npm run build
 
 ## NERIS export (test integration)
 
+Preferred setup (UI):
+
+1. Sign in as Admin.
+2. Go to **Admin Functions -> Customization**.
+3. Open **NERIS Export Configuration**.
+4. Enter endpoint URL, vendor code/header, secret key, auth header/scheme, and content type.
+5. Click **Save Customization**.
+6. Open a NERIS incident report and click **Export** (next to **Import**).
+
+Environment-file setup (optional fallback):
+
 1. Copy the sample env file:
 
 ```bash
 cp .env.example .env.local
 ```
 
-2. Set these values in `.env.local`:
-   - `VITE_NERIS_EXPORT_URL` = your export endpoint (recommended: your backend proxy URL)
-   - `VITE_NERIS_VENDOR_CODE` = your test vendor/department code
-   - `VITE_NERIS_SECRET_KEY` = your test secret key
-3. Restart `npm run dev` after updating `.env.local`.
-4. Open a NERIS incident report and click **Export** (next to **Import**).
+2. Set values in `.env.local` (`VITE_NERIS_EXPORT_URL`, `VITE_NERIS_VENDOR_CODE`, `VITE_NERIS_SECRET_KEY`, etc.).
+3. Restart `npm run dev`.
 
-> Important: this prototype is frontend-only. Secrets in `VITE_` variables are visible in the browser bundle. Use a backend proxy for production and keep real secrets server-side only.
+> Important: this prototype is frontend-only. UI/env secrets are stored client-side and visible to users with browser access. Use a backend proxy for production and keep real secrets server-side only.
 
 ## Notes
 
