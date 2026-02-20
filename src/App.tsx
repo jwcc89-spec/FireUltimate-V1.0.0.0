@@ -3543,7 +3543,7 @@ function NerisReportFormPage({
   };
 
   useEffect(() => {
-    const locationUpdates: Partial<NerisFormValues> = {};
+    const locationUpdates: Record<string, string> = {};
     if (
       (formValues.location_state ?? "").trim().length === 0 &&
       parsedImportedLocation.locationState
@@ -3589,7 +3589,7 @@ function NerisReportFormPage({
   ]);
 
   const handlePullLocationFromImportedAddress = () => {
-    const locationUpdates: Partial<NerisFormValues> = {};
+    const locationUpdates: Record<string, string> = {};
     if (
       parsedImportedLocation.locationState &&
       parsedImportedLocation.locationState !== (formValues.location_state ?? "")
