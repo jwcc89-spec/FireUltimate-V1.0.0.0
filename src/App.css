@@ -1919,7 +1919,6 @@ body.resizing-dispatch-columns {
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
   gap: 0.78rem;
   align-items: stretch;
-  height: 100%;
   min-height: 0;
 }
 
@@ -1932,15 +1931,10 @@ body.resizing-dispatch-columns {
 
 .neris-sidebar {
   padding: 0;
-  overflow: hidden;
+  overflow: visible;
   position: sticky;
   top: 0;
   align-self: start;
-  height: 100%;
-  max-height: none;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
 }
 
 .neris-sidebar-header {
@@ -1963,7 +1957,6 @@ body.resizing-dispatch-columns {
 
 .neris-section-nav {
   display: grid;
-  overflow-y: auto;
 }
 
 .neris-section-nav button {
