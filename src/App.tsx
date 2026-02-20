@@ -65,6 +65,18 @@ import {
   type Tone,
   type UserRole,
 } from "./appData";
+import {
+  NERIS_FORM_SECTIONS,
+  createDefaultNerisFormValues,
+  getNerisFieldsForSection,
+  getNerisValueOptions,
+  isNerisFieldRequired,
+  validateNerisSection,
+  type NerisFieldMetadata,
+  type NerisFormValues,
+  type NerisSectionId,
+  type NerisValueOption,
+} from "./nerisMetadata";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -144,23 +156,18 @@ interface CustomizationSectionProps {
 
 type DisplayCardConfig = Partial<Record<MainMenuId, string[]>>;
 type SubmenuVisibilityMap = Record<string, boolean>;
-type NerisSectionId =
-  | "core"
-  | "narrative"
-  | "location"
-  | "incidentTimes"
-  | "resources"
-  | "emergingHazards"
-  | "exposures"
-  | "riskReduction"
-  | "medical"
-  | "rescuesCasualties"
-  | "attachments";
 
-interface NerisSectionConfig {
-  id: NerisSectionId;
-  label: string;
-  helper: string;
+interface NerisDraftAidEntry {
+  aidDirection: string;
+  aidType: string;
+  aidDepartment: string;
+}
+
+interface NerisStoredDraft {
+  formValues: NerisFormValues;
+  reportStatus: string;
+  lastSavedAt: string;
+  additionalAidEntries: NerisDraftAidEntry[];
 }
 
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
@@ -168,6 +175,8 @@ const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
 const INCIDENT_DISPLAY_STORAGE_KEY = "fire-ultimate-incident-display";
 const SUBMENU_VISIBILITY_STORAGE_KEY = "fire-ultimate-submenu-visibility";
+const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
+const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -175,6 +184,12 @@ const LEGACY_WORKFLOW_STATE_STORAGE_KEYS = ["stationboss-mimic-workflow-states"]
 const LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS = ["stationboss-mimic-incident-display"] as const;
 const LEGACY_SUBMENU_VISIBILITY_STORAGE_KEYS = [
   "stationboss-mimic-submenu-visibility",
+] as const;
+const LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS = [
+  "stationboss-mimic-shell-sidebar-width",
+] as const;
+const LEGACY_NERIS_DRAFT_STORAGE_KEYS = [
+  "stationboss-mimic-neris-drafts",
 ] as const;
 
 function readStorageWithMigration(
@@ -246,6 +261,9 @@ const VALID_CALL_FIELD_IDS = new Set<IncidentCallFieldId>(
 );
 const MIN_CALL_FIELD_WIDTH = 100;
 const MAX_CALL_FIELD_WIDTH = 560;
+const DEFAULT_SHELL_SIDEBAR_WIDTH = 316;
+const MIN_SHELL_SIDEBAR_WIDTH = 220;
+const MAX_SHELL_SIDEBAR_WIDTH = 520;
 const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   incidentType: 180,
   priority: 120,
@@ -262,63 +280,6 @@ const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-089": "Draft",
   "D-260218-082": "Approved",
 };
-const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
-  {
-    id: "core",
-    label: "Core",
-    helper: "Complete the required baseline NERIS incident details.",
-  },
-  {
-    id: "narrative",
-    label: "Narrative",
-    helper: "Document final outcomes and notable response context.",
-  },
-  {
-    id: "location",
-    label: "Location",
-    helper: "Capture location precision and scene environment details.",
-  },
-  {
-    id: "incidentTimes",
-    label: "Incident Times",
-    helper: "Track lifecycle timestamps from dispatch through clearance.",
-  },
-  {
-    id: "resources",
-    label: "Resources",
-    helper: "Record units, apparatus, and mutual aid resource usage.",
-  },
-  {
-    id: "emergingHazards",
-    label: "Emerging Hazards",
-    helper: "Flag hazardous materials or hazards found on scene.",
-  },
-  {
-    id: "exposures",
-    label: "Exposures",
-    helper: "Document threatened structures, vehicles, or adjacent risk.",
-  },
-  {
-    id: "riskReduction",
-    label: "Risk Reduction",
-    helper: "Capture prevention/education items connected to this incident.",
-  },
-  {
-    id: "medical",
-    label: "Medical",
-    helper: "Document patient care and related medical observations.",
-  },
-  {
-    id: "rescuesCasualties",
-    label: "Rescues/Casualties",
-    helper: "Track rescues, injuries, and casualty outcomes.",
-  },
-  {
-    id: "attachments",
-    label: "Attachments",
-    helper: "Attach CAD notes, photos, diagrams, and supporting files.",
-  },
-];
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -364,6 +325,23 @@ function toneFromNerisStatus(status: string): Tone {
     return "critical";
   }
   return "neutral";
+}
+
+function normalizeNerisEnumValue(raw: string): string {
+  if (raw.includes("||")) {
+    return raw;
+  }
+  return raw
+    .split(":")
+    .map((segment) => segment.trim())
+    .join("||");
+}
+
+function formatNerisEnumSegment(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function dedupeAndCleanStrings(values: string[]): string[] {
@@ -627,6 +605,139 @@ function writeSubmenuVisibility(next: SubmenuVisibilityMap): void {
   );
 }
 
+function readShellSidebarWidth(): number {
+  if (typeof window === "undefined") {
+    return DEFAULT_SHELL_SIDEBAR_WIDTH;
+  }
+  const rawValue = readStorageWithMigration(
+    SHELL_SIDEBAR_WIDTH_STORAGE_KEY,
+    LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS,
+  );
+  if (!rawValue) {
+    return DEFAULT_SHELL_SIDEBAR_WIDTH;
+  }
+  const parsedWidth = Number.parseInt(rawValue, 10);
+  if (Number.isNaN(parsedWidth)) {
+    return DEFAULT_SHELL_SIDEBAR_WIDTH;
+  }
+  return Math.min(
+    MAX_SHELL_SIDEBAR_WIDTH,
+    Math.max(MIN_SHELL_SIDEBAR_WIDTH, parsedWidth),
+  );
+}
+
+function writeShellSidebarWidth(width: number): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  const clampedWidth = Math.min(
+    MAX_SHELL_SIDEBAR_WIDTH,
+    Math.max(MIN_SHELL_SIDEBAR_WIDTH, Math.round(width)),
+  );
+  writeStorageValue(
+    SHELL_SIDEBAR_WIDTH_STORAGE_KEY,
+    LEGACY_SHELL_SIDEBAR_WIDTH_STORAGE_KEYS,
+    String(clampedWidth),
+  );
+}
+
+function readNerisDraftStore(): Record<string, NerisStoredDraft> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  const rawValue = readStorageWithMigration(
+    NERIS_DRAFT_STORAGE_KEY,
+    LEGACY_NERIS_DRAFT_STORAGE_KEYS,
+  );
+  if (!rawValue) {
+    return {};
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+    if (!parsed || typeof parsed !== "object") {
+      return {};
+    }
+    const drafts: Record<string, NerisStoredDraft> = {};
+    for (const [callNumber, candidateValue] of Object.entries(parsed)) {
+      if (!candidateValue || typeof candidateValue !== "object") {
+        continue;
+      }
+      const candidate = candidateValue as Record<string, unknown>;
+      const formValuesCandidate = candidate.formValues;
+      if (!formValuesCandidate || typeof formValuesCandidate !== "object") {
+        continue;
+      }
+      const formValues: NerisFormValues = {};
+      for (const [fieldId, fieldValue] of Object.entries(
+        formValuesCandidate as Record<string, unknown>,
+      )) {
+        if (typeof fieldValue === "string") {
+          formValues[fieldId] = fieldValue;
+        }
+      }
+      const additionalAidEntries: NerisDraftAidEntry[] = Array.isArray(
+        candidate.additionalAidEntries,
+      )
+        ? candidate.additionalAidEntries.reduce<NerisDraftAidEntry[]>(
+            (entriesAccumulator, entryValue) => {
+              if (!entryValue || typeof entryValue !== "object") {
+                return entriesAccumulator;
+              }
+              const entry = entryValue as Record<string, unknown>;
+              entriesAccumulator.push({
+                aidDirection:
+                  typeof entry.aidDirection === "string" ? entry.aidDirection : "",
+                aidType: typeof entry.aidType === "string" ? entry.aidType : "",
+                aidDepartment:
+                  typeof entry.aidDepartment === "string" ? entry.aidDepartment : "",
+              });
+              return entriesAccumulator;
+            },
+            [],
+          )
+        : [];
+      drafts[callNumber] = {
+        formValues,
+        reportStatus:
+          typeof candidate.reportStatus === "string"
+            ? candidate.reportStatus
+            : NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft",
+        lastSavedAt:
+          typeof candidate.lastSavedAt === "string"
+            ? candidate.lastSavedAt
+            : "Not saved",
+        additionalAidEntries,
+      };
+    }
+    return drafts;
+  } catch {
+    return {};
+  }
+}
+
+function writeNerisDraftStore(store: Record<string, NerisStoredDraft>): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  writeStorageValue(
+    NERIS_DRAFT_STORAGE_KEY,
+    LEGACY_NERIS_DRAFT_STORAGE_KEYS,
+    JSON.stringify(store),
+  );
+}
+
+function readNerisDraft(callNumber: string): NerisStoredDraft | null {
+  const store = readNerisDraftStore();
+  return store[callNumber] ?? null;
+}
+
+function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
+  const store = readNerisDraftStore();
+  store[callNumber] = draft;
+  writeNerisDraftStore(store);
+}
+
 function getCallFieldValue(
   call: (typeof INCIDENT_CALLS)[number],
   fieldId: IncidentCallFieldId,
@@ -650,6 +761,10 @@ function getCallFieldValue(
 }
 
 function getNerisReportStatus(callNumber: string): string {
+  const draftStatus = readNerisDraft(callNumber)?.reportStatus;
+  if (draftStatus) {
+    return draftStatus;
+  }
   return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
 }
 
@@ -782,9 +897,16 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
+  const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
+    readShellSidebarWidth(),
+  );
   const [expandedMenuId, setExpandedMenuId] = useState<MainMenuId | null>(
     "incidentsMapping",
   );
+  const activeSidebarResize = useRef<{ startX: number; startWidth: number } | null>(
+    null,
+  );
+  const sidebarWidthRef = useRef(sidebarWidth);
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -849,8 +971,60 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     navigate("/auth", { replace: true });
   };
 
+  useEffect(() => {
+    sidebarWidthRef.current = sidebarWidth;
+  }, [sidebarWidth]);
+
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeSidebarResize.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_SHELL_SIDEBAR_WIDTH,
+        Math.max(MIN_SHELL_SIDEBAR_WIDTH, activeResize.startWidth + delta),
+      );
+      setSidebarWidth((previous) => (previous === nextWidth ? previous : nextWidth));
+    };
+
+    const stopResize = () => {
+      if (!activeSidebarResize.current) {
+        return;
+      }
+      activeSidebarResize.current = null;
+      document.body.classList.remove("resizing-shell-sidebar");
+      writeShellSidebarWidth(sidebarWidthRef.current);
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-shell-sidebar");
+    };
+  }, []);
+
+  const startSidebarResize = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (mobileNavOpen) {
+      return;
+    }
+    event.preventDefault();
+    activeSidebarResize.current = {
+      startX: event.clientX,
+      startWidth: sidebarWidth,
+    };
+    document.body.classList.add("resizing-shell-sidebar");
+  };
+
+  const shellLayoutStyle = {
+    "--shell-sidebar-width": `${sidebarWidth}px`,
+  } as CSSProperties;
+
   return (
-    <div className="shell-layout">
+    <div className="shell-layout" style={shellLayoutStyle}>
       {mobileNavOpen ? (
         <button
           type="button"
@@ -945,6 +1119,14 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
           })}
         </nav>
       </aside>
+
+      <div
+        className="sidebar-resizer"
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize main navigation sidebar"
+        onPointerDown={startSidebarResize}
+      />
 
       <div className="main-shell">
         <header className="topbar">
@@ -1221,7 +1403,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
 
   return (
-    <section className="page-section">
+    <section className="page-section neris-report-page">
       <header className="page-header">
         <div>
           <h1>Dashboard</h1>
@@ -1939,47 +2121,1033 @@ function NerisReportingPage() {
   );
 }
 
+type NerisGroupedOptionVariant = "incidentType" | "actionTactic";
+
+const INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
+  HAZSIT: "HazMat",
+  NOEMERG: "No Emergency",
+  LAWENFORCE: "Law Enforcement",
+  PUBSERV: "Public Service",
+};
+
+const CORE_SECTION_FIELD_HEADERS: Record<string, string> = {
+  incident_neris_id: "INCIDENT",
+  fd_neris_id: "DISPATCH",
+  incident_people_present: "PEOPLE / DISPLACEMENT",
+  incident_has_aid: "AID GIVEN / RECEIVED",
+};
+
+function getNerisGroupedCategoryLabel(
+  categoryKey: string,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (variant === "incidentType" && INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey]) {
+    return INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey];
+  }
+  return formatNerisEnumSegment(categoryKey);
+}
+
+function getNerisGroupedSubgroupKey(
+  categoryKey: string,
+  rawSubgroupKey: string | undefined,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (rawSubgroupKey) {
+    return rawSubgroupKey;
+  }
+  if (variant === "incidentType" && categoryKey === "LAWENFORCE") {
+    return "LAW_ENFORCEMENT_SUPPORT";
+  }
+  return "OTHER";
+}
+
+function getNerisGroupedSubgroupLabel(
+  categoryKey: string,
+  subgroupKey: string,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (
+    variant === "incidentType" &&
+    categoryKey === "LAWENFORCE" &&
+    subgroupKey === "LAW_ENFORCEMENT_SUPPORT"
+  ) {
+    return "Law Enforcement Support";
+  }
+  return formatNerisEnumSegment(subgroupKey);
+}
+
+function getNerisGroupedLeafLabel(
+  segments: string[],
+  option: NerisValueOption,
+  variant: NerisGroupedOptionVariant,
+): string {
+  if (segments.length > 2) {
+    return segments.slice(2).map(formatNerisEnumSegment).join(" / ");
+  }
+  if (segments.length === 2) {
+    return formatNerisEnumSegment(segments[1]);
+  }
+  if (variant === "incidentType" && segments[0] === "LAWENFORCE") {
+    return "Law Enforcement Support";
+  }
+  return option.label;
+}
+
+function getNerisGroupedSelectedLabel(
+  option: NerisValueOption,
+  variant: NerisGroupedOptionVariant,
+): string {
+  const segments = option.value
+    .split("||")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  if (segments.length === 0) {
+    return option.label;
+  }
+
+  const categoryKey = segments[0] ?? "";
+  const categoryLabel = getNerisGroupedCategoryLabel(categoryKey, variant);
+  if (segments.length === 1) {
+    if (variant === "incidentType" && categoryKey === "LAWENFORCE") {
+      return "Law Enforcement Support";
+    }
+    return categoryLabel;
+  }
+
+  const subgroupKey = getNerisGroupedSubgroupKey(categoryKey, segments[1], variant);
+  const subgroupLabel = getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant);
+  if (segments.length === 2) {
+    return `${categoryLabel} / ${subgroupLabel}`;
+  }
+
+  const leafLabel = segments.slice(2).map(formatNerisEnumSegment).join(" / ");
+  return `${categoryLabel} / ${subgroupLabel} / ${leafLabel}`;
+}
+
+interface NerisGroupedOptionSelectProps {
+  inputId: string;
+  value: string;
+  options: NerisValueOption[];
+  onChange: (nextValue: string) => void;
+  mode: "single" | "multi";
+  variant: NerisGroupedOptionVariant;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  maxSelections?: number;
+  showCheckboxes?: boolean;
+  disabled?: boolean;
+}
+
+function NerisGroupedOptionSelect({
+  inputId,
+  value,
+  options,
+  onChange,
+  mode,
+  variant,
+  placeholder,
+  searchPlaceholder,
+  maxSelections,
+  showCheckboxes = false,
+  disabled = false,
+}: NerisGroupedOptionSelectProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
+  const [collapsedSubgroups, setCollapsedSubgroups] = useState<Record<string, boolean>>({});
+
+  const normalizedSelectedValues = Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .map((entry) => normalizeNerisEnumValue(entry)),
+    ),
+  );
+  const normalizedSelectedValue = normalizedSelectedValues[0] ?? "";
+  const selectedValueSet = new Set<string>(normalizedSelectedValues);
+  const selectedOptions = normalizedSelectedValues
+    .map((selectedValue) => options.find((option) => option.value === selectedValue))
+    .filter((option): option is NerisValueOption => Boolean(option));
+  const selectedOption = selectedOptions[0];
+  const selectedOptionLabel = selectedOption
+    ? getNerisGroupedSelectedLabel(selectedOption, variant)
+    : "";
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const selectionLimitReached =
+    mode === "multi" &&
+    typeof maxSelections === "number" &&
+    selectedValueSet.size >= maxSelections;
+
+  interface GroupedLeafOption {
+    option: NerisValueOption;
+    leafLabel: string;
+  }
+
+  interface GroupedOptionCategory {
+    categoryKey: string;
+    categoryLabel: string;
+    optionCount: number;
+    directOptions: GroupedLeafOption[];
+    subgroups: Array<{
+      subgroupKey: string;
+      subgroupLabel: string;
+      options: GroupedLeafOption[];
+    }>;
+  }
+
+  const groupedOptions: GroupedOptionCategory[] = useMemo(() => {
+    const filteredOptions = options.filter((option) => {
+      if (!normalizedSearch) {
+        return true;
+      }
+      return (
+        option.label.toLowerCase().includes(normalizedSearch) ||
+        option.value.toLowerCase().includes(normalizedSearch)
+      );
+    });
+    const categoryMap = new Map<
+      string,
+      Map<string, Array<{ option: NerisValueOption; leafLabel: string }>>
+    >();
+
+    for (const option of filteredOptions) {
+      const segments = option.value
+        .split("||")
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0);
+      const categoryKey = segments[0] ?? "UNCLASSIFIED";
+      const subgroupKey = getNerisGroupedSubgroupKey(categoryKey, segments[1], variant);
+      const leafLabel = getNerisGroupedLeafLabel(segments, option, variant);
+      if (!categoryMap.has(categoryKey)) {
+        categoryMap.set(categoryKey, new Map());
+      }
+      const subgroupMap = categoryMap.get(categoryKey);
+      if (!subgroupMap) {
+        continue;
+      }
+      if (!subgroupMap.has(subgroupKey)) {
+        subgroupMap.set(subgroupKey, []);
+      }
+      const subgroupOptions = subgroupMap.get(subgroupKey);
+      if (!subgroupOptions) {
+        continue;
+      }
+      subgroupOptions.push({
+        option,
+        leafLabel,
+      });
+    }
+
+    return Array.from(categoryMap.entries()).map(([categoryKey, subgroupMap]) => {
+      const directOptions: GroupedLeafOption[] = [];
+      const subgroups = Array.from(subgroupMap.entries()).reduce<
+        Array<{
+          subgroupKey: string;
+          subgroupLabel: string;
+          options: GroupedLeafOption[];
+        }>
+      >((groupAccumulator, [subgroupKey, subgroupOptions]) => {
+        if (variant === "actionTactic" && subgroupOptions.length === 1) {
+          const onlyOption = subgroupOptions[0];
+          if (onlyOption) {
+            directOptions.push({
+              option: onlyOption.option,
+              leafLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
+            });
+          }
+          return groupAccumulator;
+        }
+        groupAccumulator.push({
+          subgroupKey,
+          subgroupLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
+          options: subgroupOptions,
+        });
+        return groupAccumulator;
+      }, []);
+
+      return {
+        categoryKey,
+        categoryLabel: getNerisGroupedCategoryLabel(categoryKey, variant),
+        optionCount: Array.from(subgroupMap.values()).reduce(
+          (count, subgroupOptions) => count + subgroupOptions.length,
+          0,
+        ),
+        directOptions,
+        subgroups,
+      };
+    });
+  }, [options, normalizedSearch, variant]);
+
+  useEffect(() => {
+    if (!isOpen || disabled) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen, disabled]);
+
+  useEffect(() => {
+    if (!isOpen || disabled) {
+      return;
+    }
+    searchInputRef.current?.focus();
+  }, [isOpen, disabled]);
+
+  const handleToggleCategory = (categoryKey: string) => {
+    const currentlyCollapsed = collapsedCategories[categoryKey] !== false;
+    const nextCollapsed = !currentlyCollapsed;
+    setCollapsedCategories((previous) => ({
+      ...previous,
+      [categoryKey]: nextCollapsed,
+    }));
+    if (!nextCollapsed) {
+      setCollapsedSubgroups((previous) =>
+        Object.fromEntries(
+          Object.entries(previous).filter(([collapseKey]) => !collapseKey.startsWith(`${categoryKey}::`)),
+        ),
+      );
+    }
+  };
+
+  const handleToggleSubgroup = (categoryKey: string, subgroupKey: string) => {
+    const collapseKey = `${categoryKey}::${subgroupKey}`;
+    setCollapsedSubgroups((previous) => ({
+      ...previous,
+      [collapseKey]: !previous[collapseKey],
+    }));
+  };
+
+  return (
+    <div className="neris-incident-type-select" ref={containerRef}>
+      <button
+        id={inputId}
+        type="button"
+        className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) {
+            return;
+          }
+          setIsOpen((previous) => !previous);
+          if (isOpen) {
+            setSearchTerm("");
+          }
+        }}
+      >
+        {mode === "single" ? (
+          <div className="neris-selected-pill-row">
+            {selectedOption ? (
+              <span className="neris-selected-pill">{selectedOptionLabel}</span>
+            ) : (
+              <span
+                className={
+                  selectedOptions.length === 0 && placeholder && placeholder.length > 0
+                    ? "neris-incident-type-placeholder"
+                    : undefined
+                }
+              >
+                {placeholder && placeholder.length > 0 ? placeholder : "\u00A0"}
+              </span>
+            )}
+          </div>
+        ) : (
+          <div className="neris-selected-pill-row">
+            {selectedOptions.length ? (
+              selectedOptions.map((selected) => (
+                <span key={`${inputId}-${selected.value}`} className="neris-selected-pill">
+                  {getNerisGroupedSelectedLabel(selected, variant)}
+                </span>
+              ))
+            ) : (
+              <span
+                className={
+                  placeholder && placeholder.length > 0 ? "neris-incident-type-placeholder" : undefined
+                }
+              >
+                {placeholder ?? "Select one or more options"}
+              </span>
+            )}
+          </div>
+        )}
+        <ChevronDown
+          size={15}
+          className={`neris-incident-type-trigger-icon${isOpen ? " open" : ""}`}
+        />
+      </button>
+
+      {isOpen && !disabled ? (
+        <div className="neris-incident-type-select-panel">
+          <div className="neris-incident-type-search-row">
+            <Search size={14} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              placeholder={searchPlaceholder ?? "Search options..."}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+            {searchTerm ? (
+              <button
+                type="button"
+                className="neris-incident-type-search-clear"
+                onClick={() => setSearchTerm("")}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+
+          {mode === "multi" && typeof maxSelections === "number" ? (
+            <p
+              className={`neris-incident-type-selection-limit${
+                selectionLimitReached ? " reached" : ""
+              }`}
+            >
+              Selected {selectedValueSet.size} of {maxSelections} allowed.
+            </p>
+          ) : null}
+
+          <div className="neris-incident-type-options-scroll" role="listbox">
+            {groupedOptions.length ? (
+              groupedOptions.map((category) => {
+                const categoryCollapsed =
+                  normalizedSearch.length === 0 && collapsedCategories[category.categoryKey] !== false;
+                return (
+                  <section key={category.categoryKey} className="neris-incident-type-group">
+                    <button
+                      type="button"
+                      className="neris-incident-type-group-button"
+                      onClick={() => handleToggleCategory(category.categoryKey)}
+                    >
+                      {categoryCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                      <span>{category.categoryLabel}</span>
+                      <strong>{category.optionCount}</strong>
+                    </button>
+
+                    {!categoryCollapsed ? (
+                      <>
+                        {category.directOptions.length ? (
+                          <div className="neris-incident-type-item-list">
+                            {category.directOptions.map(({ option, leafLabel }) => {
+                              const isSelected =
+                                mode === "single"
+                                  ? option.value === normalizedSelectedValue
+                                  : selectedValueSet.has(option.value);
+                              const isDisabled =
+                                mode === "multi" &&
+                                typeof maxSelections === "number" &&
+                                selectedValueSet.size >= maxSelections &&
+                                !isSelected;
+                              return (
+                                <button
+                                  key={option.value}
+                                  type="button"
+                                  className={`neris-incident-type-item neris-incident-type-item-main${
+                                    isSelected ? " selected" : ""
+                                  }${isDisabled ? " disabled" : ""}`}
+                                  aria-selected={isSelected}
+                                  aria-disabled={isDisabled}
+                                  onClick={() => {
+                                    if (isDisabled) {
+                                      return;
+                                    }
+                                    if (mode === "single") {
+                                      onChange(option.value);
+                                      setIsOpen(false);
+                                      setSearchTerm("");
+                                      return;
+                                    }
+                                    const nextSelected = new Set(selectedValueSet);
+                                    if (nextSelected.has(option.value)) {
+                                      nextSelected.delete(option.value);
+                                    } else {
+                                      nextSelected.add(option.value);
+                                    }
+                                    const nextOrderedValues = options
+                                      .map((entry) => entry.value)
+                                      .filter((entryValue) => nextSelected.has(entryValue));
+                                    onChange(nextOrderedValues.join(","));
+                                  }}
+                                >
+                                  {showCheckboxes ? (
+                                    <span className="neris-incident-type-item-checkbox">
+                                      <input
+                                        type="checkbox"
+                                        tabIndex={-1}
+                                        readOnly
+                                        checked={isSelected}
+                                      />
+                                    </span>
+                                  ) : null}
+                                  <span>{leafLabel}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : null}
+                        {category.subgroups.map((subgroup) => {
+                          const subgroupCollapseKey = `${category.categoryKey}::${subgroup.subgroupKey}`;
+                          const subgroupCollapsed =
+                            normalizedSearch.length === 0 &&
+                            Boolean(collapsedSubgroups[subgroupCollapseKey]);
+                          return (
+                            <div
+                              key={subgroupCollapseKey}
+                              className="neris-incident-type-subgroup-container"
+                            >
+                              <button
+                                type="button"
+                                className="neris-incident-type-subgroup-button"
+                                onClick={() =>
+                                  handleToggleSubgroup(category.categoryKey, subgroup.subgroupKey)
+                                }
+                              >
+                                {subgroupCollapsed ? (
+                                  <ChevronRight size={13} />
+                                ) : (
+                                  <ChevronDown size={13} />
+                                )}
+                                <span>{subgroup.subgroupLabel}</span>
+                              </button>
+                              {!subgroupCollapsed ? (
+                                <div className="neris-incident-type-item-list">
+                                  {subgroup.options.map(({ option, leafLabel }) => {
+                                    const isSelected =
+                                      mode === "single"
+                                        ? option.value === normalizedSelectedValue
+                                        : selectedValueSet.has(option.value);
+                                    const isDisabled =
+                                      mode === "multi" &&
+                                      typeof maxSelections === "number" &&
+                                      selectedValueSet.size >= maxSelections &&
+                                      !isSelected;
+                                    return (
+                                      <button
+                                        key={option.value}
+                                        type="button"
+                                        className={`neris-incident-type-item${
+                                          isSelected ? " selected" : ""
+                                        }${isDisabled ? " disabled" : ""}`}
+                                        aria-selected={isSelected}
+                                        aria-disabled={isDisabled}
+                                        onClick={() => {
+                                          if (isDisabled) {
+                                            return;
+                                          }
+                                          if (mode === "single") {
+                                            onChange(option.value);
+                                            setIsOpen(false);
+                                            setSearchTerm("");
+                                            return;
+                                          }
+                                          const nextSelected = new Set(selectedValueSet);
+                                          if (nextSelected.has(option.value)) {
+                                            nextSelected.delete(option.value);
+                                          } else {
+                                            nextSelected.add(option.value);
+                                          }
+                                          const nextOrderedValues = options
+                                            .map((entry) => entry.value)
+                                            .filter((entryValue) => nextSelected.has(entryValue));
+                                          onChange(nextOrderedValues.join(","));
+                                        }}
+                                      >
+                                        {showCheckboxes ? (
+                                          <span className="neris-incident-type-item-checkbox">
+                                            <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                                          </span>
+                                        ) : null}
+                                        <span>{leafLabel}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </>
+                    ) : null}
+                  </section>
+                );
+              })
+            ) : (
+              <p className="neris-incident-type-empty">No options match your search.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface NerisFlatMultiOptionSelectProps {
+  inputId: string;
+  value: string;
+  options: NerisValueOption[];
+  onChange: (nextValue: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  disabled?: boolean;
+}
+
+function NerisFlatMultiOptionSelect({
+  inputId,
+  value,
+  options,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  disabled = false,
+}: NerisFlatMultiOptionSelectProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const selectedValues = Array.from(
+    new Set(
+      value
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .map((entry) => normalizeNerisEnumValue(entry)),
+    ),
+  );
+  const selectedValueSet = new Set<string>(selectedValues);
+  const selectedOptions = selectedValues
+    .map((selectedValue) => options.find((option) => option.value === selectedValue))
+    .filter((option): option is NerisValueOption => Boolean(option));
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredOptions = normalizedSearch
+    ? options.filter(
+        (option) =>
+          option.label.toLowerCase().includes(normalizedSearch) ||
+          option.value.toLowerCase().includes(normalizedSearch),
+      )
+    : options;
+
+  useEffect(() => {
+    if (!isOpen || disabled) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen, disabled]);
+
+  useEffect(() => {
+    if (!isOpen || disabled) {
+      return;
+    }
+    searchInputRef.current?.focus();
+  }, [isOpen, disabled]);
+
+  return (
+    <div className="neris-incident-type-select" ref={containerRef}>
+      <button
+        id={inputId}
+        type="button"
+        className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) {
+            return;
+          }
+          setIsOpen((previous) => !previous);
+          if (isOpen) {
+            setSearchTerm("");
+          }
+        }}
+      >
+        <div className="neris-selected-pill-row">
+          {selectedOptions.length ? (
+            selectedOptions.map((selected) => (
+              <span key={`${inputId}-${selected.value}`} className="neris-selected-pill">
+                {selected.label}
+              </span>
+            ))
+          ) : (
+            <span
+              className={
+                placeholder && placeholder.length > 0 ? "neris-incident-type-placeholder" : undefined
+              }
+            >
+              {placeholder ?? "Select one or more options"}
+            </span>
+          )}
+        </div>
+        <ChevronDown
+          size={15}
+          className={`neris-incident-type-trigger-icon${isOpen ? " open" : ""}`}
+        />
+      </button>
+
+      {isOpen && !disabled ? (
+        <div className="neris-incident-type-select-panel">
+          <div className="neris-incident-type-search-row">
+            <Search size={14} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              placeholder={searchPlaceholder ?? "Search options..."}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+            {searchTerm ? (
+              <button
+                type="button"
+                className="neris-incident-type-search-clear"
+                onClick={() => setSearchTerm("")}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <div className="neris-incident-type-options-scroll" role="listbox">
+            {filteredOptions.length ? (
+              <div className="neris-incident-type-item-list">
+                {filteredOptions.map((option) => {
+                  const isSelected = selectedValueSet.has(option.value);
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}`}
+                      aria-selected={isSelected}
+                      onClick={() => {
+                        const nextSelected = new Set(selectedValueSet);
+                        if (nextSelected.has(option.value)) {
+                          nextSelected.delete(option.value);
+                        } else {
+                          nextSelected.add(option.value);
+                        }
+                        const nextOrderedValues = options
+                          .map((entry) => entry.value)
+                          .filter((entryValue) => nextSelected.has(entryValue));
+                        onChange(nextOrderedValues.join(","));
+                      }}
+                    >
+                      <span className="neris-incident-type-item-checkbox">
+                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                      </span>
+                      <span>{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="neris-incident-type-empty">No options match your search.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface NerisFlatSingleOptionSelectProps {
+  inputId: string;
+  value: string;
+  options: NerisValueOption[];
+  onChange: (nextValue: string) => void;
+  placeholder?: string;
+  searchPlaceholder?: string;
+  disabled?: boolean;
+  isOptionDisabled?: (optionValue: string) => boolean;
+}
+
+function NerisFlatSingleOptionSelect({
+  inputId,
+  value,
+  options,
+  onChange,
+  placeholder,
+  searchPlaceholder,
+  disabled = false,
+  isOptionDisabled,
+}: NerisFlatSingleOptionSelectProps) {
+  const containerRef = useRef<HTMLDivElement | null>(null);
+  const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [isOpen, setIsOpen] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+
+  const normalizedValue = normalizeNerisEnumValue(value);
+  const selectedOption = options.find((option) => option.value === normalizedValue);
+  const normalizedSearch = searchTerm.trim().toLowerCase();
+  const filteredOptions = normalizedSearch
+    ? options.filter(
+        (option) =>
+          option.label.toLowerCase().includes(normalizedSearch) ||
+          option.value.toLowerCase().includes(normalizedSearch),
+      )
+    : options;
+
+  useEffect(() => {
+    if (!isOpen || disabled) {
+      return;
+    }
+    const handlePointerDown = (event: PointerEvent) => {
+      if (!containerRef.current?.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [isOpen, disabled]);
+
+  useEffect(() => {
+    if (!isOpen || disabled) {
+      return;
+    }
+    searchInputRef.current?.focus();
+  }, [isOpen, disabled]);
+
+  return (
+    <div className="neris-incident-type-select" ref={containerRef}>
+      <button
+        id={inputId}
+        type="button"
+        className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
+        aria-haspopup="listbox"
+        aria-expanded={isOpen}
+        disabled={disabled}
+        onClick={() => {
+          if (disabled) {
+            return;
+          }
+          setIsOpen((previous) => !previous);
+          if (isOpen) {
+            setSearchTerm("");
+          }
+        }}
+      >
+        <div className="neris-selected-pill-row">
+          {selectedOption ? (
+            <span className="neris-selected-pill">{selectedOption.label}</span>
+          ) : (
+            <span
+              className={
+                placeholder && placeholder.length > 0 ? "neris-incident-type-placeholder" : undefined
+              }
+            >
+              {placeholder ?? "Select an option"}
+            </span>
+          )}
+        </div>
+        <ChevronDown
+          size={15}
+          className={`neris-incident-type-trigger-icon${isOpen ? " open" : ""}`}
+        />
+      </button>
+
+      {isOpen && !disabled ? (
+        <div className="neris-incident-type-select-panel">
+          <div className="neris-incident-type-search-row">
+            <Search size={14} />
+            <input
+              ref={searchInputRef}
+              type="text"
+              value={searchTerm}
+              placeholder={searchPlaceholder ?? "Search options..."}
+              onChange={(event) => setSearchTerm(event.target.value)}
+            />
+            {searchTerm ? (
+              <button
+                type="button"
+                className="neris-incident-type-search-clear"
+                onClick={() => setSearchTerm("")}
+              >
+                Clear
+              </button>
+            ) : null}
+          </div>
+          <div className="neris-incident-type-options-scroll" role="listbox">
+            {filteredOptions.length ? (
+              <div className="neris-incident-type-item-list">
+                {filteredOptions.map((option) => {
+                  const isSelected = option.value === normalizedValue;
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${
+                        optionDisabled ? " disabled" : ""
+                      }`}
+                      aria-selected={isSelected}
+                      aria-disabled={optionDisabled}
+                      onClick={() => {
+                        if (optionDisabled) {
+                          return;
+                        }
+                        onChange(option.value);
+                        setIsOpen(false);
+                        setSearchTerm("");
+                      }}
+                    >
+                      <span>{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="neris-incident-type-empty">No options match your search.</p>
+            )}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+interface AidEntry {
+  aidDirection: string;
+  aidType: string;
+  aidDepartment: string;
+}
+
+interface ValidationModalState {
+  mode: "success" | "error";
+  issues: string[];
+}
+
+const EMPTY_AID_ENTRY: AidEntry = {
+  aidDirection: "",
+  aidType: "",
+  aidDepartment: "",
+};
+
 function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
   const navigate = useNavigate();
   const detail = getIncidentCallDetail(callNumber);
+  const persistedDraft = useMemo(() => readNerisDraft(callNumber), [callNumber]);
+  const defaultFormValues = useMemo(
+    () =>
+      createDefaultNerisFormValues({
+        callNumber,
+        incidentType: detail?.incidentType,
+        receivedAt: detail?.receivedAt,
+        address: detail?.address,
+      }),
+    [callNumber, detail?.incidentType, detail?.receivedAt, detail?.address],
+  );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
   const [reportStatus, setReportStatus] = useState<string>(() =>
-    getNerisReportStatus(callNumber),
+    persistedDraft?.reportStatus ?? "Draft",
   );
-  const [onsetDate, setOnsetDate] = useState("2026-02-18");
-  const [onsetTime, setOnsetTime] = useState(detail?.receivedAt ?? "15:30:13");
-  const [primaryIncidentType, setPrimaryIncidentType] = useState(
-    detail?.incidentType ?? "Medical Assist",
-  );
-  const [additionalIncidentTypes, setAdditionalIncidentTypes] = useState("");
-  const [specialIncidentModifiers, setSpecialIncidentModifiers] = useState("");
-  const [dispatchRunNumber, setDispatchRunNumber] = useState(
-    detail?.callNumber.replace("D-", "") ?? "397",
-  );
-  const [initialDispatchCode, setInitialDispatchCode] = useState(
-    "AMB.UNRESP-BREATHING",
-  );
-  const [outcomeNarrative, setOutcomeNarrative] = useState("");
-  const [obstacleNarrative, setObstacleNarrative] = useState("");
-  const [sectionNotes, setSectionNotes] = useState<Partial<Record<NerisSectionId, string>>>(
-    {},
+  const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
+    ...defaultFormValues,
+    ...(persistedDraft?.formValues ?? {}),
+  }));
+  const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
+  const [validationIssues, setValidationIssues] = useState<string[]>([]);
+  const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
+    null,
   );
   const [saveMessage, setSaveMessage] = useState("");
-
-  const currentSection =
-    NERIS_FORM_SECTIONS.find((section) => section.id === activeSectionId) ??
-    NERIS_FORM_SECTIONS[0];
-  const sectionIndex = NERIS_FORM_SECTIONS.findIndex(
-    (section) => section.id === activeSectionId,
+  const [errorMessage, setErrorMessage] = useState("");
+  const [lastSavedAt, setLastSavedAt] = useState<string>(
+    () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
-  const hasNextSection = sectionIndex < NERIS_FORM_SECTIONS.length - 1;
-  const primaryIncidentOptions = useMemo(
+  const [fieldOptionFilters, setFieldOptionFilters] = useState<Record<string, string>>({});
+  const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
+    (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
+      aidDirection: entry.aidDirection,
+      aidType: entry.aidType,
+      aidDepartment: entry.aidDepartment,
+    })),
+  );
+
+  const primaryIncidentCategory = useMemo(() => {
+    const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
+      formValues.primary_incident_type ?? "",
+    );
+    return (
+      normalizedPrimaryIncidentType
+        .split("||")
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)[0] ?? ""
+    );
+  }, [formValues.primary_incident_type]);
+  const visibleNerisSections = useMemo(
     () =>
-      Array.from(new Set(INCIDENT_CALLS.map((call) => call.incidentType))).sort(
-        (left, right) => left.localeCompare(right),
-      ),
+      NERIS_FORM_SECTIONS.filter((section) => {
+        if (section.id === "fire") {
+          return primaryIncidentCategory === "FIRE";
+        }
+        if (section.id === "medical") {
+          return primaryIncidentCategory === "MEDICAL";
+        }
+        if (section.id === "hazards") {
+          return (
+            primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
+          );
+        }
+        return true;
+      }),
+    [primaryIncidentCategory],
+  );
+  const activeVisibleSectionId =
+    visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
+    visibleNerisSections[0]?.id ??
+    "core";
+  const currentSection =
+    visibleNerisSections.find((section) => section.id === activeVisibleSectionId) ??
+    visibleNerisSections[0] ??
+    NERIS_FORM_SECTIONS[0]!;
+  const sectionFields = useMemo(
+    () => getNerisFieldsForSection(currentSection.id),
+    [currentSection.id],
+  );
+  const allNerisFields = useMemo(
+    () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
   );
+  const nerisFieldLabelById = useMemo(
+    () =>
+      Object.fromEntries(allNerisFields.map((field) => [field.id, field.label])) as Record<
+        string,
+        string
+      >,
+    [allNerisFields],
+  );
+  const nerisFieldSectionById = useMemo(
+    () =>
+      Object.fromEntries(
+        allNerisFields.map((field) => [field.id, field.sectionId]),
+      ) as Record<string, NerisSectionId>,
+    [allNerisFields],
+  );
+  const nerisSectionLabelById = useMemo(
+    () =>
+      Object.fromEntries(
+        NERIS_FORM_SECTIONS.map((section) => [section.id, section.label.toUpperCase()]),
+      ) as Record<NerisSectionId, string>,
+    [],
+  );
+  const sectionIndex = visibleNerisSections.findIndex(
+    (section) => section.id === currentSection.id,
+  );
+  const hasNextSection =
+    sectionIndex >= 0 && sectionIndex < visibleNerisSections.length - 1;
 
   if (!detail) {
     return (
@@ -1999,21 +3167,232 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
     );
   }
 
-  const handleSaveDraft = () => {
+  const updateFieldValue = (fieldId: string, value: string) => {
+    const sanitizedValue =
+      fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
+    const shouldClearNoAction =
+      fieldId === "incident_actions_taken" && sanitizedValue.trim().length > 0;
+    const shouldClearActions =
+      fieldId === "incident_noaction" && sanitizedValue.trim().length > 0;
+    const shouldClearDisplacementCause =
+      (fieldId === "incident_displaced_number" &&
+        (sanitizedValue.trim().length === 0 ||
+          Number.parseInt(sanitizedValue, 10) <= 0)) ||
+      (fieldId === "incident_people_present" && sanitizedValue === "NO");
+    const shouldClearAidFields =
+      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT");
+    setFormValues((previous) => {
+      const nextValues: NerisFormValues = {
+        ...previous,
+        [fieldId]: sanitizedValue,
+      };
+      if (shouldClearNoAction) {
+        nextValues.incident_noaction = "";
+      }
+      if (shouldClearActions) {
+        nextValues.incident_actions_taken = "";
+      }
+      if (shouldClearDisplacementCause) {
+        nextValues.incident_displaced_cause = "";
+      }
+      if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
+        nextValues.incident_displaced_number = "";
+      }
+      if (fieldId === "incident_has_aid" && sanitizedValue === "NO") {
+        nextValues.incident_aid_agency_type = "";
+        nextValues.incident_aid_direction = "";
+        nextValues.incident_aid_type = "";
+        nextValues.incident_aid_department_name = "";
+        nextValues.incident_aid_nonfd = "";
+      }
+      if (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") {
+        nextValues.incident_aid_direction = "";
+        nextValues.incident_aid_type = "";
+        nextValues.incident_aid_department_name = "";
+      }
+      if (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT") {
+        nextValues.incident_aid_nonfd = "";
+      }
+      return nextValues;
+    });
+
+    if (
+      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
+      (fieldId === "incident_aid_direction" && sanitizedValue === "GIVEN")
+    ) {
+      setAdditionalAidEntries([]);
+    }
+
+    setSectionErrors((previous) => {
+      const hasPrimaryError = Boolean(previous[fieldId]);
+      const hasNoActionError = shouldClearNoAction && Boolean(previous.incident_noaction);
+      const hasActionsError = shouldClearActions && Boolean(previous.incident_actions_taken);
+      const hasDisplacementCauseError =
+        shouldClearDisplacementCause && Boolean(previous.incident_displaced_cause);
+      const hasDisplacementNumberError =
+        fieldId === "incident_people_present" &&
+        sanitizedValue === "NO" &&
+        Boolean(previous.incident_displaced_number);
+      const hasAidErrors =
+        shouldClearAidFields &&
+        (Boolean(previous.incident_aid_agency_type) ||
+          Boolean(previous.incident_aid_direction) ||
+          Boolean(previous.incident_aid_type) ||
+          Boolean(previous.incident_aid_department_name) ||
+          Boolean(previous.incident_aid_nonfd));
+      if (
+        !hasPrimaryError &&
+        !hasNoActionError &&
+        !hasActionsError &&
+        !hasDisplacementCauseError &&
+        !hasDisplacementNumberError &&
+        !hasAidErrors
+      ) {
+        return previous;
+      }
+      const next = { ...previous };
+      delete next[fieldId];
+      if (shouldClearNoAction) {
+        delete next.incident_noaction;
+      }
+      if (shouldClearActions) {
+        delete next.incident_actions_taken;
+      }
+      if (shouldClearDisplacementCause) {
+        delete next.incident_displaced_cause;
+      }
+      if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
+        delete next.incident_displaced_number;
+      }
+      if (shouldClearAidFields) {
+        delete next.incident_aid_agency_type;
+        delete next.incident_aid_direction;
+        delete next.incident_aid_type;
+        delete next.incident_aid_department_name;
+        delete next.incident_aid_nonfd;
+      }
+      return next;
+    });
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
+  const stampSavedAt = (
+    mode: "manual" | "auto",
+    nextStatus: string = reportStatus,
+    messageOverride?: string,
+  ) => {
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
       minute: "2-digit",
       second: "2-digit",
       hour12: false,
     });
-    setSaveMessage(`Draft saved for ${detail.callNumber} at ${savedAt}.`);
+    writeNerisDraft(callNumber, {
+      formValues,
+      reportStatus: nextStatus,
+      lastSavedAt: savedAt,
+      additionalAidEntries: additionalAidEntries.map((entry) => ({
+        aidDirection: entry.aidDirection,
+        aidType: entry.aidType,
+        aidDepartment: entry.aidDepartment,
+      })),
+    });
+    setReportStatus(nextStatus);
+    setLastSavedAt(savedAt);
+    setSaveMessage(
+      messageOverride ??
+        (mode === "auto"
+          ? `Draft auto-saved for ${detail.callNumber} at ${savedAt}.`
+          : `Draft saved for ${detail.callNumber} at ${savedAt}.`),
+    );
+  };
+
+  const handleValidateForm = () => {
+    const mergedErrors: Record<string, string> = {};
+    for (const section of NERIS_FORM_SECTIONS) {
+      const validation = validateNerisSection(section.id, formValues);
+      Object.assign(mergedErrors, validation.errors);
+    }
+
+    setSectionErrors(mergedErrors);
+    const issueLabels = Array.from(
+      new Set(
+        Object.keys(mergedErrors).map(
+          (fieldId) => {
+            const sectionId = nerisFieldSectionById[fieldId];
+            const sectionLabel = sectionId
+              ? nerisSectionLabelById[sectionId]
+              : "UNKNOWN";
+            return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
+          },
+        ),
+      ),
+    );
+    setValidationIssues(issueLabels);
+
+    if (issueLabels.length > 0) {
+      writeNerisDraft(callNumber, {
+        formValues,
+        reportStatus: "Draft",
+        lastSavedAt,
+        additionalAidEntries: additionalAidEntries.map((entry) => ({
+          aidDirection: entry.aidDirection,
+          aidType: entry.aidType,
+          aidDepartment: entry.aidDepartment,
+        })),
+      });
+      setReportStatus("Draft");
+      setSaveMessage("");
+      setErrorMessage(
+        "Validation incomplete. Complete the required fields listed below.",
+      );
+      setValidationModal({
+        mode: "error",
+        issues: issueLabels,
+      });
+      return;
+    }
+
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal({
+      mode: "success",
+      issues: [],
+    });
+    stampSavedAt(
+      "manual",
+      "In Review",
+      "Validation complete. Status updated to In Review.",
+    );
+  };
+
+  const handleSaveDraft = () => {
+    setSectionErrors({});
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    stampSavedAt("manual");
   };
 
   const goToNextSection = () => {
     if (!hasNextSection) {
       return;
     }
-    const nextSection = NERIS_FORM_SECTIONS[sectionIndex + 1];
+    setSectionErrors({});
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    stampSavedAt("auto");
+    const nextSection = visibleNerisSections[sectionIndex + 1];
     if (nextSection) {
       setActiveSectionId(nextSection.id);
     }
@@ -2021,13 +3400,608 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
 
   const handleBack = () => {
     if (sectionIndex > 0) {
-      const previousSection = NERIS_FORM_SECTIONS[sectionIndex - 1];
+      const previousSection = visibleNerisSections[sectionIndex - 1];
       if (previousSection) {
         setActiveSectionId(previousSection.id);
       }
       return;
     }
     navigate("/reporting/neris");
+  };
+
+  const handleValidationModalReturn = () => {
+    setValidationModal(null);
+    navigate("/reporting/neris");
+  };
+
+  const handleValidationModalFixIssues = () => {
+    setValidationModal(null);
+    setActiveSectionId("core");
+  };
+
+  const addAdditionalAidEntry = () => {
+    setAdditionalAidEntries((previous) => [...previous, { ...EMPTY_AID_ENTRY }]);
+    setValidationModal(null);
+  };
+
+  const updateAdditionalAidEntry = (
+    index: number,
+    field: keyof AidEntry,
+    nextValue: string,
+  ) => {
+    setAdditionalAidEntries((previous) =>
+      previous.map((entry, entryIndex) =>
+        entryIndex === index
+          ? {
+              ...entry,
+              [field]: nextValue,
+            }
+          : entry,
+      ),
+    );
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
+  const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
+    const inputId = `neris-field-${field.id}`;
+    const value = formValues[field.id] ?? "";
+    const isRequired = isNerisFieldRequired(field, formValues);
+    const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
+    const error = sectionErrors[field.id];
+    const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
+    const selectedValues = value
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const normalizedSingleValue = normalizeNerisEnumValue(value);
+    const normalizedSelectedValues = selectedValues.map((entry) =>
+      normalizeNerisEnumValue(entry),
+    );
+    const isPrimaryIncidentTypeField =
+      field.id === "primary_incident_type" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "incident_type";
+    const isAdditionalIncidentTypesField =
+      field.id === "additional_incident_types" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "incident_type";
+    const isActionsTakenField =
+      field.id === "incident_actions_taken" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "action_tactic";
+    const isSpecialIncidentModifiersField =
+      field.id === "special_incident_modifiers" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "incident_modifier";
+    const isNoActionReasonField =
+      field.id === "incident_noaction" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "no_action";
+    const isAutomaticAlarmField =
+      field.id === "dispatch_automatic_alarm" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
+    const isPeoplePresentField =
+      field.id === "incident_people_present" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
+    const isDisplacedNumberField =
+      field.id === "incident_displaced_number" && field.inputKind === "text";
+    const isDisplacementCauseField =
+      field.id === "incident_displaced_cause" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "displace_cause_incident";
+    const isAidGivenQuestionField =
+      field.id === "incident_has_aid" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
+    const isAidAgencyTypeField =
+      field.id === "incident_aid_agency_type" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "aid_agency_type";
+    const isAidDirectionField =
+      field.id === "incident_aid_direction" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "aid_direction";
+    const isAidTypeField =
+      field.id === "incident_aid_type" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "aid_type";
+    const isAidDepartmentField =
+      field.id === "incident_aid_department_name" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "aid_department";
+    const isAidNonFdField =
+      field.id === "incident_aid_nonfd" &&
+      field.inputKind === "multiselect" &&
+      field.optionsKey === "aid_nonfd";
+    const isAidManagedHiddenField =
+      isAidAgencyTypeField ||
+      isAidDirectionField ||
+      isAidTypeField ||
+      isAidDepartmentField ||
+      isAidNonFdField;
+    const hasNoActionSelected = (formValues.incident_noaction ?? "").trim().length > 0;
+    const isNoActionReasonDisabled = (formValues.incident_actions_taken ?? "").trim().length > 0;
+    const isActionsTakenDisabled = hasNoActionSelected;
+    const isSingleChoiceButtonField =
+      isNoActionReasonField || isAutomaticAlarmField || isPeoplePresentField;
+    const displacedNumberValue = Number.parseInt(
+      (formValues.incident_displaced_number ?? "").trim(),
+      10,
+    );
+    const selectedPrimaryAidDepartment = (formValues.incident_aid_department_name ?? "").trim();
+    const selectedAdditionalAidDepartments = additionalAidEntries
+      .map((entry) => entry.aidDepartment.trim())
+      .filter((entry) => entry.length > 0);
+    const shouldShowTypeahead =
+      (field.inputKind === "select" || field.inputKind === "multiselect") &&
+      options.length > 10 &&
+      !isPrimaryIncidentTypeField &&
+      !isAdditionalIncidentTypesField &&
+      !isActionsTakenField &&
+      !isSpecialIncidentModifiersField &&
+      !isNoActionReasonField &&
+      !isAidGivenQuestionField;
+    const optionFilter = fieldOptionFilters[field.id] ?? "";
+    const normalizedFilter = optionFilter.trim().toLowerCase();
+    const filteredOptions =
+      shouldShowTypeahead && normalizedFilter
+        ? options.filter(
+            (option) =>
+              option.label.toLowerCase().includes(normalizedFilter) ||
+              option.value.toLowerCase().includes(normalizedFilter),
+          )
+        : options;
+
+    if (
+      field.id === "incident_displaced_cause" &&
+      (Number.isNaN(displacedNumberValue) || displacedNumberValue <= 0)
+    ) {
+      return null;
+    }
+    if (isDisplacedNumberField && (formValues.incident_people_present ?? "") !== "YES") {
+      return null;
+    }
+    if (isAidManagedHiddenField) {
+      return null;
+    }
+
+    return (
+      <div key={fieldKey} className={wrapperClassName}>
+        {!isAidGivenQuestionField ? (
+          <label
+            htmlFor={inputId}
+            className={isNoActionReasonField ? "neris-field-label-italic" : undefined}
+          >
+            {field.label}
+            {isRequired ? " *" : ""}
+          </label>
+        ) : null}
+
+        {field.inputKind === "textarea" ? (
+          <textarea
+            id={inputId}
+            rows={field.rows ?? 6}
+            value={value}
+            placeholder={field.placeholder}
+            onChange={(event) => updateFieldValue(field.id, event.target.value)}
+          />
+        ) : null}
+
+        {(field.inputKind === "text" ||
+          field.inputKind === "date" ||
+          field.inputKind === "time" ||
+          field.inputKind === "datetime" ||
+          field.inputKind === "readonly") ? (
+          <input
+            id={inputId}
+            type={
+              field.inputKind === "readonly"
+                ? "text"
+                : field.inputKind === "datetime"
+                  ? "datetime-local"
+                  : field.inputKind
+            }
+            step={field.inputKind === "time" ? 1 : undefined}
+            readOnly={field.inputKind === "readonly"}
+            value={value}
+            placeholder={field.placeholder}
+            onChange={(event) => updateFieldValue(field.id, event.target.value)}
+          />
+        ) : null}
+
+        {isAidGivenQuestionField ? (
+          <div className="neris-aid-block">
+            <div className="neris-aid-question">
+              <label>Was aid given or received?</label>
+              <div className="neris-single-choice-row" role="group" aria-label="Was aid given or received?">
+                {getNerisValueOptions("yes_no").map((option) => {
+                  const isSelected = option.value === (formValues.incident_has_aid ?? "");
+                  return (
+                    <button
+                      key={`incident-has-aid-${option.value}`}
+                      type="button"
+                      className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                      aria-pressed={isSelected}
+                      onClick={() => updateFieldValue("incident_has_aid", option.value)}
+                    >
+                      {option.label}
+                    </button>
+                  );
+                })}
+              </div>
+              {sectionErrors.incident_has_aid ? (
+                <small className="field-error">{sectionErrors.incident_has_aid}</small>
+              ) : null}
+            </div>
+
+            {(formValues.incident_has_aid ?? "") === "YES" ? (
+              <div className="neris-aid-question">
+                <label>Aid Type</label>
+                <div className="neris-single-choice-row" role="group" aria-label="Aid Type">
+                  {getNerisValueOptions("aid_agency_type").map((option) => {
+                    const isSelected = option.value === (formValues.incident_aid_agency_type ?? "");
+                    return (
+                      <button
+                        key={`incident-aid-agency-${option.value}`}
+                        type="button"
+                        className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                        aria-pressed={isSelected}
+                        onClick={() => updateFieldValue("incident_aid_agency_type", option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {sectionErrors.incident_aid_agency_type ? (
+                  <small className="field-error">{sectionErrors.incident_aid_agency_type}</small>
+                ) : null}
+              </div>
+            ) : null}
+
+            {(formValues.incident_has_aid ?? "") === "YES" &&
+            (formValues.incident_aid_agency_type ?? "") === "NON_FD_AID" ? (
+              <div className="neris-aid-question">
+                <label>Non FD Aid</label>
+                <NerisFlatMultiOptionSelect
+                  inputId={`${inputId}-nonfd`}
+                  value={formValues.incident_aid_nonfd ?? ""}
+                  options={getNerisValueOptions("aid_nonfd")}
+                  onChange={(nextValue) => updateFieldValue("incident_aid_nonfd", nextValue)}
+                  placeholder="Select non FD aid"
+                  searchPlaceholder="Search non FD aid..."
+                />
+                {sectionErrors.incident_aid_nonfd ? (
+                  <small className="field-error">{sectionErrors.incident_aid_nonfd}</small>
+                ) : null}
+              </div>
+            ) : null}
+
+            {(formValues.incident_has_aid ?? "") === "YES" &&
+            (formValues.incident_aid_agency_type ?? "") === "FIRE_DEPARTMENT" ? (
+              <div className="neris-aid-question">
+                <label>Aid direction</label>
+                <div className="neris-single-choice-row" role="group" aria-label="Aid direction">
+                  {getNerisValueOptions("aid_direction").map((option) => {
+                    const isSelected = option.value === (formValues.incident_aid_direction ?? "");
+                    return (
+                      <button
+                        key={`incident-aid-direction-${option.value}`}
+                        type="button"
+                        className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                        aria-pressed={isSelected}
+                        onClick={() => updateFieldValue("incident_aid_direction", option.value)}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                {sectionErrors.incident_aid_direction ? (
+                  <small className="field-error">{sectionErrors.incident_aid_direction}</small>
+                ) : null}
+
+                <label className="neris-aid-subfield-label">Aid Type</label>
+                <NerisFlatSingleOptionSelect
+                  inputId={`${inputId}-aid-type`}
+                  value={formValues.incident_aid_type ?? ""}
+                  options={getNerisValueOptions("aid_type")}
+                  onChange={(nextValue) => updateFieldValue("incident_aid_type", nextValue)}
+                  placeholder="Select aid type"
+                  searchPlaceholder="Search aid types..."
+                />
+                {sectionErrors.incident_aid_type ? (
+                  <small className="field-error">{sectionErrors.incident_aid_type}</small>
+                ) : null}
+
+                <label className="neris-aid-subfield-label">Aid department name(s)</label>
+                <NerisFlatSingleOptionSelect
+                  inputId={`${inputId}-aid-department`}
+                  value={formValues.incident_aid_department_name ?? ""}
+                  options={getNerisValueOptions("aid_department")}
+                  onChange={(nextValue) =>
+                    updateFieldValue("incident_aid_department_name", nextValue)
+                  }
+                  placeholder="Select aid department"
+                  searchPlaceholder="Search aid departments..."
+                  isOptionDisabled={(optionValue) =>
+                    optionValue !== selectedPrimaryAidDepartment &&
+                    selectedAdditionalAidDepartments.includes(optionValue)
+                  }
+                />
+                {sectionErrors.incident_aid_department_name ? (
+                  <small className="field-error">{sectionErrors.incident_aid_department_name}</small>
+                ) : null}
+
+                {(formValues.incident_aid_direction ?? "") === "RECEIVED" ? (
+                  <>
+                    {additionalAidEntries.map((entry, entryIndex) => (
+                      <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
+                        <label className="neris-aid-subfield-label">Aid direction</label>
+                        <div
+                          className="neris-single-choice-row"
+                          role="group"
+                          aria-label="Additional aid direction"
+                        >
+                          {getNerisValueOptions("aid_direction").map((option) => {
+                            const isSelected = option.value === entry.aidDirection;
+                            return (
+                              <button
+                                key={`additional-aid-direction-${entryIndex}-${option.value}`}
+                                type="button"
+                                className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                                aria-pressed={isSelected}
+                                onClick={() =>
+                                  updateAdditionalAidEntry(entryIndex, "aidDirection", option.value)
+                                }
+                              >
+                                {option.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        <label className="neris-aid-subfield-label">Aid Type</label>
+                        <NerisFlatSingleOptionSelect
+                          inputId={`${inputId}-additional-aid-type-${entryIndex}`}
+                          value={entry.aidType}
+                          options={getNerisValueOptions("aid_type")}
+                          onChange={(nextValue) =>
+                            updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
+                          }
+                          placeholder="Select aid type"
+                          searchPlaceholder="Search aid types..."
+                        />
+
+                        <label className="neris-aid-subfield-label">Aid department name(s)</label>
+                        <NerisFlatSingleOptionSelect
+                          inputId={`${inputId}-additional-aid-department-${entryIndex}`}
+                          value={entry.aidDepartment}
+                          options={getNerisValueOptions("aid_department")}
+                          onChange={(nextValue) =>
+                            updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
+                          }
+                          placeholder="Select aid department"
+                          searchPlaceholder="Search aid departments..."
+                          isOptionDisabled={(optionValue) => {
+                            if (optionValue === entry.aidDepartment) {
+                              return false;
+                            }
+                            if (selectedPrimaryAidDepartment === optionValue) {
+                              return true;
+                            }
+                            return additionalAidEntries.some(
+                              (candidateEntry, candidateIndex) =>
+                                candidateIndex !== entryIndex &&
+                                candidateEntry.aidDepartment.trim() === optionValue,
+                            );
+                          }}
+                        />
+                      </div>
+                    ))}
+
+                    <button
+                      type="button"
+                      className="neris-link-button"
+                      onClick={addAdditionalAidEntry}
+                    >
+                      Add Additional Aid
+                    </button>
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+
+        {field.inputKind === "select" ? (
+          isAidGivenQuestionField ? null : isSingleChoiceButtonField ? (
+            <div
+              className={`neris-single-choice-row${
+                isNoActionReasonField && isNoActionReasonDisabled ? " disabled" : ""
+              }`}
+              role="group"
+              aria-label={field.label}
+              aria-disabled={isNoActionReasonField && isNoActionReasonDisabled}
+            >
+              {options.map((option) => {
+                const isSelected = option.value === normalizedSingleValue;
+                const isDisabled = isNoActionReasonField && isNoActionReasonDisabled;
+                return (
+                  <button
+                    key={`${field.id}-${option.value}`}
+                    type="button"
+                    className={`neris-single-choice-button${isSelected ? " selected" : ""}${
+                      isDisabled ? " disabled" : ""
+                    }`}
+                    aria-pressed={isSelected}
+                    disabled={isDisabled}
+                    onClick={() => {
+                      if (isDisabled) {
+                        return;
+                      }
+                      if (
+                        (isNoActionReasonField || isAutomaticAlarmField) &&
+                        isSelected
+                      ) {
+                        updateFieldValue(field.id, "");
+                        return;
+                      }
+                      updateFieldValue(field.id, option.value);
+                    }}
+                  >
+                    {option.label}
+                  </button>
+                );
+              })}
+            </div>
+          ) : isPrimaryIncidentTypeField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={normalizedSingleValue}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="single"
+              variant="incidentType"
+              placeholder=""
+              searchPlaceholder="Search incident types..."
+            />
+          ) : (
+            <>
+              {shouldShowTypeahead ? (
+                <input
+                  type="text"
+                  className="field-typeahead-input"
+                  value={optionFilter}
+                  placeholder={`Filter ${field.label.toLowerCase()}...`}
+                  onChange={(event) =>
+                    setFieldOptionFilters((previous) => ({
+                      ...previous,
+                      [field.id]: event.target.value,
+                    }))
+                  }
+                />
+              ) : null}
+              <select
+                id={inputId}
+                value={normalizedSingleValue}
+                onChange={(event) => updateFieldValue(field.id, event.target.value)}
+              >
+                {!isRequired ? <option value="">Select an option</option> : null}
+                {filteredOptions.map((option) => (
+                  <option key={`${field.id}-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )
+        ) : null}
+
+        {field.inputKind === "multiselect" ? (
+          isAdditionalIncidentTypesField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="multi"
+              variant="incidentType"
+              placeholder="Select up to 2 incident types"
+              searchPlaceholder="Search incident types..."
+              maxSelections={2}
+              showCheckboxes
+            />
+          ) : isSpecialIncidentModifiersField ? (
+            <NerisFlatMultiOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder="Select special incident modifier(s)"
+              searchPlaceholder="Search special modifiers..."
+            />
+          ) : isDisplacementCauseField ? (
+            <NerisFlatMultiOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder="Select displacement cause(s)"
+              searchPlaceholder="Search displacement causes..."
+            />
+          ) : isActionsTakenField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="multi"
+              variant="actionTactic"
+              placeholder="Select action(s) taken"
+              searchPlaceholder="Search actions..."
+              showCheckboxes
+              disabled={isActionsTakenDisabled}
+            />
+          ) : (
+            <>
+              {shouldShowTypeahead ? (
+                <input
+                  type="text"
+                  className="field-typeahead-input"
+                  value={optionFilter}
+                  placeholder={`Filter ${field.label.toLowerCase()}...`}
+                  onChange={(event) =>
+                    setFieldOptionFilters((previous) => ({
+                      ...previous,
+                      [field.id]: event.target.value,
+                    }))
+                  }
+                />
+              ) : null}
+              <select
+                id={inputId}
+                multiple
+                className="neris-multiselect"
+                value={normalizedSelectedValues}
+                onChange={(event) =>
+                  updateFieldValue(
+                    field.id,
+                    Array.from(event.target.selectedOptions)
+                      .map((option) => option.value)
+                      .join(","),
+                  )
+                }
+              >
+                {filteredOptions.map((option) => (
+                  <option key={`${field.id}-${option.value}`} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </>
+          )
+        ) : null}
+
+        {field.helperText ? <small className="field-hint">{field.helperText}</small> : null}
+
+        {field.maxLength ? (
+          <small className="field-hint">
+            {value.length} / {field.maxLength} characters
+          </small>
+        ) : null}
+
+        {error ? <small className="field-error">{error}</small> : null}
+      </div>
+    );
   };
 
   return (
@@ -2040,10 +4014,10 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           </p>
           <div className="neris-incident-meta">
             <span>
-              Incident date <strong>02/18/2026</strong>
+              Incident date <strong>{formValues.incident_onset_date || "Not set"}</strong>
             </span>
             <span>
-              Last saved <strong>1 minute ago</strong>
+              Last saved <strong>{lastSavedAt}</strong>
             </span>
             <span>
               Status{" "}
@@ -2063,20 +4037,59 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
           <button type="button" className="secondary-button compact-button">
             Print
           </button>
-          <select
-            className="neris-status-select"
-            aria-label="NERIS report status"
-            value={reportStatus}
-            onChange={(event) => setReportStatus(event.target.value)}
+          <button
+            type="button"
+            className="secondary-button compact-button"
+            onClick={handleValidateForm}
           >
-            <option>Draft</option>
-            <option>In Review</option>
-            <option>Ready for Review</option>
-            <option>Approved</option>
-            <option>Submitted</option>
-          </select>
+            Validate
+          </button>
+          <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
+            {reportStatus}
+          </span>
         </div>
       </header>
+
+      {validationModal ? (
+        <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="validation-modal panel">
+            {validationModal.mode === "success" ? (
+              <>
+                <h2>Report is now In Review</h2>
+                <p>Validation passed and the report status has been updated.</p>
+                <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={handleValidationModalReturn}
+                  >
+                    Return to Incidents
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2>Validation requires updates</h2>
+                <p>The following required fields still need values:</p>
+                <ul>
+                  {validationModal.issues.map((issue: string) => (
+                    <li key={`validation-modal-${issue}`}>{issue}</li>
+                  ))}
+                </ul>
+                <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={handleValidationModalFixIssues}
+                  >
+                    Fix issues now
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      ) : null}
 
       <section className="neris-report-layout">
         <aside className="panel neris-sidebar">
@@ -2085,11 +4098,11 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
             <p>NERIS sections</p>
           </div>
           <nav className="neris-section-nav" aria-label="NERIS section navigation">
-            {NERIS_FORM_SECTIONS.map((section) => (
+            {visibleNerisSections.map((section) => (
               <button
                 key={section.id}
                 type="button"
-                className={section.id === activeSectionId ? "active" : ""}
+                className={section.id === currentSection.id ? "active" : ""}
                 onClick={() => setActiveSectionId(section.id)}
               >
                 {section.label}
@@ -2099,146 +4112,43 @@ function NerisReportFormPage({ callNumber }: NerisReportFormPageProps) {
         </aside>
 
         <article className="panel neris-form-panel">
-          <div className="panel-header">
-            <h2>{currentSection.label}</h2>
+          {currentSection.id !== "core" ? (
+            <div className="panel-header">
+              <h2>{currentSection.label}</h2>
+            </div>
+          ) : null}
+          {currentSection.id !== "core" ? (
+            <p className="panel-description">{currentSection.helper}</p>
+          ) : null}
+          <div className="settings-form neris-field-grid">
+            {sectionFields.flatMap((field) => {
+              const nodes: ReactNode[] = [];
+              const headingLabel =
+                currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
+              if (headingLabel) {
+                nodes.push(
+                  <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
+                    {headingLabel}
+                  </div>,
+                );
+              }
+              nodes.push(renderNerisField(field, `field-${field.id}`));
+              return nodes;
+            })}
           </div>
-          <p className="panel-description">{currentSection.helper}</p>
-
-          {activeSectionId === "core" ? (
-            <div className="settings-form neris-field-grid">
-              <div>
-                <label htmlFor="neris-onset-date">Incident onset date *</label>
-                <input
-                  id="neris-onset-date"
-                  type="date"
-                  value={onsetDate}
-                  onChange={(event) => setOnsetDate(event.target.value)}
-                />
-              </div>
-              <div>
-                <label htmlFor="neris-onset-time">Incident onset time *</label>
-                <input
-                  id="neris-onset-time"
-                  type="time"
-                  step={1}
-                  value={onsetTime}
-                  onChange={(event) => setOnsetTime(event.target.value)}
-                />
-              </div>
-
-              <div>
-                <label htmlFor="neris-incident-number">Incident number *</label>
-                <input id="neris-incident-number" type="text" value={detail.callNumber} readOnly />
-              </div>
-              <div>
-                <label htmlFor="neris-dispatch-run">Dispatch run number</label>
-                <input
-                  id="neris-dispatch-run"
-                  type="text"
-                  value={dispatchRunNumber}
-                  onChange={(event) => setDispatchRunNumber(event.target.value)}
-                />
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-primary-type">Primary incident type *</label>
-                <select
-                  id="neris-primary-type"
-                  value={primaryIncidentType}
-                  onChange={(event) => setPrimaryIncidentType(event.target.value)}
-                >
-                  {primaryIncidentOptions.map((option) => (
-                    <option key={option} value={option}>
-                      {option}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-additional-types">Additional incident type(s)</label>
-                <input
-                  id="neris-additional-types"
-                  type="text"
-                  value={additionalIncidentTypes}
-                  placeholder="Select up to 2"
-                  onChange={(event) => setAdditionalIncidentTypes(event.target.value)}
-                />
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-special-modifiers">Special incident modifier(s)</label>
-                <input
-                  id="neris-special-modifiers"
-                  type="text"
-                  value={specialIncidentModifiers}
-                  onChange={(event) => setSpecialIncidentModifiers(event.target.value)}
-                />
-              </div>
-
-              <div className="field-span-two">
-                <label htmlFor="neris-dispatch-code">Initial dispatch code</label>
-                <input
-                  id="neris-dispatch-code"
-                  type="text"
-                  value={initialDispatchCode}
-                  onChange={(event) => setInitialDispatchCode(event.target.value)}
-                />
-              </div>
-            </div>
-          ) : null}
-
-          {activeSectionId === "narrative" ? (
-            <div className="settings-form">
-              <label htmlFor="neris-outcome-narrative">
-                Describe the final outcomes of the incident.
-              </label>
-              <textarea
-                id="neris-outcome-narrative"
-                rows={7}
-                value={outcomeNarrative}
-                onChange={(event) => setOutcomeNarrative(event.target.value)}
-                placeholder="Enter outcome narrative..."
-              />
-              <small className="field-hint">{outcomeNarrative.length} / 100000 characters</small>
-
-              <label htmlFor="neris-obstacles-narrative">
-                Describe any obstacles that impacted the incident.
-              </label>
-              <textarea
-                id="neris-obstacles-narrative"
-                rows={7}
-                value={obstacleNarrative}
-                onChange={(event) => setObstacleNarrative(event.target.value)}
-                placeholder="Enter obstacle narrative..."
-              />
-              <small className="field-hint">{obstacleNarrative.length} / 100000 characters</small>
-            </div>
-          ) : null}
-
-          {activeSectionId !== "core" && activeSectionId !== "narrative" ? (
-            <div className="neris-section-placeholder">
-              <p>
-                {currentSection.label} field controls are being configured for the full
-                NERIS specification and admin-required field settings.
-              </p>
-              <label htmlFor={`neris-section-note-${activeSectionId}`}>Section notes</label>
-              <textarea
-                id={`neris-section-note-${activeSectionId}`}
-                rows={6}
-                value={sectionNotes[activeSectionId] ?? ""}
-                onChange={(event) =>
-                  setSectionNotes((previous) => ({
-                    ...previous,
-                    [activeSectionId]: event.target.value,
-                  }))
-                }
-                placeholder={`Enter ${currentSection.label.toLowerCase()} notes...`}
-              />
-            </div>
-          ) : null}
 
           {saveMessage ? <p className="save-message">{saveMessage}</p> : null}
+          {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+          {validationIssues.length ? (
+            <div className="validation-issue-list">
+              <p>Required fields to complete:</p>
+              <ul>
+                {validationIssues.map((fieldLabel) => (
+                  <li key={`validation-issue-${fieldLabel}`}>{fieldLabel}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div className="neris-form-actions">
             <button type="button" className="secondary-button compact-button" onClick={handleBack}>
@@ -3084,7 +4994,7 @@ function RouteResolver({
 
   if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
-    return <NerisReportFormPage callNumber={callNumber} />;
+    return <NerisReportFormPage key={callNumber} callNumber={callNumber} />;
   }
 
   if (path === "/admin-functions/hydrants") {
