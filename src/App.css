@@ -1271,6 +1271,7 @@ tbody tr:last-of-type td {
 .neris-incident-type-options-scroll {
   max-height: 320px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.18rem 0;
 }
 
@@ -1784,6 +1785,10 @@ body.resizing-dispatch-columns {
   user-select: none;
 }
 
+body.resource-personnel-modal-open {
+  overflow: hidden;
+}
+
 .dispatch-info-line {
   margin: 0;
   color: #334155;
@@ -2195,6 +2200,15 @@ body.resizing-dispatch-columns {
   color: #334155;
 }
 
+.neris-risk-reduction-layout .neris-single-choice-row {
+  gap: 0.3rem;
+}
+
+.neris-risk-reduction-layout .neris-single-choice-button {
+  font-size: 0.68rem;
+  padding: 0.24rem 0.46rem;
+}
+
 .neris-risk-reduction-contact-box {
   border: 1px solid #dbe2ec;
   border-radius: 10px;
@@ -2453,6 +2467,8 @@ body.resizing-dispatch-columns {
   border-radius: 10px;
   background-color: #f8fafc;
   padding: 0.62rem;
+  display: grid;
+  gap: 0.55rem;
 }
 
 .neris-resource-times-editor-grid {
@@ -2476,6 +2492,24 @@ body.resizing-dispatch-columns {
   color: #0f172a;
   padding: 0.42rem 0.5rem;
   font-size: 0.78rem;
+}
+
+.neris-resource-canceled-enroute-button {
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.34rem 0.5rem;
+  justify-self: start;
+  cursor: pointer;
+}
+
+.neris-resource-canceled-enroute-button.active {
+  border-color: #86efac;
+  background-color: #dcfce7;
+  color: #166534;
 }
 
 .neris-resource-field-grid {
@@ -2608,6 +2642,11 @@ body.resizing-dispatch-columns {
   color: #94a3b8;
 }
 
+.neris-resource-personnel-error {
+  display: block;
+  padding: 0.45rem 0.62rem 0.56rem;
+}
+
 .neris-resource-personnel-picker {
   display: grid;
   gap: 0.28rem;
@@ -2623,10 +2662,13 @@ body.resizing-dispatch-columns {
   display: grid;
   place-items: center;
   padding: 1rem;
+  overflow-y: auto;
 }
 
 .neris-resource-personnel-modal {
   width: min(560px, 92vw);
+  max-height: min(82vh, 760px);
+  overflow: auto;
   display: grid;
   gap: 0.58rem;
 }
@@ -2642,6 +2684,14 @@ body.resizing-dispatch-columns {
   margin: 0;
   color: #0f172a;
   font-size: 0.98rem;
+}
+
+.neris-resource-personnel-modal .neris-incident-type-select-panel {
+  position: static;
+  top: auto;
+  left: auto;
+  width: 100%;
+  margin-top: 0.32rem;
 }
 
 .neris-resource-unit-narrative {
