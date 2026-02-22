@@ -397,6 +397,19 @@ interface ResourceUnitEntry {
   showPersonnelSelector: boolean;
 }
 
+interface EmergingElectrocutionItem {
+  id: string;
+  electricalHazardType: string;
+  suppressionMethods: string;
+}
+
+interface EmergingPowerGenerationItem {
+  id: string;
+  photovoltaicHazardType: string;
+  pvSourceTarget: string;
+  suppressionMethods: string;
+}
+
 function parseImportedLocationValues(
   address: string,
   stateOptionValues: Set<string>,
@@ -531,6 +544,13 @@ function inferResourceUnitTypeValue(
 
 function toResourceSummaryTime(value: string): string {
   return value.trim() || "--";
+}
+
+let emergingHazardItemCounter = 0;
+
+function nextEmergingHazardItemId(prefix: string): string {
+  emergingHazardItemCounter += 1;
+  return `${prefix}-${emergingHazardItemCounter}`;
 }
 
 function dedupeAndCleanStrings(values: string[]): string[] {
@@ -3438,10 +3458,147 @@ function NerisReportFormPage({
   const [resourceUnits, setResourceUnits] = useState<ResourceUnitEntry[]>(
     () => defaultResourceUnits,
   );
+  const [emergingElectrocutionItems, setEmergingElectrocutionItems] = useState<
+    EmergingElectrocutionItem[]
+  >(() => {
+    const stored = persistedDraft?.formValues.emerging_haz_electrocution_items_json;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Array<{
+          electricalHazardType?: string;
+          suppressionMethods?: string;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => ({
+            id: nextEmergingHazardItemId("electrocution"),
+            electricalHazardType: item.electricalHazardType?.trim() ?? "",
+            suppressionMethods: item.suppressionMethods?.trim() ?? "",
+          }));
+        }
+      } catch {
+        // Ignore malformed persisted values and fall back to legacy fields.
+      }
+    }
+
+    const legacyElectricalHazardType =
+      persistedDraft?.formValues.emerg_haz_electric_type?.trim() ?? "";
+    const legacySuppressionMethods =
+      persistedDraft?.formValues.emerg_haz_suppression_methods?.trim() ?? "";
+    if (legacyElectricalHazardType || legacySuppressionMethods) {
+      return [
+        {
+          id: nextEmergingHazardItemId("electrocution"),
+          electricalHazardType: legacyElectricalHazardType,
+          suppressionMethods: legacySuppressionMethods,
+        },
+      ];
+    }
+
+    return [];
+  });
+  const [emergingPowerGenerationItems, setEmergingPowerGenerationItems] = useState<
+    EmergingPowerGenerationItem[]
+  >(() => {
+    const stored = persistedDraft?.formValues.emerging_haz_power_generation_items_json;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Array<{
+          photovoltaicHazardType?: string;
+          pvSourceTarget?: string;
+          suppressionMethods?: string;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => ({
+            id: nextEmergingHazardItemId("power-generation"),
+            photovoltaicHazardType: item.photovoltaicHazardType?.trim() ?? "",
+            pvSourceTarget: item.pvSourceTarget?.trim() ?? "",
+            suppressionMethods: item.suppressionMethods?.trim() ?? "",
+          }));
+        }
+      } catch {
+        // Ignore malformed persisted values and fall back to legacy fields.
+      }
+    }
+
+    const legacyPvHazardType = persistedDraft?.formValues.emerg_haz_pv_type?.trim() ?? "";
+    const legacyPvSourceTarget =
+      persistedDraft?.formValues.emerg_haz_pv_source_target?.trim() ?? "";
+    const legacySuppressionMethods =
+      persistedDraft?.formValues.emerg_haz_suppression_methods?.trim() ?? "";
+    if (legacyPvHazardType || legacyPvSourceTarget || legacySuppressionMethods) {
+      return [
+        {
+          id: nextEmergingHazardItemId("power-generation"),
+          photovoltaicHazardType: legacyPvHazardType,
+          pvSourceTarget: legacyPvSourceTarget,
+          suppressionMethods: legacySuppressionMethods,
+        },
+      ];
+    }
+
+    return [];
+  });
+  const pvSourceTargetOptions = useMemo(
+    () =>
+      getNerisValueOptions("source_target").filter((option) =>
+        ["SOURCE", "TARGET", "UNKNOWN"].includes(option.value),
+      ),
+    [],
+  );
 
   useEffect(() => {
     setResourceUnits(defaultResourceUnits);
   }, [defaultResourceUnits]);
+
+  useEffect(() => {
+    const serializedElectrocutionItems = JSON.stringify(
+      emergingElectrocutionItems.map((item) => ({
+        electricalHazardType: item.electricalHazardType,
+        suppressionMethods: item.suppressionMethods,
+      })),
+    );
+    const serializedPowerGenerationItems = JSON.stringify(
+      emergingPowerGenerationItems.map((item) => ({
+        photovoltaicHazardType: item.photovoltaicHazardType,
+        pvSourceTarget: item.pvSourceTarget,
+        suppressionMethods: item.suppressionMethods,
+      })),
+    );
+    const primaryElectrocutionItem = emergingElectrocutionItems[0];
+    const primaryPowerGenerationItem = emergingPowerGenerationItems[0];
+    const defaultSuppressionMethods =
+      primaryElectrocutionItem?.suppressionMethods ||
+      primaryPowerGenerationItem?.suppressionMethods ||
+      "";
+
+    setFormValues((previous) => {
+      if (
+        (previous.emerging_haz_electrocution_items_json ?? "") ===
+          serializedElectrocutionItems &&
+        (previous.emerging_haz_power_generation_items_json ?? "") ===
+          serializedPowerGenerationItems &&
+        (previous.emerg_haz_electric_type ?? "") ===
+          (primaryElectrocutionItem?.electricalHazardType ?? "") &&
+        (previous.emerg_haz_pv_type ?? "") ===
+          (primaryPowerGenerationItem?.photovoltaicHazardType ?? "") &&
+        (previous.emerg_haz_pv_source_target ?? "") ===
+          (primaryPowerGenerationItem?.pvSourceTarget ?? "") &&
+        (previous.emerg_haz_suppression_methods ?? "") === defaultSuppressionMethods
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        emerging_haz_electrocution_items_json: serializedElectrocutionItems,
+        emerging_haz_power_generation_items_json: serializedPowerGenerationItems,
+        emerg_haz_electric_type: primaryElectrocutionItem?.electricalHazardType ?? "",
+        emerg_haz_pv_type: primaryPowerGenerationItem?.photovoltaicHazardType ?? "",
+        emerg_haz_pv_source_target: primaryPowerGenerationItem?.pvSourceTarget ?? "",
+        emerg_haz_suppression_methods: defaultSuppressionMethods,
+      };
+    });
+  }, [emergingElectrocutionItems, emergingPowerGenerationItems]);
 
   const primaryIncidentCategory = useMemo(() => {
     const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
@@ -3799,6 +3956,16 @@ function NerisReportFormPage({
     }
   };
 
+  const markNerisFormDirty = () => {
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
   useEffect(() => {
     const primaryUnit = resourceUnits[0];
     const primaryUnitId = primaryUnit?.unitId ?? "";
@@ -3854,12 +4021,14 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    markNerisFormDirty();
   };
 
   const deleteResourceUnit = (unitEntryId: string) => {
     setResourceUnits((previous) =>
       previous.filter((entry) => entry.id !== unitEntryId),
     );
+    markNerisFormDirty();
   };
 
   const updateResourceUnitField = (
@@ -3885,6 +4054,7 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    markNerisFormDirty();
   };
 
   const handleResourceUnitIdChange = (unitEntryId: string, nextUnitId: string) => {
@@ -3906,6 +4076,7 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    markNerisFormDirty();
   };
 
   const toggleResourcePersonnelPicker = (unitEntryId: string) => {
@@ -3919,6 +4090,68 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    markNerisFormDirty();
+  };
+
+  const addEmergingElectrocutionItem = () => {
+    setEmergingElectrocutionItems((previous) => [
+      ...previous,
+      {
+        id: nextEmergingHazardItemId("electrocution"),
+        electricalHazardType: "",
+        suppressionMethods: "",
+      },
+    ]);
+    markNerisFormDirty();
+  };
+
+  const updateEmergingElectrocutionItem = (
+    itemId: string,
+    field: "electricalHazardType" | "suppressionMethods",
+    value: string,
+  ) => {
+    setEmergingElectrocutionItems((previous) =>
+      previous.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const addEmergingPowerGenerationItem = () => {
+    setEmergingPowerGenerationItems((previous) => [
+      ...previous,
+      {
+        id: nextEmergingHazardItemId("power-generation"),
+        photovoltaicHazardType: "",
+        pvSourceTarget: "",
+        suppressionMethods: "",
+      },
+    ]);
+    markNerisFormDirty();
+  };
+
+  const updateEmergingPowerGenerationItem = (
+    itemId: string,
+    field: "photovoltaicHazardType" | "pvSourceTarget" | "suppressionMethods",
+    value: string,
+  ) => {
+    setEmergingPowerGenerationItems((previous) =>
+      previous.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item,
+      ),
+    );
+    markNerisFormDirty();
   };
 
   const stampSavedAt = (
@@ -4395,6 +4628,17 @@ function NerisReportFormPage({
       return null;
     }
     if (currentSection.id === "resources" && field.id.startsWith("resource_")) {
+      return null;
+    }
+    if (
+      currentSection.id === "emergingHazards" &&
+      [
+        "emerg_haz_electric_type",
+        "emerg_haz_pv_type",
+        "emerg_haz_pv_source_target",
+        "emerg_haz_suppression_methods",
+      ].includes(field.id)
+    ) {
       return null;
     }
 
@@ -4911,7 +5155,9 @@ function NerisReportFormPage({
         </aside>
 
         <article className="panel neris-form-panel">
-          {currentSection.id !== "core" && currentSection.id !== "location" ? (
+          {currentSection.id !== "core" &&
+          currentSection.id !== "location" &&
+          currentSection.id !== "emergingHazards" ? (
             <div className="panel-header">
               <h2>{currentSection.label}</h2>
             </div>
@@ -4920,6 +5166,162 @@ function NerisReportFormPage({
             <p className="panel-description">{currentSection.helper}</p>
           ) : null}
           <div className="settings-form neris-field-grid">
+            {currentSection.id === "emergingHazards" ? (
+              <section className="field-span-two neris-emerging-hazard-layout">
+                <div className="neris-core-field-heading">EMERGING HAZARDS</div>
+
+                <article className="neris-emerging-hazard-group">
+                  <div className="neris-emerging-hazard-group-header">
+                    <h3 className="neris-core-field-heading">ELECTROCUTION</h3>
+                    <button
+                      type="button"
+                      className="rl-box-button"
+                      onClick={addEmergingElectrocutionItem}
+                    >
+                      + Add item
+                    </button>
+                  </div>
+
+                  {emergingElectrocutionItems.length ? (
+                    <div className="neris-emerging-hazard-item-list">
+                      {emergingElectrocutionItems.map((item, itemIndex) => (
+                        <div key={item.id} className="neris-emerging-hazard-item-card">
+                          <div className="neris-emerging-hazard-item-title">
+                            Item {itemIndex + 1}
+                          </div>
+                          <div className="neris-emerging-hazard-field-grid">
+                            <div className="neris-emerging-hazard-field">
+                              <label>Electrical Hazard Type</label>
+                              <NerisGroupedOptionSelect
+                                inputId={`${item.id}-electrical-type`}
+                                value={item.electricalHazardType}
+                                options={getNerisValueOptions("emerg_haz_elec")}
+                                onChange={(nextValue) =>
+                                  updateEmergingElectrocutionItem(
+                                    item.id,
+                                    "electricalHazardType",
+                                    nextValue,
+                                  )
+                                }
+                                mode="single"
+                                variant="incidentType"
+                                placeholder="Select electrical hazard type"
+                                searchPlaceholder="Search electrical hazard types..."
+                              />
+                            </div>
+                            <div className="neris-emerging-hazard-field">
+                              <label>Emerging Hazard Suppression Method(s)</label>
+                              <NerisFlatMultiOptionSelect
+                                inputId={`${item.id}-electrical-suppression`}
+                                value={item.suppressionMethods}
+                                options={getNerisValueOptions("emerg_haz_suppression")}
+                                onChange={(nextValue) =>
+                                  updateEmergingElectrocutionItem(
+                                    item.id,
+                                    "suppressionMethods",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select suppression method(s)"
+                                searchPlaceholder="Search suppression methods..."
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+
+                <article className="neris-emerging-hazard-group">
+                  <div className="neris-emerging-hazard-group-header">
+                    <h3 className="neris-core-field-heading">POWER GENERATION</h3>
+                    <button
+                      type="button"
+                      className="rl-box-button"
+                      onClick={addEmergingPowerGenerationItem}
+                    >
+                      + Add item
+                    </button>
+                  </div>
+
+                  {emergingPowerGenerationItems.length ? (
+                    <div className="neris-emerging-hazard-item-list">
+                      {emergingPowerGenerationItems.map((item, itemIndex) => (
+                        <div key={item.id} className="neris-emerging-hazard-item-card">
+                          <div className="neris-emerging-hazard-item-title">
+                            Item {itemIndex + 1}
+                          </div>
+                          <div className="neris-emerging-hazard-field-grid">
+                            <div className="neris-emerging-hazard-field">
+                              <label>Photovoltaic Hazard Type</label>
+                              <NerisFlatSingleOptionSelect
+                                inputId={`${item.id}-pv-type`}
+                                value={item.photovoltaicHazardType}
+                                options={getNerisValueOptions("emerg_haz_pv")}
+                                onChange={(nextValue) =>
+                                  updateEmergingPowerGenerationItem(
+                                    item.id,
+                                    "photovoltaicHazardType",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select photovoltaic hazard type"
+                                searchPlaceholder="Search photovoltaic hazard types..."
+                              />
+                            </div>
+                            <div className="neris-emerging-hazard-field">
+                              <label>Was PV the Source or Target?</label>
+                              <div className="neris-single-choice-row" role="group" aria-label="Was PV the Source or Target?">
+                                {pvSourceTargetOptions.map((option) => {
+                                  const isSelected = option.value === item.pvSourceTarget;
+                                  return (
+                                    <button
+                                      key={`${item.id}-pv-source-target-${option.value}`}
+                                      type="button"
+                                      className={`neris-single-choice-button${
+                                        isSelected ? " selected" : ""
+                                      }`}
+                                      aria-pressed={isSelected}
+                                      onClick={() =>
+                                        updateEmergingPowerGenerationItem(
+                                          item.id,
+                                          "pvSourceTarget",
+                                          option.value,
+                                        )
+                                      }
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div className="neris-emerging-hazard-field field-span-two">
+                              <label>Emerging Hazard Suppression Method(s)</label>
+                              <NerisFlatMultiOptionSelect
+                                inputId={`${item.id}-power-suppression`}
+                                value={item.suppressionMethods}
+                                options={getNerisValueOptions("emerg_haz_suppression")}
+                                onChange={(nextValue) =>
+                                  updateEmergingPowerGenerationItem(
+                                    item.id,
+                                    "suppressionMethods",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select suppression method(s)"
+                                searchPlaceholder="Search suppression methods..."
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              </section>
+            ) : null}
             {currentSection.id === "resources" ? (
               <section className="field-span-two neris-resource-unit-list">
                 {resourceUnits.length ? (

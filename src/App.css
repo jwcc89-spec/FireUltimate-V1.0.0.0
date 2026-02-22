@@ -1510,6 +1510,22 @@ tbody tr:last-of-type td {
   padding: 0;
 }
 
+.rl-box-button {
+  border: 1px solid #bfdbfe;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.34rem 0.52rem;
+  cursor: pointer;
+}
+
+.rl-box-button:hover {
+  background-color: #dbeafe;
+  color: #1e40af;
+}
+
 .state-edit-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -2058,6 +2074,71 @@ body.resizing-dispatch-columns {
 
 .neris-imported-address-sync-button {
   width: auto;
+}
+
+.neris-emerging-hazard-layout {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.neris-emerging-hazard-group {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  padding: 0.68rem;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.neris-emerging-hazard-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.neris-emerging-hazard-group-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.neris-emerging-hazard-item-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.neris-emerging-hazard-item-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.54rem;
+}
+
+.neris-emerging-hazard-item-title {
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.neris-emerging-hazard-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.neris-emerging-hazard-field {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.neris-emerging-hazard-field label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
 }
 
 .neris-resource-unit-list {
@@ -2644,6 +2725,10 @@ body.resizing-dispatch-columns {
   }
 
   .neris-resource-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-emerging-hazard-field-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

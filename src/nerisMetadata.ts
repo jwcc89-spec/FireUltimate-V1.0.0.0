@@ -108,7 +108,7 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
     id: "emergingHazards",
     label: "Emerging Hazards",
-    helper: "Flag hazardous materials or hazards found on scene.",
+    helper: "",
   },
   {
     id: "hazards",
