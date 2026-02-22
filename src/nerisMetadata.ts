@@ -129,7 +129,7 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
     id: "riskReduction",
     label: "Risk Reduction",
-    helper: "Capture prevention/education actions connected to this incident.",
+    helper: "",
   },
   {
     id: "medical",
