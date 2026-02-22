@@ -2060,6 +2060,172 @@ body.resizing-dispatch-columns {
   width: auto;
 }
 
+.neris-resource-unit-list {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.neris-resource-unit-card {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+.neris-resource-unit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.6rem 0.68rem;
+  background-color: #f8fafc;
+}
+
+.neris-resource-unit-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.neris-resource-unit-name {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.neris-resource-complete-chip {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+}
+
+.neris-resource-complete-check {
+  width: 12px;
+  height: 12px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.58rem;
+  line-height: 1;
+}
+
+.neris-resource-complete-chip.incomplete {
+  border-color: #d1d5db;
+  background-color: #e5e7eb;
+  color: #475569;
+}
+
+.neris-resource-complete-chip.complete {
+  border-color: #bbf7d0;
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.neris-resource-personnel-count,
+.neris-resource-time-summary {
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.neris-resource-divider {
+  color: #94a3b8;
+}
+
+.neris-resource-unit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+}
+
+.neris-resource-delete-button {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background-color: #fff5f5;
+  color: #b91c1c;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.35rem 0.5rem;
+  cursor: pointer;
+}
+
+.neris-resource-delete-button:hover {
+  background-color: #fee2e2;
+}
+
+.neris-resource-expand-icon {
+  color: #64748b;
+  transition: transform 160ms ease;
+}
+
+.neris-resource-expand-icon.open {
+  transform: rotate(180deg);
+}
+
+.neris-resource-unit-body {
+  border-top: 1px solid #e2e8f0;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.66rem;
+}
+
+.neris-resource-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.neris-resource-field {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.neris-resource-field label,
+.neris-resource-personnel-picker label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-resource-staffing-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.neris-resource-personnel-wrap {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.neris-resource-personnel-picker {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.neris-resource-empty-state {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 0.82rem;
+  padding: 0.75rem;
+}
+
 .neris-field-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2464,6 +2630,20 @@ body.resizing-dispatch-columns {
   }
 
   .neris-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-unit-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .neris-resource-unit-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .neris-resource-field-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 
