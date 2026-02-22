@@ -15,11 +15,14 @@ import {
   LogOut,
   Menu,
   Palette,
+  Pencil,
   Search,
   Settings,
   Shield,
   ShieldCheck,
+  Trash2,
   UserRound,
+  Users,
 } from "lucide-react";
 import {
   BrowserRouter,
@@ -301,6 +304,9 @@ const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-089": "Draft",
   "D-260218-082": "Approved",
 };
+const SCHEDULE_STAFFING_BY_UNIT_ID: Record<string, string> = {};
+const EMPTY_PERSONNEL_GIF_URL =
+  "https://upload.wikimedia.org/wikipedia/commons/c/c7/Loading_2.gif";
 const RESOURCE_PERSONNEL_OPTIONS: NerisValueOption[] = [
   { value: "ALEX_JOHNSON", label: "Alex Johnson" },
   { value: "BROOKE_MILLER", label: "Brooke Miller" },
@@ -387,14 +393,18 @@ interface ResourceUnitEntry {
   unitId: string;
   unitType: string;
   staffing: string;
+  responseMode: string;
   dispatchTime: string;
   enrouteTime: string;
   onSceneTime: string;
   clearTime: string;
   isComplete: boolean;
   isExpanded: boolean;
+  showTimesEditor: boolean;
   personnel: string;
   showPersonnelSelector: boolean;
+  reportWriter: string;
+  unitNarrative: string;
 }
 
 interface EmergingElectrocutionItem {
@@ -414,7 +424,6 @@ function parseImportedLocationValues(
   address: string,
   stateOptionValues: Set<string>,
   countryOptionValues: Set<string>,
-  fallbackCounty?: string,
 ): ParsedImportedLocationValues {
   const trimmedAddress = address.trim();
   if (!trimmedAddress || trimmedAddress === "No imported address available.") {
@@ -422,7 +431,7 @@ function parseImportedLocationValues(
       locationState: "",
       locationCountry: countryOptionValues.has("US") ? "US" : "",
       locationPostalCode: "",
-      locationCounty: fallbackCounty?.trim() ?? "",
+      locationCounty: "",
     };
   }
 
@@ -455,9 +464,6 @@ function parseImportedLocationValues(
   }
 
   let locationCounty = segments.find((segment) => /county/i.test(segment)) ?? "";
-  if (!locationCounty) {
-    locationCounty = fallbackCounty?.trim() ?? "";
-  }
   if (!locationCounty && segments.length >= 2) {
     locationCounty = segments[1] ?? "";
   }
@@ -544,6 +550,22 @@ function inferResourceUnitTypeValue(
 
 function toResourceSummaryTime(value: string): string {
   return value.trim() || "--";
+}
+
+function countSelectedPersonnel(personnelCsv: string): number {
+  return personnelCsv
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0).length;
+}
+
+function getStaffingValueForUnit(unitId: string, personnelCsv: string): string {
+  const scheduledStaffing = SCHEDULE_STAFFING_BY_UNIT_ID[unitId]?.trim() ?? "";
+  if (scheduledStaffing.length > 0) {
+    return scheduledStaffing;
+  }
+  const selectedPersonnelCount = countSelectedPersonnel(personnelCsv);
+  return selectedPersonnelCount > 0 ? String(selectedPersonnelCount) : "";
 }
 
 let emergingHazardItemCounter = 0;
@@ -3404,6 +3426,7 @@ function NerisReportFormPage({
     () => new Set(getNerisValueOptions("country").map((option) => option.value)),
     [],
   );
+  const responseModeOptions = useMemo(() => getNerisValueOptions("response_mode"), []);
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
   const availableResourceUnitOptions = useMemo(() => {
     if (!detail) {
@@ -3420,14 +3443,13 @@ function NerisReportFormPage({
     }));
   }, [detail]);
   const apparatusByResourceUnitId = useMemo(() => {
-    const map = new Map<string, { unitType: string; crew: string }>();
+    const map = new Map<string, { unitType: string }>();
     if (!detail) {
       return map;
     }
     for (const apparatus of detail.apparatus) {
       map.set(apparatus.unit, {
         unitType: apparatus.unitType,
-        crew: apparatus.crew,
       });
     }
     return map;
@@ -3443,20 +3465,67 @@ function NerisReportFormPage({
         id: `resource-${index}-${option.value.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
         unitId: option.value,
         unitType: inferResourceUnitTypeValue(option.value, source?.unitType, unitTypeOptions),
-        staffing: source?.crew ?? "",
+        staffing: getStaffingValueForUnit(option.value, ""),
+        responseMode: "",
         dispatchTime: detail?.receivedAt ?? "",
         enrouteTime: "",
         onSceneTime: "",
         clearTime: "",
         isComplete: false,
         isExpanded: index === 0,
+        showTimesEditor: false,
         personnel: "",
         showPersonnelSelector: false,
+        reportWriter: "",
+        unitNarrative: "",
       };
     });
   }, [availableResourceUnitOptions, apparatusByResourceUnitId, unitTypeOptions, detail?.receivedAt]);
+  const persistedResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
+    const rawValue = persistedDraft?.formValues.resource_units_json;
+    if (!rawValue) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue) as Array<Partial<ResourceUnitEntry>>;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed.map((item, index) => {
+        const unitId = item.unitId?.trim() ?? "";
+        const personnel = item.personnel?.trim() ?? "";
+        const normalizedUnitType =
+          item.unitType?.trim() ??
+          inferResourceUnitTypeValue(unitId, undefined, unitTypeOptions);
+        return {
+          id:
+            item.id?.trim() ||
+            `resource-persisted-${index}-${unitId.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+          unitId,
+          unitType: normalizedUnitType,
+          staffing: getStaffingValueForUnit(unitId, personnel),
+          responseMode: item.responseMode?.trim() ?? "",
+          dispatchTime: item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
+          enrouteTime: item.enrouteTime?.trim() ?? "",
+          onSceneTime: item.onSceneTime?.trim() ?? "",
+          clearTime: item.clearTime?.trim() ?? "",
+          isComplete: Boolean(item.isComplete),
+          isExpanded: Boolean(item.isExpanded),
+          showTimesEditor: Boolean(item.showTimesEditor),
+          personnel,
+          showPersonnelSelector: Boolean(item.showPersonnelSelector),
+          reportWriter: item.reportWriter?.trim() ?? "",
+          unitNarrative: item.unitNarrative ?? "",
+        };
+      });
+    } catch {
+      return [];
+    }
+  }, [persistedDraft?.formValues.resource_units_json, detail?.receivedAt, unitTypeOptions]);
   const [resourceUnits, setResourceUnits] = useState<ResourceUnitEntry[]>(
-    () => defaultResourceUnits,
+    () => (persistedResourceUnits.length ? persistedResourceUnits : defaultResourceUnits),
   );
   const [emergingElectrocutionItems, setEmergingElectrocutionItems] = useState<
     EmergingElectrocutionItem[]
@@ -3547,8 +3616,11 @@ function NerisReportFormPage({
   );
 
   useEffect(() => {
+    if (persistedResourceUnits.length) {
+      return;
+    }
     setResourceUnits(defaultResourceUnits);
-  }, [defaultResourceUnits]);
+  }, [defaultResourceUnits, persistedResourceUnits.length]);
 
   useEffect(() => {
     const serializedElectrocutionItems = JSON.stringify(
@@ -3708,13 +3780,11 @@ function NerisReportFormPage({
         importedLocationAddress,
         locationStateOptionValues,
         locationCountryOptionValues,
-        detail?.stillDistrict,
       ),
     [
       importedLocationAddress,
       locationStateOptionValues,
       locationCountryOptionValues,
-      detail?.stillDistrict,
     ],
   );
 
@@ -3970,19 +4040,44 @@ function NerisReportFormPage({
     const primaryUnit = resourceUnits[0];
     const primaryUnitId = primaryUnit?.unitId ?? "";
     const primaryUnitType = primaryUnit?.unitType ?? "";
-    const primaryUnitStaffing = primaryUnit?.staffing ?? "";
+    const primaryUnitStaffing = primaryUnit
+      ? getStaffingValueForUnit(primaryUnit.unitId, primaryUnit.personnel)
+      : "";
+    const primaryUnitResponseMode = primaryUnit?.responseMode ?? "";
     const additionalUnits = resourceUnits
       .slice(1)
       .map((unit) => unit.unitId.trim())
       .filter((unitId) => unitId.length > 0)
       .join(", ");
+    const serializedResourceUnits = JSON.stringify(
+      resourceUnits.map((unit) => ({
+        id: unit.id,
+        unitId: unit.unitId,
+        unitType: unit.unitType,
+        staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
+        responseMode: unit.responseMode,
+        dispatchTime: unit.dispatchTime,
+        enrouteTime: unit.enrouteTime,
+        onSceneTime: unit.onSceneTime,
+        clearTime: unit.clearTime,
+        isComplete: unit.isComplete,
+        isExpanded: unit.isExpanded,
+        showTimesEditor: unit.showTimesEditor,
+        personnel: unit.personnel,
+        showPersonnelSelector: unit.showPersonnelSelector,
+        reportWriter: unit.reportWriter,
+        unitNarrative: unit.unitNarrative,
+      })),
+    );
 
     setFormValues((previous) => {
       if (
         (previous.resource_primary_unit_id ?? "") === primaryUnitId &&
         (previous.resource_primary_unit_type ?? "") === primaryUnitType &&
         (previous.resource_primary_unit_staffing ?? "") === primaryUnitStaffing &&
-        (previous.resource_additional_units ?? "") === additionalUnits
+        (previous.resource_primary_unit_response_mode ?? "") === primaryUnitResponseMode &&
+        (previous.resource_additional_units ?? "") === additionalUnits &&
+        (previous.resource_units_json ?? "") === serializedResourceUnits
       ) {
         return previous;
       }
@@ -3992,7 +4087,9 @@ function NerisReportFormPage({
         resource_primary_unit_id: primaryUnitId,
         resource_primary_unit_type: primaryUnitType,
         resource_primary_unit_staffing: primaryUnitStaffing,
+        resource_primary_unit_response_mode: primaryUnitResponseMode,
         resource_additional_units: additionalUnits,
+        resource_units_json: serializedResourceUnits,
       };
     });
   }, [resourceUnits]);
@@ -4008,6 +4105,7 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    markNerisFormDirty();
   };
 
   const toggleResourceUnitComplete = (unitEntryId: string) => {
@@ -4037,20 +4135,33 @@ function NerisReportFormPage({
       | "unitId"
       | "unitType"
       | "staffing"
+      | "responseMode"
       | "dispatchTime"
       | "enrouteTime"
       | "onSceneTime"
       | "clearTime"
-      | "personnel",
+      | "personnel"
+      | "reportWriter"
+      | "unitNarrative",
     value: string,
   ) => {
     setResourceUnits((previous) =>
       previous.map((entry) =>
         entry.id === unitEntryId
-          ? {
-              ...entry,
-              [field]: value,
-            }
+          ? (() => {
+              if (field === "personnel") {
+                const nextStaffing = getStaffingValueForUnit(entry.unitId, value);
+                return {
+                  ...entry,
+                  personnel: value,
+                  staffing: nextStaffing,
+                };
+              }
+              return {
+                ...entry,
+                [field]: value,
+              };
+            })()
           : entry,
       ),
     );
@@ -4071,7 +4182,7 @@ function NerisReportFormPage({
               ...entry,
               unitId: nextUnitId,
               unitType: inferredUnitType || entry.unitType,
-              staffing: source?.crew ?? entry.staffing,
+              staffing: getStaffingValueForUnit(nextUnitId, entry.personnel),
             }
           : entry,
       ),
@@ -4086,6 +4197,78 @@ function NerisReportFormPage({
           ? {
               ...entry,
               showPersonnelSelector: !entry.showPersonnelSelector,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const removeResourcePersonnel = (unitEntryId: string, personnelValue: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) => {
+        if (entry.id !== unitEntryId) {
+          return entry;
+        }
+
+        const nextPersonnelValues = entry.personnel
+          .split(",")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0 && value !== personnelValue);
+        const nextPersonnelCsv = nextPersonnelValues.join(",");
+        const nextStaffing = getStaffingValueForUnit(entry.unitId, nextPersonnelCsv);
+        const nextReportWriter =
+          entry.reportWriter === personnelValue ? "" : entry.reportWriter;
+
+        return {
+          ...entry,
+          personnel: nextPersonnelCsv,
+          staffing: nextStaffing,
+          reportWriter: nextReportWriter,
+        };
+      }),
+    );
+    markNerisFormDirty();
+  };
+
+  const toggleResourceTimesEditor = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              showTimesEditor: !entry.showTimesEditor,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const completeAndCollapseResourceUnit = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isComplete: true,
+              isExpanded: false,
+              showTimesEditor: false,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const collapseResourceUnit = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isExpanded: false,
+              showTimesEditor: false,
             }
           : entry,
       ),
@@ -5325,128 +5508,366 @@ function NerisReportFormPage({
             {currentSection.id === "resources" ? (
               <section className="field-span-two neris-resource-unit-list">
                 {resourceUnits.length ? (
-                  resourceUnits.map((unitEntry) => (
-                    <article key={unitEntry.id} className="neris-resource-unit-card">
-                      <header className="neris-resource-unit-header">
-                        <div className="neris-resource-unit-summary">
-                          <strong className="neris-resource-unit-name">
-                            {unitEntry.unitId || "Unassigned unit"}
-                          </strong>
-                          <button
-                            type="button"
-                            className={`neris-resource-complete-chip ${
-                              unitEntry.isComplete ? "complete" : "incomplete"
-                            }`}
-                            onClick={() => toggleResourceUnitComplete(unitEntry.id)}
-                          >
-                            <span className="neris-resource-complete-check">
-                              {unitEntry.isComplete ? "x" : ""}
-                            </span>
-                            {unitEntry.isComplete ? "Complete" : "Incomplete"}
-                          </button>
-                          <span className="neris-resource-personnel-count">
-                            {unitEntry.staffing || "0"} personnel
-                          </span>
-                          <span className="neris-resource-divider">|</span>
-                          <span className="neris-resource-time-summary">
-                            Dispatch {toResourceSummaryTime(unitEntry.dispatchTime)} | Enroute{" "}
-                            {toResourceSummaryTime(unitEntry.enrouteTime)} | On scene{" "}
-                            {toResourceSummaryTime(unitEntry.onSceneTime)} | Clear{" "}
-                            {toResourceSummaryTime(unitEntry.clearTime)}
-                          </span>
-                        </div>
-                        <div className="neris-resource-unit-actions">
-                          <button
-                            type="button"
-                            className="neris-resource-delete-button"
-                            onClick={() => deleteResourceUnit(unitEntry.id)}
-                          >
-                            Delete
-                          </button>
-                          <button
-                            type="button"
-                            className="icon-button"
-                            aria-label={unitEntry.isExpanded ? "Collapse unit details" : "Expand unit details"}
-                            onClick={() => toggleResourceUnitExpanded(unitEntry.id)}
-                          >
-                            <ChevronDown
-                              size={14}
-                              className={`neris-resource-expand-icon${
-                                unitEntry.isExpanded ? " open" : ""
-                              }`}
-                            />
-                          </button>
-                        </div>
-                      </header>
-                      {unitEntry.isExpanded ? (
-                        <div className="neris-resource-unit-body">
-                          <div className="neris-resource-field-grid">
-                            <div className="neris-resource-field">
-                              <label>Primary Responding Unit ID</label>
-                              <NerisFlatSingleOptionSelect
-                                inputId={`${unitEntry.id}-unit-id`}
-                                value={unitEntry.unitId}
-                                options={availableResourceUnitOptions}
-                                onChange={(nextValue) =>
-                                  handleResourceUnitIdChange(unitEntry.id, nextValue)
-                                }
-                                placeholder="Select responding unit"
-                                searchPlaceholder="Search responding units..."
-                              />
-                            </div>
-                            <div className="neris-resource-field">
-                              <label>Primary Unit Type</label>
-                              <NerisFlatSingleOptionSelect
-                                inputId={`${unitEntry.id}-unit-type`}
-                                value={unitEntry.unitType}
-                                options={unitTypeOptions}
-                                onChange={(nextValue) =>
-                                  updateResourceUnitField(unitEntry.id, "unitType", nextValue)
-                                }
-                                placeholder="Select unit type"
-                                searchPlaceholder="Search unit types..."
-                              />
-                            </div>
-                            <div className="neris-resource-field">
-                              <label>Primary Unit Staffing</label>
-                              <input
-                                type="text"
-                                value={unitEntry.staffing}
-                                readOnly
-                                className="neris-resource-staffing-input"
-                                placeholder="Auto-populated from rig assignment"
-                              />
-                            </div>
-                          </div>
-                          <div className="neris-resource-personnel-wrap">
+                  resourceUnits.map((unitEntry) => {
+                    const selectedPersonnelValues = unitEntry.personnel
+                      .split(",")
+                      .map((entry) => entry.trim())
+                      .filter((entry) => entry.length > 0);
+                    const selectedPersonnelOptions = selectedPersonnelValues
+                      .map((value) =>
+                        RESOURCE_PERSONNEL_OPTIONS.find((option) => option.value === value),
+                      )
+                      .filter((option): option is NerisValueOption => Boolean(option));
+                    const reportWriterOptions = selectedPersonnelOptions.length
+                      ? selectedPersonnelOptions
+                      : RESOURCE_PERSONNEL_OPTIONS;
+                    const staffingDisplay = getStaffingValueForUnit(
+                      unitEntry.unitId,
+                      unitEntry.personnel,
+                    );
+
+                    return (
+                      <article key={unitEntry.id} className="neris-resource-unit-card">
+                        <header className="neris-resource-unit-header">
+                          <div className="neris-resource-unit-summary">
+                            <strong className="neris-resource-unit-name">
+                              {unitEntry.unitId || "Unassigned unit"}
+                            </strong>
                             <button
                               type="button"
-                              className="link-button"
-                              aria-expanded={unitEntry.showPersonnelSelector}
-                              onClick={() => toggleResourcePersonnelPicker(unitEntry.id)}
+                              className={`neris-resource-complete-chip ${
+                                unitEntry.isComplete ? "complete" : "incomplete"
+                              }`}
+                              onClick={() => toggleResourceUnitComplete(unitEntry.id)}
                             >
-                              Add Personnel
+                              <span className="neris-resource-complete-check">
+                                {unitEntry.isComplete ? "x" : ""}
+                              </span>
+                              {unitEntry.isComplete ? "Complete" : "Incomplete"}
                             </button>
-                            {unitEntry.showPersonnelSelector ? (
-                              <div className="neris-resource-personnel-picker">
-                                <label>Personnel</label>
-                                <NerisFlatMultiOptionSelect
-                                  inputId={`${unitEntry.id}-personnel`}
-                                  value={unitEntry.personnel}
-                                  options={RESOURCE_PERSONNEL_OPTIONS}
+                            <span className="neris-resource-personnel-indicator">
+                              <Users size={14} />
+                              <strong>{staffingDisplay || "0"}</strong>
+                            </span>
+                            <div className="neris-resource-time-grid">
+                              <div className="neris-resource-time-item">
+                                <span>Dispatch</span>
+                                <strong>{toResourceSummaryTime(unitEntry.dispatchTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>Enroute</span>
+                                <strong>{toResourceSummaryTime(unitEntry.enrouteTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>On Scene</span>
+                                <strong>{toResourceSummaryTime(unitEntry.onSceneTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>Clear</span>
+                                <strong>{toResourceSummaryTime(unitEntry.clearTime)}</strong>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="neris-resource-unit-actions">
+                            <button
+                              type="button"
+                              className="neris-resource-delete-button"
+                              onClick={() => deleteResourceUnit(unitEntry.id)}
+                            >
+                              Delete
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label={
+                                unitEntry.isExpanded
+                                  ? "Collapse unit details"
+                                  : "Expand unit details"
+                              }
+                              onClick={() => toggleResourceUnitExpanded(unitEntry.id)}
+                            >
+                              <ChevronDown
+                                size={14}
+                                className={`neris-resource-expand-icon${
+                                  unitEntry.isExpanded ? " open" : ""
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </header>
+                        {unitEntry.isExpanded ? (
+                          <div className="neris-resource-unit-body">
+                            <div className="neris-resource-field-grid">
+                              <div className="neris-resource-field field-span-two">
+                                <label>Primary Unit Response Mode</label>
+                                <div className="neris-single-choice-row" role="group" aria-label="Primary unit response mode">
+                                  {responseModeOptions.map((option) => {
+                                    const isSelected = option.value === unitEntry.responseMode;
+                                    return (
+                                      <button
+                                        key={`${unitEntry.id}-response-mode-${option.value}`}
+                                        type="button"
+                                        className={`neris-single-choice-button${
+                                          isSelected ? " selected" : ""
+                                        }`}
+                                        aria-pressed={isSelected}
+                                        onClick={() =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "responseMode",
+                                            isSelected ? "" : option.value,
+                                          )
+                                        }
+                                      >
+                                        {option.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="neris-resource-field">
+                                <label>Primary Responding Unit ID</label>
+                                <NerisFlatSingleOptionSelect
+                                  inputId={`${unitEntry.id}-unit-id`}
+                                  value={unitEntry.unitId}
+                                  options={availableResourceUnitOptions}
                                   onChange={(nextValue) =>
-                                    updateResourceUnitField(unitEntry.id, "personnel", nextValue)
+                                    handleResourceUnitIdChange(unitEntry.id, nextValue)
                                   }
-                                  placeholder="Select personnel"
-                                  searchPlaceholder="Search personnel..."
+                                  placeholder="Select responding unit"
+                                  searchPlaceholder="Search responding units..."
                                 />
                               </div>
+                              <div className="neris-resource-field">
+                                <label>Primary Unit Type</label>
+                                <NerisFlatSingleOptionSelect
+                                  inputId={`${unitEntry.id}-unit-type`}
+                                  value={unitEntry.unitType}
+                                  options={unitTypeOptions}
+                                  onChange={(nextValue) =>
+                                    updateResourceUnitField(unitEntry.id, "unitType", nextValue)
+                                  }
+                                  placeholder="Select unit type"
+                                  searchPlaceholder="Search unit types..."
+                                />
+                              </div>
+                              <div className="neris-resource-field">
+                                <label>Primary Unit Staffing</label>
+                                <input
+                                  type="text"
+                                  value={staffingDisplay}
+                                  readOnly
+                                  className="neris-resource-staffing-input"
+                                  placeholder="Updates from schedule or assigned personnel"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="neris-resource-inline-links">
+                              <button
+                                type="button"
+                                className="link-button"
+                                aria-expanded={unitEntry.showTimesEditor}
+                                onClick={() => toggleResourceTimesEditor(unitEntry.id)}
+                              >
+                                Edit Times
+                              </button>
+                              <button
+                                type="button"
+                                className="link-button"
+                                aria-expanded={unitEntry.showPersonnelSelector}
+                                onClick={() => toggleResourcePersonnelPicker(unitEntry.id)}
+                              >
+                                Add Personnel
+                              </button>
+                            </div>
+
+                            {unitEntry.showTimesEditor ? (
+                              <div className="neris-resource-times-editor">
+                                <div className="neris-resource-times-editor-grid">
+                                  <label>
+                                    Dispatch
+                                    <input
+                                      type="time"
+                                      step={1}
+                                      value={unitEntry.dispatchTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "dispatchTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Enroute
+                                    <input
+                                      type="time"
+                                      step={1}
+                                      value={unitEntry.enrouteTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "enrouteTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    On Scene
+                                    <input
+                                      type="time"
+                                      step={1}
+                                      value={unitEntry.onSceneTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "onSceneTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                  <label>
+                                    Clear
+                                    <input
+                                      type="time"
+                                      step={1}
+                                      value={unitEntry.clearTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "clearTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                  </label>
+                                </div>
+                              </div>
                             ) : null}
+
+                            <section className="neris-resource-personnel-panel">
+                              <div className="neris-resource-personnel-header-row">
+                                <h4>Personnel</h4>
+                              </div>
+                              <div className="neris-resource-personnel-table-head">
+                                <span>Name</span>
+                              </div>
+                              {selectedPersonnelOptions.length ? (
+                                <ul className="neris-resource-personnel-list">
+                                  {selectedPersonnelOptions.map((option) => (
+                                    <li key={`${unitEntry.id}-personnel-${option.value}`}>
+                                      <span>{option.label}</span>
+                                      <div className="neris-resource-personnel-row-actions">
+                                        <button
+                                          type="button"
+                                          className="icon-button"
+                                          aria-label={`Edit ${option.label} assignment`}
+                                        >
+                                          <Pencil size={13} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="icon-button"
+                                          aria-label={`Remove ${option.label} from this unit`}
+                                          onClick={() =>
+                                            removeResourcePersonnel(unitEntry.id, option.value)
+                                          }
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <div className="neris-resource-personnel-empty">
+                                  <img
+                                    src={EMPTY_PERSONNEL_GIF_URL}
+                                    alt=""
+                                    className="neris-resource-personnel-empty-gif"
+                                  />
+                                  <p>No personnel assigned to this unit.</p>
+                                  <small>Add personnel using the + Add Personnel link above.</small>
+                                </div>
+                              )}
+                              {unitEntry.showPersonnelSelector ? (
+                                <div className="neris-resource-personnel-picker">
+                                  <NerisFlatMultiOptionSelect
+                                    inputId={`${unitEntry.id}-personnel`}
+                                    value={unitEntry.personnel}
+                                    options={RESOURCE_PERSONNEL_OPTIONS}
+                                    onChange={(nextValue) =>
+                                      updateResourceUnitField(unitEntry.id, "personnel", nextValue)
+                                    }
+                                    placeholder="Select personnel"
+                                    searchPlaceholder="Search personnel..."
+                                  />
+                                </div>
+                              ) : null}
+                            </section>
+
+                            <div className="neris-resource-field">
+                              <label>Unit Report Writer</label>
+                              <NerisFlatSingleOptionSelect
+                                inputId={`${unitEntry.id}-report-writer`}
+                                value={unitEntry.reportWriter}
+                                options={reportWriterOptions}
+                                onChange={(nextValue) =>
+                                  updateResourceUnitField(
+                                    unitEntry.id,
+                                    "reportWriter",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select report writer"
+                                searchPlaceholder="Search personnel..."
+                                allowClear
+                              />
+                            </div>
+
+                            <div className="neris-resource-unit-narrative">
+                              <div className="neris-core-field-heading neris-resource-unit-narrative-heading">
+                                UNIT NARRATIVE
+                              </div>
+                              <textarea
+                                rows={6}
+                                value={unitEntry.unitNarrative}
+                                placeholder="Insert text here..."
+                                onChange={(event) =>
+                                  updateResourceUnitField(
+                                    unitEntry.id,
+                                    "unitNarrative",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </div>
+
+                            <div className="neris-resource-footer-actions">
+                              <button
+                                type="button"
+                                className="primary-button compact-button neris-resource-complete-collapse-button"
+                                onClick={() => completeAndCollapseResourceUnit(unitEntry.id)}
+                              >
+                                Complete and Collapse
+                              </button>
+                              <button
+                                type="button"
+                                className="primary-button compact-button"
+                                onClick={() => collapseResourceUnit(unitEntry.id)}
+                              >
+                                Collapse
+                              </button>
+                            </div>
                           </div>
-                        </div>
-                      ) : null}
-                    </article>
-                  ))
+                        ) : null}
+                      </article>
+                    );
+                  })
                 ) : (
                   <div className="neris-resource-empty-state">
                     No responding units are available for this incident yet.
