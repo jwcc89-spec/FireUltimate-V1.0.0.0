@@ -305,8 +305,6 @@ const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-082": "Approved",
 };
 const SCHEDULE_STAFFING_BY_UNIT_ID: Record<string, string> = {};
-const EMPTY_PERSONNEL_GIF_URL =
-  "https://upload.wikimedia.org/wikipedia/commons/c/c7/Loading_2.gif";
 const RESOURCE_PERSONNEL_OPTIONS: NerisValueOption[] = [
   { value: "ALEX_JOHNSON", label: "Alex Johnson" },
   { value: "BROOKE_MILLER", label: "Brooke Miller" },
@@ -3733,6 +3731,16 @@ function NerisReportFormPage({
   const riskReductionCookingSuppressionPresentValue = (
     formValues.risk_reduction_cooking_suppression_present ?? ""
   ).trim();
+  const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
+    null,
+  );
+  const activeResourcePersonnelUnit = useMemo(
+    () =>
+      activeResourcePersonnelUnitId
+        ? resourceUnits.find((unit) => unit.id === activeResourcePersonnelUnitId) ?? null
+        : null,
+    [activeResourcePersonnelUnitId, resourceUnits],
+  );
 
   useEffect(() => {
     if (persistedResourceUnits.length) {
@@ -3740,6 +3748,12 @@ function NerisReportFormPage({
     }
     setResourceUnits(defaultResourceUnits);
   }, [defaultResourceUnits, persistedResourceUnits.length]);
+
+  useEffect(() => {
+    if (activeResourcePersonnelUnitId && !activeResourcePersonnelUnit) {
+      setActiveResourcePersonnelUnitId(null);
+    }
+  }, [activeResourcePersonnelUnitId, activeResourcePersonnelUnit]);
 
   useEffect(() => {
     const serializedElectrocutionItems = JSON.stringify(
@@ -4275,6 +4289,9 @@ function NerisReportFormPage({
     setResourceUnits((previous) =>
       previous.filter((entry) => entry.id !== unitEntryId),
     );
+    if (activeResourcePersonnelUnitId === unitEntryId) {
+      setActiveResourcePersonnelUnitId(null);
+    }
     markNerisFormDirty();
   };
 
@@ -4339,18 +4356,12 @@ function NerisReportFormPage({
     markNerisFormDirty();
   };
 
-  const toggleResourcePersonnelPicker = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              showPersonnelSelector: !entry.showPersonnelSelector,
-            }
-          : entry,
-      ),
-    );
-    markNerisFormDirty();
+  const openResourcePersonnelModal = (unitEntryId: string) => {
+    setActiveResourcePersonnelUnitId(unitEntryId);
+  };
+
+  const closeResourcePersonnelModal = () => {
+    setActiveResourcePersonnelUnitId(null);
   };
 
   const removeResourcePersonnel = (unitEntryId: string, personnelValue: string) => {
@@ -6277,6 +6288,9 @@ function NerisReportFormPage({
                       unitEntry.unitId,
                       unitEntry.personnel,
                     );
+                    const unitTypeDisplayLabel =
+                      unitTypeOptions.find((option) => option.value === unitEntry.unitType)?.label ??
+                      unitEntry.unitType;
 
                     return (
                       <article key={unitEntry.id} className="neris-resource-unit-card">
@@ -6352,8 +6366,8 @@ function NerisReportFormPage({
                           <div className="neris-resource-unit-body">
                             <div className="neris-resource-field-grid">
                               <div className="neris-resource-field field-span-two">
-                                <label>Primary Unit Response Mode</label>
-                                <div className="neris-single-choice-row" role="group" aria-label="Primary unit response mode">
+                                <label>Unit Response Mode</label>
+                                <div className="neris-single-choice-row" role="group" aria-label="Unit response mode">
                                   {responseModeOptions.map((option) => {
                                     const isSelected = option.value === unitEntry.responseMode;
                                     return (
@@ -6379,7 +6393,7 @@ function NerisReportFormPage({
                                 </div>
                               </div>
                               <div className="neris-resource-field">
-                                <label>Primary Responding Unit ID</label>
+                                <label>Responding Unit ID</label>
                                 <NerisFlatSingleOptionSelect
                                   inputId={`${unitEntry.id}-unit-id`}
                                   value={unitEntry.unitId}
@@ -6387,25 +6401,30 @@ function NerisReportFormPage({
                                   onChange={(nextValue) =>
                                     handleResourceUnitIdChange(unitEntry.id, nextValue)
                                   }
+                                  isOptionDisabled={(optionValue) =>
+                                    optionValue !== unitEntry.unitId &&
+                                    resourceUnits.some(
+                                      (otherUnit) =>
+                                        otherUnit.id !== unitEntry.id &&
+                                        otherUnit.unitId.trim() === optionValue,
+                                    )
+                                  }
                                   placeholder="Select responding unit"
                                   searchPlaceholder="Search responding units..."
                                 />
                               </div>
                               <div className="neris-resource-field">
-                                <label>Primary Unit Type</label>
-                                <NerisFlatSingleOptionSelect
-                                  inputId={`${unitEntry.id}-unit-type`}
-                                  value={unitEntry.unitType}
-                                  options={unitTypeOptions}
-                                  onChange={(nextValue) =>
-                                    updateResourceUnitField(unitEntry.id, "unitType", nextValue)
-                                  }
-                                  placeholder="Select unit type"
-                                  searchPlaceholder="Search unit types..."
+                                <label>Unit Type</label>
+                                <input
+                                  type="text"
+                                  value={unitTypeDisplayLabel}
+                                  readOnly
+                                  className="neris-resource-unit-type-input"
+                                  placeholder="Auto-populates from unit setup"
                                 />
                               </div>
                               <div className="neris-resource-field">
-                                <label>Primary Unit Staffing</label>
+                                <label>Unit Staffing</label>
                                 <input
                                   type="text"
                                   value={staffingDisplay}
@@ -6424,14 +6443,6 @@ function NerisReportFormPage({
                                 onClick={() => toggleResourceTimesEditor(unitEntry.id)}
                               >
                                 Edit Times
-                              </button>
-                              <button
-                                type="button"
-                                className="link-button"
-                                aria-expanded={unitEntry.showPersonnelSelector}
-                                onClick={() => toggleResourcePersonnelPicker(unitEntry.id)}
-                              >
-                                Add Personnel
                               </button>
                             </div>
 
@@ -6505,6 +6516,13 @@ function NerisReportFormPage({
                             <section className="neris-resource-personnel-panel">
                               <div className="neris-resource-personnel-header-row">
                                 <h4>Personnel</h4>
+                                <button
+                                  type="button"
+                                  className="link-button"
+                                  onClick={() => openResourcePersonnelModal(unitEntry.id)}
+                                >
+                                  Add Personnel
+                                </button>
                               </div>
                               <div className="neris-resource-personnel-table-head">
                                 <span>Name</span>
@@ -6538,29 +6556,11 @@ function NerisReportFormPage({
                                 </ul>
                               ) : (
                                 <div className="neris-resource-personnel-empty">
-                                  <img
-                                    src={EMPTY_PERSONNEL_GIF_URL}
-                                    alt=""
-                                    className="neris-resource-personnel-empty-gif"
-                                  />
+                                  <Users size={24} className="neris-resource-personnel-empty-icon" />
                                   <p>No personnel assigned to this unit.</p>
-                                  <small>Add personnel using the + Add Personnel link above.</small>
+                                  <small>Add personnel using the Add Personnel link above.</small>
                                 </div>
                               )}
-                              {unitEntry.showPersonnelSelector ? (
-                                <div className="neris-resource-personnel-picker">
-                                  <NerisFlatMultiOptionSelect
-                                    inputId={`${unitEntry.id}-personnel`}
-                                    value={unitEntry.personnel}
-                                    options={RESOURCE_PERSONNEL_OPTIONS}
-                                    onChange={(nextValue) =>
-                                      updateResourceUnitField(unitEntry.id, "personnel", nextValue)
-                                    }
-                                    placeholder="Select personnel"
-                                    searchPlaceholder="Search personnel..."
-                                  />
-                                </div>
-                              ) : null}
                             </section>
 
                             <div className="neris-resource-field">
@@ -6627,6 +6627,49 @@ function NerisReportFormPage({
                   </div>
                 )}
               </section>
+            ) : null}
+            {currentSection.id === "resources" && activeResourcePersonnelUnit ? (
+              <div
+                className="neris-resource-personnel-modal-backdrop"
+                role="dialog"
+                aria-modal="true"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) {
+                    closeResourcePersonnelModal();
+                  }
+                }}
+              >
+                <section className="panel neris-resource-personnel-modal">
+                  <div className="neris-resource-personnel-modal-header">
+                    <h3>
+                      Add Personnel
+                      {activeResourcePersonnelUnit.unitId
+                        ? ` - ${activeResourcePersonnelUnit.unitId}`
+                        : ""}
+                    </h3>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={closeResourcePersonnelModal}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <NerisFlatMultiOptionSelect
+                    inputId={`resource-personnel-modal-${activeResourcePersonnelUnit.id}`}
+                    value={activeResourcePersonnelUnit.personnel}
+                    options={RESOURCE_PERSONNEL_OPTIONS}
+                    onChange={(nextValue) =>
+                      updateResourceUnitField(activeResourcePersonnelUnit.id, "personnel", nextValue)
+                    }
+                    placeholder="Select personnel"
+                    searchPlaceholder="Search personnel..."
+                  />
+                  <small className="field-hint">
+                    Select one or more personnel. Click outside this dialog to close.
+                  </small>
+                </section>
+              </div>
             ) : null}
             {displayedSectionFields.flatMap((field) => {
               const nodes: ReactNode[] = [];

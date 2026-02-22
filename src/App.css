@@ -2306,7 +2306,7 @@ body.resizing-dispatch-columns {
   border: 1px solid #dbe2ec;
   border-radius: 10px;
   background-color: #ffffff;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .neris-resource-unit-header {
@@ -2487,6 +2487,7 @@ body.resizing-dispatch-columns {
 .neris-resource-field {
   display: grid;
   gap: 0.28rem;
+  position: relative;
 }
 
 .neris-resource-field label,
@@ -2505,6 +2506,16 @@ body.resizing-dispatch-columns {
   font-size: 0.84rem;
 }
 
+.neris-resource-unit-type-input {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background-color: #f1f5f9;
+  color: #6b7280;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
 .neris-resource-personnel-wrap {
   display: grid;
   gap: 0.45rem;
@@ -2518,6 +2529,10 @@ body.resizing-dispatch-columns {
 }
 
 .neris-resource-personnel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
   padding: 0.5rem 0.62rem;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -2589,10 +2604,8 @@ body.resizing-dispatch-columns {
   font-size: 0.74rem;
 }
 
-.neris-resource-personnel-empty-gif {
-  width: 42px;
-  height: 42px;
-  object-fit: contain;
+.neris-resource-personnel-empty-icon {
+  color: #94a3b8;
 }
 
 .neris-resource-personnel-picker {
@@ -2600,6 +2613,35 @@ body.resizing-dispatch-columns {
   gap: 0.28rem;
   padding: 0.56rem 0.62rem;
   background-color: #ffffff;
+}
+
+.neris-resource-personnel-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  background-color: rgba(15, 23, 42, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.neris-resource-personnel-modal {
+  width: min(560px, 92vw);
+  display: grid;
+  gap: 0.58rem;
+}
+
+.neris-resource-personnel-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.neris-resource-personnel-modal-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.98rem;
 }
 
 .neris-resource-unit-narrative {
@@ -3092,6 +3134,11 @@ body.resizing-dispatch-columns {
   .neris-risk-reduction-contact-grid,
   .neris-risk-reduction-subfield-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-personnel-modal-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .dispatch-grid-line {
