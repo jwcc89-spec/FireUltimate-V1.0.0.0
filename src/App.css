@@ -1510,6 +1510,18 @@ tbody tr:last-of-type td {
   padding: 0;
 }
 
+.fl-link-button {
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  justify-self: start;
+}
+
 .rl-box-button {
   border: 1px solid #bfdbfe;
   background-color: #eff6ff;
@@ -2118,10 +2130,30 @@ body.resizing-dispatch-columns {
 }
 
 .neris-emerging-hazard-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
   color: #334155;
   font-size: 0.76rem;
   font-weight: 700;
   letter-spacing: 0.01em;
+}
+
+.neris-emerging-hazard-delete-button {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background-color: #fff5f5;
+  color: #b91c1c;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.neris-emerging-hazard-delete-button:hover {
+  background-color: #fee2e2;
 }
 
 .neris-emerging-hazard-field-grid {
@@ -2139,6 +2171,130 @@ body.resizing-dispatch-columns {
   font-size: 0.82rem;
   font-weight: 700;
   color: #334155;
+}
+
+.neris-risk-reduction-layout {
+  display: grid;
+  gap: 0.74rem;
+}
+
+.neris-risk-reduction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.neris-risk-reduction-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.neris-risk-reduction-field label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-risk-reduction-contact-box {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.68rem;
+}
+
+.neris-risk-reduction-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.neris-risk-reduction-contact-grid label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.neris-risk-reduction-contact-grid input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.58rem;
+  font-size: 0.8rem;
+}
+
+.neris-risk-reduction-conditional-layout {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.neris-risk-reduction-question-card {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.36rem;
+}
+
+.neris-risk-reduction-question-card > label {
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.neris-risk-reduction-subfields {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 0.15rem;
+  padding-top: 0.55rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.neris-risk-reduction-subfields label {
+  display: grid;
+  gap: 0.22rem;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.neris-risk-reduction-subfields input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.58rem;
+  font-size: 0.8rem;
+}
+
+.neris-risk-reduction-suppression-system-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.58rem;
+  display: grid;
+  gap: 0.44rem;
+}
+
+.neris-risk-reduction-suppression-system-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.neris-risk-reduction-suppression-system-header strong {
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.neris-risk-reduction-subfield-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
 }
 
 .neris-resource-unit-list {
@@ -2258,9 +2414,10 @@ body.resizing-dispatch-columns {
   border-radius: 8px;
   background-color: #fff5f5;
   color: #b91c1c;
-  font-size: 0.74rem;
-  font-weight: 700;
-  padding: 0.35rem 0.5rem;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
   cursor: pointer;
 }
 
@@ -2928,6 +3085,12 @@ body.resizing-dispatch-columns {
   }
 
   .neris-emerging-hazard-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-risk-reduction-grid,
+  .neris-risk-reduction-contact-grid,
+  .neris-risk-reduction-subfield-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 

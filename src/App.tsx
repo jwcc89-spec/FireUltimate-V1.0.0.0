@@ -317,6 +317,51 @@ const RESOURCE_PERSONNEL_OPTIONS: NerisValueOption[] = [
   { value: "GRAYSON_LEE", label: "Grayson Lee" },
   { value: "HARPER_YOUNG", label: "Harper Young" },
 ];
+const RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS: NerisValueOption[] = [
+  { value: "YES", label: "Yes" },
+  { value: "NO", label: "No" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
+const RISK_REDUCTION_YES_NO_OPTIONS: NerisValueOption[] = [
+  { value: "YES", label: "Yes" },
+  { value: "NO", label: "No" },
+];
+const RISK_REDUCTION_SMOKE_ALARM_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "BED_SHAKER", label: "Bed Shaker" },
+  { value: "COMBINATION_SMOKE_CO", label: "Combination (smoke / CO)" },
+  { value: "HARD_OF_HEARING_STROBE", label: "Hard of hearing with strobe" },
+  { value: "HARDWIRED", label: "Hardwired" },
+  { value: "INTERCONNECTED", label: "Interconnected" },
+  { value: "LONG_LIFE_BATTERY_POWERED", label: "Long Life Battery Powered" },
+  { value: "REPLACEABLE_BATTERY_POWERED", label: "Replaceable Battery Powered" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
+const RISK_REDUCTION_FIRE_ALARM_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "AUTOMATIC", label: "Automatic" },
+  { value: "MANUAL", label: "Manual" },
+  { value: "MANUAL_AND_AUTOMATIC", label: "Manual and Automatic" },
+];
+const RISK_REDUCTION_OTHER_ALARM_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "CARBON_MONOXIDE", label: "Carbon Monoxide" },
+  { value: "HEAT_DETECTOR", label: "Heat Detector" },
+  { value: "NATURAL_GAS", label: "Natural Gas" },
+  { value: "OTHER_CHEMICAL_DETECTOR", label: "Other Chemical Detector" },
+];
+const RISK_REDUCTION_COOKING_SUPPRESSION_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "COMMERCIAL_HOOD_SUPPRESSION", label: "Commercial Hood Suppression" },
+  { value: "ELECTRIC_POWER_CUTOFF_DEVICE", label: "Electric Power Cutoff Device" },
+  {
+    value: "RESIDENTIAL_HOOD_MOUNTED_SUPPRESSION_DEVICE",
+    label: "Residential Hood Mounted Suppression Device",
+  },
+  { value: "TEMPERATURE_LIMITING_STOVE_BURNER", label: "Temperature limiting Stove Burner" },
+  { value: "OTHER", label: "Other" },
+];
+const RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS: NerisValueOption[] = [
+  { value: "FULL", label: "Full" },
+  { value: "PARTIAL", label: "Partial" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -418,6 +463,12 @@ interface EmergingPowerGenerationItem {
   photovoltaicHazardType: string;
   pvSourceTarget: string;
   suppressionMethods: string;
+}
+
+interface FireSuppressionSystemEntry {
+  id: string;
+  suppressionType: string;
+  suppressionCoverage: string;
 }
 
 function parseImportedLocationValues(
@@ -552,6 +603,10 @@ function toResourceSummaryTime(value: string): string {
   return value.trim() || "--";
 }
 
+function togglePillValue(currentValue: string, nextValue: string): string {
+  return currentValue === nextValue ? "" : nextValue;
+}
+
 function countSelectedPersonnel(personnelCsv: string): number {
   return personnelCsv
     .split(",")
@@ -569,10 +624,16 @@ function getStaffingValueForUnit(unitId: string, personnelCsv: string): string {
 }
 
 let emergingHazardItemCounter = 0;
+let riskReductionSuppressionCounter = 0;
 
 function nextEmergingHazardItemId(prefix: string): string {
   emergingHazardItemCounter += 1;
   return `${prefix}-${emergingHazardItemCounter}`;
+}
+
+function nextRiskReductionSuppressionId(): string {
+  riskReductionSuppressionCounter += 1;
+  return `risk-suppression-${riskReductionSuppressionCounter}`;
 }
 
 function dedupeAndCleanStrings(values: string[]): string[] {
@@ -3614,6 +3675,64 @@ function NerisReportFormPage({
       ),
     [],
   );
+  const [riskReductionSuppressionSystems, setRiskReductionSuppressionSystems] = useState<
+    FireSuppressionSystemEntry[]
+  >(() => {
+    const stored = persistedDraft?.formValues.risk_reduction_fire_suppression_systems_json;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Array<{
+          suppressionType?: string;
+          suppressionCoverage?: string;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => ({
+            id: nextRiskReductionSuppressionId(),
+            suppressionType: item.suppressionType?.trim() ?? "",
+            suppressionCoverage: item.suppressionCoverage?.trim() ?? "",
+          }));
+        }
+      } catch {
+        // Ignore malformed persisted values and fall back to legacy fields.
+      }
+    }
+
+    const legacySuppressionType = persistedDraft?.formValues.fire_suppression_types?.trim() ?? "";
+    const legacySuppressionCoverage =
+      persistedDraft?.formValues.fire_suppression_operation?.trim() ?? "";
+    if (legacySuppressionType || legacySuppressionCoverage) {
+      return [
+        {
+          id: nextRiskReductionSuppressionId(),
+          suppressionType: legacySuppressionType,
+          suppressionCoverage: legacySuppressionCoverage,
+        },
+      ];
+    }
+
+    return [];
+  });
+  const riskReductionCompletedValue = (formValues.risk_reduction_completed ?? "").trim();
+  const riskReductionFollowUpValue = (formValues.risk_reduction_follow_up_required ?? "").trim();
+  const riskReductionContactMadeValue = (formValues.risk_reduction_contacts_made ?? "").trim();
+  const riskReductionSmokeAlarmPresentValue = (
+    formValues.risk_reduction_smoke_alarm_present ?? ""
+  ).trim();
+  const riskReductionSmokeAlarmWorkingValue = (
+    formValues.risk_reduction_smoke_alarm_working ?? ""
+  ).trim();
+  const riskReductionFireAlarmPresentValue = (
+    formValues.risk_reduction_fire_alarm_present ?? ""
+  ).trim();
+  const riskReductionOtherAlarmPresentValue = (
+    formValues.risk_reduction_other_alarm_present ?? ""
+  ).trim();
+  const riskReductionFireSuppressionPresentValue = (
+    formValues.risk_reduction_fire_suppression_present ?? ""
+  ).trim();
+  const riskReductionCookingSuppressionPresentValue = (
+    formValues.risk_reduction_cooking_suppression_present ?? ""
+  ).trim();
 
   useEffect(() => {
     if (persistedResourceUnits.length) {
@@ -3671,6 +3790,36 @@ function NerisReportFormPage({
       };
     });
   }, [emergingElectrocutionItems, emergingPowerGenerationItems]);
+
+  useEffect(() => {
+    const serializedSuppressionSystems = JSON.stringify(
+      riskReductionSuppressionSystems.map((system) => ({
+        suppressionType: system.suppressionType,
+        suppressionCoverage: system.suppressionCoverage,
+      })),
+    );
+    const primarySuppressionSystem = riskReductionSuppressionSystems[0];
+
+    setFormValues((previous) => {
+      if (
+        (previous.risk_reduction_fire_suppression_systems_json ?? "") ===
+          serializedSuppressionSystems &&
+        (previous.fire_suppression_types ?? "") ===
+          (primarySuppressionSystem?.suppressionType ?? "") &&
+        (previous.fire_suppression_operation ?? "") ===
+          (primarySuppressionSystem?.suppressionCoverage ?? "")
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        risk_reduction_fire_suppression_systems_json: serializedSuppressionSystems,
+        fire_suppression_types: primarySuppressionSystem?.suppressionType ?? "",
+        fire_suppression_operation: primarySuppressionSystem?.suppressionCoverage ?? "",
+      };
+    });
+  }, [riskReductionSuppressionSystems]);
 
   const primaryIncidentCategory = useMemo(() => {
     const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
@@ -4306,6 +4455,13 @@ function NerisReportFormPage({
     markNerisFormDirty();
   };
 
+  const deleteEmergingElectrocutionItem = (itemId: string) => {
+    setEmergingElectrocutionItems((previous) =>
+      previous.filter((item) => item.id !== itemId),
+    );
+    markNerisFormDirty();
+  };
+
   const addEmergingPowerGenerationItem = () => {
     setEmergingPowerGenerationItems((previous) => [
       ...previous,
@@ -4333,6 +4489,50 @@ function NerisReportFormPage({
             }
           : item,
       ),
+    );
+    markNerisFormDirty();
+  };
+
+  const deleteEmergingPowerGenerationItem = (itemId: string) => {
+    setEmergingPowerGenerationItems((previous) =>
+      previous.filter((item) => item.id !== itemId),
+    );
+    markNerisFormDirty();
+  };
+
+  const addRiskReductionSuppressionSystem = () => {
+    setRiskReductionSuppressionSystems((previous) => [
+      ...previous,
+      {
+        id: nextRiskReductionSuppressionId(),
+        suppressionType: "",
+        suppressionCoverage: "",
+      },
+    ]);
+    markNerisFormDirty();
+  };
+
+  const updateRiskReductionSuppressionSystem = (
+    systemId: string,
+    field: "suppressionType" | "suppressionCoverage",
+    value: string,
+  ) => {
+    setRiskReductionSuppressionSystems((previous) =>
+      previous.map((system) =>
+        system.id === systemId
+          ? {
+              ...system,
+              [field]: value,
+            }
+          : system,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const deleteRiskReductionSuppressionSystem = (systemId: string) => {
+    setRiskReductionSuppressionSystems((previous) =>
+      previous.filter((system) => system.id !== systemId),
     );
     markNerisFormDirty();
   };
@@ -4813,6 +5013,9 @@ function NerisReportFormPage({
     if (currentSection.id === "resources" && field.id.startsWith("resource_")) {
       return null;
     }
+    if (currentSection.id === "riskReduction") {
+      return null;
+    }
     if (
       currentSection.id === "emergingHazards" &&
       [
@@ -4882,7 +5085,12 @@ function NerisReportFormPage({
                       type="button"
                       className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                       aria-pressed={isSelected}
-                      onClick={() => updateFieldValue("incident_has_aid", option.value)}
+                      onClick={() =>
+                        updateFieldValue(
+                          "incident_has_aid",
+                          togglePillValue(formValues.incident_has_aid ?? "", option.value),
+                        )
+                      }
                     >
                       {option.label}
                     </button>
@@ -4906,7 +5114,15 @@ function NerisReportFormPage({
                         type="button"
                         className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                         aria-pressed={isSelected}
-                        onClick={() => updateFieldValue("incident_aid_agency_type", option.value)}
+                        onClick={() =>
+                          updateFieldValue(
+                            "incident_aid_agency_type",
+                            togglePillValue(
+                              formValues.incident_aid_agency_type ?? "",
+                              option.value,
+                            ),
+                          )
+                        }
                       >
                         {option.label}
                       </button>
@@ -4950,7 +5166,15 @@ function NerisReportFormPage({
                         type="button"
                         className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                         aria-pressed={isSelected}
-                        onClick={() => updateFieldValue("incident_aid_direction", option.value)}
+                        onClick={() =>
+                          updateFieldValue(
+                            "incident_aid_direction",
+                            togglePillValue(
+                              formValues.incident_aid_direction ?? "",
+                              option.value,
+                            ),
+                          )
+                        }
                       >
                         {option.label}
                       </button>
@@ -5012,7 +5236,11 @@ function NerisReportFormPage({
                                 className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                                 aria-pressed={isSelected}
                                 onClick={() =>
-                                  updateAdditionalAidEntry(entryIndex, "aidDirection", option.value)
+                                  updateAdditionalAidEntry(
+                                    entryIndex,
+                                    "aidDirection",
+                                    togglePillValue(entry.aidDirection, option.value),
+                                  )
                                 }
                               >
                                 {option.label}
@@ -5100,14 +5328,10 @@ function NerisReportFormPage({
                       if (isDisabled) {
                         return;
                       }
-                      if (
-                        (isNoActionReasonField || isAutomaticAlarmField) &&
-                        isSelected
-                      ) {
-                        updateFieldValue(field.id, "");
-                        return;
-                      }
-                      updateFieldValue(field.id, option.value);
+                      updateFieldValue(
+                        field.id,
+                        togglePillValue(normalizedSingleValue, option.value),
+                      );
                     }}
                   >
                     {option.label}
@@ -5340,7 +5564,8 @@ function NerisReportFormPage({
         <article className="panel neris-form-panel">
           {currentSection.id !== "core" &&
           currentSection.id !== "location" &&
-          currentSection.id !== "emergingHazards" ? (
+          currentSection.id !== "emergingHazards" &&
+          currentSection.id !== "riskReduction" ? (
             <div className="panel-header">
               <h2>{currentSection.label}</h2>
             </div>
@@ -5370,7 +5595,15 @@ function NerisReportFormPage({
                       {emergingElectrocutionItems.map((item, itemIndex) => (
                         <div key={item.id} className="neris-emerging-hazard-item-card">
                           <div className="neris-emerging-hazard-item-title">
-                            Item {itemIndex + 1}
+                            <span>Hazard {itemIndex + 1}</span>
+                            <button
+                              type="button"
+                              className="neris-emerging-hazard-delete-button"
+                              aria-label={`Delete electrocution hazard ${itemIndex + 1}`}
+                              onClick={() => deleteEmergingElectrocutionItem(item.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                           <div className="neris-emerging-hazard-field-grid">
                             <div className="neris-emerging-hazard-field">
@@ -5433,7 +5666,15 @@ function NerisReportFormPage({
                       {emergingPowerGenerationItems.map((item, itemIndex) => (
                         <div key={item.id} className="neris-emerging-hazard-item-card">
                           <div className="neris-emerging-hazard-item-title">
-                            Item {itemIndex + 1}
+                            <span>Hazard {itemIndex + 1}</span>
+                            <button
+                              type="button"
+                              className="neris-emerging-hazard-delete-button"
+                              aria-label={`Delete power generation hazard ${itemIndex + 1}`}
+                              onClick={() => deleteEmergingPowerGenerationItem(item.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
                           </div>
                           <div className="neris-emerging-hazard-field-grid">
                             <div className="neris-emerging-hazard-field">
@@ -5470,7 +5711,7 @@ function NerisReportFormPage({
                                         updateEmergingPowerGenerationItem(
                                           item.id,
                                           "pvSourceTarget",
-                                          option.value,
+                                          togglePillValue(item.pvSourceTarget, option.value),
                                         )
                                       }
                                     >
@@ -5503,6 +5744,517 @@ function NerisReportFormPage({
                     </div>
                   ) : null}
                 </article>
+              </section>
+            ) : null}
+            {currentSection.id === "riskReduction" ? (
+              <section className="field-span-two neris-risk-reduction-layout">
+                <div className="neris-core-field-heading">RISK REDUCTION</div>
+
+                <div className="neris-risk-reduction-grid">
+                  <div className="neris-risk-reduction-field">
+                    <label>Risk reduction completed</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Risk reduction completed">
+                      {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                        const isSelected = option.value === riskReductionCompletedValue;
+                        return (
+                          <button
+                            key={`risk-reduction-completed-${option.value}`}
+                            type="button"
+                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              updateFieldValue(
+                                "risk_reduction_completed",
+                                togglePillValue(riskReductionCompletedValue, option.value),
+                              )
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="neris-risk-reduction-field">
+                    <label>Follow-up required</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Follow-up required">
+                      {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                        const isSelected = option.value === riskReductionFollowUpValue;
+                        return (
+                          <button
+                            key={`risk-reduction-follow-up-${option.value}`}
+                            type="button"
+                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              updateFieldValue(
+                                "risk_reduction_follow_up_required",
+                                togglePillValue(riskReductionFollowUpValue, option.value),
+                              )
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="neris-risk-reduction-field">
+                    <label>Contact Made?</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Contact made">
+                      {RISK_REDUCTION_YES_NO_OPTIONS.map((option) => {
+                        const isSelected = option.value === riskReductionContactMadeValue;
+                        return (
+                          <button
+                            key={`risk-reduction-contact-made-${option.value}`}
+                            type="button"
+                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              updateFieldValue(
+                                "risk_reduction_contacts_made",
+                                togglePillValue(riskReductionContactMadeValue, option.value),
+                              )
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {riskReductionContactMadeValue === "YES" ? (
+                  <section className="neris-risk-reduction-contact-box">
+                    <div className="neris-risk-reduction-contact-grid">
+                      <label>
+                        Full Name
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_full_name ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue(
+                              "risk_reduction_contact_full_name",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        Phone Number
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_phone_number ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue(
+                              "risk_reduction_contact_phone_number",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        Street
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_street ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_street", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        City
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_city ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_city", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        State
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_state ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_state", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Zip Code
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_zip_code ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_zip_code", event.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                  </section>
+                ) : null}
+
+                {riskReductionCompletedValue === "YES" ? (
+                  <div className="neris-risk-reduction-conditional-layout">
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Was there at least one smoke alarm present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Was there at least one smoke alarm present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected = option.value === riskReductionSmokeAlarmPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-smoke-alarm-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_smoke_alarm_present",
+                                  togglePillValue(riskReductionSmokeAlarmPresentValue, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {riskReductionSmokeAlarmPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>
+                              Was there at least one working or successfully test smoke alarm?
+                            </label>
+                            <div
+                              className="neris-single-choice-row"
+                              role="group"
+                              aria-label="Was there at least one working or successfully test smoke alarm?"
+                            >
+                              {RISK_REDUCTION_YES_NO_OPTIONS.map((option) => {
+                                const isSelected =
+                                  option.value === riskReductionSmokeAlarmWorkingValue;
+                                return (
+                                  <button
+                                    key={`risk-reduction-smoke-working-${option.value}`}
+                                    type="button"
+                                    className={`neris-single-choice-button${
+                                      isSelected ? " selected" : ""
+                                    }`}
+                                    aria-pressed={isSelected}
+                                    onClick={() =>
+                                      updateFieldValue(
+                                        "risk_reduction_smoke_alarm_working",
+                                        togglePillValue(
+                                          riskReductionSmokeAlarmWorkingValue,
+                                          option.value,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div>
+                            <label>Smoke Alarm Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-smoke-alarm-types"
+                              value={formValues.risk_reduction_smoke_alarm_types ?? ""}
+                              options={RISK_REDUCTION_SMOKE_ALARM_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue("risk_reduction_smoke_alarm_types", nextValue)
+                              }
+                              placeholder="Select smoke alarm type(s)"
+                              searchPlaceholder="Search smoke alarm types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Was there at least one fire alarm present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Was there at least one fire alarm present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected = option.value === riskReductionFireAlarmPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-fire-alarm-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_fire_alarm_present",
+                                  togglePillValue(riskReductionFireAlarmPresentValue, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {riskReductionFireAlarmPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>Fire Alarm Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-fire-alarm-types"
+                              value={formValues.risk_reduction_fire_alarm_types ?? ""}
+                              options={RISK_REDUCTION_FIRE_ALARM_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue("risk_reduction_fire_alarm_types", nextValue)
+                              }
+                              placeholder="Select fire alarm type(s)"
+                              searchPlaceholder="Search fire alarm types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Were there any other alarms present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Were there any other alarms present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected = option.value === riskReductionOtherAlarmPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-other-alarm-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_other_alarm_present",
+                                  togglePillValue(riskReductionOtherAlarmPresentValue, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {riskReductionOtherAlarmPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>Other Alarm Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-other-alarm-types"
+                              value={formValues.risk_reduction_other_alarm_types ?? ""}
+                              options={RISK_REDUCTION_OTHER_ALARM_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue("risk_reduction_other_alarm_types", nextValue)
+                              }
+                              placeholder="Select other alarm type(s)"
+                              searchPlaceholder="Search other alarm types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Were there any fire suppresion systems present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Were there any fire suppression systems present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected =
+                            option.value === riskReductionFireSuppressionPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-fire-suppression-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() => {
+                                const nextValue = togglePillValue(
+                                  riskReductionFireSuppressionPresentValue,
+                                  option.value,
+                                );
+                                updateFieldValue(
+                                  "risk_reduction_fire_suppression_present",
+                                  nextValue,
+                                );
+                                if (
+                                  nextValue === "YES" &&
+                                  riskReductionSuppressionSystems.length === 0
+                                ) {
+                                  addRiskReductionSuppressionSystem();
+                                }
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {riskReductionFireSuppressionPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          {riskReductionSuppressionSystems.map((system, systemIndex) => (
+                            <div
+                              key={system.id}
+                              className="neris-risk-reduction-suppression-system-card"
+                            >
+                              <div className="neris-risk-reduction-suppression-system-header">
+                                <strong>Fire Suppression System {systemIndex + 1}</strong>
+                                <button
+                                  type="button"
+                                  className="neris-emerging-hazard-delete-button"
+                                  aria-label={`Delete fire suppression system ${systemIndex + 1}`}
+                                  onClick={() => deleteRiskReductionSuppressionSystem(system.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                              <div className="neris-risk-reduction-subfield-grid">
+                                <label>
+                                  Fire Suppression Type
+                                  <input
+                                    type="text"
+                                    value={system.suppressionType}
+                                    onChange={(event) =>
+                                      updateRiskReductionSuppressionSystem(
+                                        system.id,
+                                        "suppressionType",
+                                        event.target.value,
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <div>
+                                  <label>Suppression System Coverage</label>
+                                  <div
+                                    className="neris-single-choice-row"
+                                    role="group"
+                                    aria-label="Suppression system coverage"
+                                  >
+                                    {RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS.map((option) => {
+                                      const isSelected =
+                                        option.value === system.suppressionCoverage;
+                                      return (
+                                        <button
+                                          key={`${system.id}-coverage-${option.value}`}
+                                          type="button"
+                                          className={`neris-single-choice-button${
+                                            isSelected ? " selected" : ""
+                                          }`}
+                                          aria-pressed={isSelected}
+                                          onClick={() =>
+                                            updateRiskReductionSuppressionSystem(
+                                              system.id,
+                                              "suppressionCoverage",
+                                              togglePillValue(
+                                                system.suppressionCoverage,
+                                                option.value,
+                                              ),
+                                            )
+                                          }
+                                        >
+                                          {option.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="fl-link-button"
+                            onClick={addRiskReductionSuppressionSystem}
+                          >
+                            + Add Another Fire Suppression System
+                          </button>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>
+                        Was there at least one cooking fire suppression system present?
+                      </label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Was there at least one cooking fire suppression system present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected =
+                            option.value === riskReductionCookingSuppressionPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-cooking-suppression-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_cooking_suppression_present",
+                                  togglePillValue(
+                                    riskReductionCookingSuppressionPresentValue,
+                                    option.value,
+                                  ),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {riskReductionCookingSuppressionPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>Cooking Fire Suppression Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-cooking-suppression-types"
+                              value={formValues.risk_reduction_cooking_suppression_types ?? ""}
+                              options={RISK_REDUCTION_COOKING_SUPPRESSION_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue(
+                                  "risk_reduction_cooking_suppression_types",
+                                  nextValue,
+                                )
+                              }
+                              placeholder="Select cooking fire suppression type(s)"
+                              searchPlaceholder="Search cooking suppression types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+                  </div>
+                ) : null}
               </section>
             ) : null}
             {currentSection.id === "resources" ? (
@@ -5573,8 +6325,9 @@ function NerisReportFormPage({
                               type="button"
                               className="neris-resource-delete-button"
                               onClick={() => deleteResourceUnit(unitEntry.id)}
+                              aria-label={`Delete ${unitEntry.unitId || "unit"} block`}
                             >
-                              Delete
+                              <Trash2 size={14} />
                             </button>
                             <button
                               type="button"
