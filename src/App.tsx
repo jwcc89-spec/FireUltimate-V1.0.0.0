@@ -441,6 +441,7 @@ interface ResourceUnitEntry {
   enrouteTime: string;
   onSceneTime: string;
   clearTime: string;
+  isCanceledEnroute: boolean;
   isComplete: boolean;
   isExpanded: boolean;
   showTimesEditor: boolean;
@@ -598,7 +599,58 @@ function inferResourceUnitTypeValue(
 }
 
 function toResourceSummaryTime(value: string): string {
-  return value.trim() || "--";
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "--";
+  }
+  const normalized = trimmed.replace(" ", "T");
+  const datetimeMatch = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(?::\d{2})?$/,
+  );
+  if (datetimeMatch) {
+    const [, , month, day, time] = datetimeMatch;
+    return `${month}/${day} ${time}`;
+  }
+  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  if (timeOnlyMatch) {
+    return timeOnlyMatch[1] ?? "--";
+  }
+  return trimmed;
+}
+
+function toResourceDateTimeInputValue(value: string, fallbackDate: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const normalized = trimmed.replace(" ", "T");
+  const datetimeMatch = normalized.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?$/,
+  );
+  if (datetimeMatch) {
+    return `${datetimeMatch[1]}T${datetimeMatch[2]}`;
+  }
+  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  if (timeOnlyMatch && /^\d{4}-\d{2}-\d{2}$/.test(fallbackDate)) {
+    return `${fallbackDate}T${timeOnlyMatch[1]}`;
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.valueOf())) {
+    return "";
+  }
+  const year = String(parsed.getFullYear());
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}`;
+}
+
+function resourceUnitValidationErrorKey(
+  unitEntryId: string,
+  field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+): string {
+  return `resource_unit_validation_${unitEntryId}_${field}`;
 }
 
 function togglePillValue(currentValue: string, nextValue: string): string {
@@ -3487,6 +3539,7 @@ function NerisReportFormPage({
   );
   const responseModeOptions = useMemo(() => getNerisValueOptions("response_mode"), []);
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
+  const resourceFallbackDate = (formValues.incident_onset_date ?? "").trim() || "2026-02-18";
   const availableResourceUnitOptions = useMemo(() => {
     if (!detail) {
       return [] as NerisValueOption[];
@@ -3526,10 +3579,11 @@ function NerisReportFormPage({
         unitType: inferResourceUnitTypeValue(option.value, source?.unitType, unitTypeOptions),
         staffing: getStaffingValueForUnit(option.value, ""),
         responseMode: "",
-        dispatchTime: detail?.receivedAt ?? "",
+        dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
         enrouteTime: "",
         onSceneTime: "",
         clearTime: "",
+        isCanceledEnroute: false,
         isComplete: false,
         isExpanded: index === 0,
         showTimesEditor: false,
@@ -3539,7 +3593,13 @@ function NerisReportFormPage({
         unitNarrative: "",
       };
     });
-  }, [availableResourceUnitOptions, apparatusByResourceUnitId, unitTypeOptions, detail?.receivedAt]);
+  }, [
+    availableResourceUnitOptions,
+    apparatusByResourceUnitId,
+    unitTypeOptions,
+    detail?.receivedAt,
+    resourceFallbackDate,
+  ]);
   const persistedResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
     const rawValue = persistedDraft?.formValues.resource_units_json;
     if (!rawValue) {
@@ -3566,10 +3626,20 @@ function NerisReportFormPage({
           unitType: normalizedUnitType,
           staffing: getStaffingValueForUnit(unitId, personnel),
           responseMode: item.responseMode?.trim() ?? "",
-          dispatchTime: item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
-          enrouteTime: item.enrouteTime?.trim() ?? "",
-          onSceneTime: item.onSceneTime?.trim() ?? "",
-          clearTime: item.clearTime?.trim() ?? "",
+          dispatchTime: toResourceDateTimeInputValue(
+            item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
+            resourceFallbackDate,
+          ),
+          enrouteTime: toResourceDateTimeInputValue(
+            item.enrouteTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
+          onSceneTime: toResourceDateTimeInputValue(
+            item.onSceneTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
+          clearTime: toResourceDateTimeInputValue(item.clearTime?.trim() ?? "", resourceFallbackDate),
+          isCanceledEnroute: Boolean(item.isCanceledEnroute),
           isComplete: Boolean(item.isComplete),
           isExpanded: Boolean(item.isExpanded),
           showTimesEditor: Boolean(item.showTimesEditor),
@@ -3582,7 +3652,12 @@ function NerisReportFormPage({
     } catch {
       return [];
     }
-  }, [persistedDraft?.formValues.resource_units_json, detail?.receivedAt, unitTypeOptions]);
+  }, [
+    persistedDraft?.formValues.resource_units_json,
+    detail?.receivedAt,
+    unitTypeOptions,
+    resourceFallbackDate,
+  ]);
   const [resourceUnits, setResourceUnits] = useState<ResourceUnitEntry[]>(
     () => (persistedResourceUnits.length ? persistedResourceUnits : defaultResourceUnits),
   );
@@ -3754,6 +3829,18 @@ function NerisReportFormPage({
       setActiveResourcePersonnelUnitId(null);
     }
   }, [activeResourcePersonnelUnitId, activeResourcePersonnelUnit]);
+
+  useEffect(() => {
+    const className = "resource-personnel-modal-open";
+    if (activeResourcePersonnelUnitId) {
+      document.body.classList.add(className);
+    } else {
+      document.body.classList.remove(className);
+    }
+    return () => {
+      document.body.classList.remove(className);
+    };
+  }, [activeResourcePersonnelUnitId]);
 
   useEffect(() => {
     const serializedElectrocutionItems = JSON.stringify(
@@ -4199,6 +4286,22 @@ function NerisReportFormPage({
     }
   };
 
+  const clearResourceUnitValidationErrors = (unitEntryId: string) => {
+    const keyPrefix = `resource_unit_validation_${unitEntryId}_`;
+    setSectionErrors((previous) => {
+      let hasMatch = false;
+      const next: Record<string, string> = {};
+      Object.entries(previous).forEach(([key, value]) => {
+        if (key.startsWith(keyPrefix)) {
+          hasMatch = true;
+          return;
+        }
+        next[key] = value;
+      });
+      return hasMatch ? next : previous;
+    });
+  };
+
   useEffect(() => {
     const primaryUnit = resourceUnits[0];
     const primaryUnitId = primaryUnit?.unitId ?? "";
@@ -4223,6 +4326,7 @@ function NerisReportFormPage({
         enrouteTime: unit.enrouteTime,
         onSceneTime: unit.onSceneTime,
         clearTime: unit.clearTime,
+        isCanceledEnroute: unit.isCanceledEnroute,
         isComplete: unit.isComplete,
         isExpanded: unit.isExpanded,
         showTimesEditor: unit.showTimesEditor,
@@ -4289,6 +4393,7 @@ function NerisReportFormPage({
     setResourceUnits((previous) =>
       previous.filter((entry) => entry.id !== unitEntryId),
     );
+    clearResourceUnitValidationErrors(unitEntryId);
     if (activeResourcePersonnelUnitId === unitEntryId) {
       setActiveResourcePersonnelUnitId(null);
     }
@@ -4331,6 +4436,7 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    clearResourceUnitValidationErrors(unitEntryId);
     markNerisFormDirty();
   };
 
@@ -4353,6 +4459,7 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    clearResourceUnitValidationErrors(unitEntryId);
     markNerisFormDirty();
   };
 
@@ -4388,6 +4495,7 @@ function NerisReportFormPage({
         };
       }),
     );
+    clearResourceUnitValidationErrors(unitEntryId);
     markNerisFormDirty();
   };
 
@@ -4402,6 +4510,21 @@ function NerisReportFormPage({
           : entry,
       ),
     );
+    markNerisFormDirty();
+  };
+
+  const toggleResourceCanceledEnroute = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isCanceledEnroute: !entry.isCanceledEnroute,
+            }
+          : entry,
+      ),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
     markNerisFormDirty();
   };
 
@@ -4581,16 +4704,64 @@ function NerisReportFormPage({
 
   const handleValidateForm = () => {
     const mergedErrors: Record<string, string> = {};
+    const customIssueLabelsByFieldId: Record<string, string> = {};
     for (const section of NERIS_FORM_SECTIONS) {
       const validation = validateNerisSection(section.id, formValues);
       Object.assign(mergedErrors, validation.errors);
     }
+
+    resourceUnits.forEach((unitEntry, unitIndex) => {
+      const unitLabel = unitEntry.unitId.trim() || `Unit ${unitIndex + 1}`;
+      const addResourceError = (
+        field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+        fieldLabel: string,
+        message: string,
+      ) => {
+        const errorKey = resourceUnitValidationErrorKey(unitEntry.id, field);
+        mergedErrors[errorKey] = message;
+        customIssueLabelsByFieldId[errorKey] = `Resources - ${unitLabel}: ${fieldLabel}`;
+      };
+
+      if (countSelectedPersonnel(unitEntry.personnel) < 1) {
+        addResourceError(
+          "personnel",
+          "Personnel",
+          "At least one personnel member is required for each unit.",
+        );
+      }
+      if (!unitEntry.dispatchTime.trim()) {
+        addResourceError("dispatchTime", "Dispatch time", "Dispatch time is required.");
+      }
+      if (!unitEntry.clearTime.trim()) {
+        addResourceError("clearTime", "Clear time", "Clear time is required.");
+      }
+      if (!unitEntry.isCanceledEnroute) {
+        if (!unitEntry.enrouteTime.trim()) {
+          addResourceError(
+            "enrouteTime",
+            "Enroute time",
+            "Enroute time is required unless dispatched and canceled en route.",
+          );
+        }
+        if (!unitEntry.onSceneTime.trim()) {
+          addResourceError(
+            "onSceneTime",
+            "On Scene time",
+            "On Scene time is required unless dispatched and canceled en route.",
+          );
+        }
+      }
+    });
 
     setSectionErrors(mergedErrors);
     const issueLabels = Array.from(
       new Set(
         Object.keys(mergedErrors).map(
           (fieldId) => {
+            const customLabel = customIssueLabelsByFieldId[fieldId];
+            if (customLabel) {
+              return customLabel;
+            }
             const sectionId = nerisFieldSectionById[fieldId];
             const sectionLabel = sectionId
               ? nerisSectionLabelById[sectionId]
@@ -6291,6 +6462,19 @@ function NerisReportFormPage({
                     const unitTypeDisplayLabel =
                       unitTypeOptions.find((option) => option.value === unitEntry.unitType)?.label ??
                       unitEntry.unitType;
+                    const personnelError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "personnel")] ?? "";
+                    const dispatchTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "dispatchTime")] ??
+                      "";
+                    const enrouteTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime")] ??
+                      "";
+                    const onSceneTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime")] ??
+                      "";
+                    const clearTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "clearTime")] ?? "";
 
                     return (
                       <article key={unitEntry.id} className="neris-resource-unit-card">
@@ -6423,16 +6607,6 @@ function NerisReportFormPage({
                                   placeholder="Auto-populates from unit setup"
                                 />
                               </div>
-                              <div className="neris-resource-field">
-                                <label>Unit Staffing</label>
-                                <input
-                                  type="text"
-                                  value={staffingDisplay}
-                                  readOnly
-                                  className="neris-resource-staffing-input"
-                                  placeholder="Updates from schedule or assigned personnel"
-                                />
-                              </div>
                             </div>
 
                             <div className="neris-resource-inline-links">
@@ -6452,8 +6626,7 @@ function NerisReportFormPage({
                                   <label>
                                     Dispatch
                                     <input
-                                      type="time"
-                                      step={1}
+                                      type="datetime-local"
                                       value={unitEntry.dispatchTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6463,12 +6636,14 @@ function NerisReportFormPage({
                                         )
                                       }
                                     />
+                                    {dispatchTimeError ? (
+                                      <small className="field-error">{dispatchTimeError}</small>
+                                    ) : null}
                                   </label>
                                   <label>
                                     Enroute
                                     <input
-                                      type="time"
-                                      step={1}
+                                      type="datetime-local"
                                       value={unitEntry.enrouteTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6478,12 +6653,14 @@ function NerisReportFormPage({
                                         )
                                       }
                                     />
+                                    {enrouteTimeError ? (
+                                      <small className="field-error">{enrouteTimeError}</small>
+                                    ) : null}
                                   </label>
                                   <label>
                                     On Scene
                                     <input
-                                      type="time"
-                                      step={1}
+                                      type="datetime-local"
                                       value={unitEntry.onSceneTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6493,12 +6670,14 @@ function NerisReportFormPage({
                                         )
                                       }
                                     />
+                                    {onSceneTimeError ? (
+                                      <small className="field-error">{onSceneTimeError}</small>
+                                    ) : null}
                                   </label>
                                   <label>
                                     Clear
                                     <input
-                                      type="time"
-                                      step={1}
+                                      type="datetime-local"
                                       value={unitEntry.clearTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6508,8 +6687,21 @@ function NerisReportFormPage({
                                         )
                                       }
                                     />
+                                    {clearTimeError ? (
+                                      <small className="field-error">{clearTimeError}</small>
+                                    ) : null}
                                   </label>
                                 </div>
+                                <button
+                                  type="button"
+                                  className={`neris-resource-canceled-enroute-button${
+                                    unitEntry.isCanceledEnroute ? " active" : ""
+                                  }`}
+                                  aria-pressed={unitEntry.isCanceledEnroute}
+                                  onClick={() => toggleResourceCanceledEnroute(unitEntry.id)}
+                                >
+                                  Dispatched and canceled en route
+                                </button>
                               </div>
                             ) : null}
 
@@ -6561,6 +6753,11 @@ function NerisReportFormPage({
                                   <small>Add personnel using the Add Personnel link above.</small>
                                 </div>
                               )}
+                              {personnelError ? (
+                                <small className="field-error neris-resource-personnel-error">
+                                  {personnelError}
+                                </small>
+                              ) : null}
                             </section>
 
                             <div className="neris-resource-field">
@@ -6639,7 +6836,10 @@ function NerisReportFormPage({
                   }
                 }}
               >
-                <section className="panel neris-resource-personnel-modal">
+                <section
+                  className="panel neris-resource-personnel-modal"
+                  onWheel={(event) => event.stopPropagation()}
+                >
                   <div className="neris-resource-personnel-modal-header">
                     <h3>
                       Add Personnel
