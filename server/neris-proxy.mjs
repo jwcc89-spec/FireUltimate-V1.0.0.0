@@ -254,6 +254,17 @@ function parseLocationFromAddress(addressValue, fallbackState, fallbackCountry) 
   };
 }
 
+function firstAssignedUnit(rawValue) {
+  const normalized = trimValue(rawValue);
+  if (!normalized) {
+    return "";
+  }
+  return normalized
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)[0] ?? "";
+}
+
 function getProxyConfig() {
   const baseUrl = trimValue(process.env.NERIS_BASE_URL) || DEFAULT_NERIS_BASE_URL;
   const grantType = trimValue(process.env.NERIS_GRANT_TYPE) || "client_credentials";
@@ -483,11 +494,19 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   ];
 
   const primaryUnitId = trimValue(formValues.resource_primary_unit_id);
+  const fallbackReportedUnitId = firstAssignedUnit(incidentSnapshot.assignedUnits);
   const staffingRaw = trimValue(formValues.resource_primary_unit_staffing);
   const staffing = Number.parseInt(staffingRaw, 10);
   const unitResponse = {};
   if (primaryUnitId) {
     unitResponse.reported_unit_id = primaryUnitId;
+    unitResponse.reported_id_unit = primaryUnitId;
+  } else if (fallbackReportedUnitId) {
+    unitResponse.reported_unit_id = fallbackReportedUnitId;
+    unitResponse.reported_id_unit = fallbackReportedUnitId;
+  } else {
+    unitResponse.reported_unit_id = "UNSPECIFIED_UNIT";
+    unitResponse.reported_id_unit = "UNSPECIFIED_UNIT";
   }
   if (!Number.isNaN(staffing) && staffing >= 0) {
     unitResponse.staffing = staffing;
