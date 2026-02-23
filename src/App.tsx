@@ -605,15 +605,16 @@ function toResourceSummaryTime(value: string): string {
   }
   const normalized = trimmed.replace(" ", "T");
   const datetimeMatch = normalized.match(
-    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(?::\d{2})?$/,
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/,
   );
   if (datetimeMatch) {
-    const [, , month, day, time] = datetimeMatch;
-    return `${month}/${day} ${time}`;
+    const [, , month, day, time, seconds] = datetimeMatch;
+    return `${month}/${day} ${time}:${seconds ?? "00"}`;
   }
-  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::(\d{2}))?$/);
   if (timeOnlyMatch) {
-    return timeOnlyMatch[1] ?? "--";
+    const [, time, seconds] = timeOnlyMatch;
+    return `${time ?? "--"}:${seconds ?? "00"}`;
   }
   return trimmed;
 }
@@ -625,14 +626,14 @@ function toResourceDateTimeInputValue(value: string, fallbackDate: string): stri
   }
   const normalized = trimmed.replace(" ", "T");
   const datetimeMatch = normalized.match(
-    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::\d{2})?$/,
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/,
   );
   if (datetimeMatch) {
-    return `${datetimeMatch[1]}T${datetimeMatch[2]}`;
+    return `${datetimeMatch[1]}T${datetimeMatch[2]}:${datetimeMatch[3] ?? "00"}`;
   }
-  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::\d{2})?$/);
+  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::(\d{2}))?$/);
   if (timeOnlyMatch && /^\d{4}-\d{2}-\d{2}$/.test(fallbackDate)) {
-    return `${fallbackDate}T${timeOnlyMatch[1]}`;
+    return `${fallbackDate}T${timeOnlyMatch[1]}:${timeOnlyMatch[2] ?? "00"}`;
   }
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.valueOf())) {
@@ -643,7 +644,35 @@ function toResourceDateTimeInputValue(value: string, fallbackDate: string): stri
   const day = String(parsed.getDate()).padStart(2, "0");
   const hours = String(parsed.getHours()).padStart(2, "0");
   const minutes = String(parsed.getMinutes()).padStart(2, "0");
-  return `${year}-${month}-${day}T${hours}:${minutes}`;
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
+function toResourceDateTimeTimestamp(value: string, fallbackDate: string): number | null {
+  const normalized = toResourceDateTimeInputValue(value, fallbackDate);
+  if (!normalized) {
+    return null;
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.valueOf())) {
+    return null;
+  }
+  return parsed.valueOf();
+}
+
+function addMinutesToResourceDateTime(value: string, minutesToAdd: number): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return "";
+  }
+  parsed.setMinutes(parsed.getMinutes() + minutesToAdd);
+  const year = String(parsed.getFullYear());
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
 function resourceUnitValidationErrorKey(
@@ -4302,6 +4331,152 @@ function NerisReportFormPage({
     });
   };
 
+  const toValidationIssueLabel = (
+    fieldId: string,
+    customIssueLabelsByFieldId: Record<string, string>,
+  ): string => {
+    const customLabel = customIssueLabelsByFieldId[fieldId];
+    if (customLabel) {
+      return customLabel;
+    }
+    const sectionId = nerisFieldSectionById[fieldId];
+    const sectionLabel = sectionId ? nerisSectionLabelById[sectionId] : "UNKNOWN";
+    return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
+  };
+
+  const validateResourceUnit = (unitEntry: ResourceUnitEntry, unitIndex: number) => {
+    const unitLabel = unitEntry.unitId.trim() || `Unit ${unitIndex + 1}`;
+    const errors: Record<string, string> = {};
+    const customIssueLabelsByFieldId: Record<string, string> = {};
+    const addResourceError = (
+      field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+      fieldLabel: string,
+      message: string,
+    ) => {
+      const errorKey = resourceUnitValidationErrorKey(unitEntry.id, field);
+      errors[errorKey] = message;
+      customIssueLabelsByFieldId[errorKey] = `Resources - ${unitLabel}: ${fieldLabel}`;
+    };
+    const addTimelineError = (
+      entry: {
+        key: string;
+        label: string;
+        customIssueLabel?: string;
+      },
+      message: string,
+    ) => {
+      errors[entry.key] = message;
+      if (entry.customIssueLabel) {
+        customIssueLabelsByFieldId[entry.key] = entry.customIssueLabel;
+      }
+    };
+
+    if (countSelectedPersonnel(unitEntry.personnel) < 1) {
+      addResourceError(
+        "personnel",
+        "Personnel",
+        "At least one personnel member is required for each unit.",
+      );
+    }
+    if (!unitEntry.dispatchTime.trim()) {
+      addResourceError("dispatchTime", "Dispatch time", "Dispatch time is required.");
+    }
+    if (!unitEntry.clearTime.trim()) {
+      addResourceError("clearTime", "Clear time", "Clear time is required.");
+    }
+    if (!unitEntry.isCanceledEnroute) {
+      if (!unitEntry.enrouteTime.trim()) {
+        addResourceError(
+          "enrouteTime",
+          "Enroute time",
+          "Enroute time is required unless dispatched and canceled en route.",
+        );
+      }
+      if (!unitEntry.onSceneTime.trim()) {
+        addResourceError(
+          "onSceneTime",
+          "On Scene time",
+          "On Scene time is required unless dispatched and canceled en route.",
+        );
+      }
+    }
+
+    const timelineEntries = [
+      {
+        key: "incident_time_call_create",
+        label: "Call created time",
+        value: formValues.incident_time_call_create ?? "",
+      },
+      {
+        key: "incident_time_call_answered",
+        label: "Call answered time",
+        value: formValues.incident_time_call_answered ?? "",
+      },
+      {
+        key: "incident_time_call_arrival",
+        label: "Call arrival time",
+        value: formValues.incident_time_call_arrival ?? "",
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "dispatchTime"),
+        label: "Unit dispatched time",
+        customIssueLabel: `Resources - ${unitLabel}: Dispatch time`,
+        value: unitEntry.dispatchTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime"),
+        label: "Unit enroute time",
+        customIssueLabel: `Resources - ${unitLabel}: Enroute time`,
+        value: unitEntry.enrouteTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime"),
+        label: "Unit on scene time",
+        customIssueLabel: `Resources - ${unitLabel}: On Scene time`,
+        value: unitEntry.onSceneTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "clearTime"),
+        label: "Unit clear time",
+        customIssueLabel: `Resources - ${unitLabel}: Clear time`,
+        value: unitEntry.clearTime,
+      },
+      {
+        key: "time_incident_clear",
+        label: "Incident clear time",
+        value: formValues.time_incident_clear ?? "",
+      },
+    ];
+
+    let previousTimelineEntry: { label: string; timestamp: number } | null = null;
+    timelineEntries.forEach((entry) => {
+      const trimmedValue = entry.value.trim();
+      if (!trimmedValue) {
+        return;
+      }
+      const timestamp = toResourceDateTimeTimestamp(trimmedValue, resourceFallbackDate);
+      if (timestamp === null) {
+        addTimelineError(entry, `${entry.label} has an invalid date/time value.`);
+        return;
+      }
+      if (previousTimelineEntry && timestamp < previousTimelineEntry.timestamp) {
+        addTimelineError(
+          entry,
+          `${entry.label} cannot be earlier than ${previousTimelineEntry.label}.`,
+        );
+      }
+      previousTimelineEntry = {
+        label: entry.label,
+        timestamp,
+      };
+    });
+
+    return {
+      errors,
+      customIssueLabelsByFieldId,
+    };
+  };
+
   useEffect(() => {
     const primaryUnit = resourceUnits[0];
     const primaryUnitId = primaryUnit?.unitId ?? "";
@@ -4428,6 +4603,31 @@ function NerisReportFormPage({
                   staffing: nextStaffing,
                 };
               }
+              if (field === "dispatchTime") {
+                const normalizedDispatch = toResourceDateTimeInputValue(value, resourceFallbackDate);
+                const normalizedClear = toResourceDateTimeInputValue(
+                  entry.clearTime,
+                  resourceFallbackDate,
+                );
+                return {
+                  ...entry,
+                  dispatchTime: normalizedDispatch,
+                  clearTime:
+                    entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
+                      ? addMinutesToResourceDateTime(normalizedDispatch, 2)
+                      : normalizedClear,
+                };
+              }
+              if (
+                field === "enrouteTime" ||
+                field === "onSceneTime" ||
+                field === "clearTime"
+              ) {
+                return {
+                  ...entry,
+                  [field]: toResourceDateTimeInputValue(value, resourceFallbackDate),
+                };
+              }
               return {
                 ...entry,
                 [field]: value,
@@ -4517,10 +4717,33 @@ function NerisReportFormPage({
     setResourceUnits((previous) =>
       previous.map((entry) =>
         entry.id === unitEntryId
-          ? {
-              ...entry,
-              isCanceledEnroute: !entry.isCanceledEnroute,
-            }
+          ? (() => {
+              const nextCanceledEnroute = !entry.isCanceledEnroute;
+              if (!nextCanceledEnroute) {
+                return {
+                  ...entry,
+                  isCanceledEnroute: false,
+                };
+              }
+
+              const normalizedDispatch = toResourceDateTimeInputValue(
+                entry.dispatchTime,
+                resourceFallbackDate,
+              );
+              const normalizedClear = toResourceDateTimeInputValue(
+                entry.clearTime,
+                resourceFallbackDate,
+              );
+              return {
+                ...entry,
+                isCanceledEnroute: true,
+                dispatchTime: normalizedDispatch,
+                clearTime:
+                  normalizedClear || normalizedDispatch
+                    ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
+                    : "",
+              };
+            })()
           : entry,
       ),
     );
@@ -4529,6 +4752,58 @@ function NerisReportFormPage({
   };
 
   const completeAndCollapseResourceUnit = (unitEntryId: string) => {
+    const unitIndex = resourceUnits.findIndex((entry) => entry.id === unitEntryId);
+    if (unitIndex < 0) {
+      return;
+    }
+    const unitEntry = resourceUnits[unitIndex]!;
+    const { errors, customIssueLabelsByFieldId } = validateResourceUnit(unitEntry, unitIndex);
+    const hasErrors = Object.keys(errors).length > 0;
+    if (hasErrors) {
+      const unitErrorKeyPrefix = `resource_unit_validation_${unitEntryId}_`;
+      setSectionErrors((previous) => {
+        const next: Record<string, string> = {};
+        Object.entries(previous).forEach(([key, value]) => {
+          if (key.startsWith(unitErrorKeyPrefix)) {
+            return;
+          }
+          next[key] = value;
+        });
+        return {
+          ...next,
+          ...errors,
+        };
+      });
+      setValidationIssues(
+        Array.from(
+          new Set(
+            Object.keys(errors).map((fieldId) =>
+              toValidationIssueLabel(fieldId, customIssueLabelsByFieldId),
+            ),
+          ),
+        ),
+      );
+      setValidationModal(null);
+      setSaveMessage("");
+      setErrorMessage(
+        "Unit requirements are incomplete or out of sequence. Fix highlighted fields before completing.",
+      );
+      setResourceUnits((previous) =>
+        previous.map((entry) =>
+          entry.id === unitEntryId
+            ? {
+                ...entry,
+                isExpanded: true,
+                showTimesEditor: true,
+                isComplete: false,
+              }
+            : entry,
+        ),
+      );
+      return;
+    }
+
+    clearResourceUnitValidationErrors(unitEntryId);
     setResourceUnits((previous) =>
       previous.map((entry) =>
         entry.id === unitEntryId
@@ -4711,63 +4986,16 @@ function NerisReportFormPage({
     }
 
     resourceUnits.forEach((unitEntry, unitIndex) => {
-      const unitLabel = unitEntry.unitId.trim() || `Unit ${unitIndex + 1}`;
-      const addResourceError = (
-        field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
-        fieldLabel: string,
-        message: string,
-      ) => {
-        const errorKey = resourceUnitValidationErrorKey(unitEntry.id, field);
-        mergedErrors[errorKey] = message;
-        customIssueLabelsByFieldId[errorKey] = `Resources - ${unitLabel}: ${fieldLabel}`;
-      };
-
-      if (countSelectedPersonnel(unitEntry.personnel) < 1) {
-        addResourceError(
-          "personnel",
-          "Personnel",
-          "At least one personnel member is required for each unit.",
-        );
-      }
-      if (!unitEntry.dispatchTime.trim()) {
-        addResourceError("dispatchTime", "Dispatch time", "Dispatch time is required.");
-      }
-      if (!unitEntry.clearTime.trim()) {
-        addResourceError("clearTime", "Clear time", "Clear time is required.");
-      }
-      if (!unitEntry.isCanceledEnroute) {
-        if (!unitEntry.enrouteTime.trim()) {
-          addResourceError(
-            "enrouteTime",
-            "Enroute time",
-            "Enroute time is required unless dispatched and canceled en route.",
-          );
-        }
-        if (!unitEntry.onSceneTime.trim()) {
-          addResourceError(
-            "onSceneTime",
-            "On Scene time",
-            "On Scene time is required unless dispatched and canceled en route.",
-          );
-        }
-      }
+      const unitValidation = validateResourceUnit(unitEntry, unitIndex);
+      Object.assign(mergedErrors, unitValidation.errors);
+      Object.assign(customIssueLabelsByFieldId, unitValidation.customIssueLabelsByFieldId);
     });
 
     setSectionErrors(mergedErrors);
     const issueLabels = Array.from(
       new Set(
-        Object.keys(mergedErrors).map(
-          (fieldId) => {
-            const customLabel = customIssueLabelsByFieldId[fieldId];
-            if (customLabel) {
-              return customLabel;
-            }
-            const sectionId = nerisFieldSectionById[fieldId];
-            const sectionLabel = sectionId
-              ? nerisSectionLabelById[sectionId]
-              : "UNKNOWN";
-            return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
-          },
+        Object.keys(mergedErrors).map((fieldId) =>
+          toValidationIssueLabel(fieldId, customIssueLabelsByFieldId),
         ),
       ),
     );
@@ -6618,6 +6846,14 @@ function NerisReportFormPage({
                               >
                                 Edit Times
                               </button>
+                              <label className="neris-resource-canceled-enroute-inline">
+                                <input
+                                  type="checkbox"
+                                  checked={unitEntry.isCanceledEnroute}
+                                  onChange={() => toggleResourceCanceledEnroute(unitEntry.id)}
+                                />
+                                <span>Dispatched and canceled en route</span>
+                              </label>
                             </div>
 
                             {unitEntry.showTimesEditor ? (
@@ -6627,6 +6863,7 @@ function NerisReportFormPage({
                                     Dispatch
                                     <input
                                       type="datetime-local"
+                                      step={1}
                                       value={unitEntry.dispatchTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6644,6 +6881,7 @@ function NerisReportFormPage({
                                     Enroute
                                     <input
                                       type="datetime-local"
+                                      step={1}
                                       value={unitEntry.enrouteTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6661,6 +6899,7 @@ function NerisReportFormPage({
                                     On Scene
                                     <input
                                       type="datetime-local"
+                                      step={1}
                                       value={unitEntry.onSceneTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6678,6 +6917,7 @@ function NerisReportFormPage({
                                     Clear
                                     <input
                                       type="datetime-local"
+                                      step={1}
                                       value={unitEntry.clearTime}
                                       onChange={(event) =>
                                         updateResourceUnitField(
@@ -6692,16 +6932,6 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                 </div>
-                                <button
-                                  type="button"
-                                  className={`neris-resource-canceled-enroute-button${
-                                    unitEntry.isCanceledEnroute ? " active" : ""
-                                  }`}
-                                  aria-pressed={unitEntry.isCanceledEnroute}
-                                  onClick={() => toggleResourceCanceledEnroute(unitEntry.id)}
-                                >
-                                  Dispatched and canceled en route
-                                </button>
                               </div>
                             ) : null}
 

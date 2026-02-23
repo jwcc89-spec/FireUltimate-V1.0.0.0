@@ -2462,6 +2462,21 @@ body.resource-personnel-modal-open {
   flex-wrap: wrap;
 }
 
+.neris-resource-canceled-enroute-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.neris-resource-canceled-enroute-inline input {
+  width: 14px;
+  height: 14px;
+  accent-color: #2563eb;
+}
+
 .neris-resource-times-editor {
   border: 1px solid #dbe2ec;
   border-radius: 10px;
@@ -2492,24 +2507,6 @@ body.resource-personnel-modal-open {
   color: #0f172a;
   padding: 0.42rem 0.5rem;
   font-size: 0.78rem;
-}
-
-.neris-resource-canceled-enroute-button {
-  border: 1px solid #bfdbfe;
-  border-radius: 8px;
-  background-color: #eff6ff;
-  color: #1d4ed8;
-  font-size: 0.74rem;
-  font-weight: 700;
-  padding: 0.34rem 0.5rem;
-  justify-self: start;
-  cursor: pointer;
-}
-
-.neris-resource-canceled-enroute-button.active {
-  border-color: #86efac;
-  background-color: #dcfce7;
-  color: #166534;
 }
 
 .neris-resource-field-grid {
