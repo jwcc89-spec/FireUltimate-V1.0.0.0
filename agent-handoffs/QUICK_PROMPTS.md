@@ -48,6 +48,7 @@ After I answer:
    - agent-handoffs/branches/<branch-slug>/sessions/
    - create ACTIVE_CONTEXT.md from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md
    - create first session note from agent-handoffs/HANDOFF_TEMPLATE.md
+   - create COPY_PASTE_START_PROMPT.md from COPY_PASTE_START_PROMPT_TEMPLATE.md
 5) Read these files first:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
