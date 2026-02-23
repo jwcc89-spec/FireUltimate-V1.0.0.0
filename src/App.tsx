@@ -3482,6 +3482,13 @@ function NerisReportFormPage({
 }: NerisReportFormPageProps) {
   const navigate = useNavigate();
   const detail = getIncidentCallDetail(callNumber);
+  const detailForSideEffects = detail ?? {
+    callNumber,
+    incidentType: "",
+    address: "",
+    receivedAt: "",
+    assignedUnits: "",
+  };
   const persistedDraft = useMemo(() => readNerisDraft(callNumber), [callNumber]);
   const defaultFormValues = useMemo(
     () =>
@@ -4037,24 +4044,6 @@ function NerisReportFormPage({
       locationCountryOptionValues,
     ],
   );
-
-  if (!detail) {
-    return (
-      <section className="page-section">
-        <header className="page-header">
-          <div>
-            <h1>NERIS report not found</h1>
-            <p>No matching incident exists for report ID {callNumber}.</p>
-          </div>
-          <div className="header-actions">
-            <NavLink className="secondary-button button-link" to="/reporting/neris">
-              Back to NERIS Queue
-            </NavLink>
-          </div>
-        </header>
-      </section>
-    );
-  }
 
   const updateFieldValue = (fieldId: string, value: string) => {
     const sanitizedValue =
@@ -4697,8 +4686,8 @@ function NerisReportFormPage({
     setSaveMessage(
       messageOverride ??
         (mode === "auto"
-          ? `Draft auto-saved for ${detail.callNumber} at ${savedAt}.`
-          : `Draft saved for ${detail.callNumber} at ${savedAt}.`),
+          ? `Draft auto-saved for ${detailForSideEffects.callNumber} at ${savedAt}.`
+          : `Draft saved for ${detailForSideEffects.callNumber} at ${savedAt}.`),
     );
   };
 
@@ -4854,16 +4843,16 @@ function NerisReportFormPage({
     setIsExporting(true);
 
     const payload = {
-      callNumber: detail.callNumber,
+      callNumber: detailForSideEffects.callNumber,
       reportStatus,
       exportedAt: new Date().toISOString(),
       source: "Fire Ultimate Prototype",
       formValues,
       incidentSnapshot: {
-        incidentType: detail.incidentType,
-        address: detail.address,
-        receivedAt: detail.receivedAt,
-        assignedUnits: detail.assignedUnits,
+        incidentType: detailForSideEffects.incidentType,
+        address: detailForSideEffects.address,
+        receivedAt: detailForSideEffects.receivedAt,
+        assignedUnits: detailForSideEffects.assignedUnits,
       },
       integration: {
         entityId: vendorCode,
@@ -4984,8 +4973,8 @@ function NerisReportFormPage({
           : "";
       setSaveMessage(
         nerisId
-          ? `Report export accepted for ${detail.callNumber} at ${exportedAt}. NERIS ID: ${nerisId}`
-          : `Report export submitted for ${detail.callNumber} at ${exportedAt}.`,
+          ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportedAt}. NERIS ID: ${nerisId}`
+          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportedAt}.`,
       );
     } catch (error) {
       setSaveMessage("");
@@ -5625,6 +5614,24 @@ function NerisReportFormPage({
       </div>
     );
   };
+
+  if (!detail) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>NERIS report not found</h1>
+            <p>No matching incident exists for report ID {callNumber}.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   return (
     <section className="page-section">
