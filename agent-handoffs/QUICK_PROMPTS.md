@@ -39,31 +39,33 @@ MANDATORY FIRST QUESTION:
 "Which branch am I working on?"
 
 After I answer:
-1) Stay on that branch unless I explicitly tell you to switch.
-2) Compute branch slug by replacing "/" with "--".
+1) Name Chat <branch-slug>
+2) Stay on that branch unless I explicitly tell you to switch.
+3) Compute branch slug by replacing "/" with "--".
    - Example: submenu/neris-ui -> submenu--neris-ui
-3) If branch handoff folder does not exist, create it:
+4) If branch handoff folder does not exist, create it:
    - agent-handoffs/branches/<branch-slug>/
    - agent-handoffs/branches/<branch-slug>/sessions/
    - create ACTIVE_CONTEXT.md from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md
    - create first session note from agent-handoffs/HANDOFF_TEMPLATE.md
-4) Read these files first:
+   - create COPY_PASTE_START_PROMPT.md from COPY_PASTE_START_PROMPT_TEMPLATE.md
+5) Read these files first:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
    - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
-5) Before coding, summarize:
+6) Before coding, summarize:
    - current branch + latest commit
    - what previous agent completed
    - current blocker/status
    - exact next implementation step
-6) Follow beginner-friendly communication:
+7) Follow beginner-friendly communication:
    - explain each command in plain language
    - provide step-by-step test instructions
    - report expected vs actual output
-7) After meaningful changes:
+8) After meaningful changes:
    - update this session note
    - keep branch ACTIVE_CONTEXT.md current
-8) Before stopping:
+9) Before stopping:
    - update branch ACTIVE_CONTEXT.md with latest truth
    - add/finalize a session note
    - commit + push
