@@ -1,61 +1,28 @@
-# Quick Prompts for New/Updated Agents
+# Quick Prompt Library (Branch-Scoped)
 
-Use these copy/paste prompts to keep branch work and handoff notes isolated.
-
----
-
-## 1) Start or resume work on a branch (recommended)
-
-```md
-Handoff + work request.
-
-1) Confirm and stay on branch: <branch-name>
-2) Compute branch slug by replacing "/" with "--"
-   - Example: submenu/neris-ui -> submenu--neris-ui
-3) Read:
-   - cursoragent-context.md
-   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-   - latest file in agent-handoffs/branches/<branch-slug>/sessions/
-4) Before edits, summarize:
-   - current branch + latest commit
-   - current blocker/status
-   - exact next implementation step
-5) Implement requested changes only on <branch-name>
-6) Update handoff docs for this branch only:
-   - add a new session note in agent-handoffs/branches/<branch-slug>/sessions/
-   - refresh agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-7) Commit + push on <branch-name>
-8) Report back with:
-   - commit hash
-   - files changed
-   - one-paragraph summary
-```
+Use these prompts as copy/paste starters for new and continuing agents.
 
 ---
 
-## 2) Handoff sync only (no feature work)
+## 1) Legacy reference prompt (keep for reference)
 
-```md
-Handoff sync request only (no feature work).
+```text
+Handoff sync request only (legacy/shared-path reference).
 
-1) Stay on branch: <branch-name>
-2) Compute branch slug: <branch-slug>
-3) Read:
+1) Stay on branch: neris/phase-1
+2) Read:
    - cursoragent-context.md
-   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-   - latest file in agent-handoffs/branches/<branch-slug>/sessions/
-4) Create a new session note in:
-   - agent-handoffs/branches/<branch-slug>/sessions/
-   using:
+   - agent-handoffs/ACTIVE_CONTEXT.md
+   - latest files in agent-handoffs/sessions/
+3) Create a new session note in agent-handoffs/sessions/ using:
    - agent-handoffs/HANDOFF_TEMPLATE.md
-5) In that note summarize:
+4) In that note summarize:
    - current branch + latest commit
    - current blocker/status
    - what should happen next
-6) Update:
-   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-7) Commit + push on <branch-name>
-8) Report:
+5) Update agent-handoffs/ACTIVE_CONTEXT.md.
+6) Commit + push.
+7) Report:
    - commit hash
    - files updated
    - one-paragraph summary
@@ -63,23 +30,103 @@ Handoff sync request only (no feature work).
 
 ---
 
-## 3) Bugfix-only pass on current branch
+## 2) New agent bootstrap prompt (primary copy/paste)
 
-```md
-Bugfix-only pass.
+```text
+Before any feature work, do this in order.
 
-1) Stay on branch: <branch-name>
-2) Read branch context:
+MANDATORY FIRST QUESTION:
+"Which branch am I working on?"
+
+After I answer:
+1) Stay on that branch unless I explicitly tell you to switch.
+2) Compute branch slug by replacing "/" with "--".
+   - Example: submenu/neris-ui -> submenu--neris-ui
+3) If branch handoff folder does not exist, create it:
+   - agent-handoffs/branches/<branch-slug>/
+   - agent-handoffs/branches/<branch-slug>/sessions/
+   - create ACTIVE_CONTEXT.md from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md
+   - create first session note from agent-handoffs/HANDOFF_TEMPLATE.md
+4) Read these files first:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-3) Fix only the reported issue(s), no unrelated refactors.
-4) Run build/tests relevant to the change.
-5) Update branch handoff notes (new session note + ACTIVE_CONTEXT).
-6) Commit + push on <branch-name>.
-7) Return:
-   - root cause
-   - fix summary
-   - verification steps and results
+   - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
+5) Before coding, summarize:
+   - current branch + latest commit
+   - what previous agent completed
+   - current blocker/status
+   - exact next implementation step
+6) Follow beginner-friendly communication:
+   - explain each command in plain language
+   - provide step-by-step test instructions
+   - report expected vs actual output
+7) After meaningful changes:
+   - update this session note
+   - keep branch ACTIVE_CONTEXT.md current
+8) Before stopping:
+   - update branch ACTIVE_CONTEXT.md with latest truth
+   - add/finalize a session note
+   - commit + push
+   - report branch, commit hash, changed files, and next-step checklist
+```
+
+---
+
+## 3) Cloud continuation prompt after Cursor work (primary copy/paste)
+
+```text
+Continuation mode (Cloud agent picking up where Cursor agent left off):
+
+MANDATORY FIRST QUESTION:
+"Which branch am I working on?"
+
+After I answer:
+1) Stay on that branch.
+2) Compute branch slug by replacing "/" with "--".
+3) Sync latest code for that branch (fetch/pull).
+4) Read continuity docs:
+   - cursoragent-context.md
+   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
+   - newest notes in agent-handoffs/branches/<branch-slug>/sessions/
+5) Detect new work since last handoff:
+   - identify latest commits
+   - summarize what changed and what is still pending
+6) Continue from current blocker only (do not restart solved work).
+7) Validate changes (build/test/lint as appropriate), then report clearly.
+8) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
+9) Before ending:
+   - update session note + branch ACTIVE_CONTEXT.md
+   - commit + push
+   - report branch + commit hash + next-step checklist
+```
+
+---
+
+## 4) New branch bootstrap prompt (first agent on brand-new branch)
+
+```text
+New branch handoff bootstrap (run once per new branch).
+
+MANDATORY FIRST QUESTION:
+"Which branch am I working on?"
+
+After I answer:
+1) Stay on that branch.
+2) Compute branch slug by replacing "/" with "--".
+3) Create branch handoff paths:
+   - agent-handoffs/branches/<branch-slug>/
+   - agent-handoffs/branches/<branch-slug>/sessions/
+4) Create:
+   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md (from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md)
+   - agent-handoffs/branches/<branch-slug>/sessions/<timestamp>-<agent>-bootstrap.md (from agent-handoffs/HANDOFF_TEMPLATE.md)
+5) Populate ACTIVE_CONTEXT.md with:
+   - branch name
+   - latest commit
+   - current focus
+   - blocker/status
+   - exact next steps
+6) Commit + push these branch handoff files.
+7) Then continue normal implementation flow.
 ```
 
 ---
@@ -88,3 +135,5 @@ Bugfix-only pass.
 
 - Branch notes are intentionally isolated to reduce cross-branch confusion.
 - Do not update another branch's handoff folder unless explicitly requested.
+- If you prefer hardcoded prompts per branch, duplicate prompt #2/#3 into:
+  - `agent-handoffs/branches/<branch-slug>/QUICK_PROMPTS.md`
