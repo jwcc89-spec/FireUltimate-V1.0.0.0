@@ -656,17 +656,87 @@ app.get("/api/neris/debug/entities", async (request, response) => {
   }
 });
 
-app.post("/api/neris/export", async (request, response) => {
-  const config = getProxyConfig();
+function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
   const integration =
-    request.body?.integration && typeof request.body.integration === "object"
-      ? request.body.integration
+    requestBody?.integration && typeof requestBody.integration === "object"
+      ? requestBody.integration
       : {};
   const headerEntityId =
-    trimValue(request.headers["x-neris-entity-id"]) ||
-    trimValue(request.headers["x-neris-vendor-code"]);
+    trimValue(requestHeaders["x-neris-entity-id"]) ||
+    trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  const entityId = bodyEntityId || headerEntityId || config.defaultEntityId;
+  return bodyEntityId || headerEntityId || config.defaultEntityId;
+}
+
+app.post("/api/neris/validate", async (request, response) => {
+  const config = getProxyConfig();
+  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
+
+  if (!entityId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Missing NERIS entity ID. Set Vendor/Department code in Customization OR set NERIS_ENTITY_ID in .env.server.",
+    });
+    return;
+  }
+
+  try {
+    const payload = buildIncidentPayload(request.body, config, entityId);
+    const accessToken = await getAccessToken(config);
+
+    const nerisResponse = await fetch(
+      `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}/validate`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      },
+    );
+
+    const nerisResponseBody = await parseResponseBody(nerisResponse);
+    let troubleshooting = null;
+    if (nerisResponse.status === 403) {
+      const entitiesResult = await fetchAccessibleEntities(config, accessToken);
+      const submittedDepartmentNerisId =
+        payload?.base && typeof payload.base === "object"
+          ? trimValue(payload.base.department_neris_id)
+          : "";
+      const entityIsAccessible = entitiesResult.entityIds.includes(entityId);
+      troubleshooting = {
+        message: entityIsAccessible
+          ? "Token can list this entity, but validate permission is denied. Confirm account role/enrollment allows validate/create actions for this entity."
+          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+        accessibleEntityIds: entitiesResult.entityIds,
+        entitiesLookupStatus: entitiesResult.status,
+        submittedDepartmentNerisId,
+        entityIsAccessible,
+      };
+    }
+
+    response.status(nerisResponse.status).json({
+      ok: nerisResponse.ok,
+      status: nerisResponse.status,
+      statusText: nerisResponse.statusText,
+      neris: nerisResponseBody,
+      submittedEntityId: entityId,
+      submittedPayload: payload,
+      troubleshooting,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected proxy validate error.",
+    });
+  }
+});
+
+app.post("/api/neris/export", async (request, response) => {
+  const config = getProxyConfig();
+  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
 
   if (!entityId) {
     response.status(400).json({

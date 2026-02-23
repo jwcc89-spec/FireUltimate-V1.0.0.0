@@ -2843,6 +2843,27 @@ body.resource-personnel-modal-open {
   font-size: 0.84rem;
 }
 
+.validation-modal-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.validation-modal-form label {
+  color: #334155;
+  font-size: 0.79rem;
+  font-weight: 700;
+}
+
+.validation-modal-form input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.46rem 0.55rem;
+  font-size: 0.83rem;
+}
+
 .validation-modal ul {
   margin: 0;
   padding-left: 1rem;
