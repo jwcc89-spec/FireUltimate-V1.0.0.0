@@ -1,5 +1,6 @@
 import {
   type CSSProperties,
+  type ChangeEvent,
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
@@ -15,11 +16,14 @@ import {
   LogOut,
   Menu,
   Palette,
+  Pencil,
   Search,
   Settings,
   Shield,
   ShieldCheck,
+  Trash2,
   UserRound,
+  Users,
 } from "lucide-react";
 import {
   BrowserRouter,
@@ -101,6 +105,7 @@ interface DashboardPageProps {
 
 interface RouteResolverProps {
   role: UserRole;
+  username: string;
   workflowStates: string[];
   onSaveWorkflowStates: (nextStates: string[]) => void;
   incidentDisplaySettings: IncidentDisplaySettings;
@@ -128,6 +133,8 @@ interface IncidentsListPageProps {
 
 interface NerisReportFormPageProps {
   callNumber: string;
+  role: UserRole;
+  username: string;
   nerisExportSettings: NerisExportSettings;
 }
 
@@ -187,6 +194,28 @@ interface NerisExportSettings {
   apiVersionHeaderValue: string;
 }
 
+interface NerisExportRecord {
+  id: string;
+  callNumber: string;
+  incidentType: string;
+  address: string;
+  exportedAtIso: string;
+  exportedAtLabel: string;
+  attemptStatus: "success" | "failed";
+  httpStatus: number;
+  httpStatusText: string;
+  statusLabel: string;
+  reportStatusAtExport: string;
+  validatorName: string;
+  reportWriterName: string;
+  submittedEntityId: string;
+  submittedDepartmentNerisId: string;
+  nerisId: string;
+  responseSummary: string;
+  responseDetail: string;
+  submittedPayloadPreview: string;
+}
+
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
@@ -195,6 +224,7 @@ const SUBMENU_VISIBILITY_STORAGE_KEY = "fire-ultimate-submenu-visibility";
 const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
 const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
+const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -211,6 +241,9 @@ const LEGACY_NERIS_DRAFT_STORAGE_KEYS = [
 ] as const;
 const LEGACY_NERIS_EXPORT_SETTINGS_STORAGE_KEYS = [
   "stationboss-mimic-neris-export-settings",
+] as const;
+const LEGACY_NERIS_EXPORT_HISTORY_STORAGE_KEYS = [
+  "stationboss-mimic-neris-export-history",
 ] as const;
 
 function readStorageWithMigration(
@@ -301,6 +334,63 @@ const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-089": "Draft",
   "D-260218-082": "Approved",
 };
+const SCHEDULE_STAFFING_BY_UNIT_ID: Record<string, string> = {};
+const RESOURCE_PERSONNEL_OPTIONS: NerisValueOption[] = [
+  { value: "ALEX_JOHNSON", label: "Alex Johnson" },
+  { value: "BROOKE_MILLER", label: "Brooke Miller" },
+  { value: "CAMERON_DIAZ", label: "Cameron Diaz" },
+  { value: "DANIEL_REED", label: "Daniel Reed" },
+  { value: "EMERY_PARK", label: "Emery Park" },
+  { value: "FRANKIE_MOORE", label: "Frankie Moore" },
+  { value: "GRAYSON_LEE", label: "Grayson Lee" },
+  { value: "HARPER_YOUNG", label: "Harper Young" },
+];
+const RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS: NerisValueOption[] = [
+  { value: "YES", label: "Yes" },
+  { value: "NO", label: "No" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
+const RISK_REDUCTION_YES_NO_OPTIONS: NerisValueOption[] = [
+  { value: "YES", label: "Yes" },
+  { value: "NO", label: "No" },
+];
+const RISK_REDUCTION_SMOKE_ALARM_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "BED_SHAKER", label: "Bed Shaker" },
+  { value: "COMBINATION_SMOKE_CO", label: "Combination (smoke / CO)" },
+  { value: "HARD_OF_HEARING_STROBE", label: "Hard of hearing with strobe" },
+  { value: "HARDWIRED", label: "Hardwired" },
+  { value: "INTERCONNECTED", label: "Interconnected" },
+  { value: "LONG_LIFE_BATTERY_POWERED", label: "Long Life Battery Powered" },
+  { value: "REPLACEABLE_BATTERY_POWERED", label: "Replaceable Battery Powered" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
+const RISK_REDUCTION_FIRE_ALARM_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "AUTOMATIC", label: "Automatic" },
+  { value: "MANUAL", label: "Manual" },
+  { value: "MANUAL_AND_AUTOMATIC", label: "Manual and Automatic" },
+];
+const RISK_REDUCTION_OTHER_ALARM_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "CARBON_MONOXIDE", label: "Carbon Monoxide" },
+  { value: "HEAT_DETECTOR", label: "Heat Detector" },
+  { value: "NATURAL_GAS", label: "Natural Gas" },
+  { value: "OTHER_CHEMICAL_DETECTOR", label: "Other Chemical Detector" },
+];
+const RISK_REDUCTION_COOKING_SUPPRESSION_TYPE_OPTIONS: NerisValueOption[] = [
+  { value: "COMMERCIAL_HOOD_SUPPRESSION", label: "Commercial Hood Suppression" },
+  { value: "ELECTRIC_POWER_CUTOFF_DEVICE", label: "Electric Power Cutoff Device" },
+  {
+    value: "RESIDENTIAL_HOOD_MOUNTED_SUPPRESSION_DEVICE",
+    label: "Residential Hood Mounted Suppression Device",
+  },
+  { value: "TEMPERATURE_LIMITING_STOVE_BURNER", label: "Temperature limiting Stove Burner" },
+  { value: "OTHER", label: "Other" },
+];
+const RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS: NerisValueOption[] = [
+  { value: "FULL", label: "Full" },
+  { value: "PARTIAL", label: "Partial" },
+  { value: "UNKNOWN", label: "Unknown" },
+];
+const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -363,6 +453,297 @@ function formatNerisEnumSegment(value: string): string {
     .toLowerCase()
     .replace(/_/g, " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+interface ParsedImportedLocationValues {
+  locationState: string;
+  locationCountry: string;
+  locationPostalCode: string;
+  locationCounty: string;
+}
+
+interface ResourceUnitEntry {
+  id: string;
+  unitId: string;
+  unitType: string;
+  staffing: string;
+  responseMode: string;
+  dispatchTime: string;
+  enrouteTime: string;
+  onSceneTime: string;
+  clearTime: string;
+  isCanceledEnroute: boolean;
+  isComplete: boolean;
+  isExpanded: boolean;
+  showTimesEditor: boolean;
+  personnel: string;
+  showPersonnelSelector: boolean;
+  reportWriter: string;
+  unitNarrative: string;
+}
+
+interface EmergingElectrocutionItem {
+  id: string;
+  electricalHazardType: string;
+  suppressionMethods: string;
+}
+
+interface EmergingPowerGenerationItem {
+  id: string;
+  photovoltaicHazardType: string;
+  pvSourceTarget: string;
+  suppressionMethods: string;
+}
+
+interface FireSuppressionSystemEntry {
+  id: string;
+  suppressionType: string;
+  suppressionCoverage: string;
+}
+
+function parseImportedLocationValues(
+  address: string,
+  stateOptionValues: Set<string>,
+  countryOptionValues: Set<string>,
+): ParsedImportedLocationValues {
+  const trimmedAddress = address.trim();
+  if (!trimmedAddress || trimmedAddress === "No imported address available.") {
+    return {
+      locationState: "",
+      locationCountry: countryOptionValues.has("US") ? "US" : "",
+      locationPostalCode: "",
+      locationCounty: "",
+    };
+  }
+
+  const segments = trimmedAddress
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  const postalMatch = trimmedAddress.match(/\b\d{5}(?:-\d{4})?\b/);
+  const locationPostalCode = postalMatch?.[0] ?? "";
+  const stateCandidates = Array.from(trimmedAddress.toUpperCase().matchAll(/\b[A-Z]{2}\b/g))
+    .map((match) => match[0] ?? "")
+    .filter((candidate) => candidate.length > 0);
+  const locationState =
+    [...stateCandidates].reverse().find((candidate) => stateOptionValues.has(candidate)) ?? "";
+
+  let locationCountry = countryOptionValues.has("US") ? "US" : "";
+  const lastSegment = segments[segments.length - 1]?.toUpperCase() ?? "";
+  if (lastSegment === "USA" || lastSegment === "UNITED STATES") {
+    locationCountry = countryOptionValues.has("US") ? "US" : "";
+  } else {
+    const countryCandidates = Array.from(lastSegment.matchAll(/\b[A-Z]{2}\b/g))
+      .map((match) => match[0] ?? "")
+      .filter((candidate) => candidate.length > 0);
+    const matchedCountry = countryCandidates.find((candidate) =>
+      countryOptionValues.has(candidate),
+    );
+    if (matchedCountry) {
+      locationCountry = matchedCountry;
+    }
+  }
+
+  let locationCounty = segments.find((segment) => /county/i.test(segment)) ?? "";
+  if (!locationCounty && segments.length >= 2) {
+    locationCounty = segments[1] ?? "";
+  }
+  locationCounty = locationCounty
+    .replace(/\b\d{5}(?:-\d{4})?\b/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+
+  return {
+    locationState,
+    locationCountry,
+    locationPostalCode,
+    locationCounty,
+  };
+}
+
+function parseAssignedUnits(value: string): string[] {
+  return value
+    .split(",")
+    .map((unit) => unit.trim())
+    .filter((unit) => unit.length > 0);
+}
+
+function inferResourceUnitTypeValue(
+  unitId: string,
+  sourceUnitType: string | undefined,
+  unitTypeOptions: NerisValueOption[],
+): string {
+  const optionValues = new Set(unitTypeOptions.map((option) => option.value));
+  const normalizedSourceType = sourceUnitType?.trim().toLowerCase() ?? "";
+  const normalizedUnitId = unitId.trim().toLowerCase();
+  const preferred: string[] = [];
+
+  if (normalizedSourceType.includes("engine")) {
+    preferred.push("ENGINE_STRUCT");
+  }
+  if (
+    normalizedSourceType.includes("ladder") ||
+    normalizedSourceType.includes("truck")
+  ) {
+    preferred.push("TRUCK");
+  }
+  if (normalizedSourceType.includes("rescue")) {
+    preferred.push("RESCUE");
+  }
+  if (
+    normalizedSourceType.includes("medic") ||
+    normalizedSourceType.includes("ambulance")
+  ) {
+    preferred.push("ALS_AMB");
+  }
+  if (normalizedSourceType.includes("chief") || normalizedSourceType.includes("command")) {
+    preferred.push("CHIEF_STAFF_COMMAND");
+  }
+
+  if (normalizedUnitId.startsWith("engine ") || normalizedUnitId.startsWith("e")) {
+    preferred.push("ENGINE_STRUCT");
+  }
+  if (normalizedUnitId.startsWith("ladder ") || normalizedUnitId.startsWith("truck ")) {
+    preferred.push("TRUCK");
+  }
+  if (normalizedUnitId.startsWith("rescue ") || normalizedUnitId.startsWith("r")) {
+    preferred.push("RESCUE");
+  }
+  if (normalizedUnitId.startsWith("medic ") || normalizedUnitId.startsWith("m")) {
+    preferred.push("ALS_AMB");
+  }
+  if (normalizedUnitId.startsWith("chief ")) {
+    preferred.push("CHIEF_STAFF_COMMAND");
+  }
+
+  const matchedPreferred = preferred.find((value) => optionValues.has(value));
+  if (matchedPreferred) {
+    return matchedPreferred;
+  }
+
+  const normalizedSourceToken = normalizedSourceType.replace(/\s+/g, "_").toUpperCase();
+  if (normalizedSourceToken && optionValues.has(normalizedSourceToken)) {
+    return normalizedSourceToken;
+  }
+
+  return "";
+}
+
+function toResourceSummaryTime(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "--";
+  }
+  const normalized = trimmed.replace(" ", "T");
+  const datetimeMatch = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/,
+  );
+  if (datetimeMatch) {
+    const [, , month, day, time, seconds] = datetimeMatch;
+    return `${month}/${day} ${time}:${seconds ?? "00"}`;
+  }
+  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (timeOnlyMatch) {
+    const [, time, seconds] = timeOnlyMatch;
+    return `${time ?? "--"}:${seconds ?? "00"}`;
+  }
+  return trimmed;
+}
+
+function toResourceDateTimeInputValue(value: string, fallbackDate: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return "";
+  }
+  const normalized = trimmed.replace(" ", "T");
+  const datetimeMatch = normalized.match(
+    /^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?$/,
+  );
+  if (datetimeMatch) {
+    return `${datetimeMatch[1]}T${datetimeMatch[2]}:${datetimeMatch[3] ?? "00"}`;
+  }
+  const timeOnlyMatch = trimmed.match(/^(\d{2}:\d{2})(?::(\d{2}))?$/);
+  if (timeOnlyMatch && /^\d{4}-\d{2}-\d{2}$/.test(fallbackDate)) {
+    return `${fallbackDate}T${timeOnlyMatch[1]}:${timeOnlyMatch[2] ?? "00"}`;
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.valueOf())) {
+    return "";
+  }
+  const year = String(parsed.getFullYear());
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
+function toResourceDateTimeTimestamp(value: string, fallbackDate: string): number | null {
+  const normalized = toResourceDateTimeInputValue(value, fallbackDate);
+  if (!normalized) {
+    return null;
+  }
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.valueOf())) {
+    return null;
+  }
+  return parsed.valueOf();
+}
+
+function addMinutesToResourceDateTime(value: string, minutesToAdd: number): string {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.valueOf())) {
+    return "";
+  }
+  parsed.setMinutes(parsed.getMinutes() + minutesToAdd);
+  const year = String(parsed.getFullYear());
+  const month = String(parsed.getMonth() + 1).padStart(2, "0");
+  const day = String(parsed.getDate()).padStart(2, "0");
+  const hours = String(parsed.getHours()).padStart(2, "0");
+  const minutes = String(parsed.getMinutes()).padStart(2, "0");
+  const seconds = String(parsed.getSeconds()).padStart(2, "0");
+  return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
+}
+
+function resourceUnitValidationErrorKey(
+  unitEntryId: string,
+  field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+): string {
+  return `resource_unit_validation_${unitEntryId}_${field}`;
+}
+
+function togglePillValue(currentValue: string, nextValue: string): string {
+  return currentValue === nextValue ? "" : nextValue;
+}
+
+function countSelectedPersonnel(personnelCsv: string): number {
+  return personnelCsv
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0).length;
+}
+
+function getStaffingValueForUnit(unitId: string, personnelCsv: string): string {
+  const scheduledStaffing = SCHEDULE_STAFFING_BY_UNIT_ID[unitId]?.trim() ?? "";
+  if (scheduledStaffing.length > 0) {
+    return scheduledStaffing;
+  }
+  const selectedPersonnelCount = countSelectedPersonnel(personnelCsv);
+  return selectedPersonnelCount > 0 ? String(selectedPersonnelCount) : "";
+}
+
+let emergingHazardItemCounter = 0;
+let riskReductionSuppressionCounter = 0;
+
+function nextEmergingHazardItemId(prefix: string): string {
+  emergingHazardItemCounter += 1;
+  return `${prefix}-${emergingHazardItemCounter}`;
+}
+
+function nextRiskReductionSuppressionId(): string {
+  riskReductionSuppressionCounter += 1;
+  return `risk-suppression-${riskReductionSuppressionCounter}`;
 }
 
 function dedupeAndCleanStrings(values: string[]): string[] {
@@ -839,6 +1220,121 @@ function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
   const store = readNerisDraftStore();
   store[callNumber] = draft;
   writeNerisDraftStore(store);
+}
+
+function readNerisExportHistory(): NerisExportRecord[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const rawValue = readStorageWithMigration(
+    NERIS_EXPORT_HISTORY_STORAGE_KEY,
+    LEGACY_NERIS_EXPORT_HISTORY_STORAGE_KEYS,
+  );
+  if (!rawValue) {
+    return [];
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as unknown;
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((entry): NerisExportRecord | null => {
+        if (!entry || typeof entry !== "object") {
+          return null;
+        }
+        const candidate = entry as Record<string, unknown>;
+        const id = typeof candidate.id === "string" ? candidate.id : "";
+        const callNumber = typeof candidate.callNumber === "string" ? candidate.callNumber : "";
+        const incidentType =
+          typeof candidate.incidentType === "string" ? candidate.incidentType : "";
+        const address = typeof candidate.address === "string" ? candidate.address : "";
+        const exportedAtIso =
+          typeof candidate.exportedAtIso === "string" ? candidate.exportedAtIso : "";
+        const exportedAtLabel =
+          typeof candidate.exportedAtLabel === "string" ? candidate.exportedAtLabel : "";
+        const attemptStatus =
+          candidate.attemptStatus === "failed" ? "failed" : "success";
+        const httpStatus =
+          typeof candidate.httpStatus === "number" && Number.isFinite(candidate.httpStatus)
+            ? candidate.httpStatus
+            : attemptStatus === "failed"
+              ? 0
+              : 200;
+        const httpStatusText =
+          typeof candidate.httpStatusText === "string" ? candidate.httpStatusText : "";
+        const statusLabel = typeof candidate.statusLabel === "string" ? candidate.statusLabel : "";
+        const reportStatusAtExport =
+          typeof candidate.reportStatusAtExport === "string"
+            ? candidate.reportStatusAtExport
+            : "";
+        const validatorName =
+          typeof candidate.validatorName === "string" ? candidate.validatorName : "";
+        const reportWriterName =
+          typeof candidate.reportWriterName === "string" ? candidate.reportWriterName : "";
+        const submittedEntityId =
+          typeof candidate.submittedEntityId === "string" ? candidate.submittedEntityId : "";
+        const submittedDepartmentNerisId =
+          typeof candidate.submittedDepartmentNerisId === "string"
+            ? candidate.submittedDepartmentNerisId
+            : "";
+        const nerisId = typeof candidate.nerisId === "string" ? candidate.nerisId : "";
+        const responseSummary =
+          typeof candidate.responseSummary === "string" ? candidate.responseSummary : "";
+        const responseDetail =
+          typeof candidate.responseDetail === "string" ? candidate.responseDetail : "";
+        const submittedPayloadPreview =
+          typeof candidate.submittedPayloadPreview === "string"
+            ? candidate.submittedPayloadPreview
+            : "";
+        if (!id || !callNumber || !exportedAtIso) {
+          return null;
+        }
+        return {
+          id,
+          callNumber,
+          incidentType,
+          address,
+          exportedAtIso,
+          exportedAtLabel,
+          attemptStatus,
+          httpStatus,
+          httpStatusText,
+          statusLabel,
+          reportStatusAtExport,
+          validatorName,
+          reportWriterName,
+          submittedEntityId,
+          submittedDepartmentNerisId,
+          nerisId,
+          responseSummary,
+          responseDetail,
+          submittedPayloadPreview,
+        };
+      })
+      .filter((entry): entry is NerisExportRecord => Boolean(entry))
+      .sort((left, right) => right.exportedAtIso.localeCompare(left.exportedAtIso));
+  } catch {
+    return [];
+  }
+}
+
+function writeNerisExportHistory(history: NerisExportRecord[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  writeStorageValue(
+    NERIS_EXPORT_HISTORY_STORAGE_KEY,
+    LEGACY_NERIS_EXPORT_HISTORY_STORAGE_KEYS,
+    JSON.stringify(history),
+  );
+}
+
+function appendNerisExportRecord(record: NerisExportRecord): void {
+  const current = readNerisExportHistory();
+  current.unshift(record);
+  writeNerisExportHistory(current);
 }
 
 function getCallFieldValue(
@@ -2142,6 +2638,11 @@ function NerisReportingPage() {
             support admin-required fields, review, and export/API submission.
           </p>
         </div>
+        <div className="header-actions">
+          <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
+            View Exports
+          </NavLink>
+        </div>
       </header>
 
       <section className="panel-grid">
@@ -2218,6 +2719,283 @@ function NerisReportingPage() {
             This queue mirrors the Incidents module layout while routing directly into
             incident-specific NERIS forms.
           </p>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+interface NerisExportDetailsPageProps {
+  callNumber: string;
+}
+
+function NerisExportsPage() {
+  const navigate = useNavigate();
+  const latestExportByCall = useMemo(() => {
+    const map = new Map<string, NerisExportRecord>();
+    readNerisExportHistory().forEach((entry) => {
+      if (!map.has(entry.callNumber)) {
+        map.set(entry.callNumber, entry);
+      }
+    });
+    return map;
+  }, []);
+
+  const openExportDetails = (callNumber: string) => {
+    navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
+  };
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>Reporting | NERIS | Exports</h1>
+          <p>
+            Export visibility queue. Click any incident row to open validator details,
+            report writer details, and recent export IDs.
+          </p>
+        </div>
+        <div className="header-actions">
+          <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
+            Back to NERIS Queue
+          </NavLink>
+        </div>
+      </header>
+
+      <section className="panel-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Incident Export Queue</h2>
+          </div>
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Incident #</th>
+                  <th>Incident Type</th>
+                  <th>Report Status</th>
+                  <th>Last Attempt Result</th>
+                  <th>Last Export</th>
+                  <th>Validator</th>
+                  <th>Report Writer</th>
+                  <th>NERIS ID</th>
+                </tr>
+              </thead>
+              <tbody>
+                {INCIDENT_CALLS.map((call) => {
+                  const latestExport = latestExportByCall.get(call.callNumber);
+                  return (
+                    <tr
+                      key={`neris-export-row-${call.callNumber}`}
+                      className="clickable-row"
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => openExportDetails(call.callNumber)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter" || event.key === " ") {
+                          event.preventDefault();
+                          openExportDetails(call.callNumber);
+                        }
+                      }}
+                    >
+                      <td>
+                        <strong className="call-number-text">{call.callNumber}</strong>
+                      </td>
+                      <td>{call.incidentType}</td>
+                      <td>
+                        <span className={toToneClass(toneFromNerisStatus(getNerisReportStatus(call.callNumber)))}>
+                          {getNerisReportStatus(call.callNumber)}
+                        </span>
+                      </td>
+                      <td>
+                        {latestExport
+                          ? `${latestExport.httpStatus} ${latestExport.httpStatusText}`.trim()
+                          : "No attempts"}
+                      </td>
+                      <td>{latestExport?.exportedAtLabel ?? "Not exported"}</td>
+                      <td>{latestExport?.validatorName || "--"}</td>
+                      <td>{latestExport?.reportWriterName || "--"}</td>
+                      <td>{latestExport?.nerisId || "--"}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </article>
+      </section>
+    </section>
+  );
+}
+
+function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
+  const navigate = useNavigate();
+  const incident = getIncidentCallDetail(callNumber);
+  const exportHistory = useMemo(
+    () => readNerisExportHistory().filter((entry) => entry.callNumber === callNumber),
+    [callNumber],
+  );
+
+  if (!incident) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>NERIS export details not found</h1>
+            <p>No matching incident exists for report ID {callNumber}.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link" to="/reporting/neris/exports">
+              Back to View Exports
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
+
+  const latestExport = exportHistory[0] ?? null;
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>Export Details | {incident.callNumber}</h1>
+          <p>
+            <strong>{incident.incidentType}</strong> at {incident.address}
+          </p>
+        </div>
+        <div className="header-actions">
+          <button
+            type="button"
+            className="secondary-button compact-button"
+            onClick={() => navigate("/reporting/neris/exports")}
+          >
+            Back to View Exports
+          </button>
+          <button
+            type="button"
+            className="primary-button compact-button"
+            onClick={() => navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`)}
+          >
+            Open Report
+          </button>
+        </div>
+      </header>
+
+      <section className="panel-grid two-column">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Latest Export Attempt</h2>
+          </div>
+          {latestExport ? (
+            <>
+              <dl className="detail-grid">
+                <div>
+                  <dt>Attempt Result</dt>
+                  <dd>
+                    {latestExport.attemptStatus === "success" ? "Success" : "Failed"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>HTTP Status</dt>
+                  <dd>{`${latestExport.httpStatus} ${latestExport.httpStatusText}`.trim() || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Status Label</dt>
+                  <dd>{latestExport.statusLabel || "--"}</dd>
+                </div>
+                <div>
+                  <dt>NERIS ID</dt>
+                  <dd>{latestExport.nerisId || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Validator</dt>
+                  <dd>{latestExport.validatorName || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Report Writer</dt>
+                  <dd>{latestExport.reportWriterName || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Submitted Entity ID</dt>
+                  <dd>{latestExport.submittedEntityId || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Submitted Department NERIS ID</dt>
+                  <dd>{latestExport.submittedDepartmentNerisId || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Exported At</dt>
+                  <dd>{latestExport.exportedAtLabel || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Status at Export</dt>
+                  <dd>{latestExport.reportStatusAtExport || "--"}</dd>
+                </div>
+              </dl>
+
+              <div className="export-attempt-details-grid">
+                <section className="export-attempt-detail-card">
+                  <h3>Response Summary</h3>
+                  <p>{latestExport.responseSummary || "No summary available."}</p>
+                </section>
+                <section className="export-attempt-detail-card">
+                  <h3>Response Payload</h3>
+                  <pre className="export-attempt-json">
+                    {latestExport.responseDetail || "No response payload captured."}
+                  </pre>
+                </section>
+                <section className="export-attempt-detail-card">
+                  <h3>Submitted Payload</h3>
+                  <pre className="export-attempt-json">
+                    {latestExport.submittedPayloadPreview || "No payload captured."}
+                  </pre>
+                </section>
+              </div>
+            </>
+          ) : (
+            <p className="panel-description">
+              No export attempts have been recorded for this incident yet.
+            </p>
+          )}
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Export History</h2>
+          </div>
+          {exportHistory.length ? (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Exported At</th>
+                    <th>Result</th>
+                    <th>HTTP</th>
+                    <th>Validator</th>
+                    <th>Report Writer</th>
+                    <th>NERIS ID</th>
+                    <th>Entity ID</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {exportHistory.map((entry) => (
+                    <tr key={entry.id}>
+                      <td>{entry.exportedAtLabel}</td>
+                      <td>{entry.attemptStatus === "success" ? "Success" : "Failed"}</td>
+                      <td>{`${entry.httpStatus} ${entry.httpStatusText}`.trim() || "--"}</td>
+                      <td>{entry.validatorName || "--"}</td>
+                      <td>{entry.reportWriterName || "--"}</td>
+                      <td>{entry.nerisId || "--"}</td>
+                      <td>{entry.submittedEntityId || "--"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="panel-description">Run an export first to populate this history.</p>
+          )}
         </article>
       </section>
     </section>
@@ -2975,6 +3753,7 @@ interface NerisFlatSingleOptionSelectProps {
   searchPlaceholder?: string;
   disabled?: boolean;
   isOptionDisabled?: (optionValue: string) => boolean;
+  allowClear?: boolean;
 }
 
 function NerisFlatSingleOptionSelect({
@@ -2986,6 +3765,7 @@ function NerisFlatSingleOptionSelect({
   searchPlaceholder,
   disabled = false,
   isOptionDisabled,
+  allowClear = false,
 }: NerisFlatSingleOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -3082,6 +3862,21 @@ function NerisFlatSingleOptionSelect({
               </button>
             ) : null}
           </div>
+          {allowClear && normalizedValue ? (
+            <div className="neris-single-select-clear-row">
+              <button
+                type="button"
+                className="neris-incident-type-search-clear"
+                onClick={() => {
+                  onChange("");
+                  setIsOpen(false);
+                  setSearchTerm("");
+                }}
+              >
+                Clear selection
+              </button>
+            </div>
+          ) : null}
           <div className="neris-incident-type-options-scroll" role="listbox">
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
@@ -3128,7 +3923,7 @@ interface AidEntry {
 }
 
 interface ValidationModalState {
-  mode: "success" | "error";
+  mode: "issues" | "checkSuccess" | "adminConfirm" | "adminSuccess";
   issues: string[];
 }
 
@@ -3140,10 +3935,19 @@ const EMPTY_AID_ENTRY: AidEntry = {
 
 function NerisReportFormPage({
   callNumber,
+  role,
+  username,
   nerisExportSettings,
 }: NerisReportFormPageProps) {
   const navigate = useNavigate();
   const detail = getIncidentCallDetail(callNumber);
+  const detailForSideEffects = detail ?? {
+    callNumber,
+    incidentType: "",
+    address: "",
+    receivedAt: "",
+    assignedUnits: "",
+  };
   const persistedDraft = useMemo(() => readNerisDraft(callNumber), [callNumber]);
   const defaultFormValues = useMemo(
     () =>
@@ -3168,13 +3972,13 @@ function NerisReportFormPage({
   const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
     null,
   );
+  const [validatorName, setValidatorName] = useState<string>(() => username.trim());
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
-  const [fieldOptionFilters, setFieldOptionFilters] = useState<Record<string, string>>({});
   const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
     (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
       aidDirection: entry.aidDirection,
@@ -3182,6 +3986,408 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     })),
   );
+  const [showDirectionOfTravelField, setShowDirectionOfTravelField] = useState<boolean>(
+    () =>
+      (persistedDraft?.formValues.location_direction_of_travel ?? "").trim().length >
+      0,
+  );
+  const [showCrossStreetTypeField, setShowCrossStreetTypeField] = useState<boolean>(
+    () =>
+      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length >
+      0,
+  );
+  const locationStateOptionValues = useMemo(
+    () => new Set(getNerisValueOptions("state").map((option) => option.value)),
+    [],
+  );
+  const locationCountryOptionValues = useMemo(
+    () => new Set(getNerisValueOptions("country").map((option) => option.value)),
+    [],
+  );
+  const responseModeOptions = useMemo(() => getNerisValueOptions("response_mode"), []);
+  const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
+  const resourceFallbackDate = (formValues.incident_onset_date ?? "").trim() || "2026-02-18";
+  const availableResourceUnitOptions = useMemo(() => {
+    if (!detail) {
+      return [] as NerisValueOption[];
+    }
+
+    const units = dedupeAndCleanStrings([
+      ...detail.apparatus.map((apparatus) => apparatus.unit),
+      ...parseAssignedUnits(detail.assignedUnits),
+    ]);
+    return units.map((unitId) => ({
+      value: unitId,
+      label: unitId,
+    }));
+  }, [detail]);
+  const apparatusByResourceUnitId = useMemo(() => {
+    const map = new Map<string, { unitType: string }>();
+    if (!detail) {
+      return map;
+    }
+    for (const apparatus of detail.apparatus) {
+      map.set(apparatus.unit, {
+        unitType: apparatus.unitType,
+      });
+    }
+    return map;
+  }, [detail]);
+  const defaultResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
+    if (!availableResourceUnitOptions.length) {
+      return [];
+    }
+
+    return availableResourceUnitOptions.map((option, index) => {
+      const source = apparatusByResourceUnitId.get(option.value);
+      return {
+        id: `resource-${index}-${option.value.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+        unitId: option.value,
+        unitType: inferResourceUnitTypeValue(option.value, source?.unitType, unitTypeOptions),
+        staffing: getStaffingValueForUnit(option.value, ""),
+        responseMode: "",
+        dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
+        enrouteTime: "",
+        onSceneTime: "",
+        clearTime: "",
+        isCanceledEnroute: false,
+        isComplete: false,
+        isExpanded: index === 0,
+        showTimesEditor: false,
+        personnel: "",
+        showPersonnelSelector: false,
+        reportWriter: "",
+        unitNarrative: "",
+      };
+    });
+  }, [
+    availableResourceUnitOptions,
+    apparatusByResourceUnitId,
+    unitTypeOptions,
+    detail?.receivedAt,
+    resourceFallbackDate,
+  ]);
+  const persistedResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
+    const rawValue = persistedDraft?.formValues.resource_units_json;
+    if (!rawValue) {
+      return [];
+    }
+
+    try {
+      const parsed = JSON.parse(rawValue) as Array<Partial<ResourceUnitEntry>>;
+      if (!Array.isArray(parsed)) {
+        return [];
+      }
+
+      return parsed.map((item, index) => {
+        const unitId = item.unitId?.trim() ?? "";
+        const personnel = item.personnel?.trim() ?? "";
+        const normalizedUnitType =
+          item.unitType?.trim() ??
+          inferResourceUnitTypeValue(unitId, undefined, unitTypeOptions);
+        return {
+          id:
+            item.id?.trim() ||
+            `resource-persisted-${index}-${unitId.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+          unitId,
+          unitType: normalizedUnitType,
+          staffing: getStaffingValueForUnit(unitId, personnel),
+          responseMode: item.responseMode?.trim() ?? "",
+          dispatchTime: toResourceDateTimeInputValue(
+            item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
+            resourceFallbackDate,
+          ),
+          enrouteTime: toResourceDateTimeInputValue(
+            item.enrouteTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
+          onSceneTime: toResourceDateTimeInputValue(
+            item.onSceneTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
+          clearTime: toResourceDateTimeInputValue(item.clearTime?.trim() ?? "", resourceFallbackDate),
+          isCanceledEnroute: Boolean(item.isCanceledEnroute),
+          isComplete: Boolean(item.isComplete),
+          isExpanded: Boolean(item.isExpanded),
+          showTimesEditor: Boolean(item.showTimesEditor),
+          personnel,
+          showPersonnelSelector: Boolean(item.showPersonnelSelector),
+          reportWriter: item.reportWriter?.trim() ?? "",
+          unitNarrative: item.unitNarrative ?? "",
+        };
+      });
+    } catch {
+      return [];
+    }
+  }, [
+    persistedDraft?.formValues.resource_units_json,
+    detail?.receivedAt,
+    unitTypeOptions,
+    resourceFallbackDate,
+  ]);
+  const [resourceUnits, setResourceUnits] = useState<ResourceUnitEntry[]>(
+    () => (persistedResourceUnits.length ? persistedResourceUnits : defaultResourceUnits),
+  );
+  const [emergingElectrocutionItems, setEmergingElectrocutionItems] = useState<
+    EmergingElectrocutionItem[]
+  >(() => {
+    const stored = persistedDraft?.formValues.emerging_haz_electrocution_items_json;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Array<{
+          electricalHazardType?: string;
+          suppressionMethods?: string;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => ({
+            id: nextEmergingHazardItemId("electrocution"),
+            electricalHazardType: item.electricalHazardType?.trim() ?? "",
+            suppressionMethods: item.suppressionMethods?.trim() ?? "",
+          }));
+        }
+      } catch {
+        // Ignore malformed persisted values and fall back to legacy fields.
+      }
+    }
+
+    const legacyElectricalHazardType =
+      persistedDraft?.formValues.emerg_haz_electric_type?.trim() ?? "";
+    const legacySuppressionMethods =
+      persistedDraft?.formValues.emerg_haz_suppression_methods?.trim() ?? "";
+    if (legacyElectricalHazardType || legacySuppressionMethods) {
+      return [
+        {
+          id: nextEmergingHazardItemId("electrocution"),
+          electricalHazardType: legacyElectricalHazardType,
+          suppressionMethods: legacySuppressionMethods,
+        },
+      ];
+    }
+
+    return [];
+  });
+  const [emergingPowerGenerationItems, setEmergingPowerGenerationItems] = useState<
+    EmergingPowerGenerationItem[]
+  >(() => {
+    const stored = persistedDraft?.formValues.emerging_haz_power_generation_items_json;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Array<{
+          photovoltaicHazardType?: string;
+          pvSourceTarget?: string;
+          suppressionMethods?: string;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => ({
+            id: nextEmergingHazardItemId("power-generation"),
+            photovoltaicHazardType: item.photovoltaicHazardType?.trim() ?? "",
+            pvSourceTarget: item.pvSourceTarget?.trim() ?? "",
+            suppressionMethods: item.suppressionMethods?.trim() ?? "",
+          }));
+        }
+      } catch {
+        // Ignore malformed persisted values and fall back to legacy fields.
+      }
+    }
+
+    const legacyPvHazardType = persistedDraft?.formValues.emerg_haz_pv_type?.trim() ?? "";
+    const legacyPvSourceTarget =
+      persistedDraft?.formValues.emerg_haz_pv_source_target?.trim() ?? "";
+    const legacySuppressionMethods =
+      persistedDraft?.formValues.emerg_haz_suppression_methods?.trim() ?? "";
+    if (legacyPvHazardType || legacyPvSourceTarget || legacySuppressionMethods) {
+      return [
+        {
+          id: nextEmergingHazardItemId("power-generation"),
+          photovoltaicHazardType: legacyPvHazardType,
+          pvSourceTarget: legacyPvSourceTarget,
+          suppressionMethods: legacySuppressionMethods,
+        },
+      ];
+    }
+
+    return [];
+  });
+  const pvSourceTargetOptions = useMemo(
+    () =>
+      getNerisValueOptions("source_target").filter((option) =>
+        ["SOURCE", "TARGET", "UNKNOWN"].includes(option.value),
+      ),
+    [],
+  );
+  const [riskReductionSuppressionSystems, setRiskReductionSuppressionSystems] = useState<
+    FireSuppressionSystemEntry[]
+  >(() => {
+    const stored = persistedDraft?.formValues.risk_reduction_fire_suppression_systems_json;
+    if (stored) {
+      try {
+        const parsed = JSON.parse(stored) as Array<{
+          suppressionType?: string;
+          suppressionCoverage?: string;
+        }>;
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed.map((item) => ({
+            id: nextRiskReductionSuppressionId(),
+            suppressionType: item.suppressionType?.trim() ?? "",
+            suppressionCoverage: item.suppressionCoverage?.trim() ?? "",
+          }));
+        }
+      } catch {
+        // Ignore malformed persisted values and fall back to legacy fields.
+      }
+    }
+
+    const legacySuppressionType = persistedDraft?.formValues.fire_suppression_types?.trim() ?? "";
+    const legacySuppressionCoverage =
+      persistedDraft?.formValues.fire_suppression_operation?.trim() ?? "";
+    if (legacySuppressionType || legacySuppressionCoverage) {
+      return [
+        {
+          id: nextRiskReductionSuppressionId(),
+          suppressionType: legacySuppressionType,
+          suppressionCoverage: legacySuppressionCoverage,
+        },
+      ];
+    }
+
+    return [];
+  });
+  const riskReductionCompletedValue = (formValues.risk_reduction_completed ?? "").trim();
+  const riskReductionFollowUpValue = (formValues.risk_reduction_follow_up_required ?? "").trim();
+  const riskReductionContactMadeValue = (formValues.risk_reduction_contacts_made ?? "").trim();
+  const riskReductionSmokeAlarmPresentValue = (
+    formValues.risk_reduction_smoke_alarm_present ?? ""
+  ).trim();
+  const riskReductionSmokeAlarmWorkingValue = (
+    formValues.risk_reduction_smoke_alarm_working ?? ""
+  ).trim();
+  const riskReductionFireAlarmPresentValue = (
+    formValues.risk_reduction_fire_alarm_present ?? ""
+  ).trim();
+  const riskReductionOtherAlarmPresentValue = (
+    formValues.risk_reduction_other_alarm_present ?? ""
+  ).trim();
+  const riskReductionFireSuppressionPresentValue = (
+    formValues.risk_reduction_fire_suppression_present ?? ""
+  ).trim();
+  const riskReductionCookingSuppressionPresentValue = (
+    formValues.risk_reduction_cooking_suppression_present ?? ""
+  ).trim();
+  const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
+    null,
+  );
+  const activeResourcePersonnelUnit = useMemo(
+    () =>
+      activeResourcePersonnelUnitId
+        ? resourceUnits.find((unit) => unit.id === activeResourcePersonnelUnitId) ?? null
+        : null,
+    [activeResourcePersonnelUnitId, resourceUnits],
+  );
+
+  useEffect(() => {
+    if (persistedResourceUnits.length) {
+      return;
+    }
+    setResourceUnits(defaultResourceUnits);
+  }, [defaultResourceUnits, persistedResourceUnits.length]);
+
+  useEffect(() => {
+    if (activeResourcePersonnelUnitId && !activeResourcePersonnelUnit) {
+      setActiveResourcePersonnelUnitId(null);
+    }
+  }, [activeResourcePersonnelUnitId, activeResourcePersonnelUnit]);
+
+  useEffect(() => {
+    const className = "resource-personnel-modal-open";
+    if (activeResourcePersonnelUnitId) {
+      document.body.classList.add(className);
+    } else {
+      document.body.classList.remove(className);
+    }
+    return () => {
+      document.body.classList.remove(className);
+    };
+  }, [activeResourcePersonnelUnitId]);
+
+  useEffect(() => {
+    const serializedElectrocutionItems = JSON.stringify(
+      emergingElectrocutionItems.map((item) => ({
+        electricalHazardType: item.electricalHazardType,
+        suppressionMethods: item.suppressionMethods,
+      })),
+    );
+    const serializedPowerGenerationItems = JSON.stringify(
+      emergingPowerGenerationItems.map((item) => ({
+        photovoltaicHazardType: item.photovoltaicHazardType,
+        pvSourceTarget: item.pvSourceTarget,
+        suppressionMethods: item.suppressionMethods,
+      })),
+    );
+    const primaryElectrocutionItem = emergingElectrocutionItems[0];
+    const primaryPowerGenerationItem = emergingPowerGenerationItems[0];
+    const defaultSuppressionMethods =
+      primaryElectrocutionItem?.suppressionMethods ||
+      primaryPowerGenerationItem?.suppressionMethods ||
+      "";
+
+    setFormValues((previous) => {
+      if (
+        (previous.emerging_haz_electrocution_items_json ?? "") ===
+          serializedElectrocutionItems &&
+        (previous.emerging_haz_power_generation_items_json ?? "") ===
+          serializedPowerGenerationItems &&
+        (previous.emerg_haz_electric_type ?? "") ===
+          (primaryElectrocutionItem?.electricalHazardType ?? "") &&
+        (previous.emerg_haz_pv_type ?? "") ===
+          (primaryPowerGenerationItem?.photovoltaicHazardType ?? "") &&
+        (previous.emerg_haz_pv_source_target ?? "") ===
+          (primaryPowerGenerationItem?.pvSourceTarget ?? "") &&
+        (previous.emerg_haz_suppression_methods ?? "") === defaultSuppressionMethods
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        emerging_haz_electrocution_items_json: serializedElectrocutionItems,
+        emerging_haz_power_generation_items_json: serializedPowerGenerationItems,
+        emerg_haz_electric_type: primaryElectrocutionItem?.electricalHazardType ?? "",
+        emerg_haz_pv_type: primaryPowerGenerationItem?.photovoltaicHazardType ?? "",
+        emerg_haz_pv_source_target: primaryPowerGenerationItem?.pvSourceTarget ?? "",
+        emerg_haz_suppression_methods: defaultSuppressionMethods,
+      };
+    });
+  }, [emergingElectrocutionItems, emergingPowerGenerationItems]);
+
+  useEffect(() => {
+    const serializedSuppressionSystems = JSON.stringify(
+      riskReductionSuppressionSystems.map((system) => ({
+        suppressionType: system.suppressionType,
+        suppressionCoverage: system.suppressionCoverage,
+      })),
+    );
+    const primarySuppressionSystem = riskReductionSuppressionSystems[0];
+
+    setFormValues((previous) => {
+      if (
+        (previous.risk_reduction_fire_suppression_systems_json ?? "") ===
+          serializedSuppressionSystems &&
+        (previous.fire_suppression_types ?? "") ===
+          (primarySuppressionSystem?.suppressionType ?? "") &&
+        (previous.fire_suppression_operation ?? "") ===
+          (primarySuppressionSystem?.suppressionCoverage ?? "")
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        risk_reduction_fire_suppression_systems_json: serializedSuppressionSystems,
+        fire_suppression_types: primarySuppressionSystem?.suppressionType ?? "",
+        fire_suppression_operation: primarySuppressionSystem?.suppressionCoverage ?? "",
+      };
+    });
+  }, [riskReductionSuppressionSystems]);
 
   const primaryIncidentCategory = useMemo(() => {
     const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
@@ -3224,6 +4430,31 @@ function NerisReportFormPage({
     () => getNerisFieldsForSection(currentSection.id),
     [currentSection.id],
   );
+  const displayedSectionFields = useMemo(() => {
+    if (currentSection.id !== "location") {
+      return sectionFields;
+    }
+
+    const locationFieldOrder = new Map<string, number>([
+      ["location_state", 1],
+      ["location_country", 2],
+      ["location_postal_code", 3],
+      ["location_county", 4],
+      ["location_place_type", 5],
+      ["location_use_primary", 6],
+      ["location_use_secondary", 7],
+      ["location_vacancy_cause", 8],
+      ["location_direction_of_travel", 9],
+      ["location_cross_street_type", 10],
+      ["location_notes", 11],
+    ]);
+
+    return [...sectionFields].sort((left, right) => {
+      const leftOrder = locationFieldOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER;
+      const rightOrder = locationFieldOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER;
+      return leftOrder - rightOrder;
+    });
+  }, [currentSection.id, sectionFields]);
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
@@ -3255,24 +4486,24 @@ function NerisReportFormPage({
   );
   const hasNextSection =
     sectionIndex >= 0 && sectionIndex < visibleNerisSections.length - 1;
-
-  if (!detail) {
-    return (
-      <section className="page-section">
-        <header className="page-header">
-          <div>
-            <h1>NERIS report not found</h1>
-            <p>No matching incident exists for report ID {callNumber}.</p>
-          </div>
-          <div className="header-actions">
-            <NavLink className="secondary-button button-link" to="/reporting/neris">
-              Back to NERIS Queue
-            </NavLink>
-          </div>
-        </header>
-      </section>
-    );
-  }
+  const importedLocationAddress =
+    (formValues.incident_location_address ?? "").trim() ||
+    (formValues.dispatch_location_address ?? "").trim() ||
+    detail?.address ||
+    "No imported address available.";
+  const parsedImportedLocation = useMemo(
+    () =>
+      parseImportedLocationValues(
+        importedLocationAddress,
+        locationStateOptionValues,
+        locationCountryOptionValues,
+      ),
+    [
+      importedLocationAddress,
+      locationStateOptionValues,
+      locationCountryOptionValues,
+    ],
+  );
 
   const updateFieldValue = (fieldId: string, value: string) => {
     const sanitizedValue =
@@ -3392,6 +4623,749 @@ function NerisReportFormPage({
     }
   };
 
+  useEffect(() => {
+    const locationUpdates: Record<string, string> = {};
+    if (
+      (formValues.location_state ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationState
+    ) {
+      locationUpdates.location_state = parsedImportedLocation.locationState;
+    }
+    if (
+      (formValues.location_country ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationCountry
+    ) {
+      locationUpdates.location_country = parsedImportedLocation.locationCountry;
+    }
+    if (
+      (formValues.location_postal_code ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationPostalCode
+    ) {
+      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
+    }
+    if (
+      (formValues.location_county ?? "").trim().length === 0 &&
+      parsedImportedLocation.locationCounty
+    ) {
+      locationUpdates.location_county = parsedImportedLocation.locationCounty;
+    }
+
+    if (Object.keys(locationUpdates).length === 0) {
+      return;
+    }
+
+    setFormValues((previous) => ({
+      ...previous,
+      ...locationUpdates,
+    }));
+  }, [
+    formValues.location_state,
+    formValues.location_country,
+    formValues.location_postal_code,
+    formValues.location_county,
+    parsedImportedLocation.locationState,
+    parsedImportedLocation.locationCountry,
+    parsedImportedLocation.locationPostalCode,
+    parsedImportedLocation.locationCounty,
+  ]);
+
+  const handlePullLocationFromImportedAddress = () => {
+    const locationUpdates: Record<string, string> = {};
+    if (
+      parsedImportedLocation.locationState &&
+      parsedImportedLocation.locationState !== (formValues.location_state ?? "")
+    ) {
+      locationUpdates.location_state = parsedImportedLocation.locationState;
+    }
+    if (
+      parsedImportedLocation.locationCountry &&
+      parsedImportedLocation.locationCountry !== (formValues.location_country ?? "")
+    ) {
+      locationUpdates.location_country = parsedImportedLocation.locationCountry;
+    }
+    if (
+      parsedImportedLocation.locationPostalCode &&
+      parsedImportedLocation.locationPostalCode !== (formValues.location_postal_code ?? "")
+    ) {
+      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
+    }
+    if (
+      parsedImportedLocation.locationCounty &&
+      parsedImportedLocation.locationCounty !== (formValues.location_county ?? "")
+    ) {
+      locationUpdates.location_county = parsedImportedLocation.locationCounty;
+    }
+
+    if (Object.keys(locationUpdates).length === 0) {
+      setSaveMessage(
+        "No additional state, country, postal code, or county details were found to apply.",
+      );
+      setErrorMessage("");
+      return;
+    }
+
+    setFormValues((previous) => ({
+      ...previous,
+      ...locationUpdates,
+    }));
+    setSectionErrors((previous) => {
+      const next = { ...previous };
+      delete next.location_state;
+      delete next.location_country;
+      delete next.location_postal_code;
+      delete next.location_county;
+      return next;
+    });
+    setSaveMessage("Location details pulled from imported address.");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
+  const markNerisFormDirty = () => {
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
+  const clearResourceUnitValidationErrors = (unitEntryId: string) => {
+    const keyPrefix = `resource_unit_validation_${unitEntryId}_`;
+    setSectionErrors((previous) => {
+      let hasMatch = false;
+      const next: Record<string, string> = {};
+      Object.entries(previous).forEach(([key, value]) => {
+        if (key.startsWith(keyPrefix)) {
+          hasMatch = true;
+          return;
+        }
+        next[key] = value;
+      });
+      return hasMatch ? next : previous;
+    });
+  };
+
+  const toValidationIssueLabel = (
+    fieldId: string,
+    customIssueLabelsByFieldId: Record<string, string>,
+  ): string => {
+    const customLabel = customIssueLabelsByFieldId[fieldId];
+    if (customLabel) {
+      return customLabel;
+    }
+    const sectionId = nerisFieldSectionById[fieldId];
+    const sectionLabel = sectionId ? nerisSectionLabelById[sectionId] : "UNKNOWN";
+    return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
+  };
+
+  const validateResourceUnit = (unitEntry: ResourceUnitEntry, unitIndex: number) => {
+    const unitLabel = unitEntry.unitId.trim() || `Unit ${unitIndex + 1}`;
+    const errors: Record<string, string> = {};
+    const customIssueLabelsByFieldId: Record<string, string> = {};
+    const addResourceError = (
+      field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+      fieldLabel: string,
+      message: string,
+    ) => {
+      const errorKey = resourceUnitValidationErrorKey(unitEntry.id, field);
+      errors[errorKey] = message;
+      customIssueLabelsByFieldId[errorKey] = `Resources - ${unitLabel}: ${fieldLabel}`;
+    };
+    const addTimelineError = (
+      entry: {
+        key: string;
+        label: string;
+        customIssueLabel?: string;
+      },
+      message: string,
+    ) => {
+      errors[entry.key] = message;
+      if (entry.customIssueLabel) {
+        customIssueLabelsByFieldId[entry.key] = entry.customIssueLabel;
+      }
+    };
+
+    if (countSelectedPersonnel(unitEntry.personnel) < 1) {
+      addResourceError(
+        "personnel",
+        "Personnel",
+        "At least one personnel member is required for each unit.",
+      );
+    }
+    if (!unitEntry.dispatchTime.trim()) {
+      addResourceError("dispatchTime", "Dispatch time", "Dispatch time is required.");
+    }
+    if (!unitEntry.clearTime.trim()) {
+      addResourceError("clearTime", "Clear time", "Clear time is required.");
+    }
+    if (!unitEntry.isCanceledEnroute) {
+      if (!unitEntry.enrouteTime.trim()) {
+        addResourceError(
+          "enrouteTime",
+          "Enroute time",
+          "Enroute time is required unless dispatched and canceled en route.",
+        );
+      }
+      if (!unitEntry.onSceneTime.trim()) {
+        addResourceError(
+          "onSceneTime",
+          "On Scene time",
+          "On Scene time is required unless dispatched and canceled en route.",
+        );
+      }
+    }
+
+    const timelineEntries = [
+      {
+        key: "incident_time_call_create",
+        label: "Call created time",
+        value: formValues.incident_time_call_create ?? "",
+      },
+      {
+        key: "incident_time_call_answered",
+        label: "Call answered time",
+        value: formValues.incident_time_call_answered ?? "",
+      },
+      {
+        key: "incident_time_call_arrival",
+        label: "Call arrival time",
+        value: formValues.incident_time_call_arrival ?? "",
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "dispatchTime"),
+        label: "Unit dispatched time",
+        customIssueLabel: `Resources - ${unitLabel}: Dispatch time`,
+        value: unitEntry.dispatchTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime"),
+        label: "Unit enroute time",
+        customIssueLabel: `Resources - ${unitLabel}: Enroute time`,
+        value: unitEntry.enrouteTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime"),
+        label: "Unit on scene time",
+        customIssueLabel: `Resources - ${unitLabel}: On Scene time`,
+        value: unitEntry.onSceneTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "clearTime"),
+        label: "Unit clear time",
+        customIssueLabel: `Resources - ${unitLabel}: Clear time`,
+        value: unitEntry.clearTime,
+      },
+      {
+        key: "time_incident_clear",
+        label: "Incident clear time",
+        value: formValues.time_incident_clear ?? "",
+      },
+    ];
+
+    let previousTimelineEntry: { label: string; timestamp: number } | null = null;
+    timelineEntries.forEach((entry) => {
+      const trimmedValue = entry.value.trim();
+      if (!trimmedValue) {
+        return;
+      }
+      const timestamp = toResourceDateTimeTimestamp(trimmedValue, resourceFallbackDate);
+      if (timestamp === null) {
+        addTimelineError(entry, `${entry.label} has an invalid date/time value.`);
+        return;
+      }
+      if (previousTimelineEntry && timestamp < previousTimelineEntry.timestamp) {
+        addTimelineError(
+          entry,
+          `${entry.label} cannot be earlier than ${previousTimelineEntry.label}.`,
+        );
+      }
+      previousTimelineEntry = {
+        label: entry.label,
+        timestamp,
+      };
+    });
+
+    return {
+      errors,
+      customIssueLabelsByFieldId,
+    };
+  };
+
+  useEffect(() => {
+    const primaryUnit = resourceUnits[0];
+    const primaryUnitId = primaryUnit?.unitId ?? "";
+    const primaryUnitType = primaryUnit?.unitType ?? "";
+    const primaryUnitStaffing = primaryUnit
+      ? getStaffingValueForUnit(primaryUnit.unitId, primaryUnit.personnel)
+      : "";
+    const primaryUnitResponseMode = primaryUnit?.responseMode ?? "";
+    const additionalUnits = resourceUnits
+      .slice(1)
+      .map((unit) => unit.unitId.trim())
+      .filter((unitId) => unitId.length > 0)
+      .join(", ");
+    const serializedResourceUnits = JSON.stringify(
+      resourceUnits.map((unit) => ({
+        id: unit.id,
+        unitId: unit.unitId,
+        unitType: unit.unitType,
+        staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
+        responseMode: unit.responseMode,
+        dispatchTime: unit.dispatchTime,
+        enrouteTime: unit.enrouteTime,
+        onSceneTime: unit.onSceneTime,
+        clearTime: unit.clearTime,
+        isCanceledEnroute: unit.isCanceledEnroute,
+        isComplete: unit.isComplete,
+        isExpanded: unit.isExpanded,
+        showTimesEditor: unit.showTimesEditor,
+        personnel: unit.personnel,
+        showPersonnelSelector: unit.showPersonnelSelector,
+        reportWriter: unit.reportWriter,
+        unitNarrative: unit.unitNarrative,
+      })),
+    );
+
+    setFormValues((previous) => {
+      if (
+        (previous.resource_primary_unit_id ?? "") === primaryUnitId &&
+        (previous.resource_primary_unit_type ?? "") === primaryUnitType &&
+        (previous.resource_primary_unit_staffing ?? "") === primaryUnitStaffing &&
+        (previous.resource_primary_unit_response_mode ?? "") === primaryUnitResponseMode &&
+        (previous.resource_additional_units ?? "") === additionalUnits &&
+        (previous.resource_units_json ?? "") === serializedResourceUnits
+      ) {
+        return previous;
+      }
+
+      return {
+        ...previous,
+        resource_primary_unit_id: primaryUnitId,
+        resource_primary_unit_type: primaryUnitType,
+        resource_primary_unit_staffing: primaryUnitStaffing,
+        resource_primary_unit_response_mode: primaryUnitResponseMode,
+        resource_additional_units: additionalUnits,
+        resource_units_json: serializedResourceUnits,
+      };
+    });
+  }, [resourceUnits]);
+
+  const toggleResourceUnitExpanded = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isExpanded: !entry.isExpanded,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const toggleResourceUnitComplete = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isComplete: !entry.isComplete,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const deleteResourceUnit = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.filter((entry) => entry.id !== unitEntryId),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    if (activeResourcePersonnelUnitId === unitEntryId) {
+      setActiveResourcePersonnelUnitId(null);
+    }
+    markNerisFormDirty();
+  };
+
+  const updateResourceUnitField = (
+    unitEntryId: string,
+    field:
+      | "unitId"
+      | "unitType"
+      | "staffing"
+      | "responseMode"
+      | "dispatchTime"
+      | "enrouteTime"
+      | "onSceneTime"
+      | "clearTime"
+      | "personnel"
+      | "reportWriter"
+      | "unitNarrative",
+    value: string,
+  ) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? (() => {
+              if (field === "personnel") {
+                const nextStaffing = getStaffingValueForUnit(entry.unitId, value);
+                return {
+                  ...entry,
+                  personnel: value,
+                  staffing: nextStaffing,
+                };
+              }
+              if (field === "dispatchTime") {
+                const normalizedDispatch = toResourceDateTimeInputValue(value, resourceFallbackDate);
+                const normalizedClear = toResourceDateTimeInputValue(
+                  entry.clearTime,
+                  resourceFallbackDate,
+                );
+                return {
+                  ...entry,
+                  dispatchTime: normalizedDispatch,
+                  clearTime:
+                    entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
+                      ? addMinutesToResourceDateTime(normalizedDispatch, 2)
+                      : normalizedClear,
+                };
+              }
+              if (
+                field === "enrouteTime" ||
+                field === "onSceneTime" ||
+                field === "clearTime"
+              ) {
+                return {
+                  ...entry,
+                  [field]: toResourceDateTimeInputValue(value, resourceFallbackDate),
+                };
+              }
+              return {
+                ...entry,
+                [field]: value,
+              };
+            })()
+          : entry,
+      ),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    markNerisFormDirty();
+  };
+
+  const handleResourceUnitIdChange = (unitEntryId: string, nextUnitId: string) => {
+    const source = apparatusByResourceUnitId.get(nextUnitId);
+    const inferredUnitType = inferResourceUnitTypeValue(
+      nextUnitId,
+      source?.unitType,
+      unitTypeOptions,
+    );
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              unitId: nextUnitId,
+              unitType: inferredUnitType || entry.unitType,
+              staffing: getStaffingValueForUnit(nextUnitId, entry.personnel),
+            }
+          : entry,
+      ),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    markNerisFormDirty();
+  };
+
+  const openResourcePersonnelModal = (unitEntryId: string) => {
+    setActiveResourcePersonnelUnitId(unitEntryId);
+  };
+
+  const closeResourcePersonnelModal = () => {
+    setActiveResourcePersonnelUnitId(null);
+  };
+
+  const removeResourcePersonnel = (unitEntryId: string, personnelValue: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) => {
+        if (entry.id !== unitEntryId) {
+          return entry;
+        }
+
+        const nextPersonnelValues = entry.personnel
+          .split(",")
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0 && value !== personnelValue);
+        const nextPersonnelCsv = nextPersonnelValues.join(",");
+        const nextStaffing = getStaffingValueForUnit(entry.unitId, nextPersonnelCsv);
+        const nextReportWriter =
+          entry.reportWriter === personnelValue ? "" : entry.reportWriter;
+
+        return {
+          ...entry,
+          personnel: nextPersonnelCsv,
+          staffing: nextStaffing,
+          reportWriter: nextReportWriter,
+        };
+      }),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    markNerisFormDirty();
+  };
+
+  const toggleResourceTimesEditor = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              showTimesEditor: !entry.showTimesEditor,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const toggleResourceCanceledEnroute = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? (() => {
+              const nextCanceledEnroute = !entry.isCanceledEnroute;
+              if (!nextCanceledEnroute) {
+                return {
+                  ...entry,
+                  isCanceledEnroute: false,
+                };
+              }
+
+              const normalizedDispatch = toResourceDateTimeInputValue(
+                entry.dispatchTime,
+                resourceFallbackDate,
+              );
+              const normalizedClear = toResourceDateTimeInputValue(
+                entry.clearTime,
+                resourceFallbackDate,
+              );
+              return {
+                ...entry,
+                isCanceledEnroute: true,
+                dispatchTime: normalizedDispatch,
+                clearTime:
+                  normalizedClear || normalizedDispatch
+                    ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
+                    : "",
+              };
+            })()
+          : entry,
+      ),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    markNerisFormDirty();
+  };
+
+  const completeAndCollapseResourceUnit = (unitEntryId: string) => {
+    const unitIndex = resourceUnits.findIndex((entry) => entry.id === unitEntryId);
+    if (unitIndex < 0) {
+      return;
+    }
+    const unitEntry = resourceUnits[unitIndex]!;
+    const { errors, customIssueLabelsByFieldId } = validateResourceUnit(unitEntry, unitIndex);
+    const hasErrors = Object.keys(errors).length > 0;
+    if (hasErrors) {
+      const unitErrorKeyPrefix = `resource_unit_validation_${unitEntryId}_`;
+      setSectionErrors((previous) => {
+        const next: Record<string, string> = {};
+        Object.entries(previous).forEach(([key, value]) => {
+          if (key.startsWith(unitErrorKeyPrefix)) {
+            return;
+          }
+          next[key] = value;
+        });
+        return {
+          ...next,
+          ...errors,
+        };
+      });
+      setValidationIssues(
+        Array.from(
+          new Set(
+            Object.keys(errors).map((fieldId) =>
+              toValidationIssueLabel(fieldId, customIssueLabelsByFieldId),
+            ),
+          ),
+        ),
+      );
+      setValidationModal(null);
+      setSaveMessage("");
+      setErrorMessage(
+        "Unit requirements are incomplete or out of sequence. Fix highlighted fields before completing.",
+      );
+      setResourceUnits((previous) =>
+        previous.map((entry) =>
+          entry.id === unitEntryId
+            ? {
+                ...entry,
+                isExpanded: true,
+                showTimesEditor: true,
+                isComplete: false,
+              }
+            : entry,
+        ),
+      );
+      return;
+    }
+
+    clearResourceUnitValidationErrors(unitEntryId);
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isComplete: true,
+              isExpanded: false,
+              showTimesEditor: false,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const collapseResourceUnit = (unitEntryId: string) => {
+    setResourceUnits((previous) =>
+      previous.map((entry) =>
+        entry.id === unitEntryId
+          ? {
+              ...entry,
+              isExpanded: false,
+              showTimesEditor: false,
+            }
+          : entry,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const addEmergingElectrocutionItem = () => {
+    setEmergingElectrocutionItems((previous) => [
+      ...previous,
+      {
+        id: nextEmergingHazardItemId("electrocution"),
+        electricalHazardType: "",
+        suppressionMethods: "",
+      },
+    ]);
+    markNerisFormDirty();
+  };
+
+  const updateEmergingElectrocutionItem = (
+    itemId: string,
+    field: "electricalHazardType" | "suppressionMethods",
+    value: string,
+  ) => {
+    setEmergingElectrocutionItems((previous) =>
+      previous.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const deleteEmergingElectrocutionItem = (itemId: string) => {
+    setEmergingElectrocutionItems((previous) =>
+      previous.filter((item) => item.id !== itemId),
+    );
+    markNerisFormDirty();
+  };
+
+  const addEmergingPowerGenerationItem = () => {
+    setEmergingPowerGenerationItems((previous) => [
+      ...previous,
+      {
+        id: nextEmergingHazardItemId("power-generation"),
+        photovoltaicHazardType: "",
+        pvSourceTarget: "",
+        suppressionMethods: "",
+      },
+    ]);
+    markNerisFormDirty();
+  };
+
+  const updateEmergingPowerGenerationItem = (
+    itemId: string,
+    field: "photovoltaicHazardType" | "pvSourceTarget" | "suppressionMethods",
+    value: string,
+  ) => {
+    setEmergingPowerGenerationItems((previous) =>
+      previous.map((item) =>
+        item.id === itemId
+          ? {
+              ...item,
+              [field]: value,
+            }
+          : item,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const deleteEmergingPowerGenerationItem = (itemId: string) => {
+    setEmergingPowerGenerationItems((previous) =>
+      previous.filter((item) => item.id !== itemId),
+    );
+    markNerisFormDirty();
+  };
+
+  const addRiskReductionSuppressionSystem = () => {
+    setRiskReductionSuppressionSystems((previous) => [
+      ...previous,
+      {
+        id: nextRiskReductionSuppressionId(),
+        suppressionType: "",
+        suppressionCoverage: "",
+      },
+    ]);
+    markNerisFormDirty();
+  };
+
+  const updateRiskReductionSuppressionSystem = (
+    systemId: string,
+    field: "suppressionType" | "suppressionCoverage",
+    value: string,
+  ) => {
+    setRiskReductionSuppressionSystems((previous) =>
+      previous.map((system) =>
+        system.id === systemId
+          ? {
+              ...system,
+              [field]: value,
+            }
+          : system,
+      ),
+    );
+    markNerisFormDirty();
+  };
+
+  const deleteRiskReductionSuppressionSystem = (systemId: string) => {
+    setRiskReductionSuppressionSystems((previous) =>
+      previous.filter((system) => system.id !== systemId),
+    );
+    markNerisFormDirty();
+  };
+
   const stampSavedAt = (
     mode: "manual" | "auto",
     nextStatus: string = reportStatus,
@@ -3418,71 +5392,240 @@ function NerisReportFormPage({
     setSaveMessage(
       messageOverride ??
         (mode === "auto"
-          ? `Draft auto-saved for ${detail.callNumber} at ${savedAt}.`
-          : `Draft saved for ${detail.callNumber} at ${savedAt}.`),
+          ? `Draft auto-saved for ${detailForSideEffects.callNumber} at ${savedAt}.`
+          : `Draft saved for ${detailForSideEffects.callNumber} at ${savedAt}.`),
     );
   };
 
-  const handleValidateForm = () => {
+  const buildValidationSnapshot = () => {
     const mergedErrors: Record<string, string> = {};
+    const customIssueLabelsByFieldId: Record<string, string> = {};
     for (const section of NERIS_FORM_SECTIONS) {
       const validation = validateNerisSection(section.id, formValues);
       Object.assign(mergedErrors, validation.errors);
     }
 
+    resourceUnits.forEach((unitEntry, unitIndex) => {
+      const unitValidation = validateResourceUnit(unitEntry, unitIndex);
+      Object.assign(mergedErrors, unitValidation.errors);
+      Object.assign(customIssueLabelsByFieldId, unitValidation.customIssueLabelsByFieldId);
+    });
+
     setSectionErrors(mergedErrors);
     const issueLabels = Array.from(
       new Set(
-        Object.keys(mergedErrors).map(
-          (fieldId) => {
-            const sectionId = nerisFieldSectionById[fieldId];
-            const sectionLabel = sectionId
-              ? nerisSectionLabelById[sectionId]
-              : "UNKNOWN";
-            return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
-          },
+        Object.keys(mergedErrors).map((fieldId) =>
+          toValidationIssueLabel(fieldId, customIssueLabelsByFieldId),
         ),
       ),
     );
+    return {
+      mergedErrors,
+      issueLabels,
+    };
+  };
+
+  const buildStoredAdditionalAidEntries = () =>
+    additionalAidEntries.map((entry) => ({
+      aidDirection: entry.aidDirection,
+      aidType: entry.aidType,
+      aidDepartment: entry.aidDepartment,
+    }));
+
+  const buildReportWriterName = () => {
+    const rawReportWriter =
+      resourceUnits
+        .map((unit) => unit.reportWriter.trim())
+        .find((candidate) => candidate.length > 0) ?? username.trim();
+    if (!rawReportWriter) {
+      return "";
+    }
+    if (!rawReportWriter.includes("_")) {
+      return rawReportWriter;
+    }
+    return rawReportWriter
+      .toLowerCase()
+      .split("_")
+      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
+      .join(" ");
+  };
+
+  const applyValidationFailure = (issueLabels: string[]) => {
+    if (issueLabels.length === 0) {
+      return;
+    }
+    const serializedAidEntries = buildStoredAdditionalAidEntries();
+    writeNerisDraft(callNumber, {
+      formValues,
+      reportStatus: "Draft",
+      lastSavedAt,
+      additionalAidEntries: serializedAidEntries,
+    });
+    setReportStatus("Draft");
+    setSaveMessage("");
+    setErrorMessage(
+      "Validation incomplete. Complete the required fields listed below.",
+    );
+    setValidationModal({
+      mode: "issues",
+      issues: issueLabels,
+    });
+  };
+
+  const handleCheckForErrors = () => {
+    const { mergedErrors, issueLabels } = buildValidationSnapshot();
+    setSectionErrors(mergedErrors);
     setValidationIssues(issueLabels);
 
     if (issueLabels.length > 0) {
-      writeNerisDraft(callNumber, {
-        formValues,
-        reportStatus: "Draft",
-        lastSavedAt,
-        additionalAidEntries: additionalAidEntries.map((entry) => ({
-          aidDirection: entry.aidDirection,
-          aidType: entry.aidType,
-          aidDepartment: entry.aidDepartment,
-        })),
-      });
-      setReportStatus("Draft");
-      setSaveMessage("");
-      setErrorMessage(
-        "Validation incomplete. Complete the required fields listed below.",
-      );
-      setValidationModal({
-        mode: "error",
-        issues: issueLabels,
-      });
+      applyValidationFailure(issueLabels);
       return;
     }
 
     setErrorMessage("");
     setValidationIssues([]);
     setValidationModal({
-      mode: "success",
+      mode: "checkSuccess",
       issues: [],
     });
     stampSavedAt(
       "manual",
       "In Review",
-      "Validation complete. Status updated to In Review.",
+      "Check for Errors passed. Status updated to In Review.",
     );
   };
 
-  const handleExportReport = async () => {
+  type ExportRequestConfig = {
+    exportUrl: string;
+    isProxyRequest: boolean;
+    headers: Record<string, string>;
+    payload: Record<string, unknown>;
+  };
+
+  type ExportExecutionResult = {
+    exportedAtIso: string;
+    exportedAtLabel: string;
+    attemptStatus: "success" | "failed";
+    httpStatus: number;
+    httpStatusText: string;
+    nerisId: string;
+    submittedEntityId: string;
+    submittedDepartmentNerisId: string;
+    statusLabel: string;
+    responseSummary: string;
+    responseDetail: string;
+    submittedPayloadPreview: string;
+  };
+
+  type ExportRequestError = Error & {
+    httpStatus?: number;
+    httpStatusText?: string;
+    submittedEntityId?: string;
+    submittedDepartmentNerisId?: string;
+    responseSummary?: string;
+    responseDetail?: string;
+    submittedPayloadPreview?: string;
+  };
+
+  const toPrettyJson = (value: unknown): string => {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return "";
+    }
+  };
+
+  const extractSubmittedDepartmentFromResponse = (
+    responseJson: Record<string, unknown> | null,
+  ): string => {
+    if (
+      responseJson?.submittedPayload &&
+      typeof responseJson.submittedPayload === "object" &&
+      (responseJson.submittedPayload as Record<string, unknown>).base &&
+      typeof (responseJson.submittedPayload as Record<string, unknown>).base === "object" &&
+      typeof (
+        (responseJson.submittedPayload as Record<string, unknown>).base as Record<string, unknown>
+      ).department_neris_id === "string"
+    ) {
+      return ((responseJson.submittedPayload as Record<string, unknown>).base as Record<
+        string,
+        unknown
+      >).department_neris_id as string;
+    }
+    return (formValues.fd_neris_id ?? "").trim();
+  };
+
+  const extractExportResponseSummary = (
+    response: Response,
+    responseJson: Record<string, unknown> | null,
+    responseText: string,
+  ): string => {
+    if (typeof responseJson?.message === "string" && responseJson.message.trim().length > 0) {
+      return responseJson.message.trim();
+    }
+    const fallback =
+      responseJson?.fallback && typeof responseJson.fallback === "object"
+        ? (responseJson.fallback as Record<string, unknown>)
+        : null;
+    if (typeof fallback?.reason === "string" && fallback.reason.trim().length > 0) {
+      const updateStatus =
+        typeof fallback.updateStatus === "number" ? fallback.updateStatus : null;
+      const updateStatusText =
+        typeof fallback.updateStatusText === "string" ? fallback.updateStatusText : "";
+      if (updateStatus !== null) {
+        return `Fallback ${fallback.succeeded ? "succeeded" : "failed"} (${updateStatus} ${updateStatusText}). ${fallback.reason}`.trim();
+      }
+      return fallback.reason;
+    }
+    const detailFromNeris =
+      responseJson?.neris && typeof responseJson.neris === "object"
+        ? (responseJson.neris as Record<string, unknown>).detail
+        : null;
+    if (typeof detailFromNeris === "string" && detailFromNeris.trim().length > 0) {
+      return detailFromNeris.trim();
+    }
+    if (Array.isArray(detailFromNeris) && detailFromNeris.length > 0) {
+      return toPrettyJson(detailFromNeris);
+    }
+    if (responseText.trim().length > 0) {
+      return responseText.slice(0, 280);
+    }
+    return `${response.status} ${response.statusText}`;
+  };
+
+  const createExportRequestError = (
+    message: string,
+    metadata: Omit<ExportExecutionResult, "exportedAtIso" | "exportedAtLabel" | "attemptStatus" | "nerisId" | "statusLabel"> & {
+      httpStatus: number;
+      httpStatusText: string;
+    },
+  ): ExportRequestError => {
+    const error = new Error(message) as ExportRequestError;
+    error.httpStatus = metadata.httpStatus;
+    error.httpStatusText = metadata.httpStatusText;
+    error.submittedEntityId = metadata.submittedEntityId;
+    error.submittedDepartmentNerisId = metadata.submittedDepartmentNerisId;
+    error.responseSummary = metadata.responseSummary;
+    error.responseDetail = metadata.responseDetail;
+    error.submittedPayloadPreview = metadata.submittedPayloadPreview;
+    return error;
+  };
+
+  const getExistingIncidentNerisIdHint = () => {
+    const fromForm = (formValues.incident_neris_id ?? "").trim();
+    if (NERIS_INCIDENT_ID_PATTERN.test(fromForm)) {
+      return fromForm;
+    }
+    const fromHistory = readNerisExportHistory().find(
+      (entry) =>
+        entry.callNumber === callNumber &&
+        entry.attemptStatus === "success" &&
+        NERIS_INCIDENT_ID_PATTERN.test(entry.nerisId),
+    );
+    return fromHistory?.nerisId ?? "";
+  };
+
+  const buildExportRequestConfig = (): ExportRequestConfig => {
     const defaultExportSettings = getDefaultNerisExportSettings();
     const exportUrl =
       nerisExportSettings.exportUrl.trim() ||
@@ -3513,42 +5656,34 @@ function NerisReportFormPage({
     const apiVersionHeaderName = nerisExportSettings.apiVersionHeaderName.trim();
     const apiVersionHeaderValue = nerisExportSettings.apiVersionHeaderValue.trim();
     const isProxyRequest = exportUrl.startsWith("/api/neris/");
+    const existingIncidentNerisId = getExistingIncidentNerisIdHint();
     if (!exportUrl) {
-      setErrorMessage(
+      throw new Error(
         "Export is not configured. Add Export URL in Admin Functions > Customization > NERIS Export Configuration.",
       );
-      setSaveMessage("");
-      return;
     }
 
-    setValidationModal(null);
-    setErrorMessage("");
-    setSaveMessage("Export in progress...");
-    setIsExporting(true);
-
     const payload = {
-      callNumber: detail.callNumber,
+      callNumber: detailForSideEffects.callNumber,
       reportStatus,
       exportedAt: new Date().toISOString(),
       source: "Fire Ultimate Prototype",
       formValues,
       incidentSnapshot: {
-        incidentType: detail.incidentType,
-        address: detail.address,
-        receivedAt: detail.receivedAt,
-        assignedUnits: detail.assignedUnits,
+        incidentType: detailForSideEffects.incidentType,
+        address: detailForSideEffects.address,
+        receivedAt: detailForSideEffects.receivedAt,
+        assignedUnits: detailForSideEffects.assignedUnits,
       },
       integration: {
         entityId: vendorCode,
         contentType,
         apiVersionHeaderName,
         apiVersionHeaderValue,
+        existingIncidentNerisId,
+        allowUpdateFallback: true,
       },
-      additionalAidEntries: additionalAidEntries.map((entry) => ({
-        aidDirection: entry.aidDirection,
-        aidType: entry.aidType,
-        aidDepartment: entry.aidDepartment,
-      })),
+      additionalAidEntries: buildStoredAdditionalAidEntries(),
     };
     const headers: Record<string, string> = {
       "Content-Type": contentType,
@@ -3564,43 +5699,140 @@ function NerisReportFormPage({
     if (apiVersionHeaderName && apiVersionHeaderValue) {
       headers[apiVersionHeaderName] = apiVersionHeaderValue;
     }
+    return {
+      exportUrl,
+      isProxyRequest,
+      headers,
+      payload,
+    };
+  };
 
+  const parseJsonResponseText = (responseText: string): Record<string, unknown> | null => {
+    if (!responseText) {
+      return null;
+    }
+    try {
+      return JSON.parse(responseText) as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+  };
+
+  const extractProxyApiIssues = (responseJson: Record<string, unknown> | null): string[] => {
+    if (!responseJson || typeof responseJson !== "object") {
+      return [];
+    }
+    const neris = responseJson.neris;
+    if (!neris || typeof neris !== "object") {
+      return [];
+    }
+    const detail = (neris as Record<string, unknown>).detail;
+    if (!Array.isArray(detail)) {
+      return [];
+    }
+    return detail
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return "";
+        }
+        const candidate = entry as Record<string, unknown>;
+        const loc = Array.isArray(candidate.loc)
+          ? candidate.loc
+              .filter((segment): segment is string => typeof segment === "string")
+              .join(" > ")
+          : "";
+        const message = typeof candidate.msg === "string" ? candidate.msg : "Validation issue";
+        return loc ? `API - ${loc}: ${message}` : `API - ${message}`;
+      })
+      .filter((issue) => issue.length > 0);
+  };
+
+  const runPreExportValidation = async (requestConfig: ExportRequestConfig): Promise<string[]> => {
+    if (!requestConfig.isProxyRequest) {
+      return [];
+    }
+    if (!requestConfig.exportUrl.includes("/api/neris/export")) {
+      return [];
+    }
+
+    const validateUrl = requestConfig.exportUrl.replace(
+      "/api/neris/export",
+      "/api/neris/validate",
+    );
+    const response = await fetch(validateUrl, {
+      method: "POST",
+      headers: requestConfig.headers,
+      body: JSON.stringify(requestConfig.payload),
+    });
+    const responseText = await response.text();
+    const responseJson = parseJsonResponseText(responseText);
+    const apiIssues = extractProxyApiIssues(responseJson);
+    if (apiIssues.length > 0) {
+      return apiIssues;
+    }
+    if (response.ok) {
+      return [];
+    }
+    if (response.status === 404 || response.status === 405) {
+      // If proxy validate isn't available yet, continue with export path.
+      return [];
+    }
+    if (response.status === 422) {
+      return [
+        `API - Validation failed (${response.status}). Review field values and required formats before export.`,
+      ];
+    }
+    throw new Error(
+      `Pre-export validation failed (${response.status} ${response.statusText}). ${
+        responseText.slice(0, 240) || "No response details."
+      }`,
+    );
+  };
+
+  const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
+    const integration =
+      requestConfig.payload.integration && typeof requestConfig.payload.integration === "object"
+        ? (requestConfig.payload.integration as Record<string, unknown>)
+        : null;
+    return integration && typeof integration.entityId === "string" ? integration.entityId : "";
+  };
+
+  const executeExport = async (
+    requestConfig: ExportRequestConfig,
+  ): Promise<ExportExecutionResult> => {
+    const isProxyRequest = requestConfig.isProxyRequest;
+    const serializedAidEntries = buildStoredAdditionalAidEntries();
     writeNerisDraft(callNumber, {
       formValues,
       reportStatus,
       lastSavedAt,
-      additionalAidEntries: additionalAidEntries.map((entry) => ({
-        aidDirection: entry.aidDirection,
-        aidType: entry.aidType,
-        aidDepartment: entry.aidDepartment,
-      })),
+      additionalAidEntries: serializedAidEntries,
     });
 
     const requestController = new AbortController();
     const timeoutId = window.setTimeout(() => requestController.abort(), 20_000);
 
     try {
-      const response = await fetch(exportUrl, {
+      const response = await fetch(requestConfig.exportUrl, {
         method: "POST",
-        headers,
-        body: JSON.stringify(payload),
+        headers: requestConfig.headers,
+        body: JSON.stringify(requestConfig.payload),
         signal: requestController.signal,
       });
       const responseText = await response.text();
-      let responseJson: Record<string, unknown> | null = null;
-      try {
-        responseJson = responseText
-          ? (JSON.parse(responseText) as Record<string, unknown>)
-          : null;
-      } catch {
-        responseJson = null;
-      }
+      const responseJson = parseJsonResponseText(responseText);
+      const submittedEntityId =
+        typeof responseJson?.submittedEntityId === "string"
+          ? responseJson.submittedEntityId
+          : getRequestedEntityId(requestConfig);
+      const submittedDepartmentNerisId = extractSubmittedDepartmentFromResponse(responseJson);
+      const submittedPayloadPreview =
+        toPrettyJson(responseJson?.submittedPayload ?? requestConfig.payload) ||
+        toPrettyJson(requestConfig.payload);
+      const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
+      const responseSummary = extractExportResponseSummary(response, responseJson, responseText);
       if (!response.ok) {
         if (response.status === 403) {
-          const submittedEntityId =
-            typeof responseJson?.submittedEntityId === "string"
-              ? responseJson.submittedEntityId
-              : "unknown";
           const troubleshooting =
             responseJson?.troubleshooting &&
             typeof responseJson.troubleshooting === "object"
@@ -3611,77 +5843,371 @@ function NerisReportFormPage({
                 .filter((value): value is string => typeof value === "string")
                 .slice(0, 8)
             : [];
-          const submittedDepartmentNerisId =
+          const submittedDepartmentFromTroubleshooting =
             typeof troubleshooting?.submittedDepartmentNerisId === "string"
               ? troubleshooting.submittedDepartmentNerisId
-              : "";
+              : submittedDepartmentNerisId;
           const troubleshootingMessage =
             typeof troubleshooting?.message === "string" ? troubleshooting.message : "";
-          throw new Error(
+          const detailedMessage =
             accessibleEntityIds.length
               ? `Export denied (403). ${
                   troubleshootingMessage ||
                   `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
                 } Submitted entity ID: ${submittedEntityId}. ${
-                  submittedDepartmentNerisId
-                    ? `Submitted Department NERIS ID: ${submittedDepartmentNerisId}. `
+                  submittedDepartmentFromTroubleshooting
+                    ? `Submitted Department NERIS ID: ${submittedDepartmentFromTroubleshooting}. `
                     : ""
                 }Accessible entity IDs: ${accessibleEntityIds.join(", ")}`
               : `Export denied (403). ${
                   troubleshootingMessage ||
                   `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
                 } Submitted entity ID: ${submittedEntityId}. ${
-                  submittedDepartmentNerisId
-                    ? `Submitted Department NERIS ID: ${submittedDepartmentNerisId}.`
+                  submittedDepartmentFromTroubleshooting
+                    ? `Submitted Department NERIS ID: ${submittedDepartmentFromTroubleshooting}.`
                     : ""
-                }`,
-          );
+                }`;
+          throw createExportRequestError(detailedMessage, {
+            httpStatus: response.status,
+            httpStatusText: response.statusText,
+            submittedEntityId,
+            submittedDepartmentNerisId: submittedDepartmentFromTroubleshooting,
+            responseSummary:
+              troubleshootingMessage ||
+              responseSummary ||
+              "Export denied by NERIS authorization checks.",
+            responseDetail,
+            submittedPayloadPreview,
+          });
         }
-        throw new Error(
+        throw createExportRequestError(
           `Export failed (${response.status} ${response.statusText}). ${
-            responseText.slice(0, 280) || "No response details."
+            responseSummary || "No response details."
           }`,
+          {
+            httpStatus: response.status,
+            httpStatusText: response.statusText,
+            submittedEntityId,
+            submittedDepartmentNerisId,
+            responseSummary: responseSummary || `${response.status} ${response.statusText}`,
+            responseDetail,
+            submittedPayloadPreview,
+          },
         );
       }
-      const exportedAt = new Date().toLocaleTimeString("en-US", {
+
+      const exportedAtDate = new Date();
+      const exportedAtIso = exportedAtDate.toISOString();
+      const exportedAtLabel = new Intl.DateTimeFormat("en-US", {
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
         hour: "2-digit",
         minute: "2-digit",
         second: "2-digit",
         hour12: false,
-      });
+      }).format(exportedAtDate);
       const nerisId =
         typeof responseJson?.neris === "object" &&
         responseJson.neris &&
         typeof (responseJson.neris as Record<string, unknown>).neris_id === "string"
           ? ((responseJson.neris as Record<string, unknown>).neris_id as string)
           : "";
-      setSaveMessage(
-        nerisId
-          ? `Report export accepted for ${detail.callNumber} at ${exportedAt}. NERIS ID: ${nerisId}`
-          : `Report export submitted for ${detail.callNumber} at ${exportedAt}.`,
-      );
+
+      return {
+        exportedAtIso,
+        exportedAtLabel,
+        attemptStatus: "success",
+        httpStatus: response.status,
+        httpStatusText: response.statusText,
+        nerisId,
+        submittedEntityId,
+        submittedDepartmentNerisId,
+        statusLabel: `${response.status} ${response.statusText}`.trim(),
+        responseSummary: responseSummary || "Export submitted successfully.",
+        responseDetail,
+        submittedPayloadPreview,
+      };
     } catch (error) {
-      setSaveMessage("");
       if (error instanceof DOMException && error.name === "AbortError") {
-        setErrorMessage(
+        throw createExportRequestError(
           "Export timed out after 20 seconds. If using local proxy, confirm `npm run proxy` is running, then retry.",
+          {
+            httpStatus: 0,
+            httpStatusText: "Timeout",
+            submittedEntityId: getRequestedEntityId(requestConfig),
+            submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
+            responseSummary: "Request timed out before receiving response from export endpoint.",
+            responseDetail: "",
+            submittedPayloadPreview: toPrettyJson(requestConfig.payload),
+          },
         );
-        return;
       }
       const reason = error instanceof Error ? error.message : "Unknown export error.";
       if (reason.includes("Failed to fetch")) {
-        setErrorMessage(
+        throw createExportRequestError(
           isProxyRequest
             ? "Export request could not reach local proxy. Start it with `npm run proxy`, then retry."
             : "Export request could not reach the endpoint (network/CORS/proxy issue). Check endpoint URL and server logs.",
+          {
+            httpStatus: 0,
+            httpStatusText: "Network Error",
+            submittedEntityId: getRequestedEntityId(requestConfig),
+            submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
+            responseSummary: "Network failure (no response body).",
+            responseDetail: "",
+            submittedPayloadPreview: toPrettyJson(requestConfig.payload),
+          },
         );
-      } else {
-        setErrorMessage(reason);
       }
+      if (
+        error &&
+        typeof error === "object" &&
+        "httpStatus" in error
+      ) {
+        throw error as ExportRequestError;
+      }
+      throw createExportRequestError(reason, {
+        httpStatus: 0,
+        httpStatusText: "Unexpected Error",
+        submittedEntityId: getRequestedEntityId(requestConfig),
+        submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
+        responseSummary: reason,
+        responseDetail: "",
+        submittedPayloadPreview: toPrettyJson(requestConfig.payload),
+      });
     } finally {
       window.clearTimeout(timeoutId);
+    }
+  };
+
+  const appendExportHistoryRecord = (
+    exportResult: ExportExecutionResult,
+    validatorNameOverride: string,
+    statusAtExport: string,
+  ) => {
+    appendNerisExportRecord({
+      id: `${detailForSideEffects.callNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      callNumber: detailForSideEffects.callNumber,
+      incidentType: detailForSideEffects.incidentType,
+      address: detailForSideEffects.address,
+      exportedAtIso: exportResult.exportedAtIso,
+      exportedAtLabel: exportResult.exportedAtLabel,
+      attemptStatus: exportResult.attemptStatus,
+      httpStatus: exportResult.httpStatus,
+      httpStatusText: exportResult.httpStatusText,
+      statusLabel: exportResult.statusLabel || "Submitted",
+      reportStatusAtExport: statusAtExport,
+      validatorName: validatorNameOverride.trim(),
+      reportWriterName: buildReportWriterName(),
+      submittedEntityId: exportResult.submittedEntityId,
+      submittedDepartmentNerisId: exportResult.submittedDepartmentNerisId,
+      nerisId: exportResult.nerisId,
+      responseSummary: exportResult.responseSummary,
+      responseDetail: exportResult.responseDetail,
+      submittedPayloadPreview: exportResult.submittedPayloadPreview,
+    });
+  };
+
+  const appendFailedExportHistoryRecord = (
+    error: unknown,
+    validatorNameOverride: string,
+    statusAtExport: string,
+  ) => {
+    const metadata =
+      error && typeof error === "object" ? (error as ExportRequestError) : null;
+    const exportedAtDate = new Date();
+    const exportedAtIso = exportedAtDate.toISOString();
+    const exportedAtLabel = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(exportedAtDate);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown export error.";
+    const httpStatus = typeof metadata?.httpStatus === "number" ? metadata.httpStatus : 0;
+    const httpStatusText =
+      typeof metadata?.httpStatusText === "string" ? metadata.httpStatusText : "Error";
+    appendNerisExportRecord({
+      id: `${detailForSideEffects.callNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      callNumber: detailForSideEffects.callNumber,
+      incidentType: detailForSideEffects.incidentType,
+      address: detailForSideEffects.address,
+      exportedAtIso,
+      exportedAtLabel,
+      attemptStatus: "failed",
+      httpStatus,
+      httpStatusText,
+      statusLabel: `${httpStatus || "Error"} ${httpStatusText}`.trim(),
+      reportStatusAtExport: statusAtExport,
+      validatorName: validatorNameOverride.trim(),
+      reportWriterName: buildReportWriterName(),
+      submittedEntityId:
+        typeof metadata?.submittedEntityId === "string" ? metadata.submittedEntityId : "",
+      submittedDepartmentNerisId:
+        typeof metadata?.submittedDepartmentNerisId === "string"
+          ? metadata.submittedDepartmentNerisId
+          : (formValues.fd_neris_id ?? "").trim(),
+      nerisId: "",
+      responseSummary:
+        typeof metadata?.responseSummary === "string" && metadata.responseSummary.trim().length > 0
+          ? metadata.responseSummary
+          : errorMessage,
+      responseDetail:
+        typeof metadata?.responseDetail === "string" ? metadata.responseDetail : "",
+      submittedPayloadPreview:
+        typeof metadata?.submittedPayloadPreview === "string"
+          ? metadata.submittedPayloadPreview
+          : "",
+    });
+  };
+
+  const handleOpenAdminValidateModal = () => {
+    if (role !== "admin") {
+      return;
+    }
+    const { mergedErrors, issueLabels } = buildValidationSnapshot();
+    setSectionErrors(mergedErrors);
+    setValidationIssues(issueLabels);
+    if (issueLabels.length > 0) {
+      applyValidationFailure(issueLabels);
+      return;
+    }
+    setErrorMessage("");
+    setSaveMessage("");
+    setValidationModal({
+      mode: "adminConfirm",
+      issues: [],
+    });
+    if (!validatorName.trim()) {
+      setValidatorName(username.trim());
+    }
+  };
+
+  const handleAdminValidateAndExport = async () => {
+    if (role !== "admin") {
+      return;
+    }
+    const normalizedValidatorName = validatorName.trim();
+    if (!normalizedValidatorName) {
+      setErrorMessage("Validator username is required before validating/exporting.");
+      return;
+    }
+
+    const localValidation = buildValidationSnapshot();
+    setSectionErrors(localValidation.mergedErrors);
+    setValidationIssues(localValidation.issueLabels);
+    if (localValidation.issueLabels.length > 0) {
+      applyValidationFailure(localValidation.issueLabels);
+      return;
+    }
+
+    setErrorMessage("");
+    setSaveMessage("Validate + export in progress...");
+    setValidationModal(null);
+    setIsExporting(true);
+    try {
+      const requestConfig = buildExportRequestConfig();
+      const preExportIssues = await runPreExportValidation(requestConfig);
+      if (preExportIssues.length > 0) {
+        setValidationIssues(preExportIssues);
+        setSectionErrors({});
+        setSaveMessage("");
+        setErrorMessage(
+          "Pre-export validation found issues that are likely to return API 422 errors.",
+        );
+        setValidationModal({
+          mode: "issues",
+          issues: preExportIssues,
+        });
+        return;
+      }
+
+      const exportResult = await executeExport(requestConfig);
+      appendExportHistoryRecord(exportResult, normalizedValidatorName, "Validated");
+      setValidationIssues([]);
+      setSectionErrors({});
+      stampSavedAt(
+        "manual",
+        "Validated",
+        exportResult.nerisId
+          ? `Validated + exported at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
+          : `Validated + exported at ${exportResult.exportedAtLabel}.`,
+      );
+      setValidationModal({
+        mode: "adminSuccess",
+        issues: [],
+      });
+    } catch (error) {
+      appendFailedExportHistoryRecord(error, normalizedValidatorName, reportStatus);
+      setSaveMessage("");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unexpected validate/export error.",
+      );
+    } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleExportReport = async () => {
+    setValidationModal(null);
+    setErrorMessage("");
+    setSaveMessage("Export in progress...");
+    setIsExporting(true);
+    try {
+      const requestConfig = buildExportRequestConfig();
+      const exportResult = await executeExport(requestConfig);
+      appendExportHistoryRecord(exportResult, "", reportStatus);
+      setSaveMessage(
+        exportResult.nerisId
+          ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
+          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`,
+      );
+    } catch (error) {
+      appendFailedExportHistoryRecord(error, "", reportStatus);
+      setSaveMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "Unknown export error.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
+  const handleValidationModalClose = () => {
+    setValidationModal(null);
+  };
+
+  const handleValidationModalReturn = () => {
+    setValidationModal(null);
+    navigate("/reporting/neris");
+  };
+
+  const handleValidationModalFixIssues = () => {
+    setValidationModal(null);
+    setActiveSectionId("core");
+  };
+
+  const handleValidationModalCancelAdmin = () => {
+    setValidationModal(null);
+  };
+
+  const handleValidationValidatorNameSubmit = (
+    event: FormEvent<HTMLFormElement>,
+  ) => {
+    event.preventDefault();
+    void handleAdminValidateAndExport();
+  };
+
+  const handleValidationValidatorNameChange = (event: ChangeEvent<HTMLInputElement>) => {
+    setValidatorName(event.currentTarget.value);
+  };
+
+  const handleValidationModalValidateFromSuccess = () => {
+    setValidationModal(null);
+    navigate("/reporting/neris");
   };
 
   const handleSaveDraft = () => {
@@ -3716,16 +6242,6 @@ function NerisReportFormPage({
       return;
     }
     navigate("/reporting/neris");
-  };
-
-  const handleValidationModalReturn = () => {
-    setValidationModal(null);
-    navigate("/reporting/neris");
-  };
-
-  const handleValidationModalFixIssues = () => {
-    setValidationModal(null);
-    setActiveSectionId("core");
   };
 
   const addAdditionalAidEntry = () => {
@@ -3764,14 +6280,7 @@ function NerisReportFormPage({
     const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
     const error = sectionErrors[field.id];
     const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
-    const selectedValues = value
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
     const normalizedSingleValue = normalizeNerisEnumValue(value);
-    const normalizedSelectedValues = selectedValues.map((entry) =>
-      normalizeNerisEnumValue(entry),
-    );
     const isPrimaryIncidentTypeField =
       field.id === "primary_incident_type" &&
       field.inputKind === "select" &&
@@ -3788,6 +6297,10 @@ function NerisReportFormPage({
       field.id === "special_incident_modifiers" &&
       field.inputKind === "multiselect" &&
       field.optionsKey === "incident_modifier";
+    const isLocationUseField =
+      (field.id === "location_use_primary" || field.id === "location_use_secondary") &&
+      field.inputKind === "select" &&
+      field.optionsKey === "location_use";
     const isNoActionReasonField =
       field.id === "incident_noaction" &&
       field.inputKind === "select" &&
@@ -3849,25 +6362,6 @@ function NerisReportFormPage({
     const selectedAdditionalAidDepartments = additionalAidEntries
       .map((entry) => entry.aidDepartment.trim())
       .filter((entry) => entry.length > 0);
-    const shouldShowTypeahead =
-      (field.inputKind === "select" || field.inputKind === "multiselect") &&
-      options.length > 10 &&
-      !isPrimaryIncidentTypeField &&
-      !isAdditionalIncidentTypesField &&
-      !isActionsTakenField &&
-      !isSpecialIncidentModifiersField &&
-      !isNoActionReasonField &&
-      !isAidGivenQuestionField;
-    const optionFilter = fieldOptionFilters[field.id] ?? "";
-    const normalizedFilter = optionFilter.trim().toLowerCase();
-    const filteredOptions =
-      shouldShowTypeahead && normalizedFilter
-        ? options.filter(
-            (option) =>
-              option.label.toLowerCase().includes(normalizedFilter) ||
-              option.value.toLowerCase().includes(normalizedFilter),
-          )
-        : options;
 
     if (
       field.id === "incident_displaced_cause" &&
@@ -3879,6 +6373,29 @@ function NerisReportFormPage({
       return null;
     }
     if (isAidManagedHiddenField) {
+      return null;
+    }
+    if (field.id === "location_direction_of_travel" && !showDirectionOfTravelField) {
+      return null;
+    }
+    if (field.id === "location_cross_street_type" && !showCrossStreetTypeField) {
+      return null;
+    }
+    if (currentSection.id === "resources" && field.id.startsWith("resource_")) {
+      return null;
+    }
+    if (currentSection.id === "riskReduction") {
+      return null;
+    }
+    if (
+      currentSection.id === "emergingHazards" &&
+      [
+        "emerg_haz_electric_type",
+        "emerg_haz_pv_type",
+        "emerg_haz_pv_source_target",
+        "emerg_haz_suppression_methods",
+      ].includes(field.id)
+    ) {
       return null;
     }
 
@@ -3939,7 +6456,12 @@ function NerisReportFormPage({
                       type="button"
                       className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                       aria-pressed={isSelected}
-                      onClick={() => updateFieldValue("incident_has_aid", option.value)}
+                      onClick={() =>
+                        updateFieldValue(
+                          "incident_has_aid",
+                          togglePillValue(formValues.incident_has_aid ?? "", option.value),
+                        )
+                      }
                     >
                       {option.label}
                     </button>
@@ -3963,7 +6485,15 @@ function NerisReportFormPage({
                         type="button"
                         className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                         aria-pressed={isSelected}
-                        onClick={() => updateFieldValue("incident_aid_agency_type", option.value)}
+                        onClick={() =>
+                          updateFieldValue(
+                            "incident_aid_agency_type",
+                            togglePillValue(
+                              formValues.incident_aid_agency_type ?? "",
+                              option.value,
+                            ),
+                          )
+                        }
                       >
                         {option.label}
                       </button>
@@ -4007,7 +6537,15 @@ function NerisReportFormPage({
                         type="button"
                         className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                         aria-pressed={isSelected}
-                        onClick={() => updateFieldValue("incident_aid_direction", option.value)}
+                        onClick={() =>
+                          updateFieldValue(
+                            "incident_aid_direction",
+                            togglePillValue(
+                              formValues.incident_aid_direction ?? "",
+                              option.value,
+                            ),
+                          )
+                        }
                       >
                         {option.label}
                       </button>
@@ -4069,7 +6607,11 @@ function NerisReportFormPage({
                                 className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
                                 aria-pressed={isSelected}
                                 onClick={() =>
-                                  updateAdditionalAidEntry(entryIndex, "aidDirection", option.value)
+                                  updateAdditionalAidEntry(
+                                    entryIndex,
+                                    "aidDirection",
+                                    togglePillValue(entry.aidDirection, option.value),
+                                  )
                                 }
                               >
                                 {option.label}
@@ -4157,14 +6699,10 @@ function NerisReportFormPage({
                       if (isDisabled) {
                         return;
                       }
-                      if (
-                        (isNoActionReasonField || isAutomaticAlarmField) &&
-                        isSelected
-                      ) {
-                        updateFieldValue(field.id, "");
-                        return;
-                      }
-                      updateFieldValue(field.id, option.value);
+                      updateFieldValue(
+                        field.id,
+                        togglePillValue(normalizedSingleValue, option.value),
+                      );
                     }}
                   >
                     {option.label}
@@ -4183,35 +6721,27 @@ function NerisReportFormPage({
               placeholder=""
               searchPlaceholder="Search incident types..."
             />
+          ) : isLocationUseField ? (
+            <NerisGroupedOptionSelect
+              inputId={inputId}
+              value={normalizedSingleValue}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              mode="single"
+              variant="incidentType"
+              placeholder={`Select ${field.label.toLowerCase()}`}
+              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+            />
           ) : (
-            <>
-              {shouldShowTypeahead ? (
-                <input
-                  type="text"
-                  className="field-typeahead-input"
-                  value={optionFilter}
-                  placeholder={`Filter ${field.label.toLowerCase()}...`}
-                  onChange={(event) =>
-                    setFieldOptionFilters((previous) => ({
-                      ...previous,
-                      [field.id]: event.target.value,
-                    }))
-                  }
-                />
-              ) : null}
-              <select
-                id={inputId}
-                value={normalizedSingleValue}
-                onChange={(event) => updateFieldValue(field.id, event.target.value)}
-              >
-                {!isRequired ? <option value="">Select an option</option> : null}
-                {filteredOptions.map((option) => (
-                  <option key={`${field.id}-${option.value}`} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </>
+            <NerisFlatSingleOptionSelect
+              inputId={inputId}
+              value={normalizedSingleValue}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder={`Select ${field.label.toLowerCase()}`}
+              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+              allowClear={!isRequired}
+            />
           )
         ) : null}
 
@@ -4261,42 +6791,14 @@ function NerisReportFormPage({
               disabled={isActionsTakenDisabled}
             />
           ) : (
-            <>
-              {shouldShowTypeahead ? (
-                <input
-                  type="text"
-                  className="field-typeahead-input"
-                  value={optionFilter}
-                  placeholder={`Filter ${field.label.toLowerCase()}...`}
-                  onChange={(event) =>
-                    setFieldOptionFilters((previous) => ({
-                      ...previous,
-                      [field.id]: event.target.value,
-                    }))
-                  }
-                />
-              ) : null}
-              <select
-                id={inputId}
-                multiple
-                className="neris-multiselect"
-                value={normalizedSelectedValues}
-                onChange={(event) =>
-                  updateFieldValue(
-                    field.id,
-                    Array.from(event.target.selectedOptions)
-                      .map((option) => option.value)
-                      .join(","),
-                  )
-                }
-              >
-                {filteredOptions.map((option) => (
-                  <option key={`${field.id}-${option.value}`} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </>
+            <NerisFlatMultiOptionSelect
+              inputId={inputId}
+              value={value}
+              options={options}
+              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
+              placeholder={`Select ${field.label.toLowerCase()}`}
+              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+            />
           )
         ) : null}
 
@@ -4312,6 +6814,24 @@ function NerisReportFormPage({
       </div>
     );
   };
+
+  if (!detail) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>NERIS report not found</h1>
+            <p>No matching incident exists for report ID {callNumber}.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   return (
     <section className="page-section">
@@ -4359,10 +6879,21 @@ function NerisReportFormPage({
           <button
             type="button"
             className="secondary-button compact-button"
-            onClick={handleValidateForm}
+            onClick={handleCheckForErrors}
+            disabled={isExporting}
           >
-            Validate
+            Check for Errors
           </button>
+          {role === "admin" ? (
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={handleOpenAdminValidateModal}
+              disabled={isExporting}
+            >
+              Validate
+            </button>
+          ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
             {reportStatus}
           </span>
@@ -4372,11 +6903,21 @@ function NerisReportFormPage({
       {validationModal ? (
         <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
           <div className="validation-modal panel">
-            {validationModal.mode === "success" ? (
+            {validationModal.mode === "checkSuccess" ? (
               <>
-                <h2>Report is now In Review</h2>
-                <p>Validation passed and the report status has been updated.</p>
+                <h2>Check complete</h2>
+                <p>
+                  No required-field issues were found. Status has been updated to
+                  In Review.
+                </p>
                 <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={handleValidationModalClose}
+                  >
+                    Continue Editing
+                  </button>
                   <button
                     type="button"
                     className="primary-button compact-button"
@@ -4386,7 +6927,8 @@ function NerisReportFormPage({
                   </button>
                 </div>
               </>
-            ) : (
+            ) : null}
+            {validationModal.mode === "issues" ? (
               <>
                 <h2>Validation requires updates</h2>
                 <p>The following required fields still need values:</p>
@@ -4398,6 +6940,13 @@ function NerisReportFormPage({
                 <div className="validation-modal-actions">
                   <button
                     type="button"
+                    className="secondary-button compact-button"
+                    onClick={handleValidationModalClose}
+                  >
+                    Close
+                  </button>
+                  <button
+                    type="button"
                     className="primary-button compact-button"
                     onClick={handleValidationModalFixIssues}
                   >
@@ -4405,7 +6954,58 @@ function NerisReportFormPage({
                   </button>
                 </div>
               </>
-            )}
+            ) : null}
+            {validationModal.mode === "adminConfirm" ? (
+              <form className="validation-modal-form" onSubmit={handleValidationValidatorNameSubmit}>
+                <h2>Admin Validate + Auto Export</h2>
+                <p>
+                  Pre-export checks are complete. Enter the validator username, then
+                  Validate to auto-export this report.
+                </p>
+                <label htmlFor="neris-validator-name">Validator username</label>
+                <input
+                  id="neris-validator-name"
+                  type="text"
+                  value={validatorName}
+                  onChange={handleValidationValidatorNameChange}
+                  placeholder="Enter validator username"
+                />
+                <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={handleValidationModalCancelAdmin}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="primary-button compact-button"
+                    disabled={isExporting}
+                  >
+                    {isExporting ? "Validating..." : "Validate + Export"}
+                  </button>
+                </div>
+              </form>
+            ) : null}
+            {validationModal.mode === "adminSuccess" ? (
+              <>
+                <h2>Report validated and exported</h2>
+                <p>
+                  Status has been set to Validated and this export is now logged in
+                  View Exports.
+                </p>
+                <div className="validation-modal-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={handleValidationModalValidateFromSuccess}
+                  >
+                    Return to Incidents
+                  </button>
+                </div>
+              </>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -4431,16 +7031,1146 @@ function NerisReportFormPage({
         </aside>
 
         <article className="panel neris-form-panel">
-          {currentSection.id !== "core" ? (
+          {currentSection.id !== "core" &&
+          currentSection.id !== "location" &&
+          currentSection.id !== "emergingHazards" &&
+          currentSection.id !== "riskReduction" ? (
             <div className="panel-header">
               <h2>{currentSection.label}</h2>
             </div>
           ) : null}
-          {currentSection.id !== "core" ? (
+          {currentSection.id !== "core" && currentSection.helper.trim().length > 0 ? (
             <p className="panel-description">{currentSection.helper}</p>
           ) : null}
           <div className="settings-form neris-field-grid">
-            {sectionFields.flatMap((field) => {
+            {currentSection.id === "emergingHazards" ? (
+              <section className="field-span-two neris-emerging-hazard-layout">
+                <div className="neris-core-field-heading">EMERGING HAZARDS</div>
+
+                <article className="neris-emerging-hazard-group">
+                  <div className="neris-emerging-hazard-group-header">
+                    <h3 className="neris-core-field-heading">ELECTROCUTION</h3>
+                    <button
+                      type="button"
+                      className="rl-box-button"
+                      onClick={addEmergingElectrocutionItem}
+                    >
+                      + Add item
+                    </button>
+                  </div>
+
+                  {emergingElectrocutionItems.length ? (
+                    <div className="neris-emerging-hazard-item-list">
+                      {emergingElectrocutionItems.map((item, itemIndex) => (
+                        <div key={item.id} className="neris-emerging-hazard-item-card">
+                          <div className="neris-emerging-hazard-item-title">
+                            <span>Hazard {itemIndex + 1}</span>
+                            <button
+                              type="button"
+                              className="neris-emerging-hazard-delete-button"
+                              aria-label={`Delete electrocution hazard ${itemIndex + 1}`}
+                              onClick={() => deleteEmergingElectrocutionItem(item.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div className="neris-emerging-hazard-field-grid">
+                            <div className="neris-emerging-hazard-field">
+                              <label>Electrical Hazard Type</label>
+                              <NerisGroupedOptionSelect
+                                inputId={`${item.id}-electrical-type`}
+                                value={item.electricalHazardType}
+                                options={getNerisValueOptions("emerg_haz_elec")}
+                                onChange={(nextValue) =>
+                                  updateEmergingElectrocutionItem(
+                                    item.id,
+                                    "electricalHazardType",
+                                    nextValue,
+                                  )
+                                }
+                                mode="single"
+                                variant="incidentType"
+                                placeholder="Select electrical hazard type"
+                                searchPlaceholder="Search electrical hazard types..."
+                              />
+                            </div>
+                            <div className="neris-emerging-hazard-field">
+                              <label>Emerging Hazard Suppression Method(s)</label>
+                              <NerisFlatMultiOptionSelect
+                                inputId={`${item.id}-electrical-suppression`}
+                                value={item.suppressionMethods}
+                                options={getNerisValueOptions("emerg_haz_suppression")}
+                                onChange={(nextValue) =>
+                                  updateEmergingElectrocutionItem(
+                                    item.id,
+                                    "suppressionMethods",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select suppression method(s)"
+                                searchPlaceholder="Search suppression methods..."
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+
+                <article className="neris-emerging-hazard-group">
+                  <div className="neris-emerging-hazard-group-header">
+                    <h3 className="neris-core-field-heading">POWER GENERATION</h3>
+                    <button
+                      type="button"
+                      className="rl-box-button"
+                      onClick={addEmergingPowerGenerationItem}
+                    >
+                      + Add item
+                    </button>
+                  </div>
+
+                  {emergingPowerGenerationItems.length ? (
+                    <div className="neris-emerging-hazard-item-list">
+                      {emergingPowerGenerationItems.map((item, itemIndex) => (
+                        <div key={item.id} className="neris-emerging-hazard-item-card">
+                          <div className="neris-emerging-hazard-item-title">
+                            <span>Hazard {itemIndex + 1}</span>
+                            <button
+                              type="button"
+                              className="neris-emerging-hazard-delete-button"
+                              aria-label={`Delete power generation hazard ${itemIndex + 1}`}
+                              onClick={() => deleteEmergingPowerGenerationItem(item.id)}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          </div>
+                          <div className="neris-emerging-hazard-field-grid">
+                            <div className="neris-emerging-hazard-field">
+                              <label>Photovoltaic Hazard Type</label>
+                              <NerisFlatSingleOptionSelect
+                                inputId={`${item.id}-pv-type`}
+                                value={item.photovoltaicHazardType}
+                                options={getNerisValueOptions("emerg_haz_pv")}
+                                onChange={(nextValue) =>
+                                  updateEmergingPowerGenerationItem(
+                                    item.id,
+                                    "photovoltaicHazardType",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select photovoltaic hazard type"
+                                searchPlaceholder="Search photovoltaic hazard types..."
+                              />
+                            </div>
+                            <div className="neris-emerging-hazard-field">
+                              <label>Was PV the Source or Target?</label>
+                              <div className="neris-single-choice-row" role="group" aria-label="Was PV the Source or Target?">
+                                {pvSourceTargetOptions.map((option) => {
+                                  const isSelected = option.value === item.pvSourceTarget;
+                                  return (
+                                    <button
+                                      key={`${item.id}-pv-source-target-${option.value}`}
+                                      type="button"
+                                      className={`neris-single-choice-button${
+                                        isSelected ? " selected" : ""
+                                      }`}
+                                      aria-pressed={isSelected}
+                                      onClick={() =>
+                                        updateEmergingPowerGenerationItem(
+                                          item.id,
+                                          "pvSourceTarget",
+                                          togglePillValue(item.pvSourceTarget, option.value),
+                                        )
+                                      }
+                                    >
+                                      {option.label}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                            <div className="neris-emerging-hazard-field field-span-two">
+                              <label>Emerging Hazard Suppression Method(s)</label>
+                              <NerisFlatMultiOptionSelect
+                                inputId={`${item.id}-power-suppression`}
+                                value={item.suppressionMethods}
+                                options={getNerisValueOptions("emerg_haz_suppression")}
+                                onChange={(nextValue) =>
+                                  updateEmergingPowerGenerationItem(
+                                    item.id,
+                                    "suppressionMethods",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select suppression method(s)"
+                                searchPlaceholder="Search suppression methods..."
+                              />
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
+                </article>
+              </section>
+            ) : null}
+            {currentSection.id === "riskReduction" ? (
+              <section className="field-span-two neris-risk-reduction-layout">
+                <div className="neris-core-field-heading">RISK REDUCTION</div>
+
+                <div className="neris-risk-reduction-grid">
+                  <div className="neris-risk-reduction-field">
+                    <label>Risk reduction completed</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Risk reduction completed">
+                      {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                        const isSelected = option.value === riskReductionCompletedValue;
+                        return (
+                          <button
+                            key={`risk-reduction-completed-${option.value}`}
+                            type="button"
+                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              updateFieldValue(
+                                "risk_reduction_completed",
+                                togglePillValue(riskReductionCompletedValue, option.value),
+                              )
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="neris-risk-reduction-field">
+                    <label>Follow-up required</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Follow-up required">
+                      {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                        const isSelected = option.value === riskReductionFollowUpValue;
+                        return (
+                          <button
+                            key={`risk-reduction-follow-up-${option.value}`}
+                            type="button"
+                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              updateFieldValue(
+                                "risk_reduction_follow_up_required",
+                                togglePillValue(riskReductionFollowUpValue, option.value),
+                              )
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  <div className="neris-risk-reduction-field">
+                    <label>Contact Made?</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Contact made">
+                      {RISK_REDUCTION_YES_NO_OPTIONS.map((option) => {
+                        const isSelected = option.value === riskReductionContactMadeValue;
+                        return (
+                          <button
+                            key={`risk-reduction-contact-made-${option.value}`}
+                            type="button"
+                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                            aria-pressed={isSelected}
+                            onClick={() =>
+                              updateFieldValue(
+                                "risk_reduction_contacts_made",
+                                togglePillValue(riskReductionContactMadeValue, option.value),
+                              )
+                            }
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+
+                {riskReductionContactMadeValue === "YES" ? (
+                  <section className="neris-risk-reduction-contact-box">
+                    <div className="neris-risk-reduction-contact-grid">
+                      <label>
+                        Full Name
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_full_name ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue(
+                              "risk_reduction_contact_full_name",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        Phone Number
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_phone_number ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue(
+                              "risk_reduction_contact_phone_number",
+                              event.target.value,
+                            )
+                          }
+                        />
+                      </label>
+                      <label>
+                        Street
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_street ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_street", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        City
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_city ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_city", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        State
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_state ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_state", event.target.value)
+                          }
+                        />
+                      </label>
+                      <label>
+                        Zip Code
+                        <input
+                          type="text"
+                          value={formValues.risk_reduction_contact_zip_code ?? ""}
+                          onChange={(event) =>
+                            updateFieldValue("risk_reduction_contact_zip_code", event.target.value)
+                          }
+                        />
+                      </label>
+                    </div>
+                  </section>
+                ) : null}
+
+                {riskReductionCompletedValue === "YES" ? (
+                  <div className="neris-risk-reduction-conditional-layout">
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Was there at least one smoke alarm present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Was there at least one smoke alarm present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected = option.value === riskReductionSmokeAlarmPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-smoke-alarm-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_smoke_alarm_present",
+                                  togglePillValue(riskReductionSmokeAlarmPresentValue, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {riskReductionSmokeAlarmPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>
+                              Was there at least one working or successfully test smoke alarm?
+                            </label>
+                            <div
+                              className="neris-single-choice-row"
+                              role="group"
+                              aria-label="Was there at least one working or successfully test smoke alarm?"
+                            >
+                              {RISK_REDUCTION_YES_NO_OPTIONS.map((option) => {
+                                const isSelected =
+                                  option.value === riskReductionSmokeAlarmWorkingValue;
+                                return (
+                                  <button
+                                    key={`risk-reduction-smoke-working-${option.value}`}
+                                    type="button"
+                                    className={`neris-single-choice-button${
+                                      isSelected ? " selected" : ""
+                                    }`}
+                                    aria-pressed={isSelected}
+                                    onClick={() =>
+                                      updateFieldValue(
+                                        "risk_reduction_smoke_alarm_working",
+                                        togglePillValue(
+                                          riskReductionSmokeAlarmWorkingValue,
+                                          option.value,
+                                        ),
+                                      )
+                                    }
+                                  >
+                                    {option.label}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <div>
+                            <label>Smoke Alarm Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-smoke-alarm-types"
+                              value={formValues.risk_reduction_smoke_alarm_types ?? ""}
+                              options={RISK_REDUCTION_SMOKE_ALARM_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue("risk_reduction_smoke_alarm_types", nextValue)
+                              }
+                              placeholder="Select smoke alarm type(s)"
+                              searchPlaceholder="Search smoke alarm types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Was there at least one fire alarm present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Was there at least one fire alarm present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected = option.value === riskReductionFireAlarmPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-fire-alarm-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_fire_alarm_present",
+                                  togglePillValue(riskReductionFireAlarmPresentValue, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {riskReductionFireAlarmPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>Fire Alarm Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-fire-alarm-types"
+                              value={formValues.risk_reduction_fire_alarm_types ?? ""}
+                              options={RISK_REDUCTION_FIRE_ALARM_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue("risk_reduction_fire_alarm_types", nextValue)
+                              }
+                              placeholder="Select fire alarm type(s)"
+                              searchPlaceholder="Search fire alarm types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Were there any other alarms present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Were there any other alarms present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected = option.value === riskReductionOtherAlarmPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-other-alarm-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_other_alarm_present",
+                                  togglePillValue(riskReductionOtherAlarmPresentValue, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {riskReductionOtherAlarmPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>Other Alarm Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-other-alarm-types"
+                              value={formValues.risk_reduction_other_alarm_types ?? ""}
+                              options={RISK_REDUCTION_OTHER_ALARM_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue("risk_reduction_other_alarm_types", nextValue)
+                              }
+                              placeholder="Select other alarm type(s)"
+                              searchPlaceholder="Search other alarm types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>Were there any fire suppresion systems present?</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Were there any fire suppression systems present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected =
+                            option.value === riskReductionFireSuppressionPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-fire-suppression-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() => {
+                                const nextValue = togglePillValue(
+                                  riskReductionFireSuppressionPresentValue,
+                                  option.value,
+                                );
+                                updateFieldValue(
+                                  "risk_reduction_fire_suppression_present",
+                                  nextValue,
+                                );
+                                if (
+                                  nextValue === "YES" &&
+                                  riskReductionSuppressionSystems.length === 0
+                                ) {
+                                  addRiskReductionSuppressionSystem();
+                                }
+                              }}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+
+                      {riskReductionFireSuppressionPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          {riskReductionSuppressionSystems.map((system, systemIndex) => (
+                            <div
+                              key={system.id}
+                              className="neris-risk-reduction-suppression-system-card"
+                            >
+                              <div className="neris-risk-reduction-suppression-system-header">
+                                <strong>Fire Suppression System {systemIndex + 1}</strong>
+                                <button
+                                  type="button"
+                                  className="neris-emerging-hazard-delete-button"
+                                  aria-label={`Delete fire suppression system ${systemIndex + 1}`}
+                                  onClick={() => deleteRiskReductionSuppressionSystem(system.id)}
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                              <div className="neris-risk-reduction-subfield-grid">
+                                <label>
+                                  Fire Suppression Type
+                                  <input
+                                    type="text"
+                                    value={system.suppressionType}
+                                    onChange={(event) =>
+                                      updateRiskReductionSuppressionSystem(
+                                        system.id,
+                                        "suppressionType",
+                                        event.target.value,
+                                      )
+                                    }
+                                  />
+                                </label>
+                                <div>
+                                  <label>Suppression System Coverage</label>
+                                  <div
+                                    className="neris-single-choice-row"
+                                    role="group"
+                                    aria-label="Suppression system coverage"
+                                  >
+                                    {RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS.map((option) => {
+                                      const isSelected =
+                                        option.value === system.suppressionCoverage;
+                                      return (
+                                        <button
+                                          key={`${system.id}-coverage-${option.value}`}
+                                          type="button"
+                                          className={`neris-single-choice-button${
+                                            isSelected ? " selected" : ""
+                                          }`}
+                                          aria-pressed={isSelected}
+                                          onClick={() =>
+                                            updateRiskReductionSuppressionSystem(
+                                              system.id,
+                                              "suppressionCoverage",
+                                              togglePillValue(
+                                                system.suppressionCoverage,
+                                                option.value,
+                                              ),
+                                            )
+                                          }
+                                        >
+                                          {option.label}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+
+                          <button
+                            type="button"
+                            className="fl-link-button"
+                            onClick={addRiskReductionSuppressionSystem}
+                          >
+                            + Add Another Fire Suppression System
+                          </button>
+                        </div>
+                      ) : null}
+                    </section>
+
+                    <section className="neris-risk-reduction-question-card">
+                      <label>
+                        Was there at least one cooking fire suppression system present?
+                      </label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Was there at least one cooking fire suppression system present?"
+                      >
+                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
+                          const isSelected =
+                            option.value === riskReductionCookingSuppressionPresentValue;
+                          return (
+                            <button
+                              key={`risk-reduction-cooking-suppression-present-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateFieldValue(
+                                  "risk_reduction_cooking_suppression_present",
+                                  togglePillValue(
+                                    riskReductionCookingSuppressionPresentValue,
+                                    option.value,
+                                  ),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {riskReductionCookingSuppressionPresentValue === "YES" ? (
+                        <div className="neris-risk-reduction-subfields">
+                          <div>
+                            <label>Cooking Fire Suppression Type(s)</label>
+                            <NerisFlatMultiOptionSelect
+                              inputId="risk-reduction-cooking-suppression-types"
+                              value={formValues.risk_reduction_cooking_suppression_types ?? ""}
+                              options={RISK_REDUCTION_COOKING_SUPPRESSION_TYPE_OPTIONS}
+                              onChange={(nextValue) =>
+                                updateFieldValue(
+                                  "risk_reduction_cooking_suppression_types",
+                                  nextValue,
+                                )
+                              }
+                              placeholder="Select cooking fire suppression type(s)"
+                              searchPlaceholder="Search cooking suppression types..."
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                    </section>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+            {currentSection.id === "resources" ? (
+              <section className="field-span-two neris-resource-unit-list">
+                {resourceUnits.length ? (
+                  resourceUnits.map((unitEntry) => {
+                    const selectedPersonnelValues = unitEntry.personnel
+                      .split(",")
+                      .map((entry) => entry.trim())
+                      .filter((entry) => entry.length > 0);
+                    const selectedPersonnelOptions = selectedPersonnelValues
+                      .map((value) =>
+                        RESOURCE_PERSONNEL_OPTIONS.find((option) => option.value === value),
+                      )
+                      .filter((option): option is NerisValueOption => Boolean(option));
+                    const reportWriterOptions = selectedPersonnelOptions.length
+                      ? selectedPersonnelOptions
+                      : RESOURCE_PERSONNEL_OPTIONS;
+                    const staffingDisplay = getStaffingValueForUnit(
+                      unitEntry.unitId,
+                      unitEntry.personnel,
+                    );
+                    const unitTypeDisplayLabel =
+                      unitTypeOptions.find((option) => option.value === unitEntry.unitType)?.label ??
+                      unitEntry.unitType;
+                    const personnelError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "personnel")] ?? "";
+                    const dispatchTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "dispatchTime")] ??
+                      "";
+                    const enrouteTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime")] ??
+                      "";
+                    const onSceneTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime")] ??
+                      "";
+                    const clearTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "clearTime")] ?? "";
+
+                    return (
+                      <article key={unitEntry.id} className="neris-resource-unit-card">
+                        <header className="neris-resource-unit-header">
+                          <div className="neris-resource-unit-summary">
+                            <strong className="neris-resource-unit-name">
+                              {unitEntry.unitId || "Unassigned unit"}
+                            </strong>
+                            <button
+                              type="button"
+                              className={`neris-resource-complete-chip ${
+                                unitEntry.isComplete ? "complete" : "incomplete"
+                              }`}
+                              onClick={() => toggleResourceUnitComplete(unitEntry.id)}
+                            >
+                              <span className="neris-resource-complete-check">
+                                {unitEntry.isComplete ? "x" : ""}
+                              </span>
+                              {unitEntry.isComplete ? "Complete" : "Incomplete"}
+                            </button>
+                            <span className="neris-resource-personnel-indicator">
+                              <Users size={14} />
+                              <strong>{staffingDisplay || "0"}</strong>
+                            </span>
+                            <div className="neris-resource-time-grid">
+                              <div className="neris-resource-time-item">
+                                <span>Dispatch</span>
+                                <strong>{toResourceSummaryTime(unitEntry.dispatchTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>Enroute</span>
+                                <strong>{toResourceSummaryTime(unitEntry.enrouteTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>On Scene</span>
+                                <strong>{toResourceSummaryTime(unitEntry.onSceneTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>Clear</span>
+                                <strong>{toResourceSummaryTime(unitEntry.clearTime)}</strong>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="neris-resource-unit-actions">
+                            <button
+                              type="button"
+                              className="neris-resource-delete-button"
+                              onClick={() => deleteResourceUnit(unitEntry.id)}
+                              aria-label={`Delete ${unitEntry.unitId || "unit"} block`}
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                            <button
+                              type="button"
+                              className="icon-button"
+                              aria-label={
+                                unitEntry.isExpanded
+                                  ? "Collapse unit details"
+                                  : "Expand unit details"
+                              }
+                              onClick={() => toggleResourceUnitExpanded(unitEntry.id)}
+                            >
+                              <ChevronDown
+                                size={14}
+                                className={`neris-resource-expand-icon${
+                                  unitEntry.isExpanded ? " open" : ""
+                                }`}
+                              />
+                            </button>
+                          </div>
+                        </header>
+                        {unitEntry.isExpanded ? (
+                          <div className="neris-resource-unit-body">
+                            <div className="neris-resource-field-grid">
+                              <div className="neris-resource-field field-span-two">
+                                <label>Unit Response Mode</label>
+                                <div className="neris-single-choice-row" role="group" aria-label="Unit response mode">
+                                  {responseModeOptions.map((option) => {
+                                    const isSelected = option.value === unitEntry.responseMode;
+                                    return (
+                                      <button
+                                        key={`${unitEntry.id}-response-mode-${option.value}`}
+                                        type="button"
+                                        className={`neris-single-choice-button${
+                                          isSelected ? " selected" : ""
+                                        }`}
+                                        aria-pressed={isSelected}
+                                        onClick={() =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "responseMode",
+                                            isSelected ? "" : option.value,
+                                          )
+                                        }
+                                      >
+                                        {option.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="neris-resource-field">
+                                <label>Responding Unit ID</label>
+                                <NerisFlatSingleOptionSelect
+                                  inputId={`${unitEntry.id}-unit-id`}
+                                  value={unitEntry.unitId}
+                                  options={availableResourceUnitOptions}
+                                  onChange={(nextValue) =>
+                                    handleResourceUnitIdChange(unitEntry.id, nextValue)
+                                  }
+                                  isOptionDisabled={(optionValue) =>
+                                    optionValue !== unitEntry.unitId &&
+                                    resourceUnits.some(
+                                      (otherUnit) =>
+                                        otherUnit.id !== unitEntry.id &&
+                                        otherUnit.unitId.trim() === optionValue,
+                                    )
+                                  }
+                                  placeholder="Select responding unit"
+                                  searchPlaceholder="Search responding units..."
+                                />
+                              </div>
+                              <div className="neris-resource-field">
+                                <label>Unit Type</label>
+                                <input
+                                  type="text"
+                                  value={unitTypeDisplayLabel}
+                                  readOnly
+                                  className="neris-resource-unit-type-input"
+                                  placeholder="Auto-populates from unit setup"
+                                />
+                              </div>
+                            </div>
+
+                            <div className="neris-resource-inline-links">
+                              <button
+                                type="button"
+                                className="link-button"
+                                aria-expanded={unitEntry.showTimesEditor}
+                                onClick={() => toggleResourceTimesEditor(unitEntry.id)}
+                              >
+                                Edit Times
+                              </button>
+                              <label className="neris-resource-canceled-enroute-inline">
+                                <input
+                                  type="checkbox"
+                                  checked={unitEntry.isCanceledEnroute}
+                                  onChange={() => toggleResourceCanceledEnroute(unitEntry.id)}
+                                />
+                                <span>Dispatched and canceled en route</span>
+                              </label>
+                            </div>
+
+                            {unitEntry.showTimesEditor ? (
+                              <div className="neris-resource-times-editor">
+                                <div className="neris-resource-times-editor-grid">
+                                  <label>
+                                    Dispatch
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.dispatchTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "dispatchTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {dispatchTimeError ? (
+                                      <small className="field-error">{dispatchTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
+                                    Enroute
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.enrouteTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "enrouteTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {enrouteTimeError ? (
+                                      <small className="field-error">{enrouteTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
+                                    On Scene
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.onSceneTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "onSceneTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {onSceneTimeError ? (
+                                      <small className="field-error">{onSceneTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
+                                    Clear
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.clearTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "clearTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {clearTimeError ? (
+                                      <small className="field-error">{clearTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                </div>
+                                <button
+                                  type="button"
+                                  className={`neris-resource-canceled-enroute-button${
+                                    unitEntry.isCanceledEnroute ? " active" : ""
+                                  }`}
+                                  aria-pressed={unitEntry.isCanceledEnroute}
+                                  onClick={() => toggleResourceCanceledEnroute(unitEntry.id)}
+                                >
+                                  Dispatched and canceled en route
+                                </button>
+                              </div>
+                            ) : null}
+
+                            <section className="neris-resource-personnel-panel">
+                              <div className="neris-resource-personnel-header-row">
+                                <h4>Personnel</h4>
+                                <button
+                                  type="button"
+                                  className="link-button"
+                                  onClick={() => openResourcePersonnelModal(unitEntry.id)}
+                                >
+                                  Add Personnel
+                                </button>
+                              </div>
+                              <div className="neris-resource-personnel-table-head">
+                                <span>Name</span>
+                              </div>
+                              {selectedPersonnelOptions.length ? (
+                                <ul className="neris-resource-personnel-list">
+                                  {selectedPersonnelOptions.map((option) => (
+                                    <li key={`${unitEntry.id}-personnel-${option.value}`}>
+                                      <span>{option.label}</span>
+                                      <div className="neris-resource-personnel-row-actions">
+                                        <button
+                                          type="button"
+                                          className="icon-button"
+                                          aria-label={`Edit ${option.label} assignment`}
+                                        >
+                                          <Pencil size={13} />
+                                        </button>
+                                        <button
+                                          type="button"
+                                          className="icon-button"
+                                          aria-label={`Remove ${option.label} from this unit`}
+                                          onClick={() =>
+                                            removeResourcePersonnel(unitEntry.id, option.value)
+                                          }
+                                        >
+                                          <Trash2 size={13} />
+                                        </button>
+                                      </div>
+                                    </li>
+                                  ))}
+                                </ul>
+                              ) : (
+                                <div className="neris-resource-personnel-empty">
+                                  <Users size={24} className="neris-resource-personnel-empty-icon" />
+                                  <p>No personnel assigned to this unit.</p>
+                                  <small>Add personnel using the Add Personnel link above.</small>
+                                </div>
+                              )}
+                              {personnelError ? (
+                                <small className="field-error neris-resource-personnel-error">
+                                  {personnelError}
+                                </small>
+                              ) : null}
+                            </section>
+
+                            <div className="neris-resource-field">
+                              <label>Unit Report Writer</label>
+                              <NerisFlatSingleOptionSelect
+                                inputId={`${unitEntry.id}-report-writer`}
+                                value={unitEntry.reportWriter}
+                                options={reportWriterOptions}
+                                onChange={(nextValue) =>
+                                  updateResourceUnitField(
+                                    unitEntry.id,
+                                    "reportWriter",
+                                    nextValue,
+                                  )
+                                }
+                                placeholder="Select report writer"
+                                searchPlaceholder="Search personnel..."
+                                allowClear
+                              />
+                            </div>
+
+                            <div className="neris-resource-unit-narrative">
+                              <div className="neris-core-field-heading neris-resource-unit-narrative-heading">
+                                UNIT NARRATIVE
+                              </div>
+                              <textarea
+                                rows={6}
+                                value={unitEntry.unitNarrative}
+                                placeholder="Insert text here..."
+                                onChange={(event) =>
+                                  updateResourceUnitField(
+                                    unitEntry.id,
+                                    "unitNarrative",
+                                    event.target.value,
+                                  )
+                                }
+                              />
+                            </div>
+
+                            <div className="neris-resource-footer-actions">
+                              <button
+                                type="button"
+                                className="primary-button compact-button neris-resource-complete-collapse-button"
+                                onClick={() => completeAndCollapseResourceUnit(unitEntry.id)}
+                              >
+                                Complete and Collapse
+                              </button>
+                              <button
+                                type="button"
+                                className="primary-button compact-button"
+                                onClick={() => collapseResourceUnit(unitEntry.id)}
+                              >
+                                Collapse
+                              </button>
+                            </div>
+                          </div>
+                        ) : null}
+                      </article>
+                    );
+                  })
+                ) : (
+                  <div className="neris-resource-empty-state">
+                    No responding units are available for this incident yet.
+                  </div>
+                )}
+              </section>
+            ) : null}
+            {currentSection.id === "resources" && activeResourcePersonnelUnit ? (
+              <div
+                className="neris-resource-personnel-modal-backdrop"
+                role="dialog"
+                aria-modal="true"
+                onClick={(event) => {
+                  if (event.target === event.currentTarget) {
+                    closeResourcePersonnelModal();
+                  }
+                }}
+              >
+                <section
+                  className="panel neris-resource-personnel-modal"
+                  onWheel={(event) => event.stopPropagation()}
+                >
+                  <div className="neris-resource-personnel-modal-header">
+                    <h3>
+                      Add Personnel
+                      {activeResourcePersonnelUnit.unitId
+                        ? ` - ${activeResourcePersonnelUnit.unitId}`
+                        : ""}
+                    </h3>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={closeResourcePersonnelModal}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  <NerisFlatMultiOptionSelect
+                    inputId={`resource-personnel-modal-${activeResourcePersonnelUnit.id}`}
+                    value={activeResourcePersonnelUnit.personnel}
+                    options={RESOURCE_PERSONNEL_OPTIONS}
+                    onChange={(nextValue) =>
+                      updateResourceUnitField(activeResourcePersonnelUnit.id, "personnel", nextValue)
+                    }
+                    placeholder="Select personnel"
+                    searchPlaceholder="Search personnel..."
+                  />
+                  <small className="field-hint">
+                    Select one or more personnel. Click outside this dialog to close.
+                  </small>
+                </section>
+              </div>
+            ) : null}
+            {displayedSectionFields.flatMap((field) => {
               const nodes: ReactNode[] = [];
               const headingLabel =
                 currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
@@ -4448,6 +8178,74 @@ function NerisReportFormPage({
                 nodes.push(
                   <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
                     {headingLabel}
+                  </div>,
+                );
+              }
+              if (currentSection.id === "location" && field.id === "location_state") {
+                nodes.push(
+                  <div
+                    key="heading-location-usage"
+                    className="field-span-two neris-core-field-heading"
+                  >
+                    LOCATION / USAGE
+                  </div>,
+                );
+                nodes.push(
+                  <div
+                    key="location-imported-address"
+                    className="field-span-two neris-imported-address-block"
+                  >
+                    <div className="neris-imported-address-header">
+                      <label htmlFor="location-imported-address-box">Imported address</label>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button neris-imported-address-sync-button"
+                        onClick={handlePullLocationFromImportedAddress}
+                      >
+                        Pull location data
+                      </button>
+                    </div>
+                    <div id="location-imported-address-box" className="neris-imported-address">
+                      {importedLocationAddress}
+                    </div>
+                  </div>,
+                );
+              }
+              if (currentSection.id === "location" && field.id === "location_direction_of_travel") {
+                nodes.push(
+                  <div
+                    key="location-direction-of-travel-link"
+                    className="field-span-two neris-location-add-links"
+                  >
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-expanded={showDirectionOfTravelField}
+                      onClick={() =>
+                        setShowDirectionOfTravelField((previous) => !previous)
+                      }
+                    >
+                      Add Direction of Travel
+                    </button>
+                  </div>,
+                );
+              }
+              if (currentSection.id === "location" && field.id === "location_cross_street_type") {
+                nodes.push(
+                  <div
+                    key="location-cross-street-link"
+                    className="field-span-two neris-location-add-links"
+                  >
+                    <button
+                      type="button"
+                      className="link-button"
+                      aria-expanded={showCrossStreetTypeField}
+                      onClick={() =>
+                        setShowCrossStreetTypeField((previous) => !previous)
+                      }
+                    >
+                      Add Cross Street
+                    </button>
                   </div>,
                 );
               }
@@ -5365,6 +9163,7 @@ function NotFoundPage() {
 
 function RouteResolver({
   role,
+  username,
   workflowStates,
   onSaveWorkflowStates,
   incidentDisplaySettings,
@@ -5443,12 +9242,23 @@ function RouteResolver({
     return <NerisReportingPage />;
   }
 
+  if (path === "/reporting/neris/exports") {
+    return <NerisExportsPage />;
+  }
+
+  if (path.startsWith("/reporting/neris/exports/")) {
+    const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
+    return <NerisExportDetailsPage callNumber={callNumber} />;
+  }
+
   if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
     return (
       <NerisReportFormPage
         key={callNumber}
         callNumber={callNumber}
+        role={role}
+        username={username}
         nerisExportSettings={nerisExportSettings}
       />
     );
@@ -5585,6 +9395,7 @@ function App() {
             element={
               <RouteResolver
                 role={session.role}
+                username={session.username}
                 workflowStates={workflowStates}
                 onSaveWorkflowStates={handleSaveWorkflowStates}
                 incidentDisplaySettings={incidentDisplaySettings}

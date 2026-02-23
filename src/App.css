@@ -1260,9 +1260,18 @@ tbody tr:last-of-type td {
   color: #0f172a;
 }
 
+.neris-single-select-clear-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 0.24rem 0.5rem;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+}
+
 .neris-incident-type-options-scroll {
   max-height: 320px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.18rem 0;
 }
 
@@ -1500,6 +1509,34 @@ tbody tr:last-of-type td {
   cursor: pointer;
   text-decoration: underline;
   padding: 0;
+}
+
+.fl-link-button {
+  border: 0;
+  background: transparent;
+  color: #1d4ed8;
+  font-size: 0.76rem;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: underline;
+  padding: 0;
+  justify-self: start;
+}
+
+.rl-box-button {
+  border: 1px solid #bfdbfe;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  border-radius: 8px;
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 0.34rem 0.52rem;
+  cursor: pointer;
+}
+
+.rl-box-button:hover {
+  background-color: #dbeafe;
+  color: #1e40af;
 }
 
 .state-edit-row {
@@ -1746,6 +1783,10 @@ tbody tr:last-of-type td {
 body.resizing-dispatch-columns {
   cursor: col-resize;
   user-select: none;
+}
+
+body.resource-personnel-modal-open {
+  overflow: hidden;
 }
 
 .dispatch-info-line {
@@ -2012,6 +2053,709 @@ body.resizing-dispatch-columns {
   margin-top: 0.32rem;
 }
 
+.neris-imported-address-block {
+  display: grid;
+  gap: 0.34rem;
+}
+
+.neris-imported-address-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.neris-imported-address-block label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-imported-address {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background-color: #e5e7eb;
+  color: #1f2937;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  padding: 0.56rem 0.65rem;
+}
+
+.neris-location-add-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+}
+
+.neris-imported-address-sync-button {
+  width: auto;
+}
+
+.neris-emerging-hazard-layout {
+  display: grid;
+  gap: 0.72rem;
+}
+
+.neris-emerging-hazard-group {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  padding: 0.68rem;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.neris-emerging-hazard-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  flex-wrap: wrap;
+}
+
+.neris-emerging-hazard-group-header h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+
+.neris-emerging-hazard-item-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.neris-emerging-hazard-item-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.54rem;
+}
+
+.neris-emerging-hazard-item-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.45rem;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.neris-emerging-hazard-delete-button {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background-color: #fff5f5;
+  color: #b91c1c;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+}
+
+.neris-emerging-hazard-delete-button:hover {
+  background-color: #fee2e2;
+}
+
+.neris-emerging-hazard-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.neris-emerging-hazard-field {
+  display: grid;
+  gap: 0.28rem;
+}
+
+.neris-emerging-hazard-field label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-risk-reduction-layout {
+  display: grid;
+  gap: 0.74rem;
+}
+
+.neris-risk-reduction-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.neris-risk-reduction-field {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.neris-risk-reduction-field label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-risk-reduction-layout .neris-single-choice-row {
+  gap: 0.3rem;
+}
+
+.neris-risk-reduction-layout .neris-single-choice-button {
+  font-size: 0.68rem;
+  padding: 0.24rem 0.46rem;
+}
+
+.neris-risk-reduction-contact-box {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.68rem;
+}
+
+.neris-risk-reduction-contact-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.neris-risk-reduction-contact-grid label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.neris-risk-reduction-contact-grid input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.58rem;
+  font-size: 0.8rem;
+}
+
+.neris-risk-reduction-conditional-layout {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.neris-risk-reduction-question-card {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  padding: 0.65rem;
+  display: grid;
+  gap: 0.36rem;
+}
+
+.neris-risk-reduction-question-card > label {
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.neris-risk-reduction-subfields {
+  border-top: 1px solid #e2e8f0;
+  margin-top: 0.15rem;
+  padding-top: 0.55rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.neris-risk-reduction-subfields label {
+  display: grid;
+  gap: 0.22rem;
+  color: #334155;
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.neris-risk-reduction-subfields input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.58rem;
+  font-size: 0.8rem;
+}
+
+.neris-risk-reduction-suppression-system-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.58rem;
+  display: grid;
+  gap: 0.44rem;
+}
+
+.neris-risk-reduction-suppression-system-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.neris-risk-reduction-suppression-system-header strong {
+  font-size: 0.8rem;
+  color: #334155;
+}
+
+.neris-risk-reduction-subfield-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.neris-resource-unit-list {
+  display: grid;
+  gap: 0.62rem;
+}
+
+.neris-resource-unit-card {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  overflow: visible;
+}
+
+.neris-resource-unit-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+  padding: 0.6rem 0.68rem;
+  background-color: #f8fafc;
+}
+
+.neris-resource-unit-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.48rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.neris-resource-unit-name {
+  color: #0f172a;
+  font-size: 0.9rem;
+}
+
+.neris-resource-complete-chip {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+}
+
+.neris-resource-complete-check {
+  width: 12px;
+  height: 12px;
+  border: 1px solid currentColor;
+  border-radius: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.58rem;
+  line-height: 1;
+}
+
+.neris-resource-complete-chip.incomplete {
+  border-color: #d1d5db;
+  background-color: #e5e7eb;
+  color: #475569;
+}
+
+.neris-resource-complete-chip.complete {
+  border-color: #bbf7d0;
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.neris-resource-personnel-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.24rem;
+  color: #475569;
+  font-size: 0.76rem;
+  font-weight: 700;
+}
+
+.neris-resource-time-grid {
+  display: inline-grid;
+  grid-template-columns: repeat(4, minmax(72px, auto));
+  gap: 0.48rem;
+  align-items: center;
+}
+
+.neris-resource-time-item {
+  display: grid;
+  gap: 0.06rem;
+}
+
+.neris-resource-time-item span {
+  color: #64748b;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.neris-resource-time-item strong {
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 700;
+}
+
+.neris-resource-unit-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.36rem;
+}
+
+.neris-resource-delete-button {
+  border: 1px solid #fecaca;
+  border-radius: 8px;
+  background-color: #fff5f5;
+  color: #b91c1c;
+  width: 28px;
+  height: 28px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+}
+
+.neris-resource-delete-button:hover {
+  background-color: #fee2e2;
+}
+
+.neris-resource-expand-icon {
+  color: #64748b;
+  transition: transform 160ms ease;
+}
+
+.neris-resource-expand-icon.open {
+  transform: rotate(180deg);
+}
+
+.neris-resource-unit-body {
+  border-top: 1px solid #e2e8f0;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.66rem;
+}
+
+.neris-resource-inline-links {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.72rem;
+  flex-wrap: wrap;
+}
+
+.neris-resource-canceled-enroute-inline {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.34rem;
+  color: #334155;
+  font-size: 0.76rem;
+  font-weight: 600;
+}
+
+.neris-resource-canceled-enroute-inline input {
+  width: 14px;
+  height: 14px;
+  accent-color: #2563eb;
+}
+
+.neris-resource-times-editor {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.neris-resource-times-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.neris-resource-times-editor-grid label {
+  display: grid;
+  gap: 0.2rem;
+  color: #334155;
+  font-size: 0.74rem;
+  font-weight: 700;
+}
+
+.neris-resource-times-editor-grid input {
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.42rem 0.5rem;
+  font-size: 0.78rem;
+}
+
+.neris-resource-canceled-enroute-button {
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.74rem;
+  font-weight: 700;
+  padding: 0.34rem 0.5rem;
+  justify-self: start;
+  cursor: pointer;
+}
+
+.neris-resource-canceled-enroute-button.active {
+  border-color: #86efac;
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.neris-resource-field-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.neris-resource-field {
+  display: grid;
+  gap: 0.28rem;
+  position: relative;
+}
+
+.neris-resource-field label,
+.neris-resource-personnel-picker label {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.neris-resource-staffing-input {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f1f5f9;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.neris-resource-unit-type-input {
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  background-color: #f1f5f9;
+  color: #6b7280;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+  font-weight: 600;
+}
+
+.neris-resource-personnel-wrap {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.neris-resource-personnel-panel {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #ffffff;
+  overflow: hidden;
+}
+
+.neris-resource-personnel-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  padding: 0.5rem 0.62rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.neris-resource-personnel-header-row h4 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.92rem;
+}
+
+.neris-resource-personnel-table-head {
+  padding: 0.42rem 0.62rem;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  color: #64748b;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.01em;
+}
+
+.neris-resource-personnel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.neris-resource-personnel-list li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.55rem;
+  border-bottom: 1px solid #eef2f7;
+  padding: 0.5rem 0.62rem;
+}
+
+.neris-resource-personnel-list li span {
+  color: #0f172a;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.neris-resource-personnel-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.neris-resource-personnel-empty {
+  min-height: 150px;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f1f5f9;
+  display: grid;
+  place-items: center;
+  text-align: center;
+  gap: 0.25rem;
+  padding: 0.75rem;
+}
+
+.neris-resource-personnel-empty p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.neris-resource-personnel-empty small {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.neris-resource-personnel-empty-icon {
+  color: #94a3b8;
+}
+
+.neris-resource-personnel-error {
+  display: block;
+  padding: 0.45rem 0.62rem 0.56rem;
+}
+
+.neris-resource-personnel-picker {
+  display: grid;
+  gap: 0.28rem;
+  padding: 0.56rem 0.62rem;
+  background-color: #ffffff;
+}
+
+.neris-resource-personnel-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  background-color: rgba(15, 23, 42, 0.5);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  overflow-y: auto;
+}
+
+.neris-resource-personnel-modal {
+  width: min(560px, 92vw);
+  max-height: min(82vh, 760px);
+  overflow: auto;
+  display: grid;
+  gap: 0.58rem;
+}
+
+.neris-resource-personnel-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.neris-resource-personnel-modal-header h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.98rem;
+}
+
+.neris-resource-personnel-modal .neris-incident-type-select-panel {
+  position: static;
+  top: auto;
+  left: auto;
+  width: 100%;
+  margin-top: 0.32rem;
+}
+
+.neris-resource-unit-narrative {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.neris-resource-unit-narrative-heading {
+  margin-top: 0;
+  font-size: 0.96rem;
+}
+
+.neris-resource-unit-narrative textarea {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  resize: vertical;
+}
+
+.neris-resource-footer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+}
+
+.neris-resource-complete-collapse-button {
+  border-color: #16a34a;
+  background-color: #16a34a;
+}
+
+.neris-resource-complete-collapse-button:hover {
+  background-color: #15803d;
+}
+
+.neris-resource-empty-state {
+  border: 1px dashed #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #475569;
+  font-size: 0.82rem;
+  padding: 0.75rem;
+}
+
 .neris-field-grid {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
@@ -2114,6 +2858,27 @@ body.resizing-dispatch-columns {
   font-size: 0.84rem;
 }
 
+.validation-modal-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.validation-modal-form label {
+  color: #334155;
+  font-size: 0.79rem;
+  font-weight: 700;
+}
+
+.validation-modal-form input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.46rem 0.55rem;
+  font-size: 0.83rem;
+}
+
 .validation-modal ul {
   margin: 0;
   padding-left: 1rem;
@@ -2171,6 +2936,49 @@ body.resizing-dispatch-columns {
   font-size: 0.74rem;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.export-attempt-details-grid {
+  margin-top: 0.7rem;
+  display: grid;
+  gap: 0.65rem;
+}
+
+.export-attempt-detail-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.42rem;
+}
+
+.export-attempt-detail-card h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.export-attempt-detail-card p {
+  margin: 0;
+  color: #334155;
+  font-size: 0.79rem;
+  line-height: 1.4;
+}
+
+.export-attempt-json {
+  margin: 0;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.5rem 0.56rem;
+  font-size: 0.73rem;
+  line-height: 1.36;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 220px;
+  overflow: auto;
 }
 
 .apparatus-personnel {
@@ -2403,6 +3211,10 @@ body.resizing-dispatch-columns {
     flex: 1;
   }
 
+  .neris-imported-address-sync-button {
+    width: auto;
+  }
+
   .breadcrumb {
     font-size: 0.88rem;
   }
@@ -2413,6 +3225,49 @@ body.resizing-dispatch-columns {
 
   .neris-field-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-unit-header {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .neris-resource-unit-actions {
+    width: 100%;
+    justify-content: flex-end;
+  }
+
+  .neris-resource-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-time-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .neris-resource-times-editor-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-inline-links {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .neris-emerging-hazard-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-risk-reduction-grid,
+  .neris-risk-reduction-contact-grid,
+  .neris-risk-reduction-subfield-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-personnel-modal-header {
+    flex-direction: column;
+    align-items: stretch;
   }
 
   .dispatch-grid-line {

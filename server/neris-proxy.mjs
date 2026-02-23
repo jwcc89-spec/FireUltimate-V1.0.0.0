@@ -8,6 +8,132 @@ const DEFAULT_PROXY_PORT = 8787;
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 const NERIS_ENTITY_ID_PATTERN = /^(FD|VN|FM|FA)\d{8}$/;
 const NERIS_DEPARTMENT_ID_PATTERN = /^FD\d{8}$/;
+const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
+const NERIS_STATE_CODES = new Set([
+  "AL",
+  "AK",
+  "AS",
+  "AZ",
+  "AR",
+  "CA",
+  "CO",
+  "CT",
+  "DE",
+  "DC",
+  "FL",
+  "FM",
+  "GA",
+  "GU",
+  "HI",
+  "ID",
+  "IL",
+  "IN",
+  "IA",
+  "KS",
+  "KY",
+  "LA",
+  "ME",
+  "MD",
+  "MA",
+  "MI",
+  "MH",
+  "MN",
+  "MS",
+  "MO",
+  "MP",
+  "MT",
+  "NA",
+  "NE",
+  "NV",
+  "NH",
+  "NJ",
+  "NM",
+  "NY",
+  "NC",
+  "ND",
+  "OH",
+  "OK",
+  "OR",
+  "PA",
+  "PR",
+  "PW",
+  "RI",
+  "SC",
+  "SD",
+  "TN",
+  "TX",
+  "UM",
+  "UT",
+  "VT",
+  "VA",
+  "VI",
+  "WA",
+  "WV",
+  "WI",
+  "WY",
+]);
+const NERIS_STATE_NAME_TO_CODE = {
+  ALABAMA: "AL",
+  ALASKA: "AK",
+  "AMERICAN SAMOA": "AS",
+  ARIZONA: "AZ",
+  ARKANSAS: "AR",
+  CALIFORNIA: "CA",
+  COLORADO: "CO",
+  CONNECTICUT: "CT",
+  DELAWARE: "DE",
+  "DISTRICT OF COLUMBIA": "DC",
+  FLORIDA: "FL",
+  "FEDERATED STATES OF MICRONESIA": "FM",
+  GEORGIA: "GA",
+  GUAM: "GU",
+  HAWAII: "HI",
+  IDAHO: "ID",
+  ILLINOIS: "IL",
+  INDIANA: "IN",
+  IOWA: "IA",
+  KANSAS: "KS",
+  KENTUCKY: "KY",
+  LOUISIANA: "LA",
+  MAINE: "ME",
+  MARYLAND: "MD",
+  MASSACHUSETTS: "MA",
+  MICHIGAN: "MI",
+  "MARSHALL ISLANDS": "MH",
+  MINNESOTA: "MN",
+  MISSISSIPPI: "MS",
+  MISSOURI: "MO",
+  "NORTHERN MARIANA ISLANDS": "MP",
+  MONTANA: "MT",
+  NEBRASKA: "NE",
+  NEVADA: "NV",
+  "NEW HAMPSHIRE": "NH",
+  "NEW JERSEY": "NJ",
+  "NEW MEXICO": "NM",
+  "NEW YORK": "NY",
+  "NORTH CAROLINA": "NC",
+  "NORTH DAKOTA": "ND",
+  OHIO: "OH",
+  OKLAHOMA: "OK",
+  OREGON: "OR",
+  PENNSYLVANIA: "PA",
+  "PUERTO RICO": "PR",
+  PALAU: "PW",
+  "RHODE ISLAND": "RI",
+  "SOUTH CAROLINA": "SC",
+  "SOUTH DAKOTA": "SD",
+  TENNESSEE: "TN",
+  TEXAS: "TX",
+  "UNITED STATES MINOR OUTLYING ISLANDS": "UM",
+  UTAH: "UT",
+  VERMONT: "VT",
+  VIRGINIA: "VA",
+  "VIRGIN ISLANDS": "VI",
+  WASHINGTON: "WA",
+  "WEST VIRGINIA": "WV",
+  WISCONSIN: "WI",
+  WYOMING: "WY",
+ };
 
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
@@ -58,6 +184,52 @@ function toIsoDateTime(value, fallbackIsoDateTime) {
   return parsed.toISOString();
 }
 
+function normalizeStateCode(rawValue, fallbackValue) {
+  const fallback = trimValue(fallbackValue).toUpperCase();
+  const fallbackNormalized = NERIS_STATE_CODES.has(fallback) ? fallback : "NY";
+  const raw = trimValue(rawValue);
+  if (!raw) {
+    return fallbackNormalized;
+  }
+
+  const compactRaw = raw.replace(/[.,]/g, " ").trim();
+  const segments = compactRaw
+    .split(/\s+/)
+    .map((segment) => segment.trim().toUpperCase())
+    .filter((segment) => segment.length > 0);
+
+  for (const segment of segments) {
+    if (NERIS_STATE_CODES.has(segment)) {
+      return segment;
+    }
+  }
+
+  const alphaWords = compactRaw
+    .split(/[^A-Za-z]+/)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+  for (let index = 0; index < alphaWords.length; index += 1) {
+    const single = alphaWords[index]?.toUpperCase();
+    if (single && NERIS_STATE_NAME_TO_CODE[single]) {
+      return NERIS_STATE_NAME_TO_CODE[single];
+    }
+    const pair = `${alphaWords[index] ?? ""} ${alphaWords[index + 1] ?? ""}`
+      .trim()
+      .toUpperCase();
+    if (pair && NERIS_STATE_NAME_TO_CODE[pair]) {
+      return NERIS_STATE_NAME_TO_CODE[pair];
+    }
+    const triple = `${alphaWords[index] ?? ""} ${alphaWords[index + 1] ?? ""} ${alphaWords[index + 2] ?? ""}`
+      .trim()
+      .toUpperCase();
+    if (triple && NERIS_STATE_NAME_TO_CODE[triple]) {
+      return NERIS_STATE_NAME_TO_CODE[triple];
+    }
+  }
+
+  return fallbackNormalized;
+}
+
 function parseLocationFromAddress(addressValue, fallbackState, fallbackCountry) {
   const rawAddress = trimValue(addressValue);
   const parts = rawAddress
@@ -67,8 +239,13 @@ function parseLocationFromAddress(addressValue, fallbackState, fallbackCountry) 
 
   const street = parts[0] || "UNKNOWN";
   const city = parts[1] || "UNKNOWN";
-  const stateAndZip = parts[2] || fallbackState || "NY";
-  const state = stateAndZip.split(/\s+/)[0] || fallbackState || "NY";
+  const stateSource =
+    parts[2] ||
+    parts[parts.length - 1] ||
+    rawAddress ||
+    fallbackState ||
+    "NY";
+  const state = normalizeStateCode(stateSource, fallbackState);
 
   return {
     street,
@@ -76,6 +253,112 @@ function parseLocationFromAddress(addressValue, fallbackState, fallbackCountry) 
     state,
     country: fallbackCountry || "US",
   };
+}
+
+function normalizeCountryCode(rawValue, fallbackCountry) {
+  const value = trimValue(rawValue).toUpperCase();
+  if (value.length === 2) {
+    return value;
+  }
+  const fallback = trimValue(fallbackCountry).toUpperCase();
+  if (fallback.length === 2) {
+    return fallback;
+  }
+  return "US";
+}
+
+function firstAssignedUnit(rawValue) {
+  const normalized = trimValue(rawValue);
+  if (!normalized) {
+    return "";
+  }
+  return normalized
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0)[0] ?? "";
+}
+
+function parseUnitList(rawValue) {
+  const normalized = trimValue(rawValue);
+  if (!normalized) {
+    return [];
+  }
+  return normalized
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
+function toNonNegativeInt(value) {
+  const parsed = Number.parseInt(trimValue(value), 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function extractUnitResponses(formValues, incidentSnapshot) {
+  const unitsFromJson = [];
+  const staffingByUnitId = new Map();
+  const resourceUnitsJsonRaw = trimValue(formValues.resource_units_json);
+  if (resourceUnitsJsonRaw) {
+    try {
+      const parsed = JSON.parse(resourceUnitsJsonRaw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return;
+          }
+          const unitId = trimValue(entry.unitId);
+          if (!unitId) {
+            return;
+          }
+          unitsFromJson.push(unitId);
+          const staffingCandidate = toNonNegativeInt(String(entry.staffing ?? ""));
+          if (staffingCandidate !== null) {
+            staffingByUnitId.set(unitId, staffingCandidate);
+          }
+        });
+      }
+    } catch {
+      // Ignore malformed serialized unit data and rely on other fields.
+    }
+  }
+
+  const primaryUnitId = trimValue(formValues.resource_primary_unit_id);
+  const additionalUnits = parseUnitList(formValues.resource_additional_units);
+  const assignedUnits = parseUnitList(incidentSnapshot.assignedUnits);
+  const fallbackReportedUnitId = firstAssignedUnit(incidentSnapshot.assignedUnits);
+
+  const orderedUnitIds = Array.from(
+    new Set([
+      ...unitsFromJson,
+      primaryUnitId,
+      ...additionalUnits,
+      ...assignedUnits,
+      fallbackReportedUnitId,
+    ].filter((unitId) => unitId.length > 0)),
+  );
+
+  const primaryStaffing = toNonNegativeInt(formValues.resource_primary_unit_staffing);
+  if (primaryUnitId && primaryStaffing !== null && !staffingByUnitId.has(primaryUnitId)) {
+    staffingByUnitId.set(primaryUnitId, primaryStaffing);
+  }
+
+  if (!orderedUnitIds.length) {
+    return [{ reported_unit_id: "UNSPECIFIED_UNIT" }];
+  }
+
+  return orderedUnitIds.map((unitId) => {
+    const response = {
+      reported_unit_id: unitId,
+    };
+    const staffing = staffingByUnitId.get(unitId);
+    if (typeof staffing === "number") {
+      response.staffing = staffing;
+    }
+    return response;
+  });
 }
 
 function getProxyConfig() {
@@ -161,10 +444,24 @@ async function getAccessToken(config) {
 
   const tokenResponseBody = await parseResponseBody(tokenResponse);
   if (!tokenResponse.ok) {
+    const tokenBodyError =
+      tokenResponseBody && typeof tokenResponseBody === "object"
+        ? trimValue(tokenResponseBody.error)
+        : "";
+    const isInvalidClient = tokenBodyError === "invalid_client";
+    const usingProdBaseUrl = config.baseUrl.includes("api.neris.fsri.org/v1");
+    const usingTestBaseUrl = config.baseUrl.includes("api-test.neris.fsri.org/v1");
+    const hint = isInvalidClient
+      ? usingProdBaseUrl
+        ? " Hint: test credentials usually require NERIS_BASE_URL=https://api-test.neris.fsri.org/v1 in .env.server. Restart proxy after updating."
+        : usingTestBaseUrl
+          ? " Hint: verify NERIS_CLIENT_ID and NERIS_CLIENT_SECRET are for the test environment and are copied exactly."
+          : " Hint: verify NERIS_BASE_URL and OAuth client credentials belong to the same NERIS environment."
+      : "";
     throw new Error(
       `Token request failed (${tokenResponse.status} ${tokenResponse.statusText}). ${JSON.stringify(
         tokenResponseBody ?? {},
-      )}`,
+      )}${hint}`,
     );
   }
 
@@ -291,6 +588,18 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     config.defaultState,
     config.defaultCountry,
   );
+  const normalizedLocationState = normalizeStateCode(
+    trimValue(formValues.location_state) || baseLocation.state,
+    config.defaultState,
+  );
+  const normalizedLocationCountry = normalizeCountryCode(
+    trimValue(formValues.location_country) || baseLocation.country,
+    config.defaultCountry,
+  );
+  baseLocation.state = normalizedLocationState;
+  baseLocation.country = normalizedLocationCountry;
+  dispatchLocation.state = normalizedLocationState;
+  dispatchLocation.country = normalizedLocationCountry;
 
   const additionalIncidentTypes = csvToEnumValues(formValues.additional_incident_types)
     .filter((entry) => entry !== primaryIncidentType)
@@ -306,17 +615,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     })),
   ];
 
-  const primaryUnitId = trimValue(formValues.resource_primary_unit_id);
-  const staffingRaw = trimValue(formValues.resource_primary_unit_staffing);
-  const staffing = Number.parseInt(staffingRaw, 10);
-  const unitResponse = {};
-  if (primaryUnitId) {
-    unitResponse.reported_unit_id = primaryUnitId;
-  }
-  if (!Number.isNaN(staffing) && staffing >= 0) {
-    unitResponse.staffing = staffing;
-  }
-  const unitResponses = [unitResponse];
+  const unitResponses = extractUnitResponses(formValues, incidentSnapshot);
 
   const dispatchPayload = {
     incident_number: dispatchIncidentNumber,
@@ -396,17 +695,137 @@ app.get("/api/neris/debug/entities", async (request, response) => {
   }
 });
 
-app.post("/api/neris/export", async (request, response) => {
-  const config = getProxyConfig();
+function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
   const integration =
-    request.body?.integration && typeof request.body.integration === "object"
-      ? request.body.integration
+    requestBody?.integration && typeof requestBody.integration === "object"
+      ? requestBody.integration
       : {};
   const headerEntityId =
-    trimValue(request.headers["x-neris-entity-id"]) ||
-    trimValue(request.headers["x-neris-vendor-code"]);
+    trimValue(requestHeaders["x-neris-entity-id"]) ||
+    trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  const entityId = bodyEntityId || headerEntityId || config.defaultEntityId;
+  return bodyEntityId || headerEntityId || config.defaultEntityId;
+}
+
+function readNerisDetailString(responseBody) {
+  if (!responseBody || typeof responseBody !== "object") {
+    return "";
+  }
+  const detail = responseBody.detail;
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return "";
+    }
+  }
+  if (typeof responseBody.raw === "string") {
+    return responseBody.raw;
+  }
+  return "";
+}
+
+function parseIncidentNerisIdsFromText(rawText) {
+  const text = trimValue(rawText);
+  if (!text) {
+    return [];
+  }
+  const matches = text.match(/FD\d{8}\|[\w\-:]+\|\d{10}/g);
+  if (!matches) {
+    return [];
+  }
+  return Array.from(new Set(matches.map((entry) => trimValue(entry)).filter(Boolean)));
+}
+
+function collectIncidentNerisIdHints(exportRequestBody, createResponseBody) {
+  const hints = [];
+  const body =
+    exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
+  const integration =
+    body.integration && typeof body.integration === "object" ? body.integration : {};
+  const formValues =
+    body.formValues && typeof body.formValues === "object" ? body.formValues : {};
+
+  const integrationIncidentNerisId = trimValue(integration.existingIncidentNerisId);
+  if (integrationIncidentNerisId) {
+    hints.push({
+      value: integrationIncidentNerisId,
+      source: "integration.existingIncidentNerisId",
+    });
+  }
+
+  const formIncidentNerisId = trimValue(formValues.incident_neris_id);
+  if (formIncidentNerisId) {
+    hints.push({
+      value: formIncidentNerisId,
+      source: "formValues.incident_neris_id",
+    });
+  }
+
+  const directIncidentNerisId = trimValue(body.incidentNerisId);
+  if (directIncidentNerisId) {
+    hints.push({
+      value: directIncidentNerisId,
+      source: "body.incidentNerisId",
+    });
+  }
+
+  const createDetail = readNerisDetailString(createResponseBody);
+  parseIncidentNerisIdsFromText(createDetail).forEach((value) => {
+    hints.push({
+      value,
+      source: "createResponse.detail",
+    });
+  });
+
+  if (
+    createResponseBody &&
+    typeof createResponseBody === "object" &&
+    typeof createResponseBody.neris_id === "string"
+  ) {
+    hints.push({
+      value: trimValue(createResponseBody.neris_id),
+      source: "createResponse.neris_id",
+    });
+  }
+
+  const unique = new Map();
+  hints.forEach((hint) => {
+    if (!hint.value || !NERIS_INCIDENT_ID_PATTERN.test(hint.value)) {
+      return;
+    }
+    if (!unique.has(hint.value)) {
+      unique.set(hint.value, hint);
+    }
+  });
+  return Array.from(unique.values());
+}
+
+function selectIncidentNerisIdHint(hints, entityId) {
+  if (!Array.isArray(hints) || hints.length === 0) {
+    return null;
+  }
+  const preferredByEntity = hints.find((hint) => hint.value.startsWith(`${entityId}|`));
+  return preferredByEntity || hints[0] || null;
+}
+
+function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
+  if (createStatus !== 409) {
+    return false;
+  }
+  const detail = readNerisDetailString(createResponseBody).toLowerCase();
+  if (!detail) {
+    return false;
+  }
+  return detail.includes("cannot be resubmitted") || detail.includes("status of approved");
+}
+
+app.post("/api/neris/validate", async (request, response) => {
+  const config = getProxyConfig();
+  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
 
   if (!entityId) {
     response.status(400).json({
@@ -422,7 +841,7 @@ app.post("/api/neris/export", async (request, response) => {
     const accessToken = await getAccessToken(config);
 
     const nerisResponse = await fetch(
-      `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}`,
+      `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}/validate`,
       {
         method: "POST",
         headers: {
@@ -444,7 +863,7 @@ app.post("/api/neris/export", async (request, response) => {
       const entityIsAccessible = entitiesResult.entityIds.includes(entityId);
       troubleshooting = {
         message: entityIsAccessible
-          ? "Token can list this entity, but create permission is denied. Confirm account role/enrollment allows incident creation for this entity."
+          ? "Token can list this entity, but validate permission is denied. Confirm account role/enrollment allows validate/create actions for this entity."
           : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
@@ -452,6 +871,7 @@ app.post("/api/neris/export", async (request, response) => {
         entityIsAccessible,
       };
     }
+
     response.status(nerisResponse.status).json({
       ok: nerisResponse.ok,
       status: nerisResponse.status,
@@ -460,6 +880,144 @@ app.post("/api/neris/export", async (request, response) => {
       submittedEntityId: entityId,
       submittedPayload: payload,
       troubleshooting,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected proxy validate error.",
+    });
+  }
+});
+
+app.post("/api/neris/export", async (request, response) => {
+  const config = getProxyConfig();
+  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
+
+  if (!entityId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Missing NERIS entity ID. Set Vendor/Department code in Customization OR set NERIS_ENTITY_ID in .env.server.",
+    });
+    return;
+  }
+
+  try {
+    const payload = buildIncidentPayload(request.body, config, entityId);
+    const accessToken = await getAccessToken(config);
+    const requestHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    const createResponse = await fetch(
+      `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}`,
+      {
+        method: "POST",
+        headers: requestHeaders,
+        body: JSON.stringify(payload),
+      },
+    );
+    const createResponseBody = await parseResponseBody(createResponse);
+
+    const integration =
+      request.body?.integration && typeof request.body.integration === "object"
+        ? request.body.integration
+        : {};
+    const allowFallbackUpdate =
+      typeof integration.allowUpdateFallback === "boolean"
+        ? integration.allowUpdateFallback
+        : true;
+    const fallback = {
+      allowed: allowFallbackUpdate,
+      attempted: false,
+      succeeded: false,
+      strategy: "create-then-put-on-409",
+      reason: "",
+      usedIncidentNerisId: "",
+      usedIncidentNerisIdSource: "",
+      candidateIncidentNerisIds: [],
+      createStatus: createResponse.status,
+      createStatusText: createResponse.statusText,
+      createDetail: readNerisDetailString(createResponseBody),
+      updateStatus: null,
+      updateStatusText: "",
+      updateDetail: "",
+    };
+
+    let finalResponse = createResponse;
+    let finalResponseBody = createResponseBody;
+
+    if (
+      allowFallbackUpdate &&
+      shouldAttemptCreateConflictFallback(createResponse.status, createResponseBody)
+    ) {
+      const incidentNerisIdHints = collectIncidentNerisIdHints(
+        request.body,
+        createResponseBody,
+      );
+      fallback.attempted = true;
+      fallback.candidateIncidentNerisIds = incidentNerisIdHints.map((hint) => hint.value);
+      fallback.reason = "create-returned-409-cannot-be-resubmitted";
+      const selectedHint = selectIncidentNerisIdHint(incidentNerisIdHints, entityId);
+      if (selectedHint) {
+        fallback.usedIncidentNerisId = selectedHint.value;
+        fallback.usedIncidentNerisIdSource = selectedHint.source;
+        const updateResponse = await fetch(
+          `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}/${encodeURIComponent(
+            selectedHint.value,
+          )}`,
+          {
+            method: "PUT",
+            headers: requestHeaders,
+            body: JSON.stringify(payload),
+          },
+        );
+        const updateResponseBody = await parseResponseBody(updateResponse);
+        fallback.updateStatus = updateResponse.status;
+        fallback.updateStatusText = updateResponse.statusText;
+        fallback.updateDetail = readNerisDetailString(updateResponseBody);
+        finalResponse = updateResponse;
+        finalResponseBody = updateResponseBody;
+        if (updateResponse.ok) {
+          fallback.succeeded = true;
+        }
+      } else {
+        fallback.reason = `${fallback.reason};missing-valid-incident-neris-id-hint`;
+      }
+    }
+
+    let troubleshooting = null;
+    if (finalResponse.status === 403 || createResponse.status === 403) {
+      const entitiesResult = await fetchAccessibleEntities(config, accessToken);
+      const submittedDepartmentNerisId =
+        payload?.base && typeof payload.base === "object"
+          ? trimValue(payload.base.department_neris_id)
+          : "";
+      const entityIsAccessible = entitiesResult.entityIds.includes(entityId);
+      troubleshooting = {
+        message: entityIsAccessible
+          ? "Token can list this entity, but create/update permission is denied. Confirm account role/enrollment allows incident write actions for this entity."
+          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+        accessibleEntityIds: entitiesResult.entityIds,
+        entitiesLookupStatus: entitiesResult.status,
+        submittedDepartmentNerisId,
+        entityIsAccessible,
+      };
+    }
+    response.status(finalResponse.status).json({
+      ok: finalResponse.ok,
+      status: finalResponse.status,
+      statusText: finalResponse.statusText,
+      neris: finalResponseBody,
+      submittedEntityId: entityId,
+      submittedPayload: payload,
+      troubleshooting,
+      fallback,
+      createResult: {
+        status: createResponse.status,
+        statusText: createResponse.statusText,
+        neris: createResponseBody,
+      },
     });
   } catch (error) {
     response.status(500).json({
