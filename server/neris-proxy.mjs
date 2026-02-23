@@ -255,6 +255,18 @@ function parseLocationFromAddress(addressValue, fallbackState, fallbackCountry) 
   };
 }
 
+function normalizeCountryCode(rawValue, fallbackCountry) {
+  const value = trimValue(rawValue).toUpperCase();
+  if (value.length === 2) {
+    return value;
+  }
+  const fallback = trimValue(fallbackCountry).toUpperCase();
+  if (fallback.length === 2) {
+    return fallback;
+  }
+  return "US";
+}
+
 function firstAssignedUnit(rawValue) {
   const normalized = trimValue(rawValue);
   if (!normalized) {
@@ -576,6 +588,18 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     config.defaultState,
     config.defaultCountry,
   );
+  const normalizedLocationState = normalizeStateCode(
+    trimValue(formValues.location_state) || baseLocation.state,
+    config.defaultState,
+  );
+  const normalizedLocationCountry = normalizeCountryCode(
+    trimValue(formValues.location_country) || baseLocation.country,
+    config.defaultCountry,
+  );
+  baseLocation.state = normalizedLocationState;
+  baseLocation.country = normalizedLocationCountry;
+  dispatchLocation.state = normalizedLocationState;
+  dispatchLocation.country = normalizedLocationCountry;
 
   const additionalIncidentTypes = csvToEnumValues(formValues.additional_incident_types)
     .filter((entry) => entry !== primaryIncidentType)
