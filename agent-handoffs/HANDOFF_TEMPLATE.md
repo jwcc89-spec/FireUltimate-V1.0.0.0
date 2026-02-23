@@ -35,7 +35,7 @@
 -
 
 ## External dependencies
-- (Example: waiting on API permissions, vendor response, or environment access)
+- (Example: waiting on API permissions, vendor response, NERIS helpdesk enrollment/permissions, or environment access)
 
 ## Next steps for next agent
 1.

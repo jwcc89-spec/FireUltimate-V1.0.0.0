@@ -4,23 +4,23 @@ Use these prompts as copy/paste starters for new and continuing agents.
 
 ---
 
-## 1) Legacy reference prompt (keep for reference)
+## 1) Handoff sync (existing branch, no feature work yet)
 
 ```text
-Handoff sync request only (legacy/shared-path reference).
+Handoff sync request only (no feature work yet).
 
-1) Stay on branch: neris/phase-1
+1) Stay on branch: <your-branch>
 2) Read:
    - cursoragent-context.md
-   - agent-handoffs/ACTIVE_CONTEXT.md
-   - latest files in agent-handoffs/sessions/
-3) Create a new session note in agent-handoffs/sessions/ using:
+   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
+   - latest files in agent-handoffs/branches/<branch-slug>/sessions/
+3) Create a new session note in agent-handoffs/branches/<branch-slug>/sessions/ using:
    - agent-handoffs/HANDOFF_TEMPLATE.md
 4) In that note summarize:
    - current branch + latest commit
    - current blocker/status
    - what should happen next
-5) Update agent-handoffs/ACTIVE_CONTEXT.md.
+5) Update agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md.
 6) Commit + push.
 7) Report:
    - commit hash
