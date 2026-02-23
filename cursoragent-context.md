@@ -56,3 +56,12 @@
 ## 8) User environment constraints
 29. Prefer instructions compatible with locked-down/work environments (no admin rights assumed).
 30. Provide fallback command alternatives if a command fails.
+
+## 9) Cross-agent continuity
+31. At session start, read:
+   - `agent-handoffs/ACTIVE_CONTEXT.md`
+   - latest relevant file in `agent-handoffs/sessions/`
+32. Before ending session:
+   - update `agent-handoffs/ACTIVE_CONTEXT.md`
+   - add/update a time-stamped note in `agent-handoffs/sessions/`
+33. Include branch, commit hash, blockers, and exact next actions in every handoff.
