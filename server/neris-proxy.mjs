@@ -8,6 +8,7 @@ const DEFAULT_PROXY_PORT = 8787;
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 const NERIS_ENTITY_ID_PATTERN = /^(FD|VN|FM|FA)\d{8}$/;
 const NERIS_DEPARTMENT_ID_PATTERN = /^FD\d{8}$/;
+const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
 const NERIS_STATE_CODES = new Set([
   "AL",
   "AK",
@@ -668,6 +669,122 @@ function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
   return bodyEntityId || headerEntityId || config.defaultEntityId;
 }
 
+function readNerisDetailString(responseBody) {
+  if (!responseBody || typeof responseBody !== "object") {
+    return "";
+  }
+  const detail = responseBody.detail;
+  if (typeof detail === "string") {
+    return detail;
+  }
+  if (Array.isArray(detail)) {
+    try {
+      return JSON.stringify(detail);
+    } catch {
+      return "";
+    }
+  }
+  if (typeof responseBody.raw === "string") {
+    return responseBody.raw;
+  }
+  return "";
+}
+
+function parseIncidentNerisIdsFromText(rawText) {
+  const text = trimValue(rawText);
+  if (!text) {
+    return [];
+  }
+  const matches = text.match(/FD\d{8}\|[\w\-:]+\|\d{10}/g);
+  if (!matches) {
+    return [];
+  }
+  return Array.from(new Set(matches.map((entry) => trimValue(entry)).filter(Boolean)));
+}
+
+function collectIncidentNerisIdHints(exportRequestBody, createResponseBody) {
+  const hints = [];
+  const body =
+    exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
+  const integration =
+    body.integration && typeof body.integration === "object" ? body.integration : {};
+  const formValues =
+    body.formValues && typeof body.formValues === "object" ? body.formValues : {};
+
+  const integrationIncidentNerisId = trimValue(integration.existingIncidentNerisId);
+  if (integrationIncidentNerisId) {
+    hints.push({
+      value: integrationIncidentNerisId,
+      source: "integration.existingIncidentNerisId",
+    });
+  }
+
+  const formIncidentNerisId = trimValue(formValues.incident_neris_id);
+  if (formIncidentNerisId) {
+    hints.push({
+      value: formIncidentNerisId,
+      source: "formValues.incident_neris_id",
+    });
+  }
+
+  const directIncidentNerisId = trimValue(body.incidentNerisId);
+  if (directIncidentNerisId) {
+    hints.push({
+      value: directIncidentNerisId,
+      source: "body.incidentNerisId",
+    });
+  }
+
+  const createDetail = readNerisDetailString(createResponseBody);
+  parseIncidentNerisIdsFromText(createDetail).forEach((value) => {
+    hints.push({
+      value,
+      source: "createResponse.detail",
+    });
+  });
+
+  if (
+    createResponseBody &&
+    typeof createResponseBody === "object" &&
+    typeof createResponseBody.neris_id === "string"
+  ) {
+    hints.push({
+      value: trimValue(createResponseBody.neris_id),
+      source: "createResponse.neris_id",
+    });
+  }
+
+  const unique = new Map();
+  hints.forEach((hint) => {
+    if (!hint.value || !NERIS_INCIDENT_ID_PATTERN.test(hint.value)) {
+      return;
+    }
+    if (!unique.has(hint.value)) {
+      unique.set(hint.value, hint);
+    }
+  });
+  return Array.from(unique.values());
+}
+
+function selectIncidentNerisIdHint(hints, entityId) {
+  if (!Array.isArray(hints) || hints.length === 0) {
+    return null;
+  }
+  const preferredByEntity = hints.find((hint) => hint.value.startsWith(`${entityId}|`));
+  return preferredByEntity || hints[0] || null;
+}
+
+function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
+  if (createStatus !== 409) {
+    return false;
+  }
+  const detail = readNerisDetailString(createResponseBody).toLowerCase();
+  if (!detail) {
+    return false;
+  }
+  return detail.includes("cannot be resubmitted") || detail.includes("status of approved");
+}
+
 app.post("/api/neris/validate", async (request, response) => {
   const config = getProxyConfig();
   const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
@@ -750,22 +867,89 @@ app.post("/api/neris/export", async (request, response) => {
   try {
     const payload = buildIncidentPayload(request.body, config, entityId);
     const accessToken = await getAccessToken(config);
-
-    const nerisResponse = await fetch(
+    const requestHeaders = {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    };
+    const createResponse = await fetch(
       `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: requestHeaders,
         body: JSON.stringify(payload),
       },
     );
+    const createResponseBody = await parseResponseBody(createResponse);
 
-    const nerisResponseBody = await parseResponseBody(nerisResponse);
+    const integration =
+      request.body?.integration && typeof request.body.integration === "object"
+        ? request.body.integration
+        : {};
+    const allowFallbackUpdate =
+      typeof integration.allowUpdateFallback === "boolean"
+        ? integration.allowUpdateFallback
+        : true;
+    const fallback = {
+      allowed: allowFallbackUpdate,
+      attempted: false,
+      succeeded: false,
+      strategy: "create-then-put-on-409",
+      reason: "",
+      usedIncidentNerisId: "",
+      usedIncidentNerisIdSource: "",
+      candidateIncidentNerisIds: [],
+      createStatus: createResponse.status,
+      createStatusText: createResponse.statusText,
+      createDetail: readNerisDetailString(createResponseBody),
+      updateStatus: null,
+      updateStatusText: "",
+      updateDetail: "",
+    };
+
+    let finalResponse = createResponse;
+    let finalResponseBody = createResponseBody;
+
+    if (
+      allowFallbackUpdate &&
+      shouldAttemptCreateConflictFallback(createResponse.status, createResponseBody)
+    ) {
+      const incidentNerisIdHints = collectIncidentNerisIdHints(
+        request.body,
+        createResponseBody,
+      );
+      fallback.attempted = true;
+      fallback.candidateIncidentNerisIds = incidentNerisIdHints.map((hint) => hint.value);
+      fallback.reason = "create-returned-409-cannot-be-resubmitted";
+      const selectedHint = selectIncidentNerisIdHint(incidentNerisIdHints, entityId);
+      if (selectedHint) {
+        fallback.usedIncidentNerisId = selectedHint.value;
+        fallback.usedIncidentNerisIdSource = selectedHint.source;
+        const updateResponse = await fetch(
+          `${config.createIncidentUrlPrefix}/${encodeURIComponent(entityId)}/${encodeURIComponent(
+            selectedHint.value,
+          )}`,
+          {
+            method: "PUT",
+            headers: requestHeaders,
+            body: JSON.stringify(payload),
+          },
+        );
+        const updateResponseBody = await parseResponseBody(updateResponse);
+        fallback.updateStatus = updateResponse.status;
+        fallback.updateStatusText = updateResponse.statusText;
+        fallback.updateDetail = readNerisDetailString(updateResponseBody);
+        finalResponse = updateResponse;
+        finalResponseBody = updateResponseBody;
+        if (updateResponse.ok) {
+          fallback.succeeded = true;
+        }
+      } else {
+        fallback.reason = `${fallback.reason};missing-valid-incident-neris-id-hint`;
+      }
+    }
+
     let troubleshooting = null;
-    if (nerisResponse.status === 403) {
+    if (finalResponse.status === 403 || createResponse.status === 403) {
       const entitiesResult = await fetchAccessibleEntities(config, accessToken);
       const submittedDepartmentNerisId =
         payload?.base && typeof payload.base === "object"
@@ -774,7 +958,7 @@ app.post("/api/neris/export", async (request, response) => {
       const entityIsAccessible = entitiesResult.entityIds.includes(entityId);
       troubleshooting = {
         message: entityIsAccessible
-          ? "Token can list this entity, but create permission is denied. Confirm account role/enrollment allows incident creation for this entity."
+          ? "Token can list this entity, but create/update permission is denied. Confirm account role/enrollment allows incident write actions for this entity."
           : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
@@ -782,14 +966,20 @@ app.post("/api/neris/export", async (request, response) => {
         entityIsAccessible,
       };
     }
-    response.status(nerisResponse.status).json({
-      ok: nerisResponse.ok,
-      status: nerisResponse.status,
-      statusText: nerisResponse.statusText,
-      neris: nerisResponseBody,
+    response.status(finalResponse.status).json({
+      ok: finalResponse.ok,
+      status: finalResponse.status,
+      statusText: finalResponse.statusText,
+      neris: finalResponseBody,
       submittedEntityId: entityId,
       submittedPayload: payload,
       troubleshooting,
+      fallback,
+      createResult: {
+        status: createResponse.status,
+        statusText: createResponse.statusText,
+        neris: createResponseBody,
+      },
     });
   } catch (error) {
     response.status(500).json({

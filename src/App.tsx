@@ -390,6 +390,7 @@ const RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS: NerisValueOption[] = [
   { value: "PARTIAL", label: "Partial" },
   { value: "UNKNOWN", label: "Unknown" },
 ];
+const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -5330,6 +5331,23 @@ function NerisReportFormPage({
     responseJson: Record<string, unknown> | null,
     responseText: string,
   ): string => {
+    if (typeof responseJson?.message === "string" && responseJson.message.trim().length > 0) {
+      return responseJson.message.trim();
+    }
+    const fallback =
+      responseJson?.fallback && typeof responseJson.fallback === "object"
+        ? (responseJson.fallback as Record<string, unknown>)
+        : null;
+    if (typeof fallback?.reason === "string" && fallback.reason.trim().length > 0) {
+      const updateStatus =
+        typeof fallback.updateStatus === "number" ? fallback.updateStatus : null;
+      const updateStatusText =
+        typeof fallback.updateStatusText === "string" ? fallback.updateStatusText : "";
+      if (updateStatus !== null) {
+        return `Fallback ${fallback.succeeded ? "succeeded" : "failed"} (${updateStatus} ${updateStatusText}). ${fallback.reason}`.trim();
+      }
+      return fallback.reason;
+    }
     const detailFromNeris =
       responseJson?.neris && typeof responseJson.neris === "object"
         ? (responseJson.neris as Record<string, unknown>).detail
@@ -5364,6 +5382,20 @@ function NerisReportFormPage({
     return error;
   };
 
+  const getExistingIncidentNerisIdHint = () => {
+    const fromForm = (formValues.incident_neris_id ?? "").trim();
+    if (NERIS_INCIDENT_ID_PATTERN.test(fromForm)) {
+      return fromForm;
+    }
+    const fromHistory = readNerisExportHistory().find(
+      (entry) =>
+        entry.callNumber === callNumber &&
+        entry.attemptStatus === "success" &&
+        NERIS_INCIDENT_ID_PATTERN.test(entry.nerisId),
+    );
+    return fromHistory?.nerisId ?? "";
+  };
+
   const buildExportRequestConfig = (): ExportRequestConfig => {
     const defaultExportSettings = getDefaultNerisExportSettings();
     const exportUrl =
@@ -5395,6 +5427,7 @@ function NerisReportFormPage({
     const apiVersionHeaderName = nerisExportSettings.apiVersionHeaderName.trim();
     const apiVersionHeaderValue = nerisExportSettings.apiVersionHeaderValue.trim();
     const isProxyRequest = exportUrl.startsWith("/api/neris/");
+    const existingIncidentNerisId = getExistingIncidentNerisIdHint();
     if (!exportUrl) {
       throw new Error(
         "Export is not configured. Add Export URL in Admin Functions > Customization > NERIS Export Configuration.",
@@ -5418,6 +5451,8 @@ function NerisReportFormPage({
         contentType,
         apiVersionHeaderName,
         apiVersionHeaderValue,
+        existingIncidentNerisId,
+        allowUpdateFallback: true,
       },
       additionalAidEntries: buildStoredAdditionalAidEntries(),
     };
