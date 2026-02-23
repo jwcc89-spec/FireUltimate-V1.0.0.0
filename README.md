@@ -85,8 +85,10 @@ cp .env.server.example .env.server
      - `NERIS_STATIC_ACCESS_TOKEN`
 
 3. Keep OpenAPI defaults unless NERIS tells you otherwise:
-   - `NERIS_BASE_URL=https://api.neris.fsri.org/v1` (or test: `https://api-test.neris.fsri.org/v1`)
+   - For test accounts: `NERIS_BASE_URL=https://api-test.neris.fsri.org/v1`
+   - For production accounts: `NERIS_BASE_URL=https://api.neris.fsri.org/v1`
    - `NERIS_GRANT_TYPE=client_credentials`
+   - If token errors show `invalid_client`, verify base URL and credentials are for the same environment (test vs production).
 
 ### 2) Run both servers (2 terminals)
 

@@ -4505,24 +4505,6 @@ function NerisReportFormPage({
     ],
   );
 
-  if (!detail) {
-    return (
-      <section className="page-section">
-        <header className="page-header">
-          <div>
-            <h1>NERIS report not found</h1>
-            <p>No matching incident exists for report ID {callNumber}.</p>
-          </div>
-          <div className="header-actions">
-            <NavLink className="secondary-button button-link" to="/reporting/neris">
-              Back to NERIS Queue
-            </NavLink>
-          </div>
-        </header>
-      </section>
-    );
-  }
-
   const updateFieldValue = (fieldId: string, value: string) => {
     const sanitizedValue =
       fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;

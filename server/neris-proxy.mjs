@@ -432,10 +432,24 @@ async function getAccessToken(config) {
 
   const tokenResponseBody = await parseResponseBody(tokenResponse);
   if (!tokenResponse.ok) {
+    const tokenBodyError =
+      tokenResponseBody && typeof tokenResponseBody === "object"
+        ? trimValue(tokenResponseBody.error)
+        : "";
+    const isInvalidClient = tokenBodyError === "invalid_client";
+    const usingProdBaseUrl = config.baseUrl.includes("api.neris.fsri.org/v1");
+    const usingTestBaseUrl = config.baseUrl.includes("api-test.neris.fsri.org/v1");
+    const hint = isInvalidClient
+      ? usingProdBaseUrl
+        ? " Hint: test credentials usually require NERIS_BASE_URL=https://api-test.neris.fsri.org/v1 in .env.server. Restart proxy after updating."
+        : usingTestBaseUrl
+          ? " Hint: verify NERIS_CLIENT_ID and NERIS_CLIENT_SECRET are for the test environment and are copied exactly."
+          : " Hint: verify NERIS_BASE_URL and OAuth client credentials belong to the same NERIS environment."
+      : "";
     throw new Error(
       `Token request failed (${tokenResponse.status} ${tokenResponse.statusText}). ${JSON.stringify(
         tokenResponseBody ?? {},
-      )}`,
+      )}${hint}`,
     );
   }
 
