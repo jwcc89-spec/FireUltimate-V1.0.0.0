@@ -7,6 +7,7 @@ This workspace uses branch-specific handoff notes so each agent only sees contex
 ```
 agent-handoffs/
   HANDOFF_TEMPLATE.md
+  QUICK_PROMPTS.md
   branches/
     <branch-slug>/
       ACTIVE_CONTEXT.md
@@ -29,6 +30,7 @@ agent-handoffs/
    - `cursoragent-context.md`
    - `agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md`
    - latest note under `agent-handoffs/branches/<branch-slug>/sessions/`
+4. Optional: copy a starter prompt from `agent-handoffs/QUICK_PROMPTS.md`.
 
 ## Session end checklist
 
