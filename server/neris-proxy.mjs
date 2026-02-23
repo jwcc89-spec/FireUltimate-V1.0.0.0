@@ -265,6 +265,89 @@ function firstAssignedUnit(rawValue) {
     .filter((segment) => segment.length > 0)[0] ?? "";
 }
 
+function parseUnitList(rawValue) {
+  const normalized = trimValue(rawValue);
+  if (!normalized) {
+    return [];
+  }
+  return normalized
+    .split(",")
+    .map((segment) => segment.trim())
+    .filter((segment) => segment.length > 0);
+}
+
+function toNonNegativeInt(value) {
+  const parsed = Number.parseInt(trimValue(value), 10);
+  if (Number.isNaN(parsed) || parsed < 0) {
+    return null;
+  }
+  return parsed;
+}
+
+function extractUnitResponses(formValues, incidentSnapshot) {
+  const unitsFromJson = [];
+  const staffingByUnitId = new Map();
+  const resourceUnitsJsonRaw = trimValue(formValues.resource_units_json);
+  if (resourceUnitsJsonRaw) {
+    try {
+      const parsed = JSON.parse(resourceUnitsJsonRaw);
+      if (Array.isArray(parsed)) {
+        parsed.forEach((entry) => {
+          if (!entry || typeof entry !== "object") {
+            return;
+          }
+          const unitId = trimValue(entry.unitId);
+          if (!unitId) {
+            return;
+          }
+          unitsFromJson.push(unitId);
+          const staffingCandidate = toNonNegativeInt(String(entry.staffing ?? ""));
+          if (staffingCandidate !== null) {
+            staffingByUnitId.set(unitId, staffingCandidate);
+          }
+        });
+      }
+    } catch {
+      // Ignore malformed serialized unit data and rely on other fields.
+    }
+  }
+
+  const primaryUnitId = trimValue(formValues.resource_primary_unit_id);
+  const additionalUnits = parseUnitList(formValues.resource_additional_units);
+  const assignedUnits = parseUnitList(incidentSnapshot.assignedUnits);
+  const fallbackReportedUnitId = firstAssignedUnit(incidentSnapshot.assignedUnits);
+
+  const orderedUnitIds = Array.from(
+    new Set([
+      ...unitsFromJson,
+      primaryUnitId,
+      ...additionalUnits,
+      ...assignedUnits,
+      fallbackReportedUnitId,
+    ].filter((unitId) => unitId.length > 0)),
+  );
+
+  const primaryStaffing = toNonNegativeInt(formValues.resource_primary_unit_staffing);
+  if (primaryUnitId && primaryStaffing !== null && !staffingByUnitId.has(primaryUnitId)) {
+    staffingByUnitId.set(primaryUnitId, primaryStaffing);
+  }
+
+  if (!orderedUnitIds.length) {
+    return [{ reported_unit_id: "UNSPECIFIED_UNIT" }];
+  }
+
+  return orderedUnitIds.map((unitId) => {
+    const response = {
+      reported_unit_id: unitId,
+    };
+    const staffing = staffingByUnitId.get(unitId);
+    if (typeof staffing === "number") {
+      response.staffing = staffing;
+    }
+    return response;
+  });
+}
+
 function getProxyConfig() {
   const baseUrl = trimValue(process.env.NERIS_BASE_URL) || DEFAULT_NERIS_BASE_URL;
   const grantType = trimValue(process.env.NERIS_GRANT_TYPE) || "client_credentials";
@@ -493,25 +576,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     })),
   ];
 
-  const primaryUnitId = trimValue(formValues.resource_primary_unit_id);
-  const fallbackReportedUnitId = firstAssignedUnit(incidentSnapshot.assignedUnits);
-  const staffingRaw = trimValue(formValues.resource_primary_unit_staffing);
-  const staffing = Number.parseInt(staffingRaw, 10);
-  const unitResponse = {};
-  if (primaryUnitId) {
-    unitResponse.reported_unit_id = primaryUnitId;
-    unitResponse.reported_id_unit = primaryUnitId;
-  } else if (fallbackReportedUnitId) {
-    unitResponse.reported_unit_id = fallbackReportedUnitId;
-    unitResponse.reported_id_unit = fallbackReportedUnitId;
-  } else {
-    unitResponse.reported_unit_id = "UNSPECIFIED_UNIT";
-    unitResponse.reported_id_unit = "UNSPECIFIED_UNIT";
-  }
-  if (!Number.isNaN(staffing) && staffing >= 0) {
-    unitResponse.staffing = staffing;
-  }
-  const unitResponses = [unitResponse];
+  const unitResponses = extractUnitResponses(formValues, incidentSnapshot);
 
   const dispatchPayload = {
     incident_number: dispatchIncidentNumber,
