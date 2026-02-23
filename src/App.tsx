@@ -201,6 +201,9 @@ interface NerisExportRecord {
   address: string;
   exportedAtIso: string;
   exportedAtLabel: string;
+  attemptStatus: "success" | "failed";
+  httpStatus: number;
+  httpStatusText: string;
   statusLabel: string;
   reportStatusAtExport: string;
   validatorName: string;
@@ -208,6 +211,9 @@ interface NerisExportRecord {
   submittedEntityId: string;
   submittedDepartmentNerisId: string;
   nerisId: string;
+  responseSummary: string;
+  responseDetail: string;
+  submittedPayloadPreview: string;
 }
 
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
@@ -1218,6 +1224,16 @@ function readNerisExportHistory(): NerisExportRecord[] {
           typeof candidate.exportedAtIso === "string" ? candidate.exportedAtIso : "";
         const exportedAtLabel =
           typeof candidate.exportedAtLabel === "string" ? candidate.exportedAtLabel : "";
+        const attemptStatus =
+          candidate.attemptStatus === "failed" ? "failed" : "success";
+        const httpStatus =
+          typeof candidate.httpStatus === "number" && Number.isFinite(candidate.httpStatus)
+            ? candidate.httpStatus
+            : attemptStatus === "failed"
+              ? 0
+              : 200;
+        const httpStatusText =
+          typeof candidate.httpStatusText === "string" ? candidate.httpStatusText : "";
         const statusLabel = typeof candidate.statusLabel === "string" ? candidate.statusLabel : "";
         const reportStatusAtExport =
           typeof candidate.reportStatusAtExport === "string"
@@ -1234,6 +1250,14 @@ function readNerisExportHistory(): NerisExportRecord[] {
             ? candidate.submittedDepartmentNerisId
             : "";
         const nerisId = typeof candidate.nerisId === "string" ? candidate.nerisId : "";
+        const responseSummary =
+          typeof candidate.responseSummary === "string" ? candidate.responseSummary : "";
+        const responseDetail =
+          typeof candidate.responseDetail === "string" ? candidate.responseDetail : "";
+        const submittedPayloadPreview =
+          typeof candidate.submittedPayloadPreview === "string"
+            ? candidate.submittedPayloadPreview
+            : "";
         if (!id || !callNumber || !exportedAtIso) {
           return null;
         }
@@ -1244,6 +1268,9 @@ function readNerisExportHistory(): NerisExportRecord[] {
           address,
           exportedAtIso,
           exportedAtLabel,
+          attemptStatus,
+          httpStatus,
+          httpStatusText,
           statusLabel,
           reportStatusAtExport,
           validatorName,
@@ -1251,6 +1278,9 @@ function readNerisExportHistory(): NerisExportRecord[] {
           submittedEntityId,
           submittedDepartmentNerisId,
           nerisId,
+          responseSummary,
+          responseDetail,
+          submittedPayloadPreview,
         };
       })
       .filter((entry): entry is NerisExportRecord => Boolean(entry))
@@ -2713,7 +2743,8 @@ function NerisExportsPage() {
                 <tr>
                   <th>Incident #</th>
                   <th>Incident Type</th>
-                  <th>Status</th>
+                  <th>Report Status</th>
+                  <th>Last Attempt Result</th>
                   <th>Last Export</th>
                   <th>Validator</th>
                   <th>Report Writer</th>
@@ -2745,6 +2776,11 @@ function NerisExportsPage() {
                         <span className={toToneClass(toneFromNerisStatus(getNerisReportStatus(call.callNumber)))}>
                           {getNerisReportStatus(call.callNumber)}
                         </span>
+                      </td>
+                      <td>
+                        {latestExport
+                          ? `${latestExport.httpStatus} ${latestExport.httpStatusText}`.trim()
+                          : "No attempts"}
                       </td>
                       <td>{latestExport?.exportedAtLabel ?? "Not exported"}</td>
                       <td>{latestExport?.validatorName || "--"}</td>
@@ -2819,45 +2855,78 @@ function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
       <section className="panel-grid two-column">
         <article className="panel">
           <div className="panel-header">
-            <h2>Latest Export</h2>
+            <h2>Latest Export Attempt</h2>
           </div>
           {latestExport ? (
-            <dl className="detail-grid">
-              <div>
-                <dt>Status</dt>
-                <dd>{latestExport.statusLabel || "Success"}</dd>
+            <>
+              <dl className="detail-grid">
+                <div>
+                  <dt>Attempt Result</dt>
+                  <dd>
+                    {latestExport.attemptStatus === "success" ? "Success" : "Failed"}
+                  </dd>
+                </div>
+                <div>
+                  <dt>HTTP Status</dt>
+                  <dd>{`${latestExport.httpStatus} ${latestExport.httpStatusText}`.trim() || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Status Label</dt>
+                  <dd>{latestExport.statusLabel || "--"}</dd>
+                </div>
+                <div>
+                  <dt>NERIS ID</dt>
+                  <dd>{latestExport.nerisId || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Validator</dt>
+                  <dd>{latestExport.validatorName || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Report Writer</dt>
+                  <dd>{latestExport.reportWriterName || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Submitted Entity ID</dt>
+                  <dd>{latestExport.submittedEntityId || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Submitted Department NERIS ID</dt>
+                  <dd>{latestExport.submittedDepartmentNerisId || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Exported At</dt>
+                  <dd>{latestExport.exportedAtLabel || "--"}</dd>
+                </div>
+                <div>
+                  <dt>Status at Export</dt>
+                  <dd>{latestExport.reportStatusAtExport || "--"}</dd>
+                </div>
+              </dl>
+
+              <div className="export-attempt-details-grid">
+                <section className="export-attempt-detail-card">
+                  <h3>Response Summary</h3>
+                  <p>{latestExport.responseSummary || "No summary available."}</p>
+                </section>
+                <section className="export-attempt-detail-card">
+                  <h3>Response Payload</h3>
+                  <pre className="export-attempt-json">
+                    {latestExport.responseDetail || "No response payload captured."}
+                  </pre>
+                </section>
+                <section className="export-attempt-detail-card">
+                  <h3>Submitted Payload</h3>
+                  <pre className="export-attempt-json">
+                    {latestExport.submittedPayloadPreview || "No payload captured."}
+                  </pre>
+                </section>
               </div>
-              <div>
-                <dt>NERIS ID</dt>
-                <dd>{latestExport.nerisId || "--"}</dd>
-              </div>
-              <div>
-                <dt>Validator</dt>
-                <dd>{latestExport.validatorName || "--"}</dd>
-              </div>
-              <div>
-                <dt>Report Writer</dt>
-                <dd>{latestExport.reportWriterName || "--"}</dd>
-              </div>
-              <div>
-                <dt>Submitted Entity ID</dt>
-                <dd>{latestExport.submittedEntityId || "--"}</dd>
-              </div>
-              <div>
-                <dt>Submitted Department NERIS ID</dt>
-                <dd>{latestExport.submittedDepartmentNerisId || "--"}</dd>
-              </div>
-              <div>
-                <dt>Exported At</dt>
-                <dd>{latestExport.exportedAtLabel || "--"}</dd>
-              </div>
-              <div>
-                <dt>Status at Export</dt>
-                <dd>{latestExport.reportStatusAtExport || "--"}</dd>
-              </div>
-            </dl>
+            </>
           ) : (
-            <p className="panel-description">No successful exports have been recorded for this incident yet.</p>
+            <p className="panel-description">
+              No export attempts have been recorded for this incident yet.
+            </p>
           )}
         </article>
 
@@ -2871,6 +2940,8 @@ function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
                 <thead>
                   <tr>
                     <th>Exported At</th>
+                    <th>Result</th>
+                    <th>HTTP</th>
                     <th>Validator</th>
                     <th>Report Writer</th>
                     <th>NERIS ID</th>
@@ -2881,6 +2952,8 @@ function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
                   {exportHistory.map((entry) => (
                     <tr key={entry.id}>
                       <td>{entry.exportedAtLabel}</td>
+                      <td>{entry.attemptStatus === "success" ? "Success" : "Failed"}</td>
+                      <td>{`${entry.httpStatus} ${entry.httpStatusText}`.trim() || "--"}</td>
                       <td>{entry.validatorName || "--"}</td>
                       <td>{entry.reportWriterName || "--"}</td>
                       <td>{entry.nerisId || "--"}</td>
@@ -5202,10 +5275,93 @@ function NerisReportFormPage({
   type ExportExecutionResult = {
     exportedAtIso: string;
     exportedAtLabel: string;
+    attemptStatus: "success" | "failed";
+    httpStatus: number;
+    httpStatusText: string;
     nerisId: string;
     submittedEntityId: string;
     submittedDepartmentNerisId: string;
     statusLabel: string;
+    responseSummary: string;
+    responseDetail: string;
+    submittedPayloadPreview: string;
+  };
+
+  type ExportRequestError = Error & {
+    httpStatus?: number;
+    httpStatusText?: string;
+    submittedEntityId?: string;
+    submittedDepartmentNerisId?: string;
+    responseSummary?: string;
+    responseDetail?: string;
+    submittedPayloadPreview?: string;
+  };
+
+  const toPrettyJson = (value: unknown): string => {
+    try {
+      return JSON.stringify(value, null, 2);
+    } catch {
+      return "";
+    }
+  };
+
+  const extractSubmittedDepartmentFromResponse = (
+    responseJson: Record<string, unknown> | null,
+  ): string => {
+    if (
+      responseJson?.submittedPayload &&
+      typeof responseJson.submittedPayload === "object" &&
+      (responseJson.submittedPayload as Record<string, unknown>).base &&
+      typeof (responseJson.submittedPayload as Record<string, unknown>).base === "object" &&
+      typeof (
+        (responseJson.submittedPayload as Record<string, unknown>).base as Record<string, unknown>
+      ).department_neris_id === "string"
+    ) {
+      return ((responseJson.submittedPayload as Record<string, unknown>).base as Record<
+        string,
+        unknown
+      >).department_neris_id as string;
+    }
+    return (formValues.fd_neris_id ?? "").trim();
+  };
+
+  const extractExportResponseSummary = (
+    response: Response,
+    responseJson: Record<string, unknown> | null,
+    responseText: string,
+  ): string => {
+    const detailFromNeris =
+      responseJson?.neris && typeof responseJson.neris === "object"
+        ? (responseJson.neris as Record<string, unknown>).detail
+        : null;
+    if (typeof detailFromNeris === "string" && detailFromNeris.trim().length > 0) {
+      return detailFromNeris.trim();
+    }
+    if (Array.isArray(detailFromNeris) && detailFromNeris.length > 0) {
+      return toPrettyJson(detailFromNeris);
+    }
+    if (responseText.trim().length > 0) {
+      return responseText.slice(0, 280);
+    }
+    return `${response.status} ${response.statusText}`;
+  };
+
+  const createExportRequestError = (
+    message: string,
+    metadata: Omit<ExportExecutionResult, "exportedAtIso" | "exportedAtLabel" | "attemptStatus" | "nerisId" | "statusLabel"> & {
+      httpStatus: number;
+      httpStatusText: string;
+    },
+  ): ExportRequestError => {
+    const error = new Error(message) as ExportRequestError;
+    error.httpStatus = metadata.httpStatus;
+    error.httpStatusText = metadata.httpStatusText;
+    error.submittedEntityId = metadata.submittedEntityId;
+    error.submittedDepartmentNerisId = metadata.submittedDepartmentNerisId;
+    error.responseSummary = metadata.responseSummary;
+    error.responseDetail = metadata.responseDetail;
+    error.submittedPayloadPreview = metadata.submittedPayloadPreview;
+    return error;
   };
 
   const buildExportRequestConfig = (): ExportRequestConfig => {
@@ -5369,6 +5525,14 @@ function NerisReportFormPage({
     );
   };
 
+  const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
+    const integration =
+      requestConfig.payload.integration && typeof requestConfig.payload.integration === "object"
+        ? (requestConfig.payload.integration as Record<string, unknown>)
+        : null;
+    return integration && typeof integration.entityId === "string" ? integration.entityId : "";
+  };
+
   const executeExport = async (
     requestConfig: ExportRequestConfig,
   ): Promise<ExportExecutionResult> => {
@@ -5393,12 +5557,18 @@ function NerisReportFormPage({
       });
       const responseText = await response.text();
       const responseJson = parseJsonResponseText(responseText);
+      const submittedEntityId =
+        typeof responseJson?.submittedEntityId === "string"
+          ? responseJson.submittedEntityId
+          : getRequestedEntityId(requestConfig);
+      const submittedDepartmentNerisId = extractSubmittedDepartmentFromResponse(responseJson);
+      const submittedPayloadPreview =
+        toPrettyJson(responseJson?.submittedPayload ?? requestConfig.payload) ||
+        toPrettyJson(requestConfig.payload);
+      const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
+      const responseSummary = extractExportResponseSummary(response, responseJson, responseText);
       if (!response.ok) {
         if (response.status === 403) {
-          const submittedEntityId =
-            typeof responseJson?.submittedEntityId === "string"
-              ? responseJson.submittedEntityId
-              : "unknown";
           const troubleshooting =
             responseJson?.troubleshooting &&
             typeof responseJson.troubleshooting === "object"
@@ -5409,36 +5579,56 @@ function NerisReportFormPage({
                 .filter((value): value is string => typeof value === "string")
                 .slice(0, 8)
             : [];
-          const submittedDepartmentNerisId =
+          const submittedDepartmentFromTroubleshooting =
             typeof troubleshooting?.submittedDepartmentNerisId === "string"
               ? troubleshooting.submittedDepartmentNerisId
-              : "";
+              : submittedDepartmentNerisId;
           const troubleshootingMessage =
             typeof troubleshooting?.message === "string" ? troubleshooting.message : "";
-          throw new Error(
+          const detailedMessage =
             accessibleEntityIds.length
               ? `Export denied (403). ${
                   troubleshootingMessage ||
                   `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
                 } Submitted entity ID: ${submittedEntityId}. ${
-                  submittedDepartmentNerisId
-                    ? `Submitted Department NERIS ID: ${submittedDepartmentNerisId}. `
+                  submittedDepartmentFromTroubleshooting
+                    ? `Submitted Department NERIS ID: ${submittedDepartmentFromTroubleshooting}. `
                     : ""
                 }Accessible entity IDs: ${accessibleEntityIds.join(", ")}`
               : `Export denied (403). ${
                   troubleshootingMessage ||
                   `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
                 } Submitted entity ID: ${submittedEntityId}. ${
-                  submittedDepartmentNerisId
-                    ? `Submitted Department NERIS ID: ${submittedDepartmentNerisId}.`
+                  submittedDepartmentFromTroubleshooting
+                    ? `Submitted Department NERIS ID: ${submittedDepartmentFromTroubleshooting}.`
                     : ""
-                }`,
-          );
+                }`;
+          throw createExportRequestError(detailedMessage, {
+            httpStatus: response.status,
+            httpStatusText: response.statusText,
+            submittedEntityId,
+            submittedDepartmentNerisId: submittedDepartmentFromTroubleshooting,
+            responseSummary:
+              troubleshootingMessage ||
+              responseSummary ||
+              "Export denied by NERIS authorization checks.",
+            responseDetail,
+            submittedPayloadPreview,
+          });
         }
-        throw new Error(
+        throw createExportRequestError(
           `Export failed (${response.status} ${response.statusText}). ${
-            responseText.slice(0, 280) || "No response details."
+            responseSummary || "No response details."
           }`,
+          {
+            httpStatus: response.status,
+            httpStatusText: response.statusText,
+            submittedEntityId,
+            submittedDepartmentNerisId,
+            responseSummary: responseSummary || `${response.status} ${response.statusText}`,
+            responseDetail,
+            submittedPayloadPreview,
+          },
         );
       }
 
@@ -5453,25 +5643,6 @@ function NerisReportFormPage({
         second: "2-digit",
         hour12: false,
       }).format(exportedAtDate);
-      const submittedEntityId =
-        typeof responseJson?.submittedEntityId === "string"
-          ? responseJson.submittedEntityId
-          : "";
-      const submittedDepartmentNerisId =
-        responseJson?.submittedPayload &&
-        typeof responseJson.submittedPayload === "object" &&
-        (responseJson.submittedPayload as Record<string, unknown>).base &&
-        typeof (responseJson.submittedPayload as Record<string, unknown>).base === "object" &&
-        typeof (
-          (responseJson.submittedPayload as Record<string, unknown>).base as Record<
-            string,
-            unknown
-          >
-        ).department_neris_id === "string"
-          ? ((
-              responseJson.submittedPayload as Record<string, unknown>
-            ).base as Record<string, unknown>).department_neris_id as string
-          : (formValues.fd_neris_id ?? "").trim();
       const nerisId =
         typeof responseJson?.neris === "object" &&
         responseJson.neris &&
@@ -5482,29 +5653,65 @@ function NerisReportFormPage({
       return {
         exportedAtIso,
         exportedAtLabel,
+        attemptStatus: "success",
+        httpStatus: response.status,
+        httpStatusText: response.statusText,
         nerisId,
         submittedEntityId,
         submittedDepartmentNerisId,
-        statusLabel:
-          typeof responseJson?.statusText === "string"
-            ? responseJson.statusText
-            : response.statusText || "Submitted",
+        statusLabel: `${response.status} ${response.statusText}`.trim(),
+        responseSummary: responseSummary || "Export submitted successfully.",
+        responseDetail,
+        submittedPayloadPreview,
       };
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error(
+        throw createExportRequestError(
           "Export timed out after 20 seconds. If using local proxy, confirm `npm run proxy` is running, then retry.",
+          {
+            httpStatus: 0,
+            httpStatusText: "Timeout",
+            submittedEntityId: getRequestedEntityId(requestConfig),
+            submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
+            responseSummary: "Request timed out before receiving response from export endpoint.",
+            responseDetail: "",
+            submittedPayloadPreview: toPrettyJson(requestConfig.payload),
+          },
         );
       }
       const reason = error instanceof Error ? error.message : "Unknown export error.";
       if (reason.includes("Failed to fetch")) {
-        throw new Error(
+        throw createExportRequestError(
           isProxyRequest
             ? "Export request could not reach local proxy. Start it with `npm run proxy`, then retry."
             : "Export request could not reach the endpoint (network/CORS/proxy issue). Check endpoint URL and server logs.",
+          {
+            httpStatus: 0,
+            httpStatusText: "Network Error",
+            submittedEntityId: getRequestedEntityId(requestConfig),
+            submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
+            responseSummary: "Network failure (no response body).",
+            responseDetail: "",
+            submittedPayloadPreview: toPrettyJson(requestConfig.payload),
+          },
         );
       }
-      throw error instanceof Error ? error : new Error("Unknown export error.");
+      if (
+        error &&
+        typeof error === "object" &&
+        "httpStatus" in error
+      ) {
+        throw error as ExportRequestError;
+      }
+      throw createExportRequestError(reason, {
+        httpStatus: 0,
+        httpStatusText: "Unexpected Error",
+        submittedEntityId: getRequestedEntityId(requestConfig),
+        submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
+        responseSummary: reason,
+        responseDetail: "",
+        submittedPayloadPreview: toPrettyJson(requestConfig.payload),
+      });
     } finally {
       window.clearTimeout(timeoutId);
     }
@@ -5522,6 +5729,9 @@ function NerisReportFormPage({
       address: detailForSideEffects.address,
       exportedAtIso: exportResult.exportedAtIso,
       exportedAtLabel: exportResult.exportedAtLabel,
+      attemptStatus: exportResult.attemptStatus,
+      httpStatus: exportResult.httpStatus,
+      httpStatusText: exportResult.httpStatusText,
       statusLabel: exportResult.statusLabel || "Submitted",
       reportStatusAtExport: statusAtExport,
       validatorName: validatorNameOverride.trim(),
@@ -5529,6 +5739,66 @@ function NerisReportFormPage({
       submittedEntityId: exportResult.submittedEntityId,
       submittedDepartmentNerisId: exportResult.submittedDepartmentNerisId,
       nerisId: exportResult.nerisId,
+      responseSummary: exportResult.responseSummary,
+      responseDetail: exportResult.responseDetail,
+      submittedPayloadPreview: exportResult.submittedPayloadPreview,
+    });
+  };
+
+  const appendFailedExportHistoryRecord = (
+    error: unknown,
+    validatorNameOverride: string,
+    statusAtExport: string,
+  ) => {
+    const metadata =
+      error && typeof error === "object" ? (error as ExportRequestError) : null;
+    const exportedAtDate = new Date();
+    const exportedAtIso = exportedAtDate.toISOString();
+    const exportedAtLabel = new Intl.DateTimeFormat("en-US", {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+      hour12: false,
+    }).format(exportedAtDate);
+    const errorMessage =
+      error instanceof Error ? error.message : "Unknown export error.";
+    const httpStatus = typeof metadata?.httpStatus === "number" ? metadata.httpStatus : 0;
+    const httpStatusText =
+      typeof metadata?.httpStatusText === "string" ? metadata.httpStatusText : "Error";
+    appendNerisExportRecord({
+      id: `${detailForSideEffects.callNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      callNumber: detailForSideEffects.callNumber,
+      incidentType: detailForSideEffects.incidentType,
+      address: detailForSideEffects.address,
+      exportedAtIso,
+      exportedAtLabel,
+      attemptStatus: "failed",
+      httpStatus,
+      httpStatusText,
+      statusLabel: `${httpStatus || "Error"} ${httpStatusText}`.trim(),
+      reportStatusAtExport: statusAtExport,
+      validatorName: validatorNameOverride.trim(),
+      reportWriterName: buildReportWriterName(),
+      submittedEntityId:
+        typeof metadata?.submittedEntityId === "string" ? metadata.submittedEntityId : "",
+      submittedDepartmentNerisId:
+        typeof metadata?.submittedDepartmentNerisId === "string"
+          ? metadata.submittedDepartmentNerisId
+          : (formValues.fd_neris_id ?? "").trim(),
+      nerisId: "",
+      responseSummary:
+        typeof metadata?.responseSummary === "string" && metadata.responseSummary.trim().length > 0
+          ? metadata.responseSummary
+          : errorMessage,
+      responseDetail:
+        typeof metadata?.responseDetail === "string" ? metadata.responseDetail : "",
+      submittedPayloadPreview:
+        typeof metadata?.submittedPayloadPreview === "string"
+          ? metadata.submittedPayloadPreview
+          : "",
     });
   };
 
@@ -5609,6 +5879,7 @@ function NerisReportFormPage({
         issues: [],
       });
     } catch (error) {
+      appendFailedExportHistoryRecord(error, normalizedValidatorName, reportStatus);
       setSaveMessage("");
       setErrorMessage(
         error instanceof Error ? error.message : "Unexpected validate/export error.",
@@ -5633,6 +5904,7 @@ function NerisReportFormPage({
           : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`,
       );
     } catch (error) {
+      appendFailedExportHistoryRecord(error, "", reportStatus);
       setSaveMessage("");
       setErrorMessage(error instanceof Error ? error.message : "Unknown export error.");
     } finally {
