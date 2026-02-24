@@ -7,8 +7,7 @@
 - Department Details: DD-M style alignment (pill-style dropdown matching NERIS Additional Incident Types).
 
 ## Latest known status
-- Latest commit: (pending this session)
-- DD-M fields now use NerisFlatMultiOptionSelect (pill-style dropdown with search, matching NERIS Additional Incident Types).
+- Latest commit: 3f56271 - Align Department Details DD-M fields to NERIS Additional Incident Types style.
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 
 ## Current blocker / status
@@ -18,6 +17,7 @@
 - 
 
 ## Recent key commits (latest first)
+- 3f56271 Align Department Details DD-M fields to NERIS Additional Incident Types style
 - 0c06c19 ACTIVE_CONTEXT: latest bf26a49
 - bf26a49 Add Department Details API persistence (GET/POST) with localStorage fallback
 - 0b42ddd ACTIVE_CONTEXT: latest commit c57038c, session note final
