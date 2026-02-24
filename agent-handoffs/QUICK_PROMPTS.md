@@ -52,7 +52,7 @@ After I answer:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
    - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
-   - latest conversation in agent-handoffs/branches/<branch-slug>/conversations/
+   - all conversations in agent-handoffs/branches/<branch-slug>/conversations/
 5) Before coding, summarize:
    - current branch + latest commit
    - what previous agent completed
