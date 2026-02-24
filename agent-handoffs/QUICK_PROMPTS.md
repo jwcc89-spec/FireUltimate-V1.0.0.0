@@ -128,6 +128,34 @@ After I answer:
 6) Commit + push these branch handoff files.
 7) Then continue normal implementation flow.
 ```
+---
+
+## 5) Get Ready to "Close our conversation" (Send to Agent to ensure they update relevant information)
+
+```text
+Preserve branch, update active_context.md and session notes.
+
+MANDATORY FIRST QUESTION:
+"Which branch am I working on?"
+
+After I answer:
+1) Stay on that branch.
+2) Compute branch slug by replacing "/" with "--".
+3) Create branch handoff paths:
+   - agent-handoffs/branches/<branch-slug>/
+   - agent-handoffs/branches/<branch-slug>/sessions/
+4) Create:
+   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md (from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md)
+   - agent-handoffs/branches/<branch-slug>/sessions/<timestamp>-<agent>-bootstrap.md (from agent-handoffs/HANDOFF_TEMPLATE.md)
+5) Populate ACTIVE_CONTEXT.md with:
+   - branch name
+   - latest commit
+   - current focus
+   - blocker/status
+   - exact next steps
+6) Commit + push these branch handoff files.
+7) Then continue normal implementation flow.
+```
 
 ---
 
