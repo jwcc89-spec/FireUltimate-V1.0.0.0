@@ -37,7 +37,7 @@
   - Lint passed with no errors.
 
 ## Git status
-- Commit(s) created: (pending)
+- Commit(s) created: 446ba73 - Add personnel credential schema (qualifications DD-M) and persistence
 - Pushed to: (pending)
 
 ## Open issues / blockers
