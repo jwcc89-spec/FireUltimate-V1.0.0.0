@@ -220,7 +220,24 @@ type DepartmentCollectionKey =
   | "personnel"
   | "apparatus"
   | "stations"
-  | "mutualAidDepartments";
+  | "mutualAidDepartments"
+  | "shiftInformation"
+  | "userType";
+
+type ShiftRecurrencePreset =
+  | "Daily"
+  | "Every other Day"
+  | "Every 2 days"
+  | "Every 3 days"
+  | "Custom";
+
+interface ShiftInformationEntry {
+  shiftType: string;
+  shiftDuration: string;
+  recurrence: ShiftRecurrencePreset;
+  recurrenceCustomValue: string;
+  location: string;
+}
 
 interface DepartmentCollectionDefinition {
   key: DepartmentCollectionKey;
@@ -238,6 +255,7 @@ const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
 const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
+const DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY = "fire-ultimate-department-logo-data-url";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -365,7 +383,28 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
     editButtonLabel: "Edit Mutual Aid Departments",
     helperText: "Add and update outside departments that provide mutual aid.",
   },
+  {
+    key: "shiftInformation",
+    label: "Shift Information",
+    editButtonLabel: "Edit Shift Information",
+    helperText:
+      "Add shift type, duration, recurrence, and location records for assignment.",
+  },
+  {
+    key: "userType",
+    label: "User Type",
+    editButtonLabel: "Edit User Type",
+    helperText: "Manage user role values including default and custom types.",
+  },
 ];
+const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
+  "Daily",
+  "Every other Day",
+  "Every 2 days",
+  "Every 3 days",
+  "Custom",
+];
+const DEFAULT_USER_TYPE_VALUES = ["Admin", "Sub Admin", "Secretary", "User"];
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -1545,6 +1584,12 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     null,
   );
   const sidebarWidthRef = useRef(sidebarWidth);
+  const [departmentLogoDataUrl, setDepartmentLogoDataUrl] = useState<string>(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    return window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "";
+  });
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -1614,6 +1659,22 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   }, [sidebarWidth]);
 
   useEffect(() => {
+    const handleDepartmentLogoUpdate = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      setDepartmentLogoDataUrl(
+        window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "",
+      );
+    };
+
+    window.addEventListener("department-logo-updated", handleDepartmentLogoUpdate);
+    return () => {
+      window.removeEventListener("department-logo-updated", handleDepartmentLogoUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const activeResize = activeSidebarResize.current;
       if (!activeResize) {
@@ -1675,7 +1736,15 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
       <aside className={`sidebar ${mobileNavOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
           <div className="sidebar-logo">
-            <Shield size={18} />
+            {departmentLogoDataUrl ? (
+              <img
+                src={departmentLogoDataUrl}
+                alt="Department logo"
+                className="sidebar-logo-image"
+              />
+            ) : (
+              <Shield size={18} />
+            )}
           </div>
           <div>
             <strong>Fire Ultimate</strong>
@@ -8341,17 +8410,40 @@ function DepartmentDetailsPage() {
   const [secondaryContactName, setSecondaryContactName] = useState("");
   const [secondaryContactPhone, setSecondaryContactPhone] = useState("");
   const [departmentLogoFileName, setDepartmentLogoFileName] = useState("No file selected");
-  const [departmentCollections, setDepartmentCollections] = useState<
-    Record<DepartmentCollectionKey, string[]>
-  >({
+  const [departmentCollections, setDepartmentCollections] = useState({
     personnel: [],
     apparatus: [],
     stations: [],
     mutualAidDepartments: [],
   });
+  const [shiftInformationEntries, setShiftInformationEntries] = useState<
+    ShiftInformationEntry[]
+  >([]);
+  const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>({
+    shiftType: "",
+    shiftDuration: "",
+    recurrence: "Daily",
+    recurrenceCustomValue: "",
+    location: "",
+  });
+  const [editingShiftIndex, setEditingShiftIndex] = useState<number | null>(null);
+  const [userTypeValues, setUserTypeValues] = useState<string[]>([
+    ...DEFAULT_USER_TYPE_VALUES,
+  ]);
+  const [userTypeDraft, setUserTypeDraft] = useState("");
+  const [editingUserTypeIndex, setEditingUserTypeIndex] = useState<number | null>(null);
   const [activeCollectionEditor, setActiveCollectionEditor] =
     useState<DepartmentCollectionKey | null>(null);
   const [collectionDraft, setCollectionDraft] = useState("");
+  const [isMultiEditMode, setIsMultiEditMode] = useState(false);
+  const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
+  const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
+  const [isEditScreenOpen, setIsEditScreenOpen] = useState(false);
+  const [editEntryDrafts, setEditEntryDrafts] = useState<string[]>([]);
+  const [personnelShiftValue, setPersonnelShiftValue] = useState("");
+  const [personnelApparatusValue, setPersonnelApparatusValue] = useState("");
+  const [personnelStationValue, setPersonnelStationValue] = useState("");
+  const [personnelUserTypeValue, setPersonnelUserTypeValue] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
 
   const activeCollectionDefinition = useMemo(
@@ -8364,58 +8456,206 @@ function DepartmentDetailsPage() {
     [activeCollectionEditor],
   );
 
-  const activeCollectionItems = activeCollectionEditor
-    ? departmentCollections[activeCollectionEditor]
+  const isShiftEditor = activeCollectionEditor === "shiftInformation";
+  const isUserTypeEditor = activeCollectionEditor === "userType";
+  const isSimpleListEditor =
+    Boolean(activeCollectionEditor) && !isShiftEditor && !isUserTypeEditor;
+  const activeSimpleCollectionKey = isSimpleListEditor
+    ? (activeCollectionEditor as keyof typeof departmentCollections)
+    : null;
+  const activeCollectionItems = activeSimpleCollectionKey
+    ? departmentCollections[activeSimpleCollectionKey]
     : [];
+  const shiftOptionValues = shiftInformationEntries.map((entry) => {
+    const recurrenceLabel =
+      entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
+        ? entry.recurrenceCustomValue
+        : entry.recurrence;
+    return `${entry.shiftType} | ${entry.shiftDuration} | ${recurrenceLabel} | ${entry.location}`;
+  });
 
   const handleLogoSelection = (event: ChangeEvent<HTMLInputElement>) => {
-    setDepartmentLogoFileName(event.target.files?.[0]?.name ?? "No file selected");
+    const file = event.target.files?.[0];
+    setDepartmentLogoFileName(file?.name ?? "No file selected");
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, dataUrl);
+      window.dispatchEvent(new Event("department-logo-updated"));
+    };
+    reader.readAsDataURL(file);
   };
 
   const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
     setActiveCollectionEditor(collectionKey);
     setCollectionDraft("");
+    setIsMultiEditMode(false);
+    setSelectedSingleIndex(null);
+    setSelectedMultiIndices([]);
+    setIsEditScreenOpen(false);
+    setEditEntryDrafts([]);
   };
 
   const closeCollectionEditor = () => {
     setActiveCollectionEditor(null);
     setCollectionDraft("");
+    setIsMultiEditMode(false);
+    setSelectedSingleIndex(null);
+    setSelectedMultiIndices([]);
+    setIsEditScreenOpen(false);
+    setEditEntryDrafts([]);
+    setEditingShiftIndex(null);
+    setEditingUserTypeIndex(null);
+    setPersonnelShiftValue("");
+    setPersonnelApparatusValue("");
+    setPersonnelStationValue("");
+    setPersonnelUserTypeValue("");
   };
 
   const addCollectionItem = () => {
     const trimmed = collectionDraft.trim();
-    if (!activeCollectionEditor || !trimmed) {
+    if (!activeSimpleCollectionKey || !trimmed) {
       return;
     }
     setDepartmentCollections((previous) => ({
       ...previous,
-      [activeCollectionEditor]: [...previous[activeCollectionEditor], trimmed],
+      [activeSimpleCollectionKey]: [...previous[activeSimpleCollectionKey], trimmed],
     }));
     setCollectionDraft("");
   };
 
-  const updateCollectionItem = (index: number, value: string) => {
-    if (!activeCollectionEditor) {
+  const toggleMultiIndex = (index: number) => {
+    setSelectedMultiIndices((previous) =>
+      previous.includes(index)
+        ? previous.filter((entryIndex) => entryIndex !== index)
+        : [...previous, index],
+    );
+  };
+
+  const openEditScreen = (entryIndex?: number) => {
+    if (!activeSimpleCollectionKey) {
+      return;
+    }
+    const items = departmentCollections[activeSimpleCollectionKey];
+    if (!items.length) {
+      return;
+    }
+
+    if (!isMultiEditMode) {
+      const nextSingleIndex =
+        typeof entryIndex === "number" ? entryIndex : selectedSingleIndex ?? 0;
+      setSelectedSingleIndex(nextSingleIndex);
+      setEditEntryDrafts([items[nextSingleIndex] ?? ""]);
+    } else {
+      const selected =
+        selectedMultiIndices.length > 0 ? selectedMultiIndices : entryIndex !== undefined ? [entryIndex] : [];
+      if (selected.length === 0) {
+        return;
+      }
+      setSelectedMultiIndices(selected);
+      setEditEntryDrafts(selected.map((index) => items[index] ?? ""));
+    }
+
+    setIsEditScreenOpen(true);
+  };
+
+  const saveEditedEntries = () => {
+    if (!activeSimpleCollectionKey) {
       return;
     }
     setDepartmentCollections((previous) => ({
       ...previous,
-      [activeCollectionEditor]: previous[activeCollectionEditor].map((entry, currentIndex) =>
-        currentIndex === index ? value : entry,
+      [activeSimpleCollectionKey]: previous[activeSimpleCollectionKey].map(
+        (entry, currentIndex) => {
+          if (!isMultiEditMode && selectedSingleIndex === currentIndex) {
+            return editEntryDrafts[0]?.trim() || entry;
+          }
+          if (isMultiEditMode) {
+            const multiIndex = selectedMultiIndices.indexOf(currentIndex);
+            if (multiIndex >= 0) {
+              return editEntryDrafts[multiIndex]?.trim() || entry;
+            }
+          }
+          return entry;
+        },
       ),
     }));
+    setIsEditScreenOpen(false);
   };
 
   const removeCollectionItem = (index: number) => {
-    if (!activeCollectionEditor) {
+    if (!activeSimpleCollectionKey) {
       return;
     }
     setDepartmentCollections((previous) => ({
       ...previous,
-      [activeCollectionEditor]: previous[activeCollectionEditor].filter(
+      [activeSimpleCollectionKey]: previous[activeSimpleCollectionKey].filter(
         (_, currentIndex) => currentIndex !== index,
       ),
     }));
+    setSelectedSingleIndex((previous) => (previous === index ? null : previous));
+    setSelectedMultiIndices((previous) =>
+      previous.filter((entryIndex) => entryIndex !== index),
+    );
+  };
+
+  const addShiftInformationEntry = () => {
+    if (
+      !shiftDraft.shiftType.trim() ||
+      !shiftDraft.shiftDuration.trim() ||
+      !shiftDraft.location.trim()
+    ) {
+      return;
+    }
+    if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
+      return;
+    }
+
+    const nextValue = {
+      ...shiftDraft,
+      shiftType: shiftDraft.shiftType.trim(),
+      shiftDuration: shiftDraft.shiftDuration.trim(),
+      location: shiftDraft.location.trim(),
+      recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
+    };
+
+    if (editingShiftIndex === null) {
+      setShiftInformationEntries((previous) => [...previous, nextValue]);
+    } else {
+      setShiftInformationEntries((previous) =>
+        previous.map((entry, index) => (index === editingShiftIndex ? nextValue : entry)),
+      );
+    }
+    setShiftDraft({
+      shiftType: "",
+      shiftDuration: "",
+      recurrence: "Daily",
+      recurrenceCustomValue: "",
+      location: "",
+    });
+    setEditingShiftIndex(null);
+  };
+
+  const addOrUpdateUserType = () => {
+    const trimmed = userTypeDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+    if (editingUserTypeIndex === null) {
+      setUserTypeValues((previous) => [...previous, trimmed]);
+    } else {
+      setUserTypeValues((previous) =>
+        previous.map((entry, index) => (index === editingUserTypeIndex ? trimmed : entry)),
+      );
+    }
+    setUserTypeDraft("");
+    setEditingUserTypeIndex(null);
   };
 
   const handleDepartmentDetailsSave = (event: FormEvent<HTMLFormElement>) => {
@@ -8589,7 +8829,17 @@ function DepartmentDetailsPage() {
                 </div>
                 <p>{definition.helperText}</p>
                 <p className="field-hint">
-                  Entries added: {departmentCollections[definition.key].length}
+                  {definition.key === "personnel"
+                    ? `Total Personnel: ${departmentCollections.personnel.length}`
+                    : definition.key === "apparatus"
+                      ? `Total Apparatus: ${departmentCollections.apparatus.length}`
+                      : definition.key === "stations"
+                        ? `Total Stations: ${departmentCollections.stations.length}`
+                        : definition.key === "mutualAidDepartments"
+                          ? `Total Mutual Aid Departments: ${departmentCollections.mutualAidDepartments.length}`
+                          : definition.key === "shiftInformation"
+                            ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
+                            : `Total User Types: ${userTypeValues.length}`}
                 </p>
               </div>
             ))}
@@ -8625,45 +8875,422 @@ function DepartmentDetailsPage() {
 
             <p className="panel-description">{activeCollectionDefinition.helperText}</p>
 
-            <div className="department-editor-add-row">
-              <input
-                type="text"
-                value={collectionDraft}
-                onChange={(event) => setCollectionDraft(event.target.value)}
-                placeholder={`Add ${activeCollectionDefinition.label.toLowerCase()} entry`}
-              />
-              <button
-                type="button"
-                className="primary-button compact-button"
-                onClick={addCollectionItem}
-              >
-                Add
-              </button>
-            </div>
-
-            {activeCollectionItems.length > 0 ? (
-              <ul className="department-editor-list">
-                {activeCollectionItems.map((entry, index) => (
-                  <li key={`${activeCollectionEditor}-${index}`}>
-                    <input
-                      type="text"
-                      value={entry}
-                      onChange={(event) => updateCollectionItem(index, event.target.value)}
-                    />
+            {isSimpleListEditor ? (
+              <>
+                <div className="department-editor-toolbar">
+                  <div className="department-dd-mode-badge">{isMultiEditMode ? "DD-M" : "DD-S"}</div>
+                  <div className="department-editor-toolbar-actions">
                     <button
                       type="button"
                       className="secondary-button compact-button"
-                      onClick={() => removeCollectionItem(index)}
+                      onClick={addCollectionItem}
                     >
-                      Remove
+                      Add
                     </button>
-                  </li>
-                ))}
-              </ul>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setIsMultiEditMode((previous) => !previous);
+                        setSelectedSingleIndex(null);
+                        setSelectedMultiIndices([]);
+                        setIsEditScreenOpen(false);
+                      }}
+                    >
+                      Edit Multiple
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={closeCollectionEditor}
+                    >
+                      Close
+                    </button>
+                  </div>
+                </div>
+
+                <div className="department-editor-add-row">
+                  <input
+                    type="text"
+                    value={collectionDraft}
+                    onChange={(event) => setCollectionDraft(event.target.value)}
+                    placeholder={`Add ${activeCollectionDefinition.label.toLowerCase()} entry`}
+                  />
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={openEditScreen}
+                  >
+                    Edit
+                  </button>
+                </div>
+
+                {activeCollectionItems.length > 0 ? (
+                  <ul className="department-editor-list">
+                    {activeCollectionItems.map((entry, index) => (
+                      <li key={`${activeCollectionEditor}-${index}`}>
+                        <label className="department-selection-row">
+                          <input
+                            type={isMultiEditMode ? "checkbox" : "radio"}
+                            name={`department-selection-${activeCollectionEditor}`}
+                            checked={
+                              isMultiEditMode
+                                ? selectedMultiIndices.includes(index)
+                                : selectedSingleIndex === index
+                            }
+                            onChange={() => {
+                              if (isMultiEditMode) {
+                                toggleMultiIndex(index);
+                              } else {
+                                setSelectedSingleIndex(index);
+                                openEditScreen(index);
+                              }
+                            }}
+                          />
+                          <span>{entry}</span>
+                        </label>
+                        <div className="department-row-actions">
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => openEditScreen(index)}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => removeCollectionItem(index)}
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="field-hint">
+                    No {activeCollectionDefinition.label.toLowerCase()} entries yet.
+                  </p>
+                )}
+
+                {isEditScreenOpen ? (
+                  <div className="department-edit-screen">
+                    <div className="panel-header">
+                      <h3>Edit {activeCollectionDefinition.label}</h3>
+                    </div>
+
+                    {collectionDraft.trim().length > 0 ? (
+                      <p className="field-hint">
+                        Click save to create new entry: <strong>{collectionDraft.trim()}</strong>
+                      </p>
+                    ) : null}
+
+                    {editEntryDrafts.length > 0
+                      ? editEntryDrafts.map((value, editIndex) => (
+                          <input
+                            key={`edit-draft-${editIndex}`}
+                            type="text"
+                            value={value}
+                            onChange={(event) =>
+                              setEditEntryDrafts((previous) =>
+                                previous.map((entry, index) =>
+                                  index === editIndex ? event.target.value : entry,
+                                ),
+                              )
+                            }
+                          />
+                        ))
+                      : null}
+
+                    {activeCollectionEditor === "personnel" ? (
+                      <div className="department-edit-grid">
+                        <label>
+                          Shift (DD-S)
+                          <select
+                            value={personnelShiftValue}
+                            onChange={(event) => setPersonnelShiftValue(event.target.value)}
+                          >
+                            <option value="">Select shift</option>
+                            {shiftOptionValues.map((option) => (
+                              <option key={`shift-option-${option}`} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Apparatus Assignment (DD-S)
+                          <select
+                            value={personnelApparatusValue}
+                            onChange={(event) => setPersonnelApparatusValue(event.target.value)}
+                          >
+                            <option value="">Select apparatus</option>
+                            {departmentCollections.apparatus.map((option) => (
+                              <option key={`apparatus-option-${option}`} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Station (DD-S)
+                          <select
+                            value={personnelStationValue}
+                            onChange={(event) => setPersonnelStationValue(event.target.value)}
+                          >
+                            <option value="">Select station</option>
+                            {departmentCollections.stations.map((option) => (
+                              <option key={`station-option-${option}`} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          User Type (DD-S)
+                          <select
+                            value={personnelUserTypeValue}
+                            onChange={(event) => setPersonnelUserTypeValue(event.target.value)}
+                          >
+                            <option value="">Select user type</option>
+                            {userTypeValues.map((option) => (
+                              <option key={`user-type-option-${option}`} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                      </div>
+                    ) : null}
+
+                    <div className="department-editor-toolbar-actions">
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={() => {
+                          if (collectionDraft.trim().length > 0) {
+                            addCollectionItem();
+                            setCollectionDraft("");
+                          }
+                          saveEditedEntries();
+                        }}
+                      >
+                        Save
+                      </button>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={() => setIsEditScreenOpen(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </>
+            ) : null}
+
+            {isShiftEditor ? (
+              <>
+                <div className="department-edit-grid">
+                  <label>
+                    Shift Type
+                    <input
+                      type="text"
+                      value={shiftDraft.shiftType}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          shiftType: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Shift Duration
+                    <input
+                      type="text"
+                      value={shiftDraft.shiftDuration}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          shiftDuration: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Recurrence
+                    <select
+                      value={shiftDraft.recurrence}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          recurrence: event.target.value as ShiftRecurrencePreset,
+                        }))
+                      }
+                    >
+                      {SHIFT_RECURRENCE_PRESET_OPTIONS.map((option) => (
+                        <option key={`shift-recurrence-${option}`} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {shiftDraft.recurrence === "Custom" ? (
+                    <label>
+                      Custom Recurrence
+                      <input
+                        type="text"
+                        value={shiftDraft.recurrenceCustomValue}
+                        onChange={(event) =>
+                          setShiftDraft((previous) => ({
+                            ...previous,
+                            recurrenceCustomValue: event.target.value,
+                          }))
+                        }
+                        placeholder="Describe custom recurrence"
+                      />
+                    </label>
+                  ) : null}
+                  <label>
+                    Location
+                    <input
+                      type="text"
+                      value={shiftDraft.location}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          location: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                </div>
+
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={addShiftInformationEntry}
+                  >
+                    {editingShiftIndex === null ? "Add Shift Information" : "Save Shift Information"}
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={closeCollectionEditor}
+                  >
+                    Close
+                  </button>
+                </div>
+
+                {shiftInformationEntries.length > 0 ? (
+                  <ul className="department-editor-list">
+                    {shiftInformationEntries.map((entry, index) => (
+                      <li key={`shift-entry-${index}`}>
+                        <span>
+                          {entry.shiftType} | {entry.shiftDuration} |{" "}
+                          {entry.recurrence === "Custom" &&
+                          entry.recurrenceCustomValue.trim().length > 0
+                            ? entry.recurrenceCustomValue
+                            : entry.recurrence}{" "}
+                          | {entry.location}
+                        </span>
+                        <div className="department-row-actions">
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => {
+                              setShiftDraft(entry);
+                              setEditingShiftIndex(index);
+                            }}
+                          >
+                            Edit
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() =>
+                              setShiftInformationEntries((previous) =>
+                                previous.filter((_, currentIndex) => currentIndex !== index),
+                              )
+                            }
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p className="field-hint">No shift information entries yet.</p>
+                )}
+              </>
             ) : (
-              <p className="field-hint">
-                No {activeCollectionDefinition.label.toLowerCase()} entries yet.
-              </p>
+              isUserTypeEditor ? (
+                <>
+                  <div className="department-editor-add-row">
+                    <input
+                      type="text"
+                      value={userTypeDraft}
+                      onChange={(event) => setUserTypeDraft(event.target.value)}
+                      placeholder="Add or edit user type"
+                    />
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={addOrUpdateUserType}
+                    >
+                      {editingUserTypeIndex === null ? "Add User Type" : "Save User Type"}
+                    </button>
+                  </div>
+                  <div className="department-editor-toolbar-actions">
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={closeCollectionEditor}
+                    >
+                      Close
+                    </button>
+                  </div>
+                  {userTypeValues.length > 0 ? (
+                    <ul className="department-editor-list">
+                      {userTypeValues.map((entry, index) => (
+                        <li key={`user-type-${index}`}>
+                          <span>{entry}</span>
+                          <div className="department-row-actions">
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() => {
+                                setUserTypeDraft(entry);
+                                setEditingUserTypeIndex(index);
+                              }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() =>
+                                setUserTypeValues((previous) =>
+                                  previous.filter((_, currentIndex) => currentIndex !== index),
+                                )
+                              }
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : (
+                    <p className="field-hint">No user types yet.</p>
+                  )}
+                </>
+              ) : null
             )}
           </article>
         </div>

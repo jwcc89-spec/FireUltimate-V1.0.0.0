@@ -19,21 +19,32 @@
   - Added upload control for department logo/image.
   - Added multi-entry cards for Personnel, Apparatus, Stations, and Mutual Aid Departments, each with an edit button that opens a popup editor for add/update/remove.
   - Added field reference markdown for mapping support.
+  - Updated Department Details workflow:
+    - Added Shift Information and User Type multi-entry modules.
+    - Added DD-S/DD-M edit modes for Personnel/Apparatus/Stations with multi-edit toggle.
+    - Moved Add action to toolbar and changed lower-row action button to Edit.
+    - Added personnel assignment dropdowns in the edit screen (Shift, Apparatus, Station, User Type).
+    - Connected uploaded logo image to sidebar top-left branding preview.
 - Files changed:
   - `src/appData.ts`
   - `src/App.tsx`
   - `src/App.css`
   - `docs/department-details-field-reference.md`
+  - `agent-handoffs/branches/submenu--departmentdetails-ui/ACTIVE_CONTEXT.md`
+  - `agent-handoffs/branches/submenu--departmentdetails-ui/sessions/2026-02-24-department-details-ui-build.md`
 - Decisions made:
   - Popup editors currently use simple text entries for each multi list so detailed schemas can be added in the next phase without blocking UI flow.
+  - DD-S/DD-M behavior is implemented with radio vs checkbox selection patterns in list editors.
 
 ## Verification
 - Commands run:
   - `npm run lint`
   - `git status --short`
+  - `npm run lint` (after workflow update)
 - Results:
   - Lint passed with no errors.
   - Expected changes are present in app data, page component, styling, and docs file.
+  - Expanded workflow update remains lint clean.
 
 ## Git status
 - Commit(s) created:
