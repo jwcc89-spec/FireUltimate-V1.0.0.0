@@ -4,6 +4,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -234,7 +235,7 @@ type ShiftRecurrencePreset =
 
 interface ShiftInformationEntry {
   shiftType: string;
-  shiftDuration: string;
+  shiftDuration: number;
   recurrence: ShiftRecurrencePreset;
   recurrenceCustomValue: string;
   location: string;
@@ -246,7 +247,6 @@ interface DepartmentPersonnelRecord {
   apparatusAssignment: string;
   station: string;
   userType: string;
-  timeZone: string;
 }
 
 interface DepartmentStationRecord {
@@ -444,33 +444,10 @@ const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
 ];
 const DEFAULT_USER_TYPE_VALUES = ["Admin", "Sub Admin", "Secretary", "User"];
 const GMT_TIMEZONE_OPTIONS = [
-  "GMT-12:00 Baker Island",
-  "GMT-11:00 Pago Pago",
-  "GMT-10:00 Honolulu",
-  "GMT-09:00 Anchorage",
-  "GMT-08:00 Los Angeles",
-  "GMT-07:00 Denver",
-  "GMT-06:00 Chicago",
-  "GMT-05:00 New York",
-  "GMT-04:00 Halifax",
-  "GMT-03:00 Buenos Aires",
-  "GMT-02:00 South Georgia",
-  "GMT-01:00 Azores",
-  "GMT+00:00 London",
-  "GMT+01:00 Berlin",
-  "GMT+02:00 Athens",
-  "GMT+03:00 Riyadh",
-  "GMT+04:00 Dubai",
-  "GMT+05:00 Karachi",
-  "GMT+06:00 Dhaka",
-  "GMT+07:00 Bangkok",
-  "GMT+08:00 Beijing",
-  "GMT+09:00 Tokyo",
-  "GMT+10:00 Sydney",
-  "GMT+11:00 Honiara",
-  "GMT+12:00 Auckland",
-  "GMT+13:00 Nuku'alofa",
-  "GMT+14:00 Kiritimati",
+  "GMT-05:00 Eastern",
+  "GMT-06:00 Central",
+  "GMT-07:00 Mountain",
+  "GMT-08:00 Pacific",
 ] as const;
 const DEPARTMENT_ENTITY_FALLBACK_OPTIONS: DepartmentNerisEntityOption[] = [
   { id: "FD00001001", name: "Fallback Fire Department 1" },
@@ -8545,7 +8522,7 @@ function DepartmentDetailsPage() {
   });
   const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>({
     shiftType: "",
-    shiftDuration: "",
+    shiftDuration: 0,
     recurrence: "Daily",
     recurrenceCustomValue: "",
     location: "",
@@ -8556,19 +8533,20 @@ function DepartmentDetailsPage() {
     apparatusAssignment: "",
     station: "",
     userType: "",
-    timeZone: "",
   });
   const [personnelBulkDraft, setPersonnelBulkDraft] = useState({
     shift: "",
     apparatusAssignment: "",
     station: "",
     userType: "",
-    timeZone: "",
   });
   const [userTypeDraft, setUserTypeDraft] = useState("");
   const [qualificationDraft, setQualificationDraft] = useState("");
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
+  const [editingQualificationIndex, setEditingQualificationIndex] = useState<number | null>(null);
+  const [dragQualificationIndex, setDragQualificationIndex] = useState<number | null>(null);
+  const [autoSaveTick, setAutoSaveTick] = useState(0);
 
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
   const activeCollectionDefinition = useMemo(
@@ -8604,11 +8582,20 @@ function DepartmentDetailsPage() {
     [shiftInformationEntries],
   );
 
-  const detailCards = DEPARTMENT_COLLECTION_DEFINITIONS.filter((definition) =>
-    ["stations", "apparatus", "shiftInformation", "personnel", "personnelQualifications"].includes(
-      definition.key,
-    ),
-  );
+  const detailCardOrder: DepartmentCollectionKey[] = [
+    "stations",
+    "personnelQualifications",
+    "apparatus",
+    "shiftInformation",
+    "personnel",
+  ];
+  const detailCards = detailCardOrder
+    .map((key) =>
+      DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
+    )
+    .filter((definition): definition is DepartmentCollectionDefinition =>
+      Boolean(definition),
+    );
   const resourceCards = DEPARTMENT_COLLECTION_DEFINITIONS.filter(
     (definition) => definition.key === "mutualAidDepartments",
   );
@@ -8731,14 +8718,12 @@ function DepartmentDetailsPage() {
         apparatusAssignment: "",
         station: "",
         userType: "",
-        timeZone: departmentTimeZone || "",
       });
       setPersonnelBulkDraft({
         shift: "",
         apparatusAssignment: "",
         station: "",
         userType: "",
-        timeZone: "",
       });
     }
     setIsEntryFormOpen(true);
@@ -8792,7 +8777,6 @@ function DepartmentDetailsPage() {
         apparatusAssignment: "",
         station: "",
         userType: "",
-        timeZone: "",
       });
     }
     setIsEntryFormOpen(true);
@@ -8827,11 +8811,19 @@ function DepartmentDetailsPage() {
       );
     }
     setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
   };
 
   const saveApparatusForm = () => {
     if (!isMultiEditMode) {
       if (!apparatusDraft.unitId.trim() || !apparatusDraft.unitType.trim()) {
+        return;
+      }
+      if (apparatusDraft.personnelRequirements.length !== apparatusDraft.minimumPersonnel) {
+        setStatusMessage(
+          "Personnel Requirements selection count must match Minimum Personnel.",
+        );
         return;
       }
       const normalized = {
@@ -8869,6 +8861,8 @@ function DepartmentDetailsPage() {
       );
     }
     setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
   };
 
   const savePersonnelForm = () => {
@@ -8895,16 +8889,17 @@ function DepartmentDetailsPage() {
               personnelBulkDraft.apparatusAssignment || entry.apparatusAssignment,
             station: personnelBulkDraft.station || entry.station,
             userType: personnelBulkDraft.userType || entry.userType,
-            timeZone: personnelBulkDraft.timeZone || entry.timeZone,
           };
         }),
       );
     }
     setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
   };
 
   const addShiftInformationEntry = () => {
-    if (!shiftDraft.shiftType.trim() || !shiftDraft.shiftDuration.trim()) {
+    if (!shiftDraft.shiftType.trim() || shiftDraft.shiftDuration <= 0) {
       return;
     }
     if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
@@ -8913,7 +8908,7 @@ function DepartmentDetailsPage() {
     const normalized = {
       ...shiftDraft,
       shiftType: shiftDraft.shiftType.trim(),
-      shiftDuration: shiftDraft.shiftDuration.trim(),
+      shiftDuration: shiftDraft.shiftDuration,
       recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
       location: shiftDraft.location.trim(),
     };
@@ -8924,12 +8919,14 @@ function DepartmentDetailsPage() {
     );
     setShiftDraft({
       shiftType: "",
-      shiftDuration: "",
+      shiftDuration: 0,
       recurrence: "Daily",
       recurrenceCustomValue: "",
       location: "",
     });
     setEditingIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
   };
 
   const addOrUpdateUserType = () => {
@@ -8944,6 +8941,8 @@ function DepartmentDetailsPage() {
     );
     setUserTypeDraft("");
     setEditingIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
   };
 
   const addQualification = () => {
@@ -8951,37 +8950,77 @@ function DepartmentDetailsPage() {
     if (!trimmed) {
       return;
     }
-    setPersonnelQualifications((previous) => [...previous, trimmed]);
+    setPersonnelQualifications((previous) =>
+      editingQualificationIndex === null
+        ? [...previous, trimmed]
+        : previous.map((entry, index) =>
+            index === editingQualificationIndex ? trimmed : entry,
+          ),
+    );
     setQualificationDraft("");
+    setEditingQualificationIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
   };
+
+  const persistDepartmentDetails = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.localStorage.setItem(
+      DEPARTMENT_DETAILS_STORAGE_KEY,
+      JSON.stringify({
+        departmentName,
+        departmentStreet,
+        departmentCity,
+        departmentState,
+        departmentZipCode,
+        departmentTimeZone,
+        mainContactName,
+        mainContactPhone,
+        secondaryContactName,
+        secondaryContactPhone,
+        departmentLogoFileName,
+        stationRecords,
+        apparatusRecords,
+        shiftInformationEntries,
+        personnelRecords,
+        personnelQualifications,
+        userTypeValues,
+        selectedMutualAidIds,
+      }),
+    );
+  }, [
+    apparatusRecords,
+    departmentCity,
+    departmentLogoFileName,
+    departmentName,
+    departmentState,
+    departmentStreet,
+    departmentTimeZone,
+    departmentZipCode,
+    mainContactName,
+    mainContactPhone,
+    personnelQualifications,
+    personnelRecords,
+    secondaryContactName,
+    secondaryContactPhone,
+    selectedMutualAidIds,
+    shiftInformationEntries,
+    stationRecords,
+    userTypeValues,
+  ]);
+
+  useEffect(() => {
+    if (autoSaveTick === 0) {
+      return;
+    }
+    persistDepartmentDetails();
+  }, [autoSaveTick, persistDepartmentDetails]);
 
   const handleDepartmentDetailsSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (typeof window !== "undefined") {
-      window.localStorage.setItem(
-        DEPARTMENT_DETAILS_STORAGE_KEY,
-        JSON.stringify({
-          departmentName,
-          departmentStreet,
-          departmentCity,
-          departmentState,
-          departmentZipCode,
-          departmentTimeZone,
-          mainContactName,
-          mainContactPhone,
-          secondaryContactName,
-          secondaryContactPhone,
-          departmentLogoFileName,
-          stationRecords,
-          apparatusRecords,
-          shiftInformationEntries,
-          personnelRecords,
-          personnelQualifications,
-          userTypeValues,
-          selectedMutualAidIds,
-        }),
-      );
-    }
+    persistDepartmentDetails();
     setStatusMessage("Department details saved locally in this browser.");
   };
 
@@ -9214,6 +9253,54 @@ function DepartmentDetailsPage() {
 
             {isShiftEditor ? (
               <>
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={() => {
+                      setEditingIndex(null);
+                      setSelectedSingleIndex(null);
+                      setShiftDraft({
+                        shiftType: "",
+                        shiftDuration: 0,
+                        recurrence: "Daily",
+                        recurrenceCustomValue: "",
+                        location: "",
+                      });
+                    }}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={() => {
+                      if (selectedSingleIndex === null || !shiftInformationEntries[selectedSingleIndex]) {
+                        return;
+                      }
+                      setEditingIndex(selectedSingleIndex);
+                      setShiftDraft(shiftInformationEntries[selectedSingleIndex]!);
+                    }}
+                  >
+                    Edit
+                  </button>
+                </div>
+                <select
+                  className="department-select-box"
+                  value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
+                  onChange={(event) =>
+                    setSelectedSingleIndex(
+                      event.target.value === "" ? null : Number.parseInt(event.target.value, 10),
+                    )
+                  }
+                >
+                  <option value="">Select shift entry</option>
+                  {shiftOptionValues.map((entry, index) => (
+                    <option key={`shift-entry-${index}`} value={String(index)}>
+                      {entry}
+                    </option>
+                  ))}
+                </select>
                 <div className="department-edit-grid">
                   <label>
                     Shift Type
@@ -9221,7 +9308,17 @@ function DepartmentDetailsPage() {
                   </label>
                   <label>
                     Shift Duration
-                    <input type="text" value={shiftDraft.shiftDuration} onChange={(event) => setShiftDraft((previous) => ({ ...previous, shiftDuration: event.target.value }))} />
+                    <input
+                      type="number"
+                      min={0}
+                      value={shiftDraft.shiftDuration}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          shiftDuration: Number.parseInt(event.target.value, 10) || 0,
+                        }))
+                      }
+                    />
                   </label>
                   <label>
                     Recurrence
@@ -9260,12 +9357,76 @@ function DepartmentDetailsPage() {
             ) : null}
 
             {isQualificationsEditor ? (
-              <div className="department-editor-add-row">
-                <input type="text" value={qualificationDraft} onChange={(event) => setQualificationDraft(event.target.value)} placeholder="Qualification name" />
-                <button type="button" className="primary-button compact-button" onClick={addQualification}>
-                  Add
-                </button>
-              </div>
+              <>
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={() => {
+                      setEditingQualificationIndex(null);
+                      setQualificationDraft("");
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="department-editor-add-row">
+                  <input
+                    type="text"
+                    value={qualificationDraft}
+                    onChange={(event) => setQualificationDraft(event.target.value)}
+                    placeholder="Qualification name"
+                  />
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={addQualification}
+                  >
+                    {editingQualificationIndex === null ? "Save" : "Update"}
+                  </button>
+                </div>
+                <ul className="department-editor-list">
+                  {personnelQualifications.map((qualification, index) => (
+                    <li
+                      key={`qualification-${qualification}-${index}`}
+                      draggable
+                      onDragStart={() => setDragQualificationIndex(index)}
+                      onDragOver={(event) => event.preventDefault()}
+                      onDrop={() => {
+                        if (dragQualificationIndex === null || dragQualificationIndex === index) {
+                          return;
+                        }
+                        setPersonnelQualifications((previous) => {
+                          const next = [...previous];
+                          const [moved] = next.splice(dragQualificationIndex, 1);
+                          if (!moved) {
+                            return previous;
+                          }
+                          next.splice(index, 0, moved);
+                          return next;
+                        });
+                        setDragQualificationIndex(null);
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Auto-saved.");
+                      }}
+                    >
+                      <span>{qualification}</span>
+                      <div className="department-row-actions">
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => {
+                            setEditingQualificationIndex(index);
+                            setQualificationDraft(qualification);
+                          }}
+                        >
+                          Edit
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
             ) : null}
 
             {isMutualAidEditor ? (
@@ -9494,24 +9655,6 @@ function DepartmentDetailsPage() {
                     <option value="">{isMultiEditMode ? "No change" : "Select user type"}</option>
                     {userTypeValues.map((option) => (
                       <option key={`personnel-user-type-${option}`} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label>
-                  Time Zone
-                  <select
-                    value={!isMultiEditMode ? personnelDraft.timeZone : personnelBulkDraft.timeZone}
-                    onChange={(event) =>
-                      !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, timeZone: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, timeZone: event.target.value }))
-                    }
-                  >
-                    <option value="">{isMultiEditMode ? "No change" : "Select time zone"}</option>
-                    {GMT_TIMEZONE_OPTIONS.map((option) => (
-                      <option key={`personnel-time-zone-${option}`} value={option}>
                         {option}
                       </option>
                     ))}

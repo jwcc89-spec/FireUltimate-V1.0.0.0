@@ -11,7 +11,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Department Address - City | `departmentAddressCity` |
 | Department Address - State | `departmentAddressState` |
 | Department Address - Zip Code | `departmentAddressZipCode` |
-| Department Time Zone (DD-S) | `departmentTimeZone` |
+| Department Time Zone (DD-S) | `departmentTimeZone` (US-only: Eastern, Central, Mountain, Pacific) |
 | Main Contact Name | `mainContactName` |
 | Main Contact Phone Number | `mainContactPhoneNumber` |
 | Secondary Contact Name | `secondaryContactName` |
@@ -25,7 +25,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Personnel | `personnel` | Use **Edit Personnel** button to open add/update screen |
 | Apparatus | `apparatus` | Use **Edit Apparatus** button to open add/update screen |
 | Stations | `stations` | Use **Edit Stations** button to open add/update screen |
-| Personnel Qualifications | `personnelQualifications` | Use **Edit Personnel Qualifications** button to add qualification values |
+| Personnel Qualifications | `personnelQualifications` | Use **Edit Personnel Qualifications** to add, view, edit, and drag-reorder qualification values |
 | Mutual Aid Departments | `mutualAidDepartments` | Use **Edit Mutual Aid Departments** button to open add/update screen |
 | Shift Information | `shiftInformation` | Use **Edit Shift Information** for Shift Type, Shift Duration, Recurrence, and Location |
 | User Type | `userType` | Use **Edit User Type** for defaults and custom role values |
@@ -35,7 +35,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | UI Field Label | Suggested Field Key |
 | --- | --- |
 | Shift Type | `shiftType` |
-| Shift Duration | `shiftDuration` |
+| Shift Duration (number-only) | `shiftDuration` |
 | Recurrence | `recurrence` |
 | Recurrence Custom Value | `recurrenceCustomValue` |
 | Location | `location` |
@@ -58,7 +58,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Unit ID | `unitId` |
 | Unit Type | `unitType` |
 | Minimum Personnel | `minimumPersonnel` |
-| Personnel Requirements (DD-M) | `personnelRequirements` |
+| Personnel Requirements (DD-M) | `personnelRequirements` (must match `minimumPersonnel` selection count) |
 | Station (DD-S) | `station` |
 
 ## Personnel Assignment Fields (Edit Screen)
@@ -69,11 +69,11 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Apparatus Assignment (DD-S) | `assignedApparatus` | `apparatus` values |
 | Station (DD-S) | `assignedStation` | `stations` values |
 | User Type (DD-S) | `assignedUserType` | `userType` values |
-| Time Zone (DD-S) | `assignedTimeZone` | Department GMT list with local labels |
 
 ## Notes
 
-- Personnel/Apparatus/Stations editors now support DD-S and DD-M interaction modes.
+- Personnel/Apparatus/Stations editors support DD-S and DD-M interaction modes.
 - Personnel add/edit popup now includes core assignment fields to avoid blank personnel records.
+- Personnel assignment timezone is removed; personnel inherit department timezone.
 - Mutual Aid Departments are sourced from `/api/neris/debug/entities` when available and fall back to valid FD ID options if unavailable.
-- Clicking **Save Department Details** stores values to browser localStorage (`fire-ultimate-department-details`).
+- Clicking save actions stores values to browser localStorage (`fire-ultimate-department-details`), including **Save Department Details** and editor save buttons.
