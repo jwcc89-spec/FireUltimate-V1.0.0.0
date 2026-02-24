@@ -38,8 +38,8 @@
   - Lint passed with no errors.
 
 ## Git status
-- Commit(s) created: bf26a49
-- Pushed to: (pending)
+- Commit(s) created: bf26a49, 0c06c19
+- Pushed to: origin submenu/departmentdetails-ui
 
 ## Open issues / blockers
 - None.

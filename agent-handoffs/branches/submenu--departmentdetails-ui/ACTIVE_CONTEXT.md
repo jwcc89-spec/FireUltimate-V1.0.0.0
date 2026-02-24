@@ -7,7 +7,7 @@
 - Department Details: API persistence (GET/POST) with localStorage fallback.
 
 ## Latest known status
-- Latest commit: bf26a49 - Add Department Details API persistence (GET/POST) with localStorage fallback
+- Latest commit: 0c06c19 - ACTIVE_CONTEXT: latest bf26a49
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 
 ## Current blocker / status
@@ -17,6 +17,7 @@
 - 
 
 ## Recent key commits (latest first)
+- 0c06c19 ACTIVE_CONTEXT: latest bf26a49
 - bf26a49 Add Department Details API persistence (GET/POST) with localStorage fallback
 - 0b42ddd ACTIVE_CONTEXT: latest commit c57038c, session note final
 - c57038c ACTIVE_CONTEXT: set latest commit 446ba73
