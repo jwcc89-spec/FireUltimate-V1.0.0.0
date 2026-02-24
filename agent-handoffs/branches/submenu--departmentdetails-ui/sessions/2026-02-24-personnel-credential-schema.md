@@ -37,8 +37,8 @@
   - Lint passed with no errors.
 
 ## Git status
-- Commit(s) created: 446ba73 - Add personnel credential schema (qualifications DD-M) and persistence
-- Pushed to: (pending)
+- Commit(s) created: 446ba73, c57038c
+- Pushed to: origin submenu/departmentdetails-ui
 
 ## Open issues / blockers
 - None.
