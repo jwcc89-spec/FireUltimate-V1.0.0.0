@@ -142,7 +142,7 @@ MANDATORY FIRST RESPONSE:
 After I answer:
 1) Update agent-handoffs/branches/<branch-slug>/active_context.md
 2) finalize session note
-3) Create a copy of all conversation HX as a backup in agent-handoffs/branches/<branch-slug>/sessions/<timestamp>-<agent>/conversation.md
+3) Create or update a copy of all conversation history as a backup in agent-handoffs/branches/<branch-slug>/sessions/<timestamp>-<agent>/conversation.md
 
 ```
 
