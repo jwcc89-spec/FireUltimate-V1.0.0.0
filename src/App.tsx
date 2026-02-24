@@ -216,6 +216,19 @@ interface NerisExportRecord {
   submittedPayloadPreview: string;
 }
 
+type DepartmentCollectionKey =
+  | "personnel"
+  | "apparatus"
+  | "stations"
+  | "mutualAidDepartments";
+
+interface DepartmentCollectionDefinition {
+  key: DepartmentCollectionKey;
+  label: string;
+  editButtonLabel: string;
+  helperText: string;
+}
+
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
@@ -327,6 +340,32 @@ const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   lastUpdated: 140,
 };
 const NERIS_QUEUE_FIELD_ORDER: IncidentCallFieldId[] = [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
+const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
+  {
+    key: "personnel",
+    label: "Personnel",
+    editButtonLabel: "Edit Personnel",
+    helperText: "Add and update personnel records tied to this department.",
+  },
+  {
+    key: "apparatus",
+    label: "Apparatus",
+    editButtonLabel: "Edit Apparatus",
+    helperText: "Add and update apparatus/units assigned to this department.",
+  },
+  {
+    key: "stations",
+    label: "Stations",
+    editButtonLabel: "Edit Stations",
+    helperText: "Add and update the station list for this department.",
+  },
+  {
+    key: "mutualAidDepartments",
+    label: "Mutual Aid Departments",
+    editButtonLabel: "Edit Mutual Aid Departments",
+    helperText: "Add and update outside departments that provide mutual aid.",
+  },
+];
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -8291,6 +8330,348 @@ function NerisReportFormPage({
   );
 }
 
+function DepartmentDetailsPage() {
+  const [departmentName, setDepartmentName] = useState("");
+  const [departmentStreet, setDepartmentStreet] = useState("");
+  const [departmentCity, setDepartmentCity] = useState("");
+  const [departmentState, setDepartmentState] = useState("");
+  const [departmentZipCode, setDepartmentZipCode] = useState("");
+  const [mainContactName, setMainContactName] = useState("");
+  const [mainContactPhone, setMainContactPhone] = useState("");
+  const [secondaryContactName, setSecondaryContactName] = useState("");
+  const [secondaryContactPhone, setSecondaryContactPhone] = useState("");
+  const [departmentLogoFileName, setDepartmentLogoFileName] = useState("No file selected");
+  const [departmentCollections, setDepartmentCollections] = useState<
+    Record<DepartmentCollectionKey, string[]>
+  >({
+    personnel: [],
+    apparatus: [],
+    stations: [],
+    mutualAidDepartments: [],
+  });
+  const [activeCollectionEditor, setActiveCollectionEditor] =
+    useState<DepartmentCollectionKey | null>(null);
+  const [collectionDraft, setCollectionDraft] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+
+  const activeCollectionDefinition = useMemo(
+    () =>
+      activeCollectionEditor
+        ? DEPARTMENT_COLLECTION_DEFINITIONS.find(
+            (definition) => definition.key === activeCollectionEditor,
+          )
+        : undefined,
+    [activeCollectionEditor],
+  );
+
+  const activeCollectionItems = activeCollectionEditor
+    ? departmentCollections[activeCollectionEditor]
+    : [];
+
+  const handleLogoSelection = (event: ChangeEvent<HTMLInputElement>) => {
+    setDepartmentLogoFileName(event.target.files?.[0]?.name ?? "No file selected");
+  };
+
+  const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
+    setActiveCollectionEditor(collectionKey);
+    setCollectionDraft("");
+  };
+
+  const closeCollectionEditor = () => {
+    setActiveCollectionEditor(null);
+    setCollectionDraft("");
+  };
+
+  const addCollectionItem = () => {
+    const trimmed = collectionDraft.trim();
+    if (!activeCollectionEditor || !trimmed) {
+      return;
+    }
+    setDepartmentCollections((previous) => ({
+      ...previous,
+      [activeCollectionEditor]: [...previous[activeCollectionEditor], trimmed],
+    }));
+    setCollectionDraft("");
+  };
+
+  const updateCollectionItem = (index: number, value: string) => {
+    if (!activeCollectionEditor) {
+      return;
+    }
+    setDepartmentCollections((previous) => ({
+      ...previous,
+      [activeCollectionEditor]: previous[activeCollectionEditor].map((entry, currentIndex) =>
+        currentIndex === index ? value : entry,
+      ),
+    }));
+  };
+
+  const removeCollectionItem = (index: number) => {
+    if (!activeCollectionEditor) {
+      return;
+    }
+    setDepartmentCollections((previous) => ({
+      ...previous,
+      [activeCollectionEditor]: previous[activeCollectionEditor].filter(
+        (_, currentIndex) => currentIndex !== index,
+      ),
+    }));
+  };
+
+  const handleDepartmentDetailsSave = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setStatusMessage(
+      "Department details saved in prototype mode. API/storage persistence will be added next.",
+    );
+  };
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>Admin Functions | Department Details</h1>
+          <p>
+            Maintain core department information for use throughout the program,
+            including contacts, address, and list-based department resources.
+          </p>
+        </div>
+      </header>
+
+      <form className="panel-grid" onSubmit={handleDepartmentDetailsSave}>
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Department Profile</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="department-name">Department Name</label>
+              <input
+                id="department-name"
+                type="text"
+                value={departmentName}
+                onChange={(event) => setDepartmentName(event.target.value)}
+                placeholder="Enter department name"
+              />
+
+              <label htmlFor="department-street">Department Address - Street</label>
+              <input
+                id="department-street"
+                type="text"
+                value={departmentStreet}
+                onChange={(event) => setDepartmentStreet(event.target.value)}
+                placeholder="Enter street address"
+              />
+
+              <div className="department-inline-grid">
+                <label htmlFor="department-city">
+                  Department Address - City
+                  <input
+                    id="department-city"
+                    type="text"
+                    value={departmentCity}
+                    onChange={(event) => setDepartmentCity(event.target.value)}
+                    placeholder="City"
+                  />
+                </label>
+                <label htmlFor="department-state">
+                  Department Address - State
+                  <input
+                    id="department-state"
+                    type="text"
+                    value={departmentState}
+                    onChange={(event) => setDepartmentState(event.target.value)}
+                    placeholder="State"
+                  />
+                </label>
+                <label htmlFor="department-zip">
+                  Department Address - Zip Code
+                  <input
+                    id="department-zip"
+                    type="text"
+                    value={departmentZipCode}
+                    onChange={(event) => setDepartmentZipCode(event.target.value)}
+                    placeholder="Zip code"
+                  />
+                </label>
+              </div>
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Department Logo / Image</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="department-logo-upload">Upload Department Logo/Image</label>
+              <input
+                id="department-logo-upload"
+                type="file"
+                accept="image/*"
+                onChange={handleLogoSelection}
+              />
+              <p className="field-hint">Selected file: {departmentLogoFileName}</p>
+            </div>
+          </article>
+        </section>
+
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Main Contact</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="main-contact-name">Main Contact Name</label>
+              <input
+                id="main-contact-name"
+                type="text"
+                value={mainContactName}
+                onChange={(event) => setMainContactName(event.target.value)}
+                placeholder="Enter main contact name"
+              />
+
+              <label htmlFor="main-contact-phone">Main Contact Phone Number</label>
+              <input
+                id="main-contact-phone"
+                type="tel"
+                value={mainContactPhone}
+                onChange={(event) => setMainContactPhone(event.target.value)}
+                placeholder="Enter main contact phone number"
+              />
+            </div>
+          </article>
+
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Secondary Contact</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="secondary-contact-name">Secondary Contact Name</label>
+              <input
+                id="secondary-contact-name"
+                type="text"
+                value={secondaryContactName}
+                onChange={(event) => setSecondaryContactName(event.target.value)}
+                placeholder="Enter secondary contact name"
+              />
+
+              <label htmlFor="secondary-contact-phone">Secondary Contact Phone</label>
+              <input
+                id="secondary-contact-phone"
+                type="tel"
+                value={secondaryContactPhone}
+                onChange={(event) => setSecondaryContactPhone(event.target.value)}
+                placeholder="Enter secondary contact phone number"
+              />
+            </div>
+          </article>
+        </section>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Department Multi-Entry Lists</h2>
+          </div>
+          <p className="panel-description">
+            Use the edit buttons to open each management screen and add or update
+            list entries.
+          </p>
+          <div className="department-collection-grid">
+            {DEPARTMENT_COLLECTION_DEFINITIONS.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button
+                    type="button"
+                    className="rl-box-button"
+                    onClick={() => openCollectionEditor(definition.key)}
+                  >
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p>{definition.helperText}</p>
+                <p className="field-hint">
+                  Entries added: {departmentCollections[definition.key].length}
+                </p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <div className="header-actions">
+          <button type="submit" className="primary-button">
+            Save Department Details
+          </button>
+          {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
+        </div>
+      </form>
+
+      {activeCollectionEditor && activeCollectionDefinition ? (
+        <div
+          className="department-editor-backdrop"
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${activeCollectionDefinition.label} editor`}
+        >
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>{activeCollectionDefinition.label}</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={closeCollectionEditor}
+              >
+                Close
+              </button>
+            </div>
+
+            <p className="panel-description">{activeCollectionDefinition.helperText}</p>
+
+            <div className="department-editor-add-row">
+              <input
+                type="text"
+                value={collectionDraft}
+                onChange={(event) => setCollectionDraft(event.target.value)}
+                placeholder={`Add ${activeCollectionDefinition.label.toLowerCase()} entry`}
+              />
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={addCollectionItem}
+              >
+                Add
+              </button>
+            </div>
+
+            {activeCollectionItems.length > 0 ? (
+              <ul className="department-editor-list">
+                {activeCollectionItems.map((entry, index) => (
+                  <li key={`${activeCollectionEditor}-${index}`}>
+                    <input
+                      type="text"
+                      value={entry}
+                      onChange={(event) => updateCollectionItem(index, event.target.value)}
+                    />
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => removeCollectionItem(index)}
+                    >
+                      Remove
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="field-hint">
+                No {activeCollectionDefinition.label.toLowerCase()} entries yet.
+              </p>
+            )}
+          </article>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function HydrantsAdminPage() {
   const [fileName, setFileName] = useState("No file selected");
   const [statusMessage, setStatusMessage] = useState("");
@@ -9262,6 +9643,10 @@ function RouteResolver({
         nerisExportSettings={nerisExportSettings}
       />
     );
+  }
+
+  if (path === "/admin-functions/department-details") {
+    return <DepartmentDetailsPage />;
   }
 
   if (path === "/admin-functions/hydrants") {

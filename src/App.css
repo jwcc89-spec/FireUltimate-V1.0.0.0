@@ -1117,6 +1117,112 @@ tbody tr:last-of-type td {
   resize: vertical;
 }
 
+.department-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.department-inline-grid label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.department-collection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.department-collection-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.department-collection-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.department-collection-card-header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.department-collection-card p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.department-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  background-color: rgba(15, 23, 42, 0.52);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.department-editor-modal {
+  width: min(700px, 95vw);
+  max-height: min(85vh, 760px);
+  overflow: auto;
+  display: grid;
+  gap: 0.7rem;
+}
+
+.department-editor-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.department-editor-add-row input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.department-editor-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.48rem;
+}
+
+.department-editor-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.department-editor-list input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.62rem;
+  font-size: 0.82rem;
+}
+
 .neris-multiselect {
   min-height: 130px;
 }
@@ -3224,6 +3330,16 @@ body.resource-personnel-modal-open {
   }
 
   .neris-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .department-inline-grid,
+  .department-collection-grid,
+  .department-editor-list li {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .department-editor-add-row {
     grid-template-columns: minmax(0, 1fr);
   }
 

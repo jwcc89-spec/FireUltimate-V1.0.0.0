@@ -412,6 +412,14 @@ export const MAIN_MENUS: MainMenu[] = [
     adminOnly: true,
     submenus: [
       {
+        label: "Department Details",
+        path: "/admin-functions/department-details",
+        summary:
+          "Set department profile information, contacts, address, and managed lists.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
         label: "Scheduling",
         path: "/admin-functions/scheduling",
         summary: "Administrative schedule management controls.",
