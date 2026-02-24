@@ -173,6 +173,19 @@ function csvToEnumValues(rawValue) {
   );
 }
 
+function parseJsonArray(rawValue) {
+  const normalized = trimValue(rawValue);
+  if (!normalized) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(normalized);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
 function parseLocalDateTimeWithOffset(value, utcOffsetMinutes) {
   const trimmed = trimValue(value);
   const localMatch = trimmed.match(
@@ -238,6 +251,16 @@ function toIsoDateTimeOrNull(value, utcOffsetMinutes = 0) {
     return null;
   }
   return parsed.toISOString();
+}
+
+function toIsoDateTimeFromDateAndTime(dateValue, timeValue, utcOffsetMinutes = 0) {
+  const date = trimValue(dateValue);
+  const time = trimValue(timeValue);
+  if (!date || !time) {
+    return null;
+  }
+  const normalizedTime = time.length === 5 ? `${time}:00` : time;
+  return toIsoDateTimeOrNull(`${date}T${normalizedTime}`, utcOffsetMinutes);
 }
 
 function yesNoToBoolean(value) {
@@ -800,9 +823,14 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   }
 
   const nowIso = new Date().toISOString();
+  const onsetDateTimeIso = toIsoDateTimeFromDateAndTime(
+    formValues.incident_onset_date,
+    formValues.incident_onset_time,
+    clientUtcOffsetMinutes,
+  );
   const callCreate = toIsoDateTime(
     formValues.incident_time_call_create,
-    nowIso,
+    onsetDateTimeIso || nowIso,
     clientUtcOffsetMinutes,
   );
   const callAnswered = toIsoDateTime(
@@ -862,8 +890,14 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     dispatchLocation.direction_of_travel = directionOfTravel;
   }
   const crossStreetType = normalizeEnumValue(formValues.location_cross_street_type);
-  if (crossStreetType) {
-    const crossStreetPayload = [{ cross_street_modifier: crossStreetType }];
+  const crossStreetName = trimValue(formValues.location_cross_street_name);
+  if (crossStreetType || crossStreetName) {
+    const crossStreetPayload = [
+      {
+        cross_street_modifier: crossStreetType || undefined,
+        street: crossStreetName || undefined,
+      },
+    ];
     baseLocation.cross_streets = crossStreetPayload;
     dispatchLocation.cross_streets = crossStreetPayload;
   }
@@ -975,13 +1009,30 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     dispatchPayload.incident_clear = incidentClearTime;
   }
 
+  const aidAgencyType = trimValue(formValues.incident_aid_agency_type).toUpperCase();
+  const additionalNonFdAidEntries = Array.isArray(body.additionalNonFdAidEntries)
+    ? body.additionalNonFdAidEntries
+    : [];
   const nonFdAids =
-    trimValue(formValues.incident_aid_agency_type).toUpperCase() === "NON_FD_AID"
-      ? csvToEnumValues(formValues.incident_aid_nonfd)
+    aidAgencyType === "NON_FD_AID"
+      ? Array.from(
+          new Set(
+            [
+              ...csvToEnumValues(formValues.incident_aid_nonfd),
+              ...additionalNonFdAidEntries
+                .map((entry) =>
+                  entry && typeof entry === "object"
+                    ? normalizeEnumValue(entry.aidType)
+                    : "",
+                )
+                .filter((entry) => entry.length > 0),
+            ].filter((entry) => entry.length > 0),
+          ),
+        )
       : [];
 
   const aidEntries = [];
-  if (trimValue(formValues.incident_aid_agency_type).toUpperCase() === "FIRE_DEPARTMENT") {
+  if (aidAgencyType === "FIRE_DEPARTMENT") {
     const direction = normalizeEnumValue(formValues.incident_aid_direction);
     const aidType = normalizeEnumValue(formValues.incident_aid_type);
     const department = normalizeAidDepartmentId(formValues.incident_aid_department_name, entityId);
@@ -1046,6 +1097,109 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     basePayload.location_use = locationUse;
   }
 
+  const isHazsitIncident = primaryIncidentType.startsWith("HAZSIT||");
+  const isMedicalIncident = primaryIncidentType.startsWith("MEDICAL||");
+  const hazsitDisposition = normalizeEnumValue(formValues.emerg_haz_disposition);
+  const hazsitEvacuatedCount = toNonNegativeInt(formValues.emerg_haz_evacuated_count);
+  let hazsitPayload = null;
+  if (
+    isHazsitIncident &&
+    hazsitDisposition &&
+    typeof hazsitEvacuatedCount === "number"
+  ) {
+    hazsitPayload = {
+      evacuated: hazsitEvacuatedCount,
+      disposition: hazsitDisposition,
+    };
+    const chemicalName = trimValue(formValues.emerg_haz_chemical_name);
+    const chemicalDot = normalizeEnumValue(formValues.emerg_haz_chemical_dot);
+    if (chemicalName && chemicalDot) {
+      hazsitPayload.chemicals = [
+        {
+          name: chemicalName,
+          dot_class: chemicalDot,
+          release_occurred: false,
+        },
+      ];
+    }
+  }
+
+  const electricHazards = parseJsonArray(formValues.emerging_haz_electrocution_items_json)
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const type = normalizeEnumValue(item.electricalHazardType);
+      if (!type) {
+        return null;
+      }
+      const suppressionTypes = csvToEnumValues(item.suppressionMethods);
+      const hazardPayload = {
+        type,
+      };
+      if (suppressionTypes.length > 0) {
+        hazardPayload.fire_details = [
+          {
+            suppression_types: suppressionTypes,
+          },
+        ];
+      }
+      return hazardPayload;
+    })
+    .filter((entry) => entry);
+
+  const powergenHazards = parseJsonArray(formValues.emerging_haz_power_generation_items_json)
+    .map((item) => {
+      if (!item || typeof item !== "object") {
+        return null;
+      }
+      const pvType = normalizeEnumValue(item.photovoltaicHazardType);
+      if (!pvType) {
+        return null;
+      }
+      const sourceOrTarget = normalizeEnumValue(item.pvSourceTarget);
+      return {
+        pv_other: {
+          type: "PHOTOVOLTAICS",
+          pv_type: pvType,
+          source_or_target: sourceOrTarget || undefined,
+        },
+      };
+    })
+    .filter((entry) => entry);
+
+  const medicalEvaluation = normalizeEnumValue(formValues.medical_patient_care_evaluation);
+  const medicalStatus = normalizeEnumValue(formValues.medical_patient_status);
+  const medicalTransport = normalizeEnumValue(formValues.medical_transport_disposition);
+  const medicalReportId = trimValue(formValues.medical_patient_care_report_id);
+  const medicalPatientCount = toNonNegativeInt(formValues.medical_patient_count);
+  const medicalDetails =
+    isMedicalIncident && (medicalEvaluation || medicalStatus || medicalTransport || medicalReportId)
+      ? Array.from(
+          {
+            length:
+              typeof medicalPatientCount === "number" && medicalPatientCount > 0
+                ? medicalPatientCount
+                : 1,
+          },
+          () => {
+            const detail = {
+              patient_care_evaluation: medicalEvaluation,
+            };
+            if (medicalStatus) {
+              detail.patient_status = medicalStatus;
+            }
+            if (medicalTransport) {
+              detail.transport_disposition = medicalTransport;
+            }
+            if (medicalReportId) {
+              detail.patient_care_report_id = medicalReportId;
+            }
+            return detail;
+          },
+        )
+      : [];
+
   const payload = {
     base: basePayload,
     incident_types: incidentTypes,
@@ -1062,6 +1216,18 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   }
   if (nonFdAids.length > 0) {
     payload.nonfd_aids = nonFdAids;
+  }
+  if (hazsitPayload) {
+    payload.hazsit_detail = hazsitPayload;
+  }
+  if (electricHazards.length > 0) {
+    payload.electric_hazards = electricHazards;
+  }
+  if (powergenHazards.length > 0) {
+    payload.powergen_hazards = powergenHazards;
+  }
+  if (medicalDetails.length > 0) {
+    payload.medical_details = medicalDetails;
   }
 
   return payload;

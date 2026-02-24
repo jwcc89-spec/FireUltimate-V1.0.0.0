@@ -3000,6 +3000,44 @@ body.resource-personnel-modal-open {
   font-size: 0.78rem;
 }
 
+.neris-required-matrix {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.52rem 0.65rem;
+}
+
+.neris-required-matrix summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+.neris-required-matrix-grid {
+  margin-top: 0.56rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+
+.neris-required-matrix-grid strong {
+  font-size: 0.78rem;
+  color: #1e293b;
+}
+
+.neris-required-matrix-grid ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.neris-required-matrix-grid li {
+  font-size: 0.76rem;
+  color: #334155;
+}
+
 .validation-modal-backdrop {
   position: fixed;
   inset: 0;

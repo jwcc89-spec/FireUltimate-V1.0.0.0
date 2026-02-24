@@ -36,7 +36,7 @@ export interface NerisValueOption {
 
 export interface NerisConditionalRule {
   fieldId: string;
-  operator: "equals" | "notEmpty" | "isEmpty" | "includes";
+  operator: "equals" | "notEmpty" | "isEmpty" | "includes" | "startsWith";
   value?: string;
 }
 
@@ -77,6 +77,35 @@ export const NERIS_SCHEMA_REFERENCE_LINKS = [
   "https://neris-prod-public.s3.us-east-2.amazonaws.com/docs/NERIS_V1_Core_Schemas.zip",
   "https://neris-prod-public.s3.us-east-2.amazonaws.com/docs/NERIS_V1_Secondary_Schemas.zip",
 ] as const;
+
+export const NERIS_REQUIRED_FIELD_MATRIX = {
+  coreMinimum: [
+    "incident_internal_id",
+    "fd_neris_id",
+    "primary_incident_type",
+    "dispatch_internal_id",
+    "incident_location_address",
+    "dispatch_location_address",
+    "incident_time_call_create",
+    "incident_time_call_answered",
+    "incident_time_call_arrival",
+    "resource_primary_unit_id",
+  ],
+  byIncidentFamily: {
+    FIRE: [
+      "fire_condition_on_arrival",
+      "fire_water_supply",
+      "fire_investigation_needed",
+      "fire_investigation_types",
+    ],
+    HAZSIT: ["emerg_haz_disposition", "emerg_haz_evacuated_count"],
+    MEDICAL: [
+      "medical_patient_care_evaluation",
+      "medical_patient_status",
+      "medical_patient_count",
+    ],
+  },
+} as const;
 
 export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
@@ -1608,6 +1637,13 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "half",
   },
   {
+    id: "location_cross_street_name",
+    sectionId: "location",
+    label: "Street name",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
     id: "location_postal_code",
     sectionId: "location",
     label: "Postal code",
@@ -1626,6 +1662,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "incidentTimes",
     label: "Call created time",
     inputKind: "datetime",
+    required: true,
     layout: "half",
   },
   {
@@ -1633,6 +1670,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "incidentTimes",
     label: "Call answered time",
     inputKind: "datetime",
+    required: true,
     layout: "half",
   },
   {
@@ -1640,6 +1678,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "incidentTimes",
     label: "Call arrival time",
     inputKind: "datetime",
+    required: true,
     layout: "half",
   },
   {
@@ -1696,6 +1735,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "resources",
     label: "Primary responding unit ID",
     inputKind: "text",
+    required: true,
     layout: "half",
   },
   {
@@ -1736,6 +1776,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Hazard disposition",
     inputKind: "select",
     optionsKey: "hazard_disposition",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "HAZSIT",
+    },
     layout: "half",
   },
   {
@@ -1743,6 +1788,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "hazards",
     label: "Evacuated occupants/businesses",
     inputKind: "text",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "HAZSIT",
+    },
     layout: "half",
   },
   {
@@ -1814,6 +1864,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Water supply",
     inputKind: "select",
     optionsKey: "fire_water_supply",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "FIRE",
+    },
     layout: "half",
   },
   {
@@ -1822,6 +1877,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Investigation needed",
     inputKind: "select",
     optionsKey: "fire_invest_need",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "FIRE",
+    },
     layout: "half",
   },
   {
@@ -1830,6 +1890,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Investigation type(s)",
     inputKind: "multiselect",
     optionsKey: "fire_invest_types",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "FIRE",
+    },
     layout: "full",
   },
   {
@@ -1846,6 +1911,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Fire condition on arrival",
     inputKind: "select",
     optionsKey: "fire_condition_arrival",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "FIRE",
+    },
     layout: "half",
   },
   {
@@ -2035,6 +2105,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Patient care evaluation",
     inputKind: "select",
     optionsKey: "medical_patient_care",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "MEDICAL",
+    },
     layout: "half",
   },
   {
@@ -2043,6 +2118,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Patient status",
     inputKind: "select",
     optionsKey: "medical_patient_status",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "MEDICAL",
+    },
     layout: "half",
   },
   {
@@ -2065,6 +2145,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "medical",
     label: "Patient count",
     inputKind: "text",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "startsWith",
+      value: "MEDICAL",
+    },
     layout: "half",
   },
   {
@@ -2215,6 +2300,9 @@ function evaluateNerisRule(rule: NerisConditionalRule, values: NerisFormValues):
       .map((item) => toApiEnumValue(item))
       .includes(expectedValue);
   }
+  if (rule.operator === "startsWith") {
+    return toApiEnumValue(value).startsWith(expectedValue);
+  }
   return toApiEnumValue(value) === expectedValue;
 }
 
@@ -2293,6 +2381,21 @@ export function validateNerisSection(
         "Use either Actions taken or No action reason, not both.";
       errors.incident_noaction =
         "Use either No action reason or Actions taken, not both.";
+    }
+  }
+
+  if (sectionId === "medical") {
+    const patientCount = (values.medical_patient_count ?? "").trim();
+    if (patientCount && !/^\d+$/.test(patientCount)) {
+      errors.medical_patient_count = "Patient count must be a whole number.";
+    }
+  }
+
+  if (sectionId === "hazards") {
+    const evacuatedCount = (values.emerg_haz_evacuated_count ?? "").trim();
+    if (evacuatedCount && !/^\d+$/.test(evacuatedCount)) {
+      errors.emerg_haz_evacuated_count =
+        "Evacuated occupants/businesses must be a whole number.";
     }
   }
 
@@ -2397,6 +2500,7 @@ export function createDefaultNerisFormValues({
     location_country: locationCountry,
     location_in_use: "",
     location_used_as_intended: "",
+    location_cross_street_name: "",
     initial_dispatch_code: "AMB.UNRESP-BREATHING",
     dispatch_determinate_code: "",
     dispatch_final_disposition: "",

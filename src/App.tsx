@@ -70,6 +70,7 @@ import {
   type UserRole,
 } from "./appData";
 import {
+  NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
   createDefaultNerisFormValues,
   getNerisFieldsForSection,
@@ -175,11 +176,16 @@ interface NerisDraftAidEntry {
   aidDepartment: string;
 }
 
+interface NerisDraftNonFdAidEntry {
+  aidType: string;
+}
+
 interface NerisStoredDraft {
   formValues: NerisFormValues;
   reportStatus: string;
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
+  additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
 }
 
 interface NerisExportSettings {
@@ -428,6 +434,8 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_time_unit_canceled",
   "incident_time_unit_clear",
   "incident_time_clear",
+  "incident_onset_date",
+  "incident_onset_time",
   "incident_location_address",
   "dispatch_location_address",
   "location_place_type",
@@ -440,6 +448,7 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "location_country",
   "location_direction_of_travel",
   "location_cross_street_type",
+  "location_cross_street_name",
   "location_postal_code",
   "location_county",
   "dispatch_center_id",
@@ -458,6 +467,13 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "resource_primary_unit_response_mode",
   "resource_additional_units",
   "resource_primary_unit_staffing",
+  "emerging_haz_electrocution_items_json",
+  "emerging_haz_power_generation_items_json",
+  "medical_patient_care_report_id",
+  "medical_patient_care_evaluation",
+  "medical_patient_status",
+  "medical_transport_disposition",
+  "medical_patient_count",
 ]);
 
 function normalizePath(pathname: string): string {
@@ -1259,6 +1275,23 @@ function readNerisDraftStore(): Record<string, NerisStoredDraft> {
             [],
           )
         : [];
+      const additionalNonFdAidEntries: NerisDraftNonFdAidEntry[] = Array.isArray(
+        candidate.additionalNonFdAidEntries,
+      )
+        ? candidate.additionalNonFdAidEntries.reduce<NerisDraftNonFdAidEntry[]>(
+            (entriesAccumulator, entryValue) => {
+              if (!entryValue || typeof entryValue !== "object") {
+                return entriesAccumulator;
+              }
+              const entry = entryValue as Record<string, unknown>;
+              entriesAccumulator.push({
+                aidType: typeof entry.aidType === "string" ? entry.aidType : "",
+              });
+              return entriesAccumulator;
+            },
+            [],
+          )
+        : [];
       drafts[callNumber] = {
         formValues,
         reportStatus:
@@ -1270,6 +1303,7 @@ function readNerisDraftStore(): Record<string, NerisStoredDraft> {
             ? candidate.lastSavedAt
             : "Not saved",
         additionalAidEntries,
+        additionalNonFdAidEntries,
       };
     }
     return drafts;
@@ -3659,6 +3693,7 @@ interface NerisFlatMultiOptionSelectProps {
   placeholder?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  isOptionDisabled?: (optionValue: string) => boolean;
 }
 
 function NerisFlatMultiOptionSelect({
@@ -3669,6 +3704,7 @@ function NerisFlatMultiOptionSelect({
   placeholder,
   searchPlaceholder,
   disabled = false,
+  isOptionDisabled,
 }: NerisFlatMultiOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -3785,13 +3821,20 @@ function NerisFlatMultiOptionSelect({
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = selectedValueSet.has(option.value);
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value)) && !isSelected;
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}`}
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${
+                        optionDisabled ? " disabled" : ""
+                      }`}
                       aria-selected={isSelected}
+                      disabled={optionDisabled}
                       onClick={() => {
+                        if (optionDisabled) {
+                          return;
+                        }
                         const nextSelected = new Set(selectedValueSet);
                         if (nextSelected.has(option.value)) {
                           nextSelected.delete(option.value);
@@ -4000,6 +4043,10 @@ interface AidEntry {
   aidDepartment: string;
 }
 
+interface NonFdAidEntry {
+  aidType: string;
+}
+
 interface ValidationModalState {
   mode: "issues" | "checkSuccess" | "adminConfirm" | "adminSuccess";
   issues: string[];
@@ -4009,6 +4056,10 @@ const EMPTY_AID_ENTRY: AidEntry = {
   aidDirection: "",
   aidType: "",
   aidDepartment: "",
+};
+
+const EMPTY_NONFD_AID_ENTRY: NonFdAidEntry = {
+  aidType: "",
 };
 
 function NerisReportFormPage({
@@ -4068,6 +4119,11 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     })),
   );
+  const [additionalNonFdAidEntries, setAdditionalNonFdAidEntries] = useState<NonFdAidEntry[]>(() =>
+    (persistedDraft?.additionalNonFdAidEntries ?? []).map((entry) => ({
+      aidType: entry.aidType,
+    })),
+  );
   const [aidDepartmentOptions, setAidDepartmentOptions] = useState<NerisValueOption[]>(() =>
     getNerisValueOptions("aid_department"),
   );
@@ -4078,8 +4134,8 @@ function NerisReportFormPage({
   );
   const [showCrossStreetTypeField, setShowCrossStreetTypeField] = useState<boolean>(
     () =>
-      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length >
-      0,
+      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length > 0 ||
+      (persistedDraft?.formValues.location_cross_street_name ?? "").trim().length > 0,
   );
   const locationStateOptionValues = useMemo(
     () => new Set(getNerisValueOptions("state").map((option) => option.value)),
@@ -4380,6 +4436,23 @@ function NerisReportFormPage({
         : null,
     [activeResourcePersonnelUnitId, resourceUnits],
   );
+  const personnelAssignedToOtherUnits = useMemo(() => {
+    if (!activeResourcePersonnelUnitId) {
+      return new Set<string>();
+    }
+    const assigned = new Set<string>();
+    resourceUnits.forEach((unit) => {
+      if (unit.id === activeResourcePersonnelUnitId) {
+        return;
+      }
+      unit.personnel
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .forEach((entry) => assigned.add(entry));
+    });
+    return assigned;
+  }, [activeResourcePersonnelUnitId, resourceUnits]);
 
   useEffect(() => {
     if (persistedResourceUnits.length) {
@@ -4545,7 +4618,8 @@ function NerisReportFormPage({
       ["location_vacancy_cause", 10],
       ["location_direction_of_travel", 11],
       ["location_cross_street_type", 12],
-      ["location_notes", 13],
+      ["location_cross_street_name", 13],
+      ["location_notes", 14],
     ]);
 
     return [...sectionFields].sort((left, right) => {
@@ -4580,6 +4654,25 @@ function NerisReportFormPage({
       ) as Record<NerisSectionId, string>,
     [],
   );
+  const requiredMatrixRows = useMemo(() => {
+    const coreRows = NERIS_REQUIRED_FIELD_MATRIX.coreMinimum.map((fieldId) => ({
+      fieldId,
+      label: nerisFieldLabelById[fieldId] ?? fieldId,
+    }));
+    const familyRows =
+      primaryIncidentCategory in NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily
+        ? NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily[
+            primaryIncidentCategory as keyof typeof NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily
+          ].map((fieldId) => ({
+            fieldId,
+            label: nerisFieldLabelById[fieldId] ?? fieldId,
+          }))
+        : [];
+    return {
+      coreRows,
+      familyRows,
+    };
+  }, [nerisFieldLabelById, primaryIncidentCategory]);
   const sectionIndex = visibleNerisSections.findIndex(
     (section) => section.id === currentSection.id,
   );
@@ -4696,6 +4789,25 @@ function NerisReportFormPage({
     };
   }, [nerisExportSettings.exportUrl, nerisExportSettings.vendorCode]);
 
+  useEffect(() => {
+    const vendorDepartmentCode = (nerisExportSettings.vendorCode ?? "").trim();
+    if (!vendorDepartmentCode) {
+      return;
+    }
+    if ((formValues.fd_neris_id ?? "").trim() === vendorDepartmentCode) {
+      return;
+    }
+    setFormValues((previous) => {
+      if ((previous.fd_neris_id ?? "").trim() === vendorDepartmentCode) {
+        return previous;
+      }
+      return {
+        ...previous,
+        fd_neris_id: vendorDepartmentCode,
+      };
+    });
+  }, [nerisExportSettings.vendorCode, formValues.fd_neris_id]);
+
   const updateFieldValue = (fieldId: string, value: string) => {
     const sanitizedValue =
       fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
@@ -4754,10 +4866,15 @@ function NerisReportFormPage({
 
     if (
       (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
-      (fieldId === "incident_aid_direction" && sanitizedValue === "GIVEN")
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID")
     ) {
       setAdditionalAidEntries([]);
+    }
+    if (
+      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT")
+    ) {
+      setAdditionalNonFdAidEntries([]);
     }
 
     setSectionErrors((previous) => {
@@ -5256,9 +5373,17 @@ function NerisReportFormPage({
                   entry.clearTime,
                   resourceFallbackDate,
                 );
+                const normalizedCanceled = toResourceDateTimeInputValue(
+                  entry.canceledTime,
+                  resourceFallbackDate,
+                );
                 return {
                   ...entry,
                   dispatchTime: normalizedDispatch,
+                  canceledTime:
+                    entry.isCanceledEnroute && !normalizedCanceled && normalizedDispatch
+                      ? addMinutesToResourceDateTime(normalizedDispatch, 1)
+                      : normalizedCanceled,
                   clearTime:
                     entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
                       ? addMinutesToResourceDateTime(normalizedDispatch, 2)
@@ -5404,6 +5529,37 @@ function NerisReportFormPage({
             })()
           : entry,
       ),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    markNerisFormDirty();
+  };
+
+  const populateResourceTimesFromDispatch = (unitEntryId: string) => {
+    const fallbackDispatch =
+      toResourceDateTimeInputValue(
+        formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
+        resourceFallbackDate,
+      ) || "";
+    setResourceUnits((previous) =>
+      previous.map((entry) => {
+        if (entry.id !== unitEntryId) {
+          return entry;
+        }
+        const dispatchSeed =
+          toResourceDateTimeInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
+        if (!dispatchSeed) {
+          return entry;
+        }
+        return {
+          ...entry,
+          dispatchTime: dispatchSeed,
+          enrouteTime: dispatchSeed,
+          stagedTime: dispatchSeed,
+          onSceneTime: dispatchSeed,
+          canceledTime: dispatchSeed,
+          clearTime: dispatchSeed,
+        };
+      }),
     );
     clearResourceUnitValidationErrors(unitEntryId);
     markNerisFormDirty();
@@ -5624,6 +5780,9 @@ function NerisReportFormPage({
         aidType: entry.aidType,
         aidDepartment: entry.aidDepartment,
       })),
+      additionalNonFdAidEntries: additionalNonFdAidEntries.map((entry) => ({
+        aidType: entry.aidType,
+      })),
     });
     setReportStatus(nextStatus);
     setLastSavedAt(savedAt);
@@ -5670,6 +5829,11 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     }));
 
+  const buildStoredAdditionalNonFdAidEntries = () =>
+    additionalNonFdAidEntries.map((entry) => ({
+      aidType: entry.aidType,
+    }));
+
   const buildReportWriterName = () => {
     const rawReportWriter =
       resourceUnits
@@ -5693,11 +5857,13 @@ function NerisReportFormPage({
       return;
     }
     const serializedAidEntries = buildStoredAdditionalAidEntries();
+    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
     writeNerisDraft(callNumber, {
       formValues,
       reportStatus: "Draft",
       lastSavedAt,
       additionalAidEntries: serializedAidEntries,
+      additionalNonFdAidEntries: serializedNonFdAidEntries,
     });
     setReportStatus("Draft");
     setSaveMessage("");
@@ -5936,6 +6102,7 @@ function NerisReportFormPage({
         clientUtcOffsetMinutes,
       },
       additionalAidEntries: buildStoredAdditionalAidEntries(),
+      additionalNonFdAidEntries: buildStoredAdditionalNonFdAidEntries(),
     };
     const headers: Record<string, string> = {
       "Content-Type": contentType,
@@ -6028,7 +6195,14 @@ function NerisReportFormPage({
       return String(value);
     }
     if (typeof value === "string") {
-      return value.trim().toUpperCase();
+      const trimmed = value.trim();
+      if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+        const parsedTimestamp = Date.parse(trimmed);
+        if (!Number.isNaN(parsedTimestamp)) {
+          return `DT:${parsedTimestamp}`;
+        }
+      }
+      return trimmed.toUpperCase();
     }
     if (Array.isArray(value)) {
       return value
@@ -6676,11 +6850,13 @@ function NerisReportFormPage({
   ): Promise<ExportExecutionResult> => {
     const isProxyRequest = requestConfig.isProxyRequest;
     const serializedAidEntries = buildStoredAdditionalAidEntries();
+    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
     writeNerisDraft(callNumber, {
       formValues,
       reportStatus,
       lastSavedAt,
       additionalAidEntries: serializedAidEntries,
+      additionalNonFdAidEntries: serializedNonFdAidEntries,
     });
 
     const requestController = new AbortController();
@@ -7230,6 +7406,56 @@ function NerisReportFormPage({
     }
   };
 
+  const addAdditionalNonFdAidEntry = () => {
+    setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
+    setValidationModal(null);
+  };
+
+  const updateAdditionalNonFdAidEntry = (index: number, nextValue: string) => {
+    setAdditionalNonFdAidEntries((previous) =>
+      previous.map((entry, entryIndex) =>
+        entryIndex === index
+          ? {
+              ...entry,
+              aidType: nextValue,
+            }
+          : entry,
+      ),
+    );
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
+  const addAdditionalNonFdAidEntry = () => {
+    setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
+    setValidationModal(null);
+  };
+
+  const updateAdditionalNonFdAidEntry = (index: number, nextValue: string) => {
+    setAdditionalNonFdAidEntries((previous) =>
+      previous.map((entry, entryIndex) =>
+        entryIndex === index
+          ? {
+              ...entry,
+              aidType: nextValue,
+            }
+          : entry,
+      ),
+    );
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
   const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
     const inputId = `neris-field-${field.id}`;
     const value = formValues[field.id] ?? "";
@@ -7331,6 +7557,13 @@ function NerisReportFormPage({
     const selectedAdditionalAidDepartments = additionalAidEntries
       .map((entry) => entry.aidDepartment.trim())
       .filter((entry) => entry.length > 0);
+    const selectedPrimaryNonFdAidTypes = (formValues.incident_aid_nonfd ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const selectedAdditionalNonFdAidTypes = additionalNonFdAidEntries
+      .map((entry) => entry.aidType.trim())
+      .filter((entry) => entry.length > 0);
 
     if (
       field.id === "incident_displaced_cause" &&
@@ -7348,6 +7581,9 @@ function NerisReportFormPage({
       return null;
     }
     if (field.id === "location_cross_street_type" && !showCrossStreetTypeField) {
+      return null;
+    }
+    if (field.id === "location_cross_street_name" && !showCrossStreetTypeField) {
       return null;
     }
     if (
@@ -7496,6 +7732,40 @@ function NerisReportFormPage({
                 {sectionErrors.incident_aid_nonfd ? (
                   <small className="field-error">{sectionErrors.incident_aid_nonfd}</small>
                 ) : null}
+                {additionalNonFdAidEntries.map((entry, entryIndex) => (
+                  <div
+                    key={`additional-nonfd-aid-${entryIndex}`}
+                    className="neris-additional-aid-entry"
+                  >
+                    <label className="neris-aid-subfield-label">Aid Type</label>
+                    <NerisFlatSingleOptionSelect
+                      inputId={`${inputId}-additional-nonfd-aid-type-${entryIndex}`}
+                      value={entry.aidType}
+                      options={getNerisValueOptions("aid_nonfd")}
+                      onChange={(nextValue) =>
+                        updateAdditionalNonFdAidEntry(entryIndex, nextValue)
+                      }
+                      placeholder="Select non FD aid type"
+                      searchPlaceholder="Search non FD aid types..."
+                      isOptionDisabled={(optionValue) => {
+                        if (optionValue === entry.aidType) {
+                          return false;
+                        }
+                        if (selectedPrimaryNonFdAidTypes.includes(optionValue)) {
+                          return true;
+                        }
+                        return selectedAdditionalNonFdAidTypes.includes(optionValue);
+                      }}
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="neris-link-button"
+                  onClick={addAdditionalNonFdAidEntry}
+                >
+                  Add Additional Aid Type -&gt; RL
+                </button>
               </div>
             ) : null}
 
@@ -7563,86 +7833,84 @@ function NerisReportFormPage({
                   <small className="field-error">{sectionErrors.incident_aid_department_name}</small>
                 ) : null}
 
-                {(formValues.incident_aid_direction ?? "") === "RECEIVED" ? (
-                  <>
-                    {additionalAidEntries.map((entry, entryIndex) => (
-                      <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
-                        <label className="neris-aid-subfield-label">Aid direction</label>
-                        <div
-                          className="neris-single-choice-row"
-                          role="group"
-                          aria-label="Additional aid direction"
-                        >
-                          {getNerisValueOptions("aid_direction").map((option) => {
-                            const isSelected = option.value === entry.aidDirection;
-                            return (
-                              <button
-                                key={`additional-aid-direction-${entryIndex}-${option.value}`}
-                                type="button"
-                                className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                                aria-pressed={isSelected}
-                                onClick={() =>
-                                  updateAdditionalAidEntry(
-                                    entryIndex,
-                                    "aidDirection",
-                                    togglePillValue(entry.aidDirection, option.value),
-                                  )
-                                }
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <label className="neris-aid-subfield-label">Aid Type</label>
-                        <NerisFlatSingleOptionSelect
-                          inputId={`${inputId}-additional-aid-type-${entryIndex}`}
-                          value={entry.aidType}
-                          options={getNerisValueOptions("aid_type")}
-                          onChange={(nextValue) =>
-                            updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
-                          }
-                          placeholder="Select aid type"
-                          searchPlaceholder="Search aid types..."
-                        />
-
-                        <label className="neris-aid-subfield-label">Aid department name(s)</label>
-                        <NerisFlatSingleOptionSelect
-                          inputId={`${inputId}-additional-aid-department-${entryIndex}`}
-                          value={entry.aidDepartment}
-                          options={aidDepartmentOptions}
-                          onChange={(nextValue) =>
-                            updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
-                          }
-                          placeholder="Select aid department"
-                          searchPlaceholder="Search aid departments..."
-                          isOptionDisabled={(optionValue) => {
-                            if (optionValue === entry.aidDepartment) {
-                              return false;
-                            }
-                            if (selectedPrimaryAidDepartment === optionValue) {
-                              return true;
-                            }
-                            return additionalAidEntries.some(
-                              (candidateEntry, candidateIndex) =>
-                                candidateIndex !== entryIndex &&
-                                candidateEntry.aidDepartment.trim() === optionValue,
-                            );
-                          }}
-                        />
+                <>
+                  {additionalAidEntries.map((entry, entryIndex) => (
+                    <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
+                      <label className="neris-aid-subfield-label">Aid direction</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Additional aid direction"
+                      >
+                        {getNerisValueOptions("aid_direction").map((option) => {
+                          const isSelected = option.value === entry.aidDirection;
+                          return (
+                            <button
+                              key={`additional-aid-direction-${entryIndex}-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateAdditionalAidEntry(
+                                  entryIndex,
+                                  "aidDirection",
+                                  togglePillValue(entry.aidDirection, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
                       </div>
-                    ))}
 
-                    <button
-                      type="button"
-                      className="neris-link-button"
-                      onClick={addAdditionalAidEntry}
-                    >
-                      Add Additional Aid
-                    </button>
-                  </>
-                ) : null}
+                      <label className="neris-aid-subfield-label">Aid Type</label>
+                      <NerisFlatSingleOptionSelect
+                        inputId={`${inputId}-additional-aid-type-${entryIndex}`}
+                        value={entry.aidType}
+                        options={getNerisValueOptions("aid_type")}
+                        onChange={(nextValue) =>
+                          updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
+                        }
+                        placeholder="Select aid type"
+                        searchPlaceholder="Search aid types..."
+                      />
+
+                      <label className="neris-aid-subfield-label">Aid department name(s)</label>
+                      <NerisFlatSingleOptionSelect
+                        inputId={`${inputId}-additional-aid-department-${entryIndex}`}
+                        value={entry.aidDepartment}
+                        options={aidDepartmentOptions}
+                        onChange={(nextValue) =>
+                          updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
+                        }
+                        placeholder="Select aid department"
+                        searchPlaceholder="Search aid departments..."
+                        isOptionDisabled={(optionValue) => {
+                          if (optionValue === entry.aidDepartment) {
+                            return false;
+                          }
+                          if (selectedPrimaryAidDepartment === optionValue) {
+                            return true;
+                          }
+                          return additionalAidEntries.some(
+                            (candidateEntry, candidateIndex) =>
+                              candidateIndex !== entryIndex &&
+                              candidateEntry.aidDepartment.trim() === optionValue,
+                          );
+                        }}
+                      />
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    className="neris-link-button"
+                    onClick={addAdditionalAidEntry}
+                  >
+                    Add Additional Aid Type -&gt; RL
+                  </button>
+                </>
               </div>
             ) : null}
           </div>
@@ -9134,6 +9402,13 @@ function NerisReportFormPage({
                                 >
                                   Dispatched and canceled en route
                                 </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() => populateResourceTimesFromDispatch(unitEntry.id)}
+                                >
+                                  Populate Date
+                                </button>
                               </div>
                             ) : null}
 
@@ -9296,6 +9571,9 @@ function NerisReportFormPage({
                     }
                     placeholder="Select personnel"
                     searchPlaceholder="Search personnel..."
+                    isOptionDisabled={(optionValue) =>
+                      personnelAssignedToOtherUnits.has(optionValue)
+                    }
                   />
                   <small className="field-hint">
                     Select one or more personnel. Click outside this dialog to close.
@@ -9377,7 +9655,7 @@ function NerisReportFormPage({
                         setShowCrossStreetTypeField((previous) => !previous)
                       }
                     >
-                      Add Cross Street
+                      Add Cross Street -&gt; RL
                     </button>
                   </div>,
                 );
@@ -9397,6 +9675,34 @@ function NerisReportFormPage({
               </ul>
             </div>
           ) : null}
+
+          <details className="neris-required-matrix">
+            <summary>NERIS required field matrix (minimum + incident-family)</summary>
+            <div className="neris-required-matrix-grid">
+              <div>
+                <strong>Core minimum</strong>
+                <ul>
+                  {requiredMatrixRows.coreRows.map((row) => (
+                    <li key={`required-core-${row.fieldId}`}>{row.label}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <strong>
+                  Incident family: {primaryIncidentCategory || "Select Primary Incident Type"}
+                </strong>
+                <ul>
+                  {requiredMatrixRows.familyRows.length ? (
+                    requiredMatrixRows.familyRows.map((row) => (
+                      <li key={`required-family-${row.fieldId}`}>{row.label}</li>
+                    ))
+                  ) : (
+                    <li>No additional family-specific requirements yet.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </details>
 
           <div className="neris-form-actions">
             <button type="button" className="secondary-button compact-button" onClick={handleBack}>
