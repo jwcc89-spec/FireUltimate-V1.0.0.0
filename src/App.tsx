@@ -216,6 +216,17 @@ interface NerisExportRecord {
   submittedPayloadPreview: string;
 }
 
+type IncidentCompareStatus = "match" | "different";
+
+interface IncidentCompareRow {
+  id: string;
+  label: string;
+  submittedValue: string;
+  retrievedValue: string;
+  status: IncidentCompareStatus;
+  helpText?: string;
+}
+
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
 const DISPLAY_CARD_STORAGE_KEY = "fire-ultimate-display-cards";
 const WORKFLOW_STATE_STORAGE_KEY = "fire-ultimate-workflow-states";
@@ -391,6 +402,29 @@ const RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS: NerisValueOption[] = [
   { value: "UNKNOWN", label: "Unknown" },
 ];
 const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
+const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
+  "incident_internal_id",
+  "dispatch_internal_id",
+  "fd_neris_id",
+  "incident_neris_id",
+  "primary_incident_type",
+  "additional_incident_types",
+  "incident_time_call_create",
+  "incident_time_call_answered",
+  "incident_time_call_arrival",
+  "incident_location_address",
+  "dispatch_location_address",
+  "location_state",
+  "location_country",
+  "dispatch_determinate_code",
+  "initial_dispatch_code",
+  "dispatch_final_disposition",
+  "dispatch_automatic_alarm",
+  "resource_units_json",
+  "resource_primary_unit_id",
+  "resource_additional_units",
+  "resource_primary_unit_staffing",
+]);
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -3978,6 +4012,8 @@ function NerisReportFormPage({
   const [isExporting, setIsExporting] = useState(false);
   const [isFetchingIncidentTest, setIsFetchingIncidentTest] = useState(false);
   const [incidentTestResponseDetail, setIncidentTestResponseDetail] = useState("");
+  const [incidentCompareRows, setIncidentCompareRows] = useState<IncidentCompareRow[]>([]);
+  const [unmappedFilledFieldLabels, setUnmappedFilledFieldLabels] = useState<string[]>([]);
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
@@ -5749,6 +5785,308 @@ function NerisReportFormPage({
       .filter((issue) => issue.length > 0);
   };
 
+  const readPathValue = (source: unknown, path: Array<string | number>): unknown => {
+    let current: unknown = source;
+    for (const segment of path) {
+      if (typeof segment === "number") {
+        if (!Array.isArray(current) || segment < 0 || segment >= current.length) {
+          return undefined;
+        }
+        current = current[segment];
+        continue;
+      }
+      if (!current || typeof current !== "object") {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+    return current;
+  };
+
+  const toComparableText = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    if (typeof value === "boolean") {
+      return value ? "YES" : "NO";
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "string") {
+      return value.trim().toUpperCase();
+    }
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => toComparableText(entry))
+        .filter((entry) => entry.length > 0)
+        .sort()
+        .join("|");
+    }
+    return "";
+  };
+
+  const toFriendlyValue = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return "Not provided";
+    }
+    if (typeof value === "boolean") {
+      return value ? "Yes" : "No";
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "string") {
+      return value.trim() || "Not provided";
+    }
+    if (Array.isArray(value)) {
+      const flattened = value
+        .map((entry) => {
+          if (typeof entry === "string") {
+            return entry.trim();
+          }
+          if (typeof entry === "number") {
+            return String(entry);
+          }
+          return "";
+        })
+        .filter((entry) => entry.length > 0);
+      return flattened.length > 0 ? flattened.join(", ") : "Not provided";
+    }
+    return "Not provided";
+  };
+
+  const isCompareMatch = (submittedValue: unknown, retrievedValue: unknown): boolean =>
+    toComparableText(submittedValue) === toComparableText(retrievedValue);
+
+  const extractPrimaryIncidentType = (value: unknown): string => {
+    if (!Array.isArray(value)) {
+      return "";
+    }
+    const primaryEntry = value.find(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        (entry as Record<string, unknown>).primary === true &&
+        typeof (entry as Record<string, unknown>).type === "string",
+    ) as Record<string, unknown> | undefined;
+    if (!primaryEntry) {
+      return "";
+    }
+    return String(primaryEntry.type).replaceAll("||", " > ").trim();
+  };
+
+  const extractAdditionalIncidentTypes = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .filter(
+        (entry) =>
+          entry &&
+          typeof entry === "object" &&
+          (entry as Record<string, unknown>).primary !== true &&
+          typeof (entry as Record<string, unknown>).type === "string",
+      )
+      .map((entry) => String((entry as Record<string, unknown>).type).replaceAll("||", " > ").trim())
+      .filter((entry) => entry.length > 0)
+      .sort((left, right) => left.localeCompare(right));
+  };
+
+  const extractUnitSummaries = (
+    value: unknown,
+  ): {
+    units: string[];
+    staffing: string[];
+  } => {
+    if (!Array.isArray(value)) {
+      return { units: [], staffing: [] };
+    }
+    const units: string[] = [];
+    const staffing: string[] = [];
+    value.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+      const candidate = entry as Record<string, unknown>;
+      const reportedUnitId =
+        typeof candidate.reported_unit_id === "string" ? candidate.reported_unit_id.trim() : "";
+      const unitNerisId =
+        typeof candidate.unit_neris_id === "string" ? candidate.unit_neris_id.trim() : "";
+      const unitLabel = reportedUnitId || unitNerisId;
+      if (!unitLabel) {
+        return;
+      }
+      units.push(unitLabel);
+      const staffingValue =
+        typeof candidate.staffing === "number"
+          ? String(candidate.staffing)
+          : typeof candidate.staffing === "string"
+            ? candidate.staffing.trim()
+            : "";
+      staffing.push(staffingValue ? `${unitLabel} (${staffingValue})` : `${unitLabel} (Not provided)`);
+    });
+    return {
+      units: dedupeAndCleanStrings(units).sort((left, right) => left.localeCompare(right)),
+      staffing: dedupeAndCleanStrings(staffing).sort((left, right) => left.localeCompare(right)),
+    };
+  };
+
+  const buildCompareRow = (
+    id: string,
+    label: string,
+    submittedValue: unknown,
+    retrievedValue: unknown,
+    helpText?: string,
+  ): IncidentCompareRow => ({
+    id,
+    label,
+    submittedValue: toFriendlyValue(submittedValue),
+    retrievedValue: toFriendlyValue(retrievedValue),
+    status: isCompareMatch(submittedValue, retrievedValue) ? "match" : "different",
+    helpText,
+  });
+
+  const readLatestSubmittedPayloadForCompare = (): Record<string, unknown> | null => {
+    const latestSuccessfulEntry = readNerisExportHistory().find(
+      (entry) =>
+        entry.callNumber === callNumber &&
+        entry.attemptStatus === "success" &&
+        entry.submittedPayloadPreview.trim().length > 0,
+    );
+    if (!latestSuccessfulEntry) {
+      return null;
+    }
+    const parsed = parseJsonResponseText(latestSuccessfulEntry.submittedPayloadPreview);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const hasNerisPayloadShape =
+      parsed.base &&
+      typeof parsed.base === "object" &&
+      parsed.dispatch &&
+      typeof parsed.dispatch === "object";
+    return hasNerisPayloadShape ? parsed : null;
+  };
+
+  const collectUnmappedFilledFieldLabels = (): string[] => {
+    const labels = Object.entries(formValues)
+      .filter(([fieldId, fieldValue]) => {
+        if (NERIS_PROXY_MAPPED_FORM_FIELD_IDS.has(fieldId)) {
+          return false;
+        }
+        return typeof fieldValue === "string" && fieldValue.trim().length > 0;
+      })
+      .map(([fieldId]) => nerisFieldLabelById[fieldId] ?? fieldId);
+    return dedupeAndCleanStrings(labels).sort((left, right) => left.localeCompare(right));
+  };
+
+  const buildIncidentCompareRows = (
+    submittedPayload: Record<string, unknown>,
+    retrievedIncident: Record<string, unknown>,
+  ): IncidentCompareRow[] => {
+    const submittedIncidentTypes = readPathValue(submittedPayload, ["incident_types"]);
+    const retrievedIncidentTypes = readPathValue(retrievedIncident, ["incident_types"]);
+    const submittedPrimaryType = extractPrimaryIncidentType(submittedIncidentTypes);
+    const retrievedPrimaryType = extractPrimaryIncidentType(retrievedIncidentTypes);
+    const submittedAdditionalTypes = extractAdditionalIncidentTypes(submittedIncidentTypes);
+    const retrievedAdditionalTypes = extractAdditionalIncidentTypes(retrievedIncidentTypes);
+    const submittedDispatchUnits = extractUnitSummaries(
+      readPathValue(submittedPayload, ["dispatch", "unit_responses"]),
+    );
+    const retrievedDispatchUnits = extractUnitSummaries(
+      readPathValue(retrievedIncident, ["dispatch", "unit_responses"]),
+    );
+
+    return [
+      buildCompareRow(
+        "department-id",
+        "Department NERIS ID",
+        readPathValue(submittedPayload, ["base", "department_neris_id"]),
+        readPathValue(retrievedIncident, ["base", "department_neris_id"]),
+      ),
+      buildCompareRow(
+        "incident-number",
+        "Incident Number",
+        readPathValue(submittedPayload, ["base", "incident_number"]),
+        readPathValue(retrievedIncident, ["base", "incident_number"]),
+      ),
+      buildCompareRow("primary-incident-type", "Primary Incident Type", submittedPrimaryType, retrievedPrimaryType),
+      buildCompareRow(
+        "additional-incident-types",
+        "Additional Incident Type(s)",
+        submittedAdditionalTypes,
+        retrievedAdditionalTypes,
+      ),
+      buildCompareRow(
+        "incident-address-street",
+        "Incident Address - Street",
+        readPathValue(submittedPayload, ["base", "location", "street"]),
+        readPathValue(retrievedIncident, ["base", "location", "street"]),
+      ),
+      buildCompareRow(
+        "incident-address-city",
+        "Incident Address - City",
+        readPathValue(submittedPayload, ["base", "location", "incorporated_municipality"]),
+        readPathValue(retrievedIncident, ["base", "location", "incorporated_municipality"]),
+      ),
+      buildCompareRow(
+        "incident-address-state",
+        "Incident Address - State",
+        readPathValue(submittedPayload, ["base", "location", "state"]),
+        readPathValue(retrievedIncident, ["base", "location", "state"]),
+      ),
+      buildCompareRow(
+        "dispatch-incident-number",
+        "Dispatch Incident Number",
+        readPathValue(submittedPayload, ["dispatch", "incident_number"]),
+        readPathValue(retrievedIncident, ["dispatch", "incident_number"]),
+      ),
+      buildCompareRow(
+        "dispatch-code",
+        "Dispatch Code",
+        readPathValue(submittedPayload, ["dispatch", "incident_code"]),
+        readPathValue(retrievedIncident, ["dispatch", "incident_code"]),
+      ),
+      buildCompareRow(
+        "dispatch-auto-alarm",
+        "Automatic Alarm",
+        readPathValue(submittedPayload, ["dispatch", "automatic_alarm"]),
+        readPathValue(retrievedIncident, ["dispatch", "automatic_alarm"]),
+      ),
+      buildCompareRow(
+        "dispatch-units",
+        "Dispatch Units",
+        submittedDispatchUnits.units,
+        retrievedDispatchUnits.units,
+      ),
+      buildCompareRow(
+        "dispatch-unit-staffing",
+        "Dispatch Unit Staffing",
+        submittedDispatchUnits.staffing,
+        retrievedDispatchUnits.staffing,
+      ),
+      buildCompareRow(
+        "dispatch-location-street",
+        "Dispatch Location - Street",
+        readPathValue(submittedPayload, ["dispatch", "location", "street"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "street"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-city",
+        "Dispatch Location - City",
+        readPathValue(submittedPayload, ["dispatch", "location", "incorporated_municipality"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "incorporated_municipality"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-state",
+        "Dispatch Location - State",
+        readPathValue(submittedPayload, ["dispatch", "location", "state"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "state"]),
+      ),
+    ];
+  };
+
   const runPreExportValidation = async (requestConfig: ExportRequestConfig): Promise<string[]> => {
     if (!requestConfig.isProxyRequest) {
       return [];
@@ -6222,6 +6560,8 @@ function NerisReportFormPage({
     setErrorMessage("");
     setSaveMessage("Get Incident test in progress...");
     setIncidentTestResponseDetail("");
+    setIncidentCompareRows([]);
+    setUnmappedFilledFieldLabels([]);
     setIsFetchingIncidentTest(true);
     try {
       const requestConfig = buildExportRequestConfig();
@@ -6274,6 +6614,17 @@ function NerisReportFormPage({
         responseJson.incidentNerisId.trim().length > 0
           ? responseJson.incidentNerisId.trim()
           : incidentNerisId;
+      const retrievedIncident =
+        responseJson?.neris && typeof responseJson.neris === "object"
+          ? (responseJson.neris as Record<string, unknown>)
+          : null;
+      if (retrievedIncident) {
+        const submittedPayload = readLatestSubmittedPayloadForCompare();
+        if (submittedPayload) {
+          setIncidentCompareRows(buildIncidentCompareRows(submittedPayload, retrievedIncident));
+        }
+      }
+      setUnmappedFilledFieldLabels(collectUnmappedFilledFieldLabels());
       setSaveMessage(
         `Get Incident succeeded for ${responseIncidentId}. Full response is shown below.`,
       );
@@ -6926,6 +7277,14 @@ function NerisReportFormPage({
     );
   };
 
+  const compareMatchedCount = incidentCompareRows.filter((row) => row.status === "match").length;
+  const compareNeedsReviewCount = incidentCompareRows.length - compareMatchedCount;
+  const visibleUnmappedFieldLabels = unmappedFilledFieldLabels.slice(0, 8);
+  const hiddenUnmappedFieldCount = Math.max(
+    0,
+    unmappedFilledFieldLabels.length - visibleUnmappedFieldLabels.length,
+  );
+
   if (!detail) {
     return (
       <section className="page-section">
@@ -6968,6 +7327,67 @@ function NerisReportFormPage({
           </div>
           {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
+          {incidentCompareRows.length > 0 ? (
+            <section className="neris-incident-compare panel" aria-live="polite">
+              <div className="neris-incident-compare-header">
+                <h2>Submitted vs Retrieved</h2>
+                <p>
+                  {compareMatchedCount} matched • {compareNeedsReviewCount} need review
+                </p>
+              </div>
+              <div className="neris-incident-compare-list">
+                {incidentCompareRows.map((row) => (
+                  <article
+                    key={row.id}
+                    className={`neris-incident-compare-row neris-incident-compare-row-${row.status}`}
+                  >
+                    <div className="neris-incident-compare-row-top">
+                      <h3>{row.label}</h3>
+                      <span
+                        className={`neris-incident-compare-badge neris-incident-compare-badge-${row.status}`}
+                      >
+                        {row.status === "match" ? "Matched" : "Needs review"}
+                      </span>
+                    </div>
+                    <div className="neris-incident-compare-values">
+                      <div>
+                        <span>Submitted</span>
+                        <p>{row.submittedValue}</p>
+                      </div>
+                      <div>
+                        <span>Retrieved</span>
+                        <p>{row.retrievedValue}</p>
+                      </div>
+                    </div>
+                    {row.helpText ? (
+                      <p className="neris-incident-compare-help-text">{row.helpText}</p>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+              {visibleUnmappedFieldLabels.length > 0 ? (
+                <div className="neris-incident-compare-unmapped">
+                  <h3>Form fields with values not yet sent to NERIS</h3>
+                  <p>
+                    These fields currently have values in Fire Ultimate, but are not mapped into
+                    the export payload yet.
+                  </p>
+                  <div className="neris-incident-compare-unmapped-list">
+                    {visibleUnmappedFieldLabels.map((label) => (
+                      <span key={`unmapped-${label}`} className="neris-incident-compare-unmapped-pill">
+                        {label}
+                      </span>
+                    ))}
+                    {hiddenUnmappedFieldCount > 0 ? (
+                      <span className="neris-incident-compare-unmapped-pill">
+                        +{hiddenUnmappedFieldCount} more
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
           {incidentTestResponseDetail ? (
             <details className="neris-incident-test-response">
               <summary>Get Incident test response</summary>
