@@ -70,6 +70,7 @@ import {
   type UserRole,
 } from "./appData";
 import {
+  NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
   createDefaultNerisFormValues,
   getNerisFieldsForSection,
@@ -175,11 +176,16 @@ interface NerisDraftAidEntry {
   aidDepartment: string;
 }
 
+interface NerisDraftNonFdAidEntry {
+  aidType: string;
+}
+
 interface NerisStoredDraft {
   formValues: NerisFormValues;
   reportStatus: string;
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
+  additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
 }
 
 interface NerisExportSettings {
@@ -214,6 +220,17 @@ interface NerisExportRecord {
   responseSummary: string;
   responseDetail: string;
   submittedPayloadPreview: string;
+}
+
+type IncidentCompareStatus = "match" | "different";
+
+interface IncidentCompareRow {
+  id: string;
+  label: string;
+  submittedValue: string;
+  retrievedValue: string;
+  status: IncidentCompareStatus;
+  helpText?: string;
 }
 
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
@@ -391,6 +408,73 @@ const RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS: NerisValueOption[] = [
   { value: "UNKNOWN", label: "Unknown" },
 ];
 const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
+const NERIS_AID_DEPARTMENT_ID_PATTERN = /^(FD|FM)\d{8}$/;
+const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
+  "incident_internal_id",
+  "dispatch_internal_id",
+  "fd_neris_id",
+  "incident_neris_id",
+  "primary_incident_type",
+  "additional_incident_types",
+  "special_incident_modifiers",
+  "incident_actions_taken",
+  "incident_noaction",
+  "incident_people_present",
+  "incident_displaced_number",
+  "incident_displaced_cause",
+  "narrative_outcome",
+  "narrative_obstacles",
+  "incident_time_call_create",
+  "incident_time_call_answered",
+  "incident_time_call_arrival",
+  "incident_time_unit_dispatched",
+  "incident_time_unit_enroute",
+  "incident_time_unit_staged",
+  "incident_time_unit_on_scene",
+  "incident_time_unit_canceled",
+  "incident_time_unit_clear",
+  "incident_time_clear",
+  "incident_onset_date",
+  "incident_onset_time",
+  "incident_location_address",
+  "dispatch_location_address",
+  "location_place_type",
+  "location_use_primary",
+  "location_use_secondary",
+  "location_in_use",
+  "location_used_as_intended",
+  "location_vacancy_cause",
+  "location_state",
+  "location_country",
+  "location_direction_of_travel",
+  "location_cross_street_type",
+  "location_cross_street_name",
+  "location_postal_code",
+  "location_county",
+  "dispatch_center_id",
+  "dispatch_determinate_code",
+  "initial_dispatch_code",
+  "dispatch_final_disposition",
+  "dispatch_automatic_alarm",
+  "incident_has_aid",
+  "incident_aid_agency_type",
+  "incident_aid_direction",
+  "incident_aid_type",
+  "incident_aid_department_name",
+  "incident_aid_nonfd",
+  "resource_units_json",
+  "resource_primary_unit_id",
+  "resource_primary_unit_response_mode",
+  "resource_additional_units",
+  "resource_primary_unit_staffing",
+  "emerging_haz_electrocution_items_json",
+  "emerging_haz_power_generation_items_json",
+  "medical_patient_care_report_id",
+  "medical_patient_care_evaluation",
+  "medical_patient_status",
+  "medical_transport_disposition",
+  "medical_patient_count",
+]);
 
 function normalizePath(pathname: string): string {
   if (pathname === "/") {
@@ -468,9 +552,12 @@ interface ResourceUnitEntry {
   unitType: string;
   staffing: string;
   responseMode: string;
+  transportMode: string;
   dispatchTime: string;
   enrouteTime: string;
+  stagedTime: string;
   onSceneTime: string;
+  canceledTime: string;
   clearTime: string;
   isCanceledEnroute: boolean;
   isComplete: boolean;
@@ -708,7 +795,14 @@ function addMinutesToResourceDateTime(value: string, minutesToAdd: number): stri
 
 function resourceUnitValidationErrorKey(
   unitEntryId: string,
-  field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+  field:
+    | "personnel"
+    | "dispatchTime"
+    | "enrouteTime"
+    | "stagedTime"
+    | "onSceneTime"
+    | "canceledTime"
+    | "clearTime",
 ): string {
   return `resource_unit_validation_${unitEntryId}_${field}`;
 }
@@ -1181,6 +1275,23 @@ function readNerisDraftStore(): Record<string, NerisStoredDraft> {
             [],
           )
         : [];
+      const additionalNonFdAidEntries: NerisDraftNonFdAidEntry[] = Array.isArray(
+        candidate.additionalNonFdAidEntries,
+      )
+        ? candidate.additionalNonFdAidEntries.reduce<NerisDraftNonFdAidEntry[]>(
+            (entriesAccumulator, entryValue) => {
+              if (!entryValue || typeof entryValue !== "object") {
+                return entriesAccumulator;
+              }
+              const entry = entryValue as Record<string, unknown>;
+              entriesAccumulator.push({
+                aidType: typeof entry.aidType === "string" ? entry.aidType : "",
+              });
+              return entriesAccumulator;
+            },
+            [],
+          )
+        : [];
       drafts[callNumber] = {
         formValues,
         reportStatus:
@@ -1192,6 +1303,7 @@ function readNerisDraftStore(): Record<string, NerisStoredDraft> {
             ? candidate.lastSavedAt
             : "Not saved",
         additionalAidEntries,
+        additionalNonFdAidEntries,
       };
     }
     return drafts;
@@ -3581,6 +3693,7 @@ interface NerisFlatMultiOptionSelectProps {
   placeholder?: string;
   searchPlaceholder?: string;
   disabled?: boolean;
+  isOptionDisabled?: (optionValue: string) => boolean;
 }
 
 function NerisFlatMultiOptionSelect({
@@ -3591,6 +3704,7 @@ function NerisFlatMultiOptionSelect({
   placeholder,
   searchPlaceholder,
   disabled = false,
+  isOptionDisabled,
 }: NerisFlatMultiOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
@@ -3707,13 +3821,20 @@ function NerisFlatMultiOptionSelect({
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = selectedValueSet.has(option.value);
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value)) && !isSelected;
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}`}
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${
+                        optionDisabled ? " disabled" : ""
+                      }`}
                       aria-selected={isSelected}
+                      disabled={optionDisabled}
                       onClick={() => {
+                        if (optionDisabled) {
+                          return;
+                        }
                         const nextSelected = new Set(selectedValueSet);
                         if (nextSelected.has(option.value)) {
                           nextSelected.delete(option.value);
@@ -3922,6 +4043,10 @@ interface AidEntry {
   aidDepartment: string;
 }
 
+interface NonFdAidEntry {
+  aidType: string;
+}
+
 interface ValidationModalState {
   mode: "issues" | "checkSuccess" | "adminConfirm" | "adminSuccess";
   issues: string[];
@@ -3931,6 +4056,10 @@ const EMPTY_AID_ENTRY: AidEntry = {
   aidDirection: "",
   aidType: "",
   aidDepartment: "",
+};
+
+const EMPTY_NONFD_AID_ENTRY: NonFdAidEntry = {
+  aidType: "",
 };
 
 function NerisReportFormPage({
@@ -3976,6 +4105,10 @@ function NerisReportFormPage({
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [isFetchingIncidentTest, setIsFetchingIncidentTest] = useState(false);
+  const [incidentTestResponseDetail, setIncidentTestResponseDetail] = useState("");
+  const [incidentCompareRows, setIncidentCompareRows] = useState<IncidentCompareRow[]>([]);
+  const [unmappedFilledFieldLabels, setUnmappedFilledFieldLabels] = useState<string[]>([]);
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
@@ -3986,6 +4119,14 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     })),
   );
+  const [additionalNonFdAidEntries, setAdditionalNonFdAidEntries] = useState<NonFdAidEntry[]>(() =>
+    (persistedDraft?.additionalNonFdAidEntries ?? []).map((entry) => ({
+      aidType: entry.aidType,
+    })),
+  );
+  const [aidDepartmentOptions, setAidDepartmentOptions] = useState<NerisValueOption[]>(() =>
+    getNerisValueOptions("aid_department"),
+  );
   const [showDirectionOfTravelField, setShowDirectionOfTravelField] = useState<boolean>(
     () =>
       (persistedDraft?.formValues.location_direction_of_travel ?? "").trim().length >
@@ -3993,8 +4134,8 @@ function NerisReportFormPage({
   );
   const [showCrossStreetTypeField, setShowCrossStreetTypeField] = useState<boolean>(
     () =>
-      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length >
-      0,
+      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length > 0 ||
+      (persistedDraft?.formValues.location_cross_street_name ?? "").trim().length > 0,
   );
   const locationStateOptionValues = useMemo(
     () => new Set(getNerisValueOptions("state").map((option) => option.value)),
@@ -4046,9 +4187,12 @@ function NerisReportFormPage({
         unitType: inferResourceUnitTypeValue(option.value, source?.unitType, unitTypeOptions),
         staffing: getStaffingValueForUnit(option.value, ""),
         responseMode: "",
+        transportMode: "",
         dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
         enrouteTime: "",
+        stagedTime: "",
         onSceneTime: "",
+        canceledTime: "",
         clearTime: "",
         isCanceledEnroute: false,
         isComplete: false,
@@ -4093,6 +4237,7 @@ function NerisReportFormPage({
           unitType: normalizedUnitType,
           staffing: getStaffingValueForUnit(unitId, personnel),
           responseMode: item.responseMode?.trim() ?? "",
+          transportMode: item.transportMode?.trim() ?? "",
           dispatchTime: toResourceDateTimeInputValue(
             item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
             resourceFallbackDate,
@@ -4101,8 +4246,16 @@ function NerisReportFormPage({
             item.enrouteTime?.trim() ?? "",
             resourceFallbackDate,
           ),
+          stagedTime: toResourceDateTimeInputValue(
+            item.stagedTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
           onSceneTime: toResourceDateTimeInputValue(
             item.onSceneTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
+          canceledTime: toResourceDateTimeInputValue(
+            item.canceledTime?.trim() ?? "",
             resourceFallbackDate,
           ),
           clearTime: toResourceDateTimeInputValue(item.clearTime?.trim() ?? "", resourceFallbackDate),
@@ -4283,6 +4436,23 @@ function NerisReportFormPage({
         : null,
     [activeResourcePersonnelUnitId, resourceUnits],
   );
+  const personnelAssignedToOtherUnits = useMemo(() => {
+    if (!activeResourcePersonnelUnitId) {
+      return new Set<string>();
+    }
+    const assigned = new Set<string>();
+    resourceUnits.forEach((unit) => {
+      if (unit.id === activeResourcePersonnelUnitId) {
+        return;
+      }
+      unit.personnel
+        .split(",")
+        .map((entry) => entry.trim())
+        .filter((entry) => entry.length > 0)
+        .forEach((entry) => assigned.add(entry));
+    });
+    return assigned;
+  }, [activeResourcePersonnelUnitId, resourceUnits]);
 
   useEffect(() => {
     if (persistedResourceUnits.length) {
@@ -4443,10 +4613,13 @@ function NerisReportFormPage({
       ["location_place_type", 5],
       ["location_use_primary", 6],
       ["location_use_secondary", 7],
-      ["location_vacancy_cause", 8],
-      ["location_direction_of_travel", 9],
-      ["location_cross_street_type", 10],
-      ["location_notes", 11],
+      ["location_in_use", 8],
+      ["location_used_as_intended", 9],
+      ["location_vacancy_cause", 10],
+      ["location_direction_of_travel", 11],
+      ["location_cross_street_type", 12],
+      ["location_cross_street_name", 13],
+      ["location_notes", 14],
     ]);
 
     return [...sectionFields].sort((left, right) => {
@@ -4481,6 +4654,25 @@ function NerisReportFormPage({
       ) as Record<NerisSectionId, string>,
     [],
   );
+  const requiredMatrixRows = useMemo(() => {
+    const coreRows = NERIS_REQUIRED_FIELD_MATRIX.coreMinimum.map((fieldId) => ({
+      fieldId,
+      label: nerisFieldLabelById[fieldId] ?? fieldId,
+    }));
+    const familyRows =
+      primaryIncidentCategory in NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily
+        ? NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily[
+            primaryIncidentCategory as keyof typeof NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily
+          ].map((fieldId) => ({
+            fieldId,
+            label: nerisFieldLabelById[fieldId] ?? fieldId,
+          }))
+        : [];
+    return {
+      coreRows,
+      familyRows,
+    };
+  }, [nerisFieldLabelById, primaryIncidentCategory]);
   const sectionIndex = visibleNerisSections.findIndex(
     (section) => section.id === currentSection.id,
   );
@@ -4505,6 +4697,117 @@ function NerisReportFormPage({
     ],
   );
 
+  useEffect(() => {
+    let isCancelled = false;
+    const fallbackOptions = getNerisValueOptions("aid_department");
+    const exportUrl = (nerisExportSettings.exportUrl ?? "").trim();
+    if (!exportUrl.startsWith("/api/neris/")) {
+      setAidDepartmentOptions(fallbackOptions);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const loadAidDepartmentOptions = async () => {
+      try {
+        const response = await fetch("/api/neris/debug/entities");
+        const responseText = await response.text();
+        if (!response.ok) {
+          if (!isCancelled) {
+            setAidDepartmentOptions(fallbackOptions);
+          }
+          return;
+        }
+
+        const parsed = (() => {
+          if (!responseText) {
+            return null;
+          }
+          try {
+            return JSON.parse(responseText) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })();
+        const neris =
+          parsed?.neris && typeof parsed.neris === "object"
+            ? (parsed.neris as Record<string, unknown>)
+            : null;
+        const entities = Array.isArray(neris?.entities) ? (neris?.entities as unknown[]) : [];
+        const apiOptions = entities
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return null;
+            }
+            const candidate = entry as Record<string, unknown>;
+            const departmentId =
+              typeof candidate.neris_id === "string" ? candidate.neris_id.trim() : "";
+            if (!NERIS_AID_DEPARTMENT_ID_PATTERN.test(departmentId)) {
+              return null;
+            }
+            const departmentName =
+              typeof candidate.name === "string" && candidate.name.trim().length > 0
+                ? candidate.name.trim()
+                : departmentId;
+            return {
+              value: departmentId,
+              label: `${departmentId} - ${departmentName}`,
+            } as NerisValueOption;
+          })
+          .filter((option): option is NerisValueOption => Boolean(option));
+
+        const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
+        if (
+          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
+          !apiOptions.some((option) => option.value === requestedEntityId)
+        ) {
+          apiOptions.unshift({
+            value: requestedEntityId,
+            label: `${requestedEntityId} - Current export department`,
+          });
+        }
+
+        const dedupedOptions = Array.from(
+          new Map(
+            [...apiOptions, ...fallbackOptions].map((option) => [option.value, option]),
+          ).values(),
+        );
+        if (!isCancelled) {
+          setAidDepartmentOptions(dedupedOptions);
+        }
+      } catch {
+        if (!isCancelled) {
+          setAidDepartmentOptions(fallbackOptions);
+        }
+      }
+    };
+
+    void loadAidDepartmentOptions();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [nerisExportSettings.exportUrl, nerisExportSettings.vendorCode]);
+
+  useEffect(() => {
+    const vendorDepartmentCode = (nerisExportSettings.vendorCode ?? "").trim();
+    if (!vendorDepartmentCode) {
+      return;
+    }
+    if ((formValues.fd_neris_id ?? "").trim() === vendorDepartmentCode) {
+      return;
+    }
+    setFormValues((previous) => {
+      if ((previous.fd_neris_id ?? "").trim() === vendorDepartmentCode) {
+        return previous;
+      }
+      return {
+        ...previous,
+        fd_neris_id: vendorDepartmentCode,
+      };
+    });
+  }, [nerisExportSettings.vendorCode, formValues.fd_neris_id]);
+
   const updateFieldValue = (fieldId: string, value: string) => {
     const sanitizedValue =
       fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
@@ -4517,6 +4820,8 @@ function NerisReportFormPage({
         (sanitizedValue.trim().length === 0 ||
           Number.parseInt(sanitizedValue, 10) <= 0)) ||
       (fieldId === "incident_people_present" && sanitizedValue === "NO");
+    const shouldClearLocationUsedAsIntended =
+      fieldId === "location_in_use" && sanitizedValue !== "YES";
     const shouldClearAidFields =
       (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
       (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
@@ -4538,6 +4843,9 @@ function NerisReportFormPage({
       if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
         nextValues.incident_displaced_number = "";
       }
+      if (shouldClearLocationUsedAsIntended) {
+        nextValues.location_used_as_intended = "";
+      }
       if (fieldId === "incident_has_aid" && sanitizedValue === "NO") {
         nextValues.incident_aid_agency_type = "";
         nextValues.incident_aid_direction = "";
@@ -4558,10 +4866,15 @@ function NerisReportFormPage({
 
     if (
       (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
-      (fieldId === "incident_aid_direction" && sanitizedValue === "GIVEN")
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID")
     ) {
       setAdditionalAidEntries([]);
+    }
+    if (
+      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
+      (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT")
+    ) {
+      setAdditionalNonFdAidEntries([]);
     }
 
     setSectionErrors((previous) => {
@@ -4574,6 +4887,8 @@ function NerisReportFormPage({
         fieldId === "incident_people_present" &&
         sanitizedValue === "NO" &&
         Boolean(previous.incident_displaced_number);
+      const hasLocationUsedAsIntendedError =
+        shouldClearLocationUsedAsIntended && Boolean(previous.location_used_as_intended);
       const hasAidErrors =
         shouldClearAidFields &&
         (Boolean(previous.incident_aid_agency_type) ||
@@ -4587,6 +4902,7 @@ function NerisReportFormPage({
         !hasActionsError &&
         !hasDisplacementCauseError &&
         !hasDisplacementNumberError &&
+        !hasLocationUsedAsIntendedError &&
         !hasAidErrors
       ) {
         return previous;
@@ -4604,6 +4920,9 @@ function NerisReportFormPage({
       }
       if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
         delete next.incident_displaced_number;
+      }
+      if (shouldClearLocationUsedAsIntended) {
+        delete next.location_used_as_intended;
       }
       if (shouldClearAidFields) {
         delete next.incident_aid_agency_type;
@@ -4769,7 +5088,14 @@ function NerisReportFormPage({
     const errors: Record<string, string> = {};
     const customIssueLabelsByFieldId: Record<string, string> = {};
     const addResourceError = (
-      field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+      field:
+        | "personnel"
+        | "dispatchTime"
+        | "enrouteTime"
+        | "stagedTime"
+        | "onSceneTime"
+        | "canceledTime"
+        | "clearTime",
       fieldLabel: string,
       message: string,
     ) => {
@@ -4856,15 +5182,27 @@ function NerisReportFormPage({
         value: unitEntry.onSceneTime,
       },
       {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "stagedTime"),
+        label: "Unit staged time",
+        customIssueLabel: `Resources - ${unitLabel}: Staged time`,
+        value: unitEntry.stagedTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "canceledTime"),
+        label: "Unit canceled time",
+        customIssueLabel: `Resources - ${unitLabel}: Canceled time`,
+        value: unitEntry.canceledTime,
+      },
+      {
         key: resourceUnitValidationErrorKey(unitEntry.id, "clearTime"),
         label: "Unit clear time",
         customIssueLabel: `Resources - ${unitLabel}: Clear time`,
         value: unitEntry.clearTime,
       },
       {
-        key: "time_incident_clear",
+        key: "incident_time_clear",
         label: "Incident clear time",
-        value: formValues.time_incident_clear ?? "",
+        value: formValues.incident_time_clear ?? formValues.time_incident_clear ?? "",
       },
     ];
 
@@ -4917,9 +5255,12 @@ function NerisReportFormPage({
         unitType: unit.unitType,
         staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
         responseMode: unit.responseMode,
+        transportMode: unit.transportMode,
         dispatchTime: unit.dispatchTime,
         enrouteTime: unit.enrouteTime,
+        stagedTime: unit.stagedTime,
         onSceneTime: unit.onSceneTime,
+        canceledTime: unit.canceledTime,
         clearTime: unit.clearTime,
         isCanceledEnroute: unit.isCanceledEnroute,
         isComplete: unit.isComplete,
@@ -5002,9 +5343,12 @@ function NerisReportFormPage({
       | "unitType"
       | "staffing"
       | "responseMode"
+      | "transportMode"
       | "dispatchTime"
       | "enrouteTime"
+      | "stagedTime"
       | "onSceneTime"
+      | "canceledTime"
       | "clearTime"
       | "personnel"
       | "reportWriter"
@@ -5029,9 +5373,17 @@ function NerisReportFormPage({
                   entry.clearTime,
                   resourceFallbackDate,
                 );
+                const normalizedCanceled = toResourceDateTimeInputValue(
+                  entry.canceledTime,
+                  resourceFallbackDate,
+                );
                 return {
                   ...entry,
                   dispatchTime: normalizedDispatch,
+                  canceledTime:
+                    entry.isCanceledEnroute && !normalizedCanceled && normalizedDispatch
+                      ? addMinutesToResourceDateTime(normalizedDispatch, 1)
+                      : normalizedCanceled,
                   clearTime:
                     entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
                       ? addMinutesToResourceDateTime(normalizedDispatch, 2)
@@ -5040,7 +5392,9 @@ function NerisReportFormPage({
               }
               if (
                 field === "enrouteTime" ||
+                field === "stagedTime" ||
                 field === "onSceneTime" ||
+                field === "canceledTime" ||
                 field === "clearTime"
               ) {
                 return {
@@ -5143,6 +5497,7 @@ function NerisReportFormPage({
                 return {
                   ...entry,
                   isCanceledEnroute: false,
+                  canceledTime: "",
                 };
               }
 
@@ -5154,10 +5509,18 @@ function NerisReportFormPage({
                 entry.clearTime,
                 resourceFallbackDate,
               );
+              const normalizedCanceled = toResourceDateTimeInputValue(
+                entry.canceledTime,
+                resourceFallbackDate,
+              );
               return {
                 ...entry,
                 isCanceledEnroute: true,
                 dispatchTime: normalizedDispatch,
+                canceledTime:
+                  normalizedCanceled || normalizedDispatch
+                    ? normalizedCanceled || addMinutesToResourceDateTime(normalizedDispatch, 1)
+                    : "",
                 clearTime:
                   normalizedClear || normalizedDispatch
                     ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
@@ -5166,6 +5529,37 @@ function NerisReportFormPage({
             })()
           : entry,
       ),
+    );
+    clearResourceUnitValidationErrors(unitEntryId);
+    markNerisFormDirty();
+  };
+
+  const populateResourceTimesFromDispatch = (unitEntryId: string) => {
+    const fallbackDispatch =
+      toResourceDateTimeInputValue(
+        formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
+        resourceFallbackDate,
+      ) || "";
+    setResourceUnits((previous) =>
+      previous.map((entry) => {
+        if (entry.id !== unitEntryId) {
+          return entry;
+        }
+        const dispatchSeed =
+          toResourceDateTimeInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
+        if (!dispatchSeed) {
+          return entry;
+        }
+        return {
+          ...entry,
+          dispatchTime: dispatchSeed,
+          enrouteTime: dispatchSeed,
+          stagedTime: dispatchSeed,
+          onSceneTime: dispatchSeed,
+          canceledTime: dispatchSeed,
+          clearTime: dispatchSeed,
+        };
+      }),
     );
     clearResourceUnitValidationErrors(unitEntryId);
     markNerisFormDirty();
@@ -5386,6 +5780,9 @@ function NerisReportFormPage({
         aidType: entry.aidType,
         aidDepartment: entry.aidDepartment,
       })),
+      additionalNonFdAidEntries: additionalNonFdAidEntries.map((entry) => ({
+        aidType: entry.aidType,
+      })),
     });
     setReportStatus(nextStatus);
     setLastSavedAt(savedAt);
@@ -5432,6 +5829,11 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     }));
 
+  const buildStoredAdditionalNonFdAidEntries = () =>
+    additionalNonFdAidEntries.map((entry) => ({
+      aidType: entry.aidType,
+    }));
+
   const buildReportWriterName = () => {
     const rawReportWriter =
       resourceUnits
@@ -5455,11 +5857,13 @@ function NerisReportFormPage({
       return;
     }
     const serializedAidEntries = buildStoredAdditionalAidEntries();
+    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
     writeNerisDraft(callNumber, {
       formValues,
       reportStatus: "Draft",
       lastSavedAt,
       additionalAidEntries: serializedAidEntries,
+      additionalNonFdAidEntries: serializedNonFdAidEntries,
     });
     setReportStatus("Draft");
     setSaveMessage("");
@@ -5663,6 +6067,19 @@ function NerisReportFormPage({
       );
     }
 
+    const timezoneSourceDate = (() => {
+      const dispatchTime = (formValues.incident_time_call_create ?? "").trim();
+      if (!dispatchTime) {
+        return new Date();
+      }
+      const parsed = new Date(dispatchTime);
+      if (Number.isNaN(parsed.getTime())) {
+        return new Date();
+      }
+      return parsed;
+    })();
+    const clientUtcOffsetMinutes = timezoneSourceDate.getTimezoneOffset();
+
     const payload = {
       callNumber: detailForSideEffects.callNumber,
       reportStatus,
@@ -5682,8 +6099,10 @@ function NerisReportFormPage({
         apiVersionHeaderValue,
         existingIncidentNerisId,
         allowUpdateFallback: true,
+        clientUtcOffsetMinutes,
       },
       additionalAidEntries: buildStoredAdditionalAidEntries(),
+      additionalNonFdAidEntries: buildStoredAdditionalNonFdAidEntries(),
     };
     const headers: Record<string, string> = {
       "Content-Type": contentType,
@@ -5747,6 +6166,596 @@ function NerisReportFormPage({
       .filter((issue) => issue.length > 0);
   };
 
+  const readPathValue = (source: unknown, path: Array<string | number>): unknown => {
+    let current: unknown = source;
+    for (const segment of path) {
+      if (typeof segment === "number") {
+        if (!Array.isArray(current) || segment < 0 || segment >= current.length) {
+          return undefined;
+        }
+        current = current[segment];
+        continue;
+      }
+      if (!current || typeof current !== "object") {
+        return undefined;
+      }
+      current = (current as Record<string, unknown>)[segment];
+    }
+    return current;
+  };
+
+  const toComparableText = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return "";
+    }
+    if (typeof value === "boolean") {
+      return value ? "YES" : "NO";
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "string") {
+      const trimmed = value.trim();
+      if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
+        const parsedTimestamp = Date.parse(trimmed);
+        if (!Number.isNaN(parsedTimestamp)) {
+          return `DT:${parsedTimestamp}`;
+        }
+      }
+      return trimmed.toUpperCase();
+    }
+    if (Array.isArray(value)) {
+      return value
+        .map((entry) => toComparableText(entry))
+        .filter((entry) => entry.length > 0)
+        .sort()
+        .join("|");
+    }
+    return "";
+  };
+
+  const toFriendlyValue = (value: unknown): string => {
+    if (value === null || value === undefined) {
+      return "Not provided";
+    }
+    if (typeof value === "boolean") {
+      return value ? "Yes" : "No";
+    }
+    if (typeof value === "number") {
+      return String(value);
+    }
+    if (typeof value === "string") {
+      return value.trim() || "Not provided";
+    }
+    if (Array.isArray(value)) {
+      const flattened = value
+        .map((entry) => {
+          if (typeof entry === "string") {
+            return entry.trim();
+          }
+          if (typeof entry === "number") {
+            return String(entry);
+          }
+          return "";
+        })
+        .filter((entry) => entry.length > 0);
+      return flattened.length > 0 ? flattened.join(", ") : "Not provided";
+    }
+    return "Not provided";
+  };
+
+  const isCompareMatch = (submittedValue: unknown, retrievedValue: unknown): boolean =>
+    toComparableText(submittedValue) === toComparableText(retrievedValue);
+
+  const extractPrimaryIncidentType = (value: unknown): string => {
+    if (!Array.isArray(value)) {
+      return "";
+    }
+    const primaryEntry = value.find(
+      (entry) =>
+        entry &&
+        typeof entry === "object" &&
+        (entry as Record<string, unknown>).primary === true &&
+        typeof (entry as Record<string, unknown>).type === "string",
+    ) as Record<string, unknown> | undefined;
+    if (!primaryEntry) {
+      return "";
+    }
+    return String(primaryEntry.type).replaceAll("||", " > ").trim();
+  };
+
+  const extractAdditionalIncidentTypes = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    return value
+      .filter(
+        (entry) =>
+          entry &&
+          typeof entry === "object" &&
+          (entry as Record<string, unknown>).primary !== true &&
+          typeof (entry as Record<string, unknown>).type === "string",
+      )
+      .map((entry) => String((entry as Record<string, unknown>).type).replaceAll("||", " > ").trim())
+      .filter((entry) => entry.length > 0)
+      .sort((left, right) => left.localeCompare(right));
+  };
+
+  const extractUnitSummaries = (
+    value: unknown,
+  ): {
+    units: string[];
+    staffing: string[];
+  } => {
+    if (!Array.isArray(value)) {
+      return { units: [], staffing: [] };
+    }
+    const units: string[] = [];
+    const staffing: string[] = [];
+    value.forEach((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return;
+      }
+      const candidate = entry as Record<string, unknown>;
+      const reportedUnitId =
+        typeof candidate.reported_unit_id === "string" ? candidate.reported_unit_id.trim() : "";
+      const unitNerisId =
+        typeof candidate.unit_neris_id === "string" ? candidate.unit_neris_id.trim() : "";
+      const unitLabel = reportedUnitId || unitNerisId;
+      if (!unitLabel) {
+        return;
+      }
+      units.push(unitLabel);
+      const staffingValue =
+        typeof candidate.staffing === "number"
+          ? String(candidate.staffing)
+          : typeof candidate.staffing === "string"
+            ? candidate.staffing.trim()
+            : "";
+      staffing.push(staffingValue ? `${unitLabel} (${staffingValue})` : `${unitLabel} (Not provided)`);
+    });
+    return {
+      units: dedupeAndCleanStrings(units).sort((left, right) => left.localeCompare(right)),
+      staffing: dedupeAndCleanStrings(staffing).sort((left, right) => left.localeCompare(right)),
+    };
+  };
+
+  const extractAidSummaries = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const summaries = value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return "";
+        }
+        const candidate = entry as Record<string, unknown>;
+        const department =
+          typeof candidate.department_neris_id === "string"
+            ? candidate.department_neris_id.trim()
+            : "";
+        const aidType = typeof candidate.aid_type === "string" ? candidate.aid_type.trim() : "";
+        const direction =
+          typeof candidate.aid_direction === "string" ? candidate.aid_direction.trim() : "";
+        const parts = [direction, aidType, department].filter((part) => part.length > 0);
+        return parts.join(" | ");
+      })
+      .filter((entry) => entry.length > 0);
+    return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
+  };
+
+  const extractUnitFieldSummaries = (
+    value: unknown,
+    field: "response_mode" | "transport_mode" | "dispatch" | "enroute_to_scene" | "staging" | "on_scene" | "canceled_enroute" | "unit_clear",
+  ): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const summaries = value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return "";
+        }
+        const candidate = entry as Record<string, unknown>;
+        const reportedUnitId =
+          typeof candidate.reported_unit_id === "string" ? candidate.reported_unit_id.trim() : "";
+        const unitNerisId =
+          typeof candidate.unit_neris_id === "string" ? candidate.unit_neris_id.trim() : "";
+        const unitLabel = reportedUnitId || unitNerisId || "Unknown unit";
+        const rawFieldValue = candidate[field];
+        if (typeof rawFieldValue !== "string" || rawFieldValue.trim().length === 0) {
+          return "";
+        }
+        return `${unitLabel}: ${rawFieldValue.trim()}`;
+      })
+      .filter((entry) => entry.length > 0);
+    return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
+  };
+
+  const extractActionNoActionSummary = (value: unknown): string => {
+    if (!value || typeof value !== "object") {
+      return "";
+    }
+    const actionNoAction =
+      (value as Record<string, unknown>).action_noaction &&
+      typeof (value as Record<string, unknown>).action_noaction === "object"
+        ? ((value as Record<string, unknown>).action_noaction as Record<string, unknown>)
+        : null;
+    if (!actionNoAction) {
+      return "";
+    }
+    const type = typeof actionNoAction.type === "string" ? actionNoAction.type.trim() : "";
+    if (type === "ACTION") {
+      const actions = Array.isArray(actionNoAction.actions)
+        ? (actionNoAction.actions as unknown[])
+            .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+            .map((entry) => entry.trim())
+        : [];
+      return actions.length > 0 ? actions.join(", ") : "Action selected";
+    }
+    if (type === "NOACTION") {
+      const noActionType =
+        typeof actionNoAction.noaction_type === "string"
+          ? actionNoAction.noaction_type.trim()
+          : "";
+      return noActionType ? `No Action: ${noActionType}` : "No Action selected";
+    }
+    return "";
+  };
+
+  const extractLocationUseSummary = (value: unknown): string[] => {
+    if (!value || typeof value !== "object") {
+      return [];
+    }
+    const candidate = value as Record<string, unknown>;
+    const summary: string[] = [];
+    const useType = typeof candidate.use_type === "string" ? candidate.use_type.trim() : "";
+    const secondaryUse =
+      typeof candidate.secondary_use === "string" ? candidate.secondary_use.trim() : "";
+    const vacancyCause =
+      typeof candidate.vacancy_cause === "string" ? candidate.vacancy_cause.trim() : "";
+    if (useType) {
+      summary.push(`Primary: ${useType}`);
+    }
+    if (secondaryUse) {
+      summary.push(`Secondary: ${secondaryUse}`);
+    }
+    if (vacancyCause) {
+      summary.push(`Vacancy: ${vacancyCause}`);
+    }
+    const inUse =
+      candidate.in_use && typeof candidate.in_use === "object"
+        ? (candidate.in_use as Record<string, unknown>)
+        : null;
+    if (inUse && typeof inUse.in_use === "boolean") {
+      summary.push(`In Use: ${inUse.in_use ? "Yes" : "No"}`);
+    }
+    if (inUse && typeof inUse.intended === "boolean") {
+      summary.push(`As Intended: ${inUse.intended ? "Yes" : "No"}`);
+    }
+    return summary;
+  };
+
+  const buildCompareRow = (
+    id: string,
+    label: string,
+    submittedValue: unknown,
+    retrievedValue: unknown,
+    helpText?: string,
+  ): IncidentCompareRow => ({
+    id,
+    label,
+    submittedValue: toFriendlyValue(submittedValue),
+    retrievedValue: toFriendlyValue(retrievedValue),
+    status: isCompareMatch(submittedValue, retrievedValue) ? "match" : "different",
+    helpText,
+  });
+
+  const readLatestSubmittedPayloadForCompare = (): Record<string, unknown> | null => {
+    const latestSuccessfulEntry = readNerisExportHistory().find(
+      (entry) =>
+        entry.callNumber === callNumber &&
+        entry.attemptStatus === "success" &&
+        entry.submittedPayloadPreview.trim().length > 0,
+    );
+    if (!latestSuccessfulEntry) {
+      return null;
+    }
+    const parsed = parseJsonResponseText(latestSuccessfulEntry.submittedPayloadPreview);
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+    const hasNerisPayloadShape =
+      parsed.base &&
+      typeof parsed.base === "object" &&
+      parsed.dispatch &&
+      typeof parsed.dispatch === "object";
+    return hasNerisPayloadShape ? parsed : null;
+  };
+
+  const collectUnmappedFilledFieldLabels = (): string[] => {
+    const labels = Object.entries(formValues)
+      .filter(([fieldId, fieldValue]) => {
+        if (NERIS_PROXY_MAPPED_FORM_FIELD_IDS.has(fieldId)) {
+          return false;
+        }
+        return typeof fieldValue === "string" && fieldValue.trim().length > 0;
+      })
+      .map(([fieldId]) => nerisFieldLabelById[fieldId] ?? fieldId);
+    return dedupeAndCleanStrings(labels).sort((left, right) => left.localeCompare(right));
+  };
+
+  const buildIncidentCompareRows = (
+    submittedPayload: Record<string, unknown>,
+    retrievedIncident: Record<string, unknown>,
+  ): IncidentCompareRow[] => {
+    const submittedIncidentTypes = readPathValue(submittedPayload, ["incident_types"]);
+    const retrievedIncidentTypes = readPathValue(retrievedIncident, ["incident_types"]);
+    const submittedPrimaryType = extractPrimaryIncidentType(submittedIncidentTypes);
+    const retrievedPrimaryType = extractPrimaryIncidentType(retrievedIncidentTypes);
+    const submittedAdditionalTypes = extractAdditionalIncidentTypes(submittedIncidentTypes);
+    const retrievedAdditionalTypes = extractAdditionalIncidentTypes(retrievedIncidentTypes);
+    const submittedDispatchUnits = extractUnitSummaries(
+      readPathValue(submittedPayload, ["dispatch", "unit_responses"]),
+    );
+    const retrievedDispatchUnits = extractUnitSummaries(
+      readPathValue(retrievedIncident, ["dispatch", "unit_responses"]),
+    );
+    const submittedDispatchUnitResponses = readPathValue(submittedPayload, ["dispatch", "unit_responses"]);
+    const retrievedDispatchUnitResponses = readPathValue(retrievedIncident, ["dispatch", "unit_responses"]);
+    const submittedResponseModes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "response_mode",
+    );
+    const retrievedResponseModes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "response_mode",
+    );
+    const submittedTransportModes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "transport_mode",
+    );
+    const retrievedTransportModes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "transport_mode",
+    );
+    const submittedStagedTimes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "staging",
+    );
+    const retrievedStagedTimes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "staging",
+    );
+    const submittedCanceledTimes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "canceled_enroute",
+    );
+    const retrievedCanceledTimes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "canceled_enroute",
+    );
+    const submittedActionSummary = extractActionNoActionSummary(
+      readPathValue(submittedPayload, ["actions_tactics"]),
+    );
+    const retrievedActionSummary = extractActionNoActionSummary(
+      readPathValue(retrievedIncident, ["actions_tactics"]),
+    );
+    const submittedAidSummary = extractAidSummaries(readPathValue(submittedPayload, ["aids"]));
+    const retrievedAidSummary = extractAidSummaries(readPathValue(retrievedIncident, ["aids"]));
+    const submittedLocationUseSummary = extractLocationUseSummary(
+      readPathValue(submittedPayload, ["base", "location_use"]),
+    );
+    const retrievedLocationUseSummary = extractLocationUseSummary(
+      readPathValue(retrievedIncident, ["base", "location_use"]),
+    );
+
+    return [
+      buildCompareRow(
+        "department-id",
+        "Department NERIS ID",
+        readPathValue(submittedPayload, ["base", "department_neris_id"]),
+        readPathValue(retrievedIncident, ["base", "department_neris_id"]),
+      ),
+      buildCompareRow(
+        "incident-number",
+        "Incident Number",
+        readPathValue(submittedPayload, ["base", "incident_number"]),
+        readPathValue(retrievedIncident, ["base", "incident_number"]),
+      ),
+      buildCompareRow("primary-incident-type", "Primary Incident Type", submittedPrimaryType, retrievedPrimaryType),
+      buildCompareRow(
+        "additional-incident-types",
+        "Additional Incident Type(s)",
+        submittedAdditionalTypes,
+        retrievedAdditionalTypes,
+      ),
+      buildCompareRow(
+        "special-modifiers",
+        "Special Incident Modifier(s)",
+        readPathValue(submittedPayload, ["special_modifiers"]),
+        readPathValue(retrievedIncident, ["special_modifiers"]),
+        "Some special modifiers are incident-type dependent and may be ignored by NERIS.",
+      ),
+      buildCompareRow("actions-or-no-action", "Actions / No Action", submittedActionSummary, retrievedActionSummary),
+      buildCompareRow(
+        "people-present",
+        "Were people present?",
+        readPathValue(submittedPayload, ["base", "people_present"]),
+        readPathValue(retrievedIncident, ["base", "people_present"]),
+      ),
+      buildCompareRow(
+        "displaced-count",
+        "Number of People Displaced",
+        readPathValue(submittedPayload, ["base", "displacement_count"]),
+        readPathValue(retrievedIncident, ["base", "displacement_count"]),
+      ),
+      buildCompareRow(
+        "displacement-causes",
+        "Displacement Cause(s)",
+        readPathValue(submittedPayload, ["base", "displacement_causes"]),
+        readPathValue(retrievedIncident, ["base", "displacement_causes"]),
+      ),
+      buildCompareRow(
+        "narrative-outcome",
+        "Narrative - Outcome",
+        readPathValue(submittedPayload, ["base", "outcome_narrative"]),
+        readPathValue(retrievedIncident, ["base", "outcome_narrative"]),
+      ),
+      buildCompareRow(
+        "narrative-obstacles",
+        "Narrative - Obstacles",
+        readPathValue(submittedPayload, ["base", "impediment_narrative"]),
+        readPathValue(retrievedIncident, ["base", "impediment_narrative"]),
+      ),
+      buildCompareRow(
+        "incident-address-street",
+        "Incident Address - Street",
+        readPathValue(submittedPayload, ["base", "location", "street"]),
+        readPathValue(retrievedIncident, ["base", "location", "street"]),
+      ),
+      buildCompareRow(
+        "incident-address-city",
+        "Incident Address - City",
+        readPathValue(submittedPayload, ["base", "location", "incorporated_municipality"]),
+        readPathValue(retrievedIncident, ["base", "location", "incorporated_municipality"]),
+      ),
+      buildCompareRow(
+        "incident-address-state",
+        "Incident Address - State",
+        readPathValue(submittedPayload, ["base", "location", "state"]),
+        readPathValue(retrievedIncident, ["base", "location", "state"]),
+      ),
+      buildCompareRow(
+        "incident-address-postal",
+        "Incident Address - Postal Code",
+        readPathValue(submittedPayload, ["base", "location", "postal_code"]),
+        readPathValue(retrievedIncident, ["base", "location", "postal_code"]),
+      ),
+      buildCompareRow(
+        "incident-address-county",
+        "Incident Address - County",
+        readPathValue(submittedPayload, ["base", "location", "county"]),
+        readPathValue(retrievedIncident, ["base", "location", "county"]),
+      ),
+      buildCompareRow(
+        "incident-place-type",
+        "Incident Place Type",
+        readPathValue(submittedPayload, ["base", "location", "place_type"]),
+        readPathValue(retrievedIncident, ["base", "location", "place_type"]),
+      ),
+      buildCompareRow(
+        "incident-location-use",
+        "Incident Location Use",
+        submittedLocationUseSummary,
+        retrievedLocationUseSummary,
+      ),
+      buildCompareRow(
+        "dispatch-incident-number",
+        "Dispatch Incident Number",
+        readPathValue(submittedPayload, ["dispatch", "incident_number"]),
+        readPathValue(retrievedIncident, ["dispatch", "incident_number"]),
+      ),
+      buildCompareRow(
+        "dispatch-code",
+        "Dispatch Code",
+        readPathValue(submittedPayload, ["dispatch", "incident_code"]),
+        readPathValue(retrievedIncident, ["dispatch", "incident_code"]),
+      ),
+      buildCompareRow(
+        "dispatch-center-id",
+        "Dispatch Center ID",
+        readPathValue(submittedPayload, ["dispatch", "center_id"]),
+        readPathValue(retrievedIncident, ["dispatch", "center_id"]),
+      ),
+      buildCompareRow(
+        "dispatch-clear-time",
+        "Incident Clear Time",
+        readPathValue(submittedPayload, ["dispatch", "incident_clear"]),
+        readPathValue(retrievedIncident, ["dispatch", "incident_clear"]),
+      ),
+      buildCompareRow(
+        "dispatch-auto-alarm",
+        "Automatic Alarm",
+        readPathValue(submittedPayload, ["dispatch", "automatic_alarm"]),
+        readPathValue(retrievedIncident, ["dispatch", "automatic_alarm"]),
+      ),
+      buildCompareRow(
+        "dispatch-units",
+        "Dispatch Units",
+        submittedDispatchUnits.units,
+        retrievedDispatchUnits.units,
+      ),
+      buildCompareRow(
+        "dispatch-unit-staffing",
+        "Dispatch Unit Staffing",
+        submittedDispatchUnits.staffing,
+        retrievedDispatchUnits.staffing,
+      ),
+      buildCompareRow(
+        "dispatch-unit-response-mode",
+        "Dispatch Unit Response Mode",
+        submittedResponseModes,
+        retrievedResponseModes,
+      ),
+      buildCompareRow(
+        "dispatch-unit-transport-mode",
+        "Dispatch Unit Transport Mode",
+        submittedTransportModes,
+        retrievedTransportModes,
+      ),
+      buildCompareRow(
+        "dispatch-unit-staged-time",
+        "Dispatch Unit Staged Time",
+        submittedStagedTimes,
+        retrievedStagedTimes,
+      ),
+      buildCompareRow(
+        "dispatch-unit-canceled-time",
+        "Dispatch Unit Canceled Time",
+        submittedCanceledTimes,
+        retrievedCanceledTimes,
+      ),
+      buildCompareRow(
+        "dispatch-location-street",
+        "Dispatch Location - Street",
+        readPathValue(submittedPayload, ["dispatch", "location", "street"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "street"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-city",
+        "Dispatch Location - City",
+        readPathValue(submittedPayload, ["dispatch", "location", "incorporated_municipality"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "incorporated_municipality"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-state",
+        "Dispatch Location - State",
+        readPathValue(submittedPayload, ["dispatch", "location", "state"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "state"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-postal",
+        "Dispatch Location - Postal Code",
+        readPathValue(submittedPayload, ["dispatch", "location", "postal_code"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "postal_code"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-county",
+        "Dispatch Location - County",
+        readPathValue(submittedPayload, ["dispatch", "location", "county"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "county"]),
+      ),
+      buildCompareRow("aid-fire-department", "Aid (Fire Department)", submittedAidSummary, retrievedAidSummary),
+      buildCompareRow(
+        "aid-non-fd",
+        "Aid (Non FD)",
+        readPathValue(submittedPayload, ["nonfd_aids"]),
+        readPathValue(retrievedIncident, ["nonfd_aids"]),
+      ),
+    ];
+  };
+
   const runPreExportValidation = async (requestConfig: ExportRequestConfig): Promise<string[]> => {
     if (!requestConfig.isProxyRequest) {
       return [];
@@ -5759,34 +6768,73 @@ function NerisReportFormPage({
       "/api/neris/export",
       "/api/neris/validate",
     );
-    const response = await fetch(validateUrl, {
-      method: "POST",
-      headers: requestConfig.headers,
-      body: JSON.stringify(requestConfig.payload),
-    });
-    const responseText = await response.text();
-    const responseJson = parseJsonResponseText(responseText);
-    const apiIssues = extractProxyApiIssues(responseJson);
-    if (apiIssues.length > 0) {
-      return apiIssues;
+
+    try {
+      const response = await fetch(validateUrl, {
+        method: "POST",
+        headers: requestConfig.headers,
+        body: JSON.stringify(requestConfig.payload),
+      });
+      const responseText = await response.text();
+      const responseJson = parseJsonResponseText(responseText);
+      const apiIssues = extractProxyApiIssues(responseJson);
+      if (apiIssues.length > 0) {
+        return apiIssues;
+      }
+      if (response.ok) {
+        return [];
+      }
+      if (response.status === 404 || response.status === 405) {
+        // If proxy validate isn't available yet, continue with export path.
+        return [];
+      }
+      if (response.status === 422) {
+        return [
+          `API - Validation failed (${response.status}). Review field values and required formats before export.`,
+        ];
+      }
+
+      const statusText = response.statusText.trim()
+        ? response.statusText
+        : response.status === 500
+          ? "Internal Server Error"
+          : "Request Failed";
+      const proxyMessage =
+        typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
+          ? responseJson.message.trim()
+          : "";
+      const troubleshootingMessage =
+        responseJson?.troubleshooting &&
+        typeof responseJson.troubleshooting === "object" &&
+        typeof (responseJson.troubleshooting as Record<string, unknown>).message === "string"
+          ? (((responseJson.troubleshooting as Record<string, unknown>).message as string).trim())
+          : "";
+      const responseSummary =
+        proxyMessage || troubleshootingMessage || responseText.slice(0, 240);
+
+      if (response.status === 500 && !responseSummary) {
+        throw new Error(
+          "Pre-export validation failed (500 Internal Server Error). No response details were returned. If using local proxy, confirm `npm run proxy` is running and check the proxy terminal logs.",
+        );
+      }
+
+      throw new Error(
+        `Pre-export validation failed (${response.status} ${statusText}). ${
+          responseSummary || "No response details."
+        }`,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.startsWith("Pre-export validation failed") ||
+          error.message.startsWith("Pre-export validation request failed"))
+      ) {
+        throw error;
+      }
+      const reason =
+        error instanceof Error ? error.message : "Unknown validation request error.";
+      throw new Error(`Pre-export validation request failed. ${reason}`);
     }
-    if (response.ok) {
-      return [];
-    }
-    if (response.status === 404 || response.status === 405) {
-      // If proxy validate isn't available yet, continue with export path.
-      return [];
-    }
-    if (response.status === 422) {
-      return [
-        `API - Validation failed (${response.status}). Review field values and required formats before export.`,
-      ];
-    }
-    throw new Error(
-      `Pre-export validation failed (${response.status} ${response.statusText}). ${
-        responseText.slice(0, 240) || "No response details."
-      }`,
-    );
   };
 
   const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
@@ -5802,11 +6850,13 @@ function NerisReportFormPage({
   ): Promise<ExportExecutionResult> => {
     const isProxyRequest = requestConfig.isProxyRequest;
     const serializedAidEntries = buildStoredAdditionalAidEntries();
+    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
     writeNerisDraft(callNumber, {
       formValues,
       reportStatus,
       lastSavedAt,
       additionalAidEntries: serializedAidEntries,
+      additionalNonFdAidEntries: serializedNonFdAidEntries,
     });
 
     const requestController = new AbortController();
@@ -6176,6 +7226,89 @@ function NerisReportFormPage({
     }
   };
 
+  const handleGetIncidentTest = async () => {
+    setValidationModal(null);
+    setErrorMessage("");
+    setSaveMessage("Get Incident test in progress...");
+    setIncidentTestResponseDetail("");
+    setIncidentCompareRows([]);
+    setUnmappedFilledFieldLabels([]);
+    setIsFetchingIncidentTest(true);
+    try {
+      const requestConfig = buildExportRequestConfig();
+      if (!requestConfig.isProxyRequest || !requestConfig.exportUrl.includes("/api/neris/export")) {
+        throw new Error(
+          "Get Incident test requires proxy mode. Set Export URL to /api/neris/export, then retry.",
+        );
+      }
+
+      const requestedEntityId = getRequestedEntityId(requestConfig).trim();
+      if (!requestedEntityId) {
+        throw new Error(
+          "Missing NERIS entity ID. Set Vendor/Department code in Customization > NERIS Export Configuration.",
+        );
+      }
+
+      const incidentNerisId = getExistingIncidentNerisIdHint();
+      if (!NERIS_INCIDENT_ID_PATTERN.test(incidentNerisId)) {
+        throw new Error(
+          "No valid incident NERIS ID is available yet. Export this report once, then run Get Incident.",
+        );
+      }
+
+      const getIncidentUrl = requestConfig.exportUrl.replace(
+        "/api/neris/export",
+        "/api/neris/debug/incident",
+      );
+      const query = new URLSearchParams({
+        entityId: requestedEntityId,
+        incidentNerisId,
+      });
+      const response = await fetch(`${getIncidentUrl}?${query.toString()}`, {
+        method: "GET",
+      });
+      const responseText = await response.text();
+      const responseJson = parseJsonResponseText(responseText);
+      const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
+      setIncidentTestResponseDetail(responseDetail);
+
+      if (!response.ok) {
+        const summary =
+          typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
+            ? responseJson.message.trim()
+            : `${response.status} ${response.statusText}`;
+        throw new Error(`Get Incident failed (${response.status} ${response.statusText}). ${summary}`);
+      }
+
+      const responseIncidentId =
+        typeof responseJson?.incidentNerisId === "string" &&
+        responseJson.incidentNerisId.trim().length > 0
+          ? responseJson.incidentNerisId.trim()
+          : incidentNerisId;
+      const retrievedIncident =
+        responseJson?.neris && typeof responseJson.neris === "object"
+          ? (responseJson.neris as Record<string, unknown>)
+          : null;
+      if (retrievedIncident) {
+        const submittedPayload = readLatestSubmittedPayloadForCompare();
+        if (submittedPayload) {
+          setIncidentCompareRows(buildIncidentCompareRows(submittedPayload, retrievedIncident));
+        }
+      }
+      setUnmappedFilledFieldLabels(collectUnmappedFilledFieldLabels());
+      setSaveMessage(
+        `Get Incident succeeded for ${responseIncidentId}. Full response is shown below.`,
+      );
+    } catch (error) {
+      setSaveMessage("");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unexpected Get Incident test error.",
+      );
+    } finally {
+      setIsFetchingIncidentTest(false);
+    }
+  };
+
   const handleValidationModalClose = () => {
     setValidationModal(null);
   };
@@ -6273,6 +7406,31 @@ function NerisReportFormPage({
     }
   };
 
+  const addAdditionalNonFdAidEntry = () => {
+    setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
+    setValidationModal(null);
+  };
+
+  const updateAdditionalNonFdAidEntry = (index: number, nextValue: string) => {
+    setAdditionalNonFdAidEntries((previous) =>
+      previous.map((entry, entryIndex) =>
+        entryIndex === index
+          ? {
+              ...entry,
+              aidType: nextValue,
+            }
+          : entry,
+      ),
+    );
+    setSaveMessage("");
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    if (reportStatus !== "Draft") {
+      setReportStatus("Draft");
+    }
+  };
+
   const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
     const inputId = `neris-field-${field.id}`;
     const value = formValues[field.id] ?? "";
@@ -6301,6 +7459,14 @@ function NerisReportFormPage({
       (field.id === "location_use_primary" || field.id === "location_use_secondary") &&
       field.inputKind === "select" &&
       field.optionsKey === "location_use";
+    const isLocationInUseField =
+      field.id === "location_in_use" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
+    const isLocationUsedAsIntendedField =
+      field.id === "location_used_as_intended" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
     const isNoActionReasonField =
       field.id === "incident_noaction" &&
       field.inputKind === "select" &&
@@ -6353,7 +7519,11 @@ function NerisReportFormPage({
     const isNoActionReasonDisabled = (formValues.incident_actions_taken ?? "").trim().length > 0;
     const isActionsTakenDisabled = hasNoActionSelected;
     const isSingleChoiceButtonField =
-      isNoActionReasonField || isAutomaticAlarmField || isPeoplePresentField;
+      isNoActionReasonField ||
+      isAutomaticAlarmField ||
+      isPeoplePresentField ||
+      isLocationInUseField ||
+      isLocationUsedAsIntendedField;
     const displacedNumberValue = Number.parseInt(
       (formValues.incident_displaced_number ?? "").trim(),
       10,
@@ -6361,6 +7531,13 @@ function NerisReportFormPage({
     const selectedPrimaryAidDepartment = (formValues.incident_aid_department_name ?? "").trim();
     const selectedAdditionalAidDepartments = additionalAidEntries
       .map((entry) => entry.aidDepartment.trim())
+      .filter((entry) => entry.length > 0);
+    const selectedPrimaryNonFdAidTypes = (formValues.incident_aid_nonfd ?? "")
+      .split(",")
+      .map((entry) => entry.trim())
+      .filter((entry) => entry.length > 0);
+    const selectedAdditionalNonFdAidTypes = additionalNonFdAidEntries
+      .map((entry) => entry.aidType.trim())
       .filter((entry) => entry.length > 0);
 
     if (
@@ -6379,6 +7556,15 @@ function NerisReportFormPage({
       return null;
     }
     if (field.id === "location_cross_street_type" && !showCrossStreetTypeField) {
+      return null;
+    }
+    if (field.id === "location_cross_street_name" && !showCrossStreetTypeField) {
+      return null;
+    }
+    if (
+      isLocationUsedAsIntendedField &&
+      (formValues.location_in_use ?? "").trim() !== "YES"
+    ) {
       return null;
     }
     if (currentSection.id === "resources" && field.id.startsWith("resource_")) {
@@ -6521,6 +7707,40 @@ function NerisReportFormPage({
                 {sectionErrors.incident_aid_nonfd ? (
                   <small className="field-error">{sectionErrors.incident_aid_nonfd}</small>
                 ) : null}
+                {additionalNonFdAidEntries.map((entry, entryIndex) => (
+                  <div
+                    key={`additional-nonfd-aid-${entryIndex}`}
+                    className="neris-additional-aid-entry"
+                  >
+                    <label className="neris-aid-subfield-label">Aid Type</label>
+                    <NerisFlatSingleOptionSelect
+                      inputId={`${inputId}-additional-nonfd-aid-type-${entryIndex}`}
+                      value={entry.aidType}
+                      options={getNerisValueOptions("aid_nonfd")}
+                      onChange={(nextValue) =>
+                        updateAdditionalNonFdAidEntry(entryIndex, nextValue)
+                      }
+                      placeholder="Select non FD aid type"
+                      searchPlaceholder="Search non FD aid types..."
+                      isOptionDisabled={(optionValue) => {
+                        if (optionValue === entry.aidType) {
+                          return false;
+                        }
+                        if (selectedPrimaryNonFdAidTypes.includes(optionValue)) {
+                          return true;
+                        }
+                        return selectedAdditionalNonFdAidTypes.includes(optionValue);
+                      }}
+                    />
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="neris-link-button"
+                  onClick={addAdditionalNonFdAidEntry}
+                >
+                  Add Additional Aid Type -&gt; RL
+                </button>
               </div>
             ) : null}
 
@@ -6573,7 +7793,7 @@ function NerisReportFormPage({
                 <NerisFlatSingleOptionSelect
                   inputId={`${inputId}-aid-department`}
                   value={formValues.incident_aid_department_name ?? ""}
-                  options={getNerisValueOptions("aid_department")}
+                  options={aidDepartmentOptions}
                   onChange={(nextValue) =>
                     updateFieldValue("incident_aid_department_name", nextValue)
                   }
@@ -6588,86 +7808,84 @@ function NerisReportFormPage({
                   <small className="field-error">{sectionErrors.incident_aid_department_name}</small>
                 ) : null}
 
-                {(formValues.incident_aid_direction ?? "") === "RECEIVED" ? (
-                  <>
-                    {additionalAidEntries.map((entry, entryIndex) => (
-                      <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
-                        <label className="neris-aid-subfield-label">Aid direction</label>
-                        <div
-                          className="neris-single-choice-row"
-                          role="group"
-                          aria-label="Additional aid direction"
-                        >
-                          {getNerisValueOptions("aid_direction").map((option) => {
-                            const isSelected = option.value === entry.aidDirection;
-                            return (
-                              <button
-                                key={`additional-aid-direction-${entryIndex}-${option.value}`}
-                                type="button"
-                                className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                                aria-pressed={isSelected}
-                                onClick={() =>
-                                  updateAdditionalAidEntry(
-                                    entryIndex,
-                                    "aidDirection",
-                                    togglePillValue(entry.aidDirection, option.value),
-                                  )
-                                }
-                              >
-                                {option.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-
-                        <label className="neris-aid-subfield-label">Aid Type</label>
-                        <NerisFlatSingleOptionSelect
-                          inputId={`${inputId}-additional-aid-type-${entryIndex}`}
-                          value={entry.aidType}
-                          options={getNerisValueOptions("aid_type")}
-                          onChange={(nextValue) =>
-                            updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
-                          }
-                          placeholder="Select aid type"
-                          searchPlaceholder="Search aid types..."
-                        />
-
-                        <label className="neris-aid-subfield-label">Aid department name(s)</label>
-                        <NerisFlatSingleOptionSelect
-                          inputId={`${inputId}-additional-aid-department-${entryIndex}`}
-                          value={entry.aidDepartment}
-                          options={getNerisValueOptions("aid_department")}
-                          onChange={(nextValue) =>
-                            updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
-                          }
-                          placeholder="Select aid department"
-                          searchPlaceholder="Search aid departments..."
-                          isOptionDisabled={(optionValue) => {
-                            if (optionValue === entry.aidDepartment) {
-                              return false;
-                            }
-                            if (selectedPrimaryAidDepartment === optionValue) {
-                              return true;
-                            }
-                            return additionalAidEntries.some(
-                              (candidateEntry, candidateIndex) =>
-                                candidateIndex !== entryIndex &&
-                                candidateEntry.aidDepartment.trim() === optionValue,
-                            );
-                          }}
-                        />
+                <>
+                  {additionalAidEntries.map((entry, entryIndex) => (
+                    <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
+                      <label className="neris-aid-subfield-label">Aid direction</label>
+                      <div
+                        className="neris-single-choice-row"
+                        role="group"
+                        aria-label="Additional aid direction"
+                      >
+                        {getNerisValueOptions("aid_direction").map((option) => {
+                          const isSelected = option.value === entry.aidDirection;
+                          return (
+                            <button
+                              key={`additional-aid-direction-${entryIndex}-${option.value}`}
+                              type="button"
+                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
+                              aria-pressed={isSelected}
+                              onClick={() =>
+                                updateAdditionalAidEntry(
+                                  entryIndex,
+                                  "aidDirection",
+                                  togglePillValue(entry.aidDirection, option.value),
+                                )
+                              }
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
                       </div>
-                    ))}
 
-                    <button
-                      type="button"
-                      className="neris-link-button"
-                      onClick={addAdditionalAidEntry}
-                    >
-                      Add Additional Aid
-                    </button>
-                  </>
-                ) : null}
+                      <label className="neris-aid-subfield-label">Aid Type</label>
+                      <NerisFlatSingleOptionSelect
+                        inputId={`${inputId}-additional-aid-type-${entryIndex}`}
+                        value={entry.aidType}
+                        options={getNerisValueOptions("aid_type")}
+                        onChange={(nextValue) =>
+                          updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
+                        }
+                        placeholder="Select aid type"
+                        searchPlaceholder="Search aid types..."
+                      />
+
+                      <label className="neris-aid-subfield-label">Aid department name(s)</label>
+                      <NerisFlatSingleOptionSelect
+                        inputId={`${inputId}-additional-aid-department-${entryIndex}`}
+                        value={entry.aidDepartment}
+                        options={aidDepartmentOptions}
+                        onChange={(nextValue) =>
+                          updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
+                        }
+                        placeholder="Select aid department"
+                        searchPlaceholder="Search aid departments..."
+                        isOptionDisabled={(optionValue) => {
+                          if (optionValue === entry.aidDepartment) {
+                            return false;
+                          }
+                          if (selectedPrimaryAidDepartment === optionValue) {
+                            return true;
+                          }
+                          return additionalAidEntries.some(
+                            (candidateEntry, candidateIndex) =>
+                              candidateIndex !== entryIndex &&
+                              candidateEntry.aidDepartment.trim() === optionValue,
+                          );
+                        }}
+                      />
+                    </div>
+                  ))}
+
+                  <button
+                    type="button"
+                    className="neris-link-button"
+                    onClick={addAdditionalAidEntry}
+                  >
+                    Add Additional Aid Type -&gt; RL
+                  </button>
+                </>
               </div>
             ) : null}
           </div>
@@ -6815,6 +8033,14 @@ function NerisReportFormPage({
     );
   };
 
+  const compareMatchedCount = incidentCompareRows.filter((row) => row.status === "match").length;
+  const compareNeedsReviewCount = incidentCompareRows.length - compareMatchedCount;
+  const visibleUnmappedFieldLabels = unmappedFilledFieldLabels.slice(0, 8);
+  const hiddenUnmappedFieldCount = Math.max(
+    0,
+    unmappedFilledFieldLabels.length - visibleUnmappedFieldLabels.length,
+  );
+
   if (!detail) {
     return (
       <section className="page-section">
@@ -6857,6 +8083,73 @@ function NerisReportFormPage({
           </div>
           {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
+          {incidentCompareRows.length > 0 ? (
+            <section className="neris-incident-compare panel" aria-live="polite">
+              <div className="neris-incident-compare-header">
+                <h2>Submitted vs Retrieved</h2>
+                <p>
+                  {compareMatchedCount} matched • {compareNeedsReviewCount} need review
+                </p>
+              </div>
+              <div className="neris-incident-compare-list">
+                {incidentCompareRows.map((row) => (
+                  <article
+                    key={row.id}
+                    className={`neris-incident-compare-row neris-incident-compare-row-${row.status}`}
+                  >
+                    <div className="neris-incident-compare-row-top">
+                      <h3>{row.label}</h3>
+                      <span
+                        className={`neris-incident-compare-badge neris-incident-compare-badge-${row.status}`}
+                      >
+                        {row.status === "match" ? "Matched" : "Needs review"}
+                      </span>
+                    </div>
+                    <div className="neris-incident-compare-values">
+                      <div>
+                        <span>Submitted</span>
+                        <p>{row.submittedValue}</p>
+                      </div>
+                      <div>
+                        <span>Retrieved</span>
+                        <p>{row.retrievedValue}</p>
+                      </div>
+                    </div>
+                    {row.helpText ? (
+                      <p className="neris-incident-compare-help-text">{row.helpText}</p>
+                    ) : null}
+                  </article>
+                ))}
+              </div>
+              {visibleUnmappedFieldLabels.length > 0 ? (
+                <div className="neris-incident-compare-unmapped">
+                  <h3>Form fields with values not yet sent to NERIS</h3>
+                  <p>
+                    These fields currently have values in Fire Ultimate, but are not mapped into
+                    the export payload yet.
+                  </p>
+                  <div className="neris-incident-compare-unmapped-list">
+                    {visibleUnmappedFieldLabels.map((label) => (
+                      <span key={`unmapped-${label}`} className="neris-incident-compare-unmapped-pill">
+                        {label}
+                      </span>
+                    ))}
+                    {hiddenUnmappedFieldCount > 0 ? (
+                      <span className="neris-incident-compare-unmapped-pill">
+                        +{hiddenUnmappedFieldCount} more
+                      </span>
+                    ) : null}
+                  </div>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
+          {incidentTestResponseDetail ? (
+            <details className="neris-incident-test-response">
+              <summary>Get Incident test response</summary>
+              <pre className="export-attempt-json">{incidentTestResponseDetail}</pre>
+            </details>
+          ) : null}
         </div>
         <div className="header-actions">
           <button type="button" className="secondary-button compact-button">
@@ -6869,6 +8162,14 @@ function NerisReportFormPage({
             disabled={isExporting}
           >
             {isExporting ? "Exporting..." : "Export"}
+          </button>
+          <button
+            type="button"
+            className="secondary-button compact-button"
+            onClick={handleGetIncidentTest}
+            disabled={isExporting || isFetchingIncidentTest}
+          >
+            {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
           </button>
           <button type="button" className="secondary-button compact-button">
             CAD notes
@@ -7757,9 +9058,13 @@ function NerisReportFormPage({
                     const enrouteTimeError =
                       sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime")] ??
                       "";
+                    const stagedTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "stagedTime")] ?? "";
                     const onSceneTimeError =
                       sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime")] ??
                       "";
+                    const canceledTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "canceledTime")] ?? "";
                     const clearTimeError =
                       sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "clearTime")] ?? "";
 
@@ -7796,8 +9101,16 @@ function NerisReportFormPage({
                                 <strong>{toResourceSummaryTime(unitEntry.enrouteTime)}</strong>
                               </div>
                               <div className="neris-resource-time-item">
+                                <span>Staged</span>
+                                <strong>{toResourceSummaryTime(unitEntry.stagedTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
                                 <span>On Scene</span>
                                 <strong>{toResourceSummaryTime(unitEntry.onSceneTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>Canceled</span>
+                                <strong>{toResourceSummaryTime(unitEntry.canceledTime)}</strong>
                               </div>
                               <div className="neris-resource-time-item">
                                 <span>Clear</span>
@@ -7853,6 +9166,33 @@ function NerisReportFormPage({
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "responseMode",
+                                            isSelected ? "" : option.value,
+                                          )
+                                        }
+                                      >
+                                        {option.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="neris-resource-field field-span-two">
+                                <label>Transport Mode (to hospital)</label>
+                                <div className="neris-single-choice-row" role="group" aria-label="Unit transport mode">
+                                  {responseModeOptions.map((option) => {
+                                    const isSelected = option.value === unitEntry.transportMode;
+                                    return (
+                                      <button
+                                        key={`${unitEntry.id}-transport-mode-${option.value}`}
+                                        type="button"
+                                        className={`neris-single-choice-button${
+                                          isSelected ? " selected" : ""
+                                        }`}
+                                        aria-pressed={isSelected}
+                                        onClick={() =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "transportMode",
                                             isSelected ? "" : option.value,
                                           )
                                         }
@@ -7955,6 +9295,24 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label>
+                                    Staged
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.stagedTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "stagedTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {stagedTimeError ? (
+                                      <small className="field-error">{stagedTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
                                     On Scene
                                     <input
                                       type="datetime-local"
@@ -7970,6 +9328,24 @@ function NerisReportFormPage({
                                     />
                                     {onSceneTimeError ? (
                                       <small className="field-error">{onSceneTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
+                                    Canceled
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.canceledTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "canceledTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {canceledTimeError ? (
+                                      <small className="field-error">{canceledTimeError}</small>
                                     ) : null}
                                   </label>
                                   <label>
@@ -8000,6 +9376,13 @@ function NerisReportFormPage({
                                   onClick={() => toggleResourceCanceledEnroute(unitEntry.id)}
                                 >
                                   Dispatched and canceled en route
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() => populateResourceTimesFromDispatch(unitEntry.id)}
+                                >
+                                  Populate Date
                                 </button>
                               </div>
                             ) : null}
@@ -8163,6 +9546,9 @@ function NerisReportFormPage({
                     }
                     placeholder="Select personnel"
                     searchPlaceholder="Search personnel..."
+                    isOptionDisabled={(optionValue) =>
+                      personnelAssignedToOtherUnits.has(optionValue)
+                    }
                   />
                   <small className="field-hint">
                     Select one or more personnel. Click outside this dialog to close.
@@ -8244,7 +9630,7 @@ function NerisReportFormPage({
                         setShowCrossStreetTypeField((previous) => !previous)
                       }
                     >
-                      Add Cross Street
+                      Add Cross Street -&gt; RL
                     </button>
                   </div>,
                 );
@@ -8264,6 +9650,34 @@ function NerisReportFormPage({
               </ul>
             </div>
           ) : null}
+
+          <details className="neris-required-matrix">
+            <summary>NERIS required field matrix (minimum + incident-family)</summary>
+            <div className="neris-required-matrix-grid">
+              <div>
+                <strong>Core minimum</strong>
+                <ul>
+                  {requiredMatrixRows.coreRows.map((row) => (
+                    <li key={`required-core-${row.fieldId}`}>{row.label}</li>
+                  ))}
+                </ul>
+              </div>
+              <div>
+                <strong>
+                  Incident family: {primaryIncidentCategory || "Select Primary Incident Type"}
+                </strong>
+                <ul>
+                  {requiredMatrixRows.familyRows.length ? (
+                    requiredMatrixRows.familyRows.map((row) => (
+                      <li key={`required-family-${row.fieldId}`}>{row.label}</li>
+                    ))
+                  ) : (
+                    <li>No additional family-specific requirements yet.</li>
+                  )}
+                </ul>
+              </div>
+            </div>
+          </details>
 
           <div className="neris-form-actions">
             <button type="button" className="secondary-button compact-button" onClick={handleBack}>

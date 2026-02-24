@@ -46,6 +46,7 @@ After I answer:
 4) If branch handoff folder does not exist, create it:
    - agent-handoffs/branches/<branch-slug>/
    - agent-handoffs/branches/<branch-slug>/sessions/
+   - agent-handoffs/branches/<branch-slug>/conversations/
    - create ACTIVE_CONTEXT.md from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md
    - create first session note from agent-handoffs/HANDOFF_TEMPLATE.md
    - create COPY_PASTE_START_PROMPT.md from COPY_PASTE_START_PROMPT_TEMPLATE.md
@@ -53,6 +54,7 @@ After I answer:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
    - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
+   - all conversations in agent-handoffs/branches/<branch-slug>/conversations/
 6) Before coding, summarize:
    - current branch + latest commit
    - what previous agent completed
@@ -129,6 +131,22 @@ After I answer:
    - exact next steps
 6) Commit + push these branch handoff files.
 7) Then continue normal implementation flow.
+```
+---
+
+## 5) Close Agent/Conversation (Send to Agent to ensure they update relevant information)
+
+```text
+This conversation is coming to an end for our current session. Follow the steps below to ensure we preserve the branch. update active_context.md and session notes.
+
+MANDATORY FIRST RESPONSE:
+-confirm current branch
+
+After I answer:
+1) Update agent-handoffs/branches/<branch-slug>/active_context.md
+2) finalize session note
+3) Create or update a copy of all conversation history as a backup in agent-handoffs/branches/<branch-slug>/conversations/<timestamp>-<agent>-conversation.md
+
 ```
 
 ---
