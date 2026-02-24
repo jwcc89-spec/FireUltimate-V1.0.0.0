@@ -7431,31 +7431,6 @@ function NerisReportFormPage({
     }
   };
 
-  const addAdditionalNonFdAidEntry = () => {
-    setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
-    setValidationModal(null);
-  };
-
-  const updateAdditionalNonFdAidEntry = (index: number, nextValue: string) => {
-    setAdditionalNonFdAidEntries((previous) =>
-      previous.map((entry, entryIndex) =>
-        entryIndex === index
-          ? {
-              ...entry,
-              aidType: nextValue,
-            }
-          : entry,
-      ),
-    );
-    setSaveMessage("");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
   const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
     const inputId = `neris-field-${field.id}`;
     const value = formValues[field.id] ?? "";
