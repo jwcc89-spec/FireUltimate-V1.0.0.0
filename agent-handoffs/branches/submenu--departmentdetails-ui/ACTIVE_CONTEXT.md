@@ -4,19 +4,20 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details workflow refinement pass: timezone DD-S, persisted save behavior, revised Personnel/Apparatus/Stations DD-S/DD-M UX, and mutual-aid NERIS-source options with fallback.
+- Department Details UX alignment pass: local-labeled GMT options, Station/Apparatus structured DD-S/DD-M editing popups, new section grouping (Department Details/Resources/Access), and field-map updates.
 
 ## Latest known status
-- Latest commit before this update: 5acd837 - Expand Department Details editor workflows and sidebar logo behavior.
-- Working tree includes requested UX adjustments and persistence changes pending commit.
+- Latest commit before this update: dd18782 - Refine Department Details DD-S/DD-M workflows and persistence.
+- Working tree includes structured Stations/Apparatus forms and updated timezone labels pending commit.
 
 ## Current blocker / status
-- No blocker. Lint clean after workflow refinement updates.
+- No blocker. Lint clean after UX alignment updates.
 
 ## External dependency status
 - 
 
 ## Recent key commits (latest first)
+- dd18782 Refine Department Details DD-S/DD-M workflows and persistence.
 - 5acd837 Expand Department Details editor workflows and sidebar logo behavior.
 - 74fd7e6 Add Department Details admin submenu UI scaffold.
 - dce98ef ACTIVE_CONTEXT: latest commit 52cb8b4

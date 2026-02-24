@@ -25,6 +25,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Personnel | `personnel` | Use **Edit Personnel** button to open add/update screen |
 | Apparatus | `apparatus` | Use **Edit Apparatus** button to open add/update screen |
 | Stations | `stations` | Use **Edit Stations** button to open add/update screen |
+| Personnel Qualifications | `personnelQualifications` | Use **Edit Personnel Qualifications** button to add qualification values |
 | Mutual Aid Departments | `mutualAidDepartments` | Use **Edit Mutual Aid Departments** button to open add/update screen |
 | Shift Information | `shiftInformation` | Use **Edit Shift Information** for Shift Type, Shift Duration, Recurrence, and Location |
 | User Type | `userType` | Use **Edit User Type** for defaults and custom role values |
@@ -39,6 +40,27 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Recurrence Custom Value | `recurrenceCustomValue` |
 | Location | `location` |
 
+## Station Fields
+
+| UI Field Label | Suggested Field Key |
+| --- | --- |
+| Station Name | `stationName` |
+| Address | `address` |
+| City | `city` |
+| State | `state` |
+| Phone | `phone` |
+| Mobile Phone | `mobilePhone` |
+
+## Apparatus Fields
+
+| UI Field Label | Suggested Field Key |
+| --- | --- |
+| Unit ID | `unitId` |
+| Unit Type | `unitType` |
+| Minimum Personnel | `minimumPersonnel` |
+| Personnel Requirements (DD-M) | `personnelRequirements` |
+| Station (DD-S) | `station` |
+
 ## Personnel Assignment Fields (Edit Screen)
 
 | UI Field Label | Suggested Field Key | Source |
@@ -47,6 +69,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Apparatus Assignment (DD-S) | `assignedApparatus` | `apparatus` values |
 | Station (DD-S) | `assignedStation` | `stations` values |
 | User Type (DD-S) | `assignedUserType` | `userType` values |
+| Time Zone (DD-S) | `assignedTimeZone` | Department GMT list with local labels |
 
 ## Notes
 

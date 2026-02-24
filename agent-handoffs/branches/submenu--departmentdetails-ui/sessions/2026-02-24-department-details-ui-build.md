@@ -33,6 +33,12 @@
     - Shift Information location changed to optional DD-S sourced from Stations.
     - Removed extra lower Close buttons where requested.
     - Mutual Aid Departments now try loading from `/api/neris/debug/entities` and fall back to valid FD ID options.
+  - Applied additional alignment updates:
+    - Time Zone values now include local city labels (example: `GMT-06:00 Chicago`).
+    - Stations/Apparatus/Personnel popups use dropdown-first DD-S and DD-M flows.
+    - Stations now include structured fields (name/address/city/state/phone/mobile) with city/state auto-fill from department values on add.
+    - Apparatus now include structured fields (Unit ID, Unit Type from NERIS unit type values, Minimum Personnel, Personnel Requirements, Station).
+    - Added Personnel Qualifications and section groupings: Department Details, Department Resources, Department Access.
 - Files changed:
   - `src/appData.ts`
   - `src/App.tsx`
@@ -54,6 +60,7 @@
   - Expected changes are present in app data, page component, styling, and docs file.
   - Expanded workflow update remains lint clean.
   - Follow-up refinement pass remains lint clean.
+  - Alignment update remains lint clean.
 
 ## Git status
 - Commit(s) created:
