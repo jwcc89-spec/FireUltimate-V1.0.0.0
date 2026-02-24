@@ -7,7 +7,7 @@
 - Department Details: personnel credential schema (qualifications DD-M) and persistence for DD-S/DD-M edit flows.
 
 ## Latest known status
-- Latest commit: c57038c - ACTIVE_CONTEXT: set latest commit 446ba73.
+- Latest commit: 0b42ddd - ACTIVE_CONTEXT: latest commit c57038c, session note final.
 - Personnel credential schema implemented: `qualifications: string[]` on Personnel records, DD-M field in edit form, migration for legacy data.
 
 ## Current blocker / status
@@ -17,6 +17,7 @@
 - 
 
 ## Recent key commits (latest first)
+- 0b42ddd ACTIVE_CONTEXT: latest commit c57038c, session note final
 - c57038c ACTIVE_CONTEXT: set latest commit 446ba73
 - 446ba73 Add personnel credential schema (qualifications DD-M) and persistence
 - dd18782 Refine Department Details DD-S/DD-M workflows and persistence
