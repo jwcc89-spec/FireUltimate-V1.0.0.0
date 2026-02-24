@@ -3976,6 +3976,8 @@ function NerisReportFormPage({
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
+  const [isFetchingIncidentTest, setIsFetchingIncidentTest] = useState(false);
+  const [incidentTestResponseDetail, setIncidentTestResponseDetail] = useState("");
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
@@ -6176,6 +6178,76 @@ function NerisReportFormPage({
     }
   };
 
+  const handleGetIncidentTest = async () => {
+    setValidationModal(null);
+    setErrorMessage("");
+    setSaveMessage("Get Incident test in progress...");
+    setIncidentTestResponseDetail("");
+    setIsFetchingIncidentTest(true);
+    try {
+      const requestConfig = buildExportRequestConfig();
+      if (!requestConfig.isProxyRequest || !requestConfig.exportUrl.includes("/api/neris/export")) {
+        throw new Error(
+          "Get Incident test requires proxy mode. Set Export URL to /api/neris/export, then retry.",
+        );
+      }
+
+      const requestedEntityId = getRequestedEntityId(requestConfig).trim();
+      if (!requestedEntityId) {
+        throw new Error(
+          "Missing NERIS entity ID. Set Vendor/Department code in Customization > NERIS Export Configuration.",
+        );
+      }
+
+      const incidentNerisId = getExistingIncidentNerisIdHint();
+      if (!NERIS_INCIDENT_ID_PATTERN.test(incidentNerisId)) {
+        throw new Error(
+          "No valid incident NERIS ID is available yet. Export this report once, then run Get Incident.",
+        );
+      }
+
+      const getIncidentUrl = requestConfig.exportUrl.replace(
+        "/api/neris/export",
+        "/api/neris/debug/incident",
+      );
+      const query = new URLSearchParams({
+        entityId: requestedEntityId,
+        incidentNerisId,
+      });
+      const response = await fetch(`${getIncidentUrl}?${query.toString()}`, {
+        method: "GET",
+      });
+      const responseText = await response.text();
+      const responseJson = parseJsonResponseText(responseText);
+      const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
+      setIncidentTestResponseDetail(responseDetail);
+
+      if (!response.ok) {
+        const summary =
+          typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
+            ? responseJson.message.trim()
+            : `${response.status} ${response.statusText}`;
+        throw new Error(`Get Incident failed (${response.status} ${response.statusText}). ${summary}`);
+      }
+
+      const responseIncidentId =
+        typeof responseJson?.incidentNerisId === "string" &&
+        responseJson.incidentNerisId.trim().length > 0
+          ? responseJson.incidentNerisId.trim()
+          : incidentNerisId;
+      setSaveMessage(
+        `Get Incident succeeded for ${responseIncidentId}. Full response is shown below.`,
+      );
+    } catch (error) {
+      setSaveMessage("");
+      setErrorMessage(
+        error instanceof Error ? error.message : "Unexpected Get Incident test error.",
+      );
+    } finally {
+      setIsFetchingIncidentTest(false);
+    }
+  };
+
   const handleValidationModalClose = () => {
     setValidationModal(null);
   };
@@ -6857,6 +6929,12 @@ function NerisReportFormPage({
           </div>
           {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
+          {incidentTestResponseDetail ? (
+            <details className="neris-incident-test-response">
+              <summary>Get Incident test response</summary>
+              <pre className="export-attempt-json">{incidentTestResponseDetail}</pre>
+            </details>
+          ) : null}
         </div>
         <div className="header-actions">
           <button type="button" className="secondary-button compact-button">
@@ -6869,6 +6947,14 @@ function NerisReportFormPage({
             disabled={isExporting}
           >
             {isExporting ? "Exporting..." : "Export"}
+          </button>
+          <button
+            type="button"
+            className="secondary-button compact-button"
+            onClick={handleGetIncidentTest}
+            disabled={isExporting || isFetchingIncidentTest}
+          >
+            {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
           </button>
           <button type="button" className="secondary-button compact-button">
             CAD notes

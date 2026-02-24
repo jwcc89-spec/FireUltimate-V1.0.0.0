@@ -695,6 +695,120 @@ app.get("/api/neris/debug/entities", async (request, response) => {
   }
 });
 
+function readQueryValue(queryValue) {
+  if (Array.isArray(queryValue)) {
+    return trimValue(queryValue[0]);
+  }
+  return trimValue(queryValue);
+}
+
+app.get("/api/neris/debug/incident", async (request, response) => {
+  const config = getProxyConfig();
+  const requestedIncidentNerisId =
+    readQueryValue(request.query.incidentNerisId) ||
+    readQueryValue(request.query.nerisId) ||
+    readQueryValue(request.query.incidentId);
+  const incidentEntityFromId = NERIS_INCIDENT_ID_PATTERN.test(requestedIncidentNerisId)
+    ? requestedIncidentNerisId.split("|")[0]
+    : "";
+  const requestedEntityId =
+    readQueryValue(request.query.entityId) || incidentEntityFromId || config.defaultEntityId;
+
+  if (!requestedEntityId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Missing NERIS entity ID. Provide ?entityId=... or set NERIS_ENTITY_ID in .env.server.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(requestedEntityId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: requestedEntityId,
+    });
+    return;
+  }
+  if (!requestedIncidentNerisId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Missing incident NERIS ID. Provide ?incidentNerisId=FD########|incident-number|##########.",
+      submittedEntityId: requestedEntityId,
+    });
+    return;
+  }
+  if (!NERIS_INCIDENT_ID_PATTERN.test(requestedIncidentNerisId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid incident NERIS ID format. Expected FD########|incident-number|##########.",
+      submittedEntityId: requestedEntityId,
+      incidentNerisId: requestedIncidentNerisId,
+    });
+    return;
+  }
+  if (incidentEntityFromId && incidentEntityFromId !== requestedEntityId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Entity mismatch. incidentNerisId prefix does not match submitted entityId.",
+      submittedEntityId: requestedEntityId,
+      incidentNerisId: requestedIncidentNerisId,
+    });
+    return;
+  }
+
+  try {
+    const accessToken = await getAccessToken(config);
+    const nerisResponse = await fetch(
+      `${config.createIncidentUrlPrefix}/${encodeURIComponent(requestedEntityId)}/${encodeURIComponent(
+        requestedIncidentNerisId,
+      )}`,
+      {
+        method: "GET",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      },
+    );
+    const nerisResponseBody = await parseResponseBody(nerisResponse);
+    let troubleshooting = null;
+    if (nerisResponse.status === 403) {
+      const entitiesResult = await fetchAccessibleEntities(config, accessToken);
+      const entityIsAccessible = entitiesResult.entityIds.includes(requestedEntityId);
+      troubleshooting = {
+        message: entityIsAccessible
+          ? "Token can list this entity, but read permission is denied for incident retrieval."
+          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+        accessibleEntityIds: entitiesResult.entityIds,
+        entitiesLookupStatus: entitiesResult.status,
+        entityIsAccessible,
+      };
+    }
+
+    response.status(nerisResponse.status).json({
+      ok: nerisResponse.ok,
+      status: nerisResponse.status,
+      statusText: nerisResponse.statusText,
+      submittedEntityId: requestedEntityId,
+      incidentNerisId: requestedIncidentNerisId,
+      neris: nerisResponseBody,
+      troubleshooting,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected proxy get-incident debug error.",
+      submittedEntityId: requestedEntityId,
+      incidentNerisId: requestedIncidentNerisId,
+    });
+  }
+});
+
 function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
   const integration =
     requestBody?.integration && typeof requestBody.integration === "object"
