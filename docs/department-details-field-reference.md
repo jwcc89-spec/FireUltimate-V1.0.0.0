@@ -79,3 +79,4 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 - Personnel assignment timezone is removed; personnel inherit department timezone.
 - Mutual Aid Departments are sourced from `/api/neris/debug/entities` when available and fall back to valid FD ID options if unavailable.
 - Clicking save actions stores values to browser localStorage (`fire-ultimate-department-details`), including **Save Department Details** and editor save buttons.
+- When the proxy server is running (`npm run proxy`), the app also syncs to `/api/department-details` (GET on load, POST on save). Data is stored in `data/department-details.json` on the server.

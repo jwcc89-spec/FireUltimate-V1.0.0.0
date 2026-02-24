@@ -4,11 +4,11 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details: personnel credential schema (qualifications DD-M) and persistence for DD-S/DD-M edit flows.
+- Department Details: API persistence (GET/POST) with localStorage fallback.
 
 ## Latest known status
-- Latest commit: 0b42ddd - ACTIVE_CONTEXT: latest commit c57038c, session note final.
-- Personnel credential schema implemented: `qualifications: string[]` on Personnel records, DD-M field in edit form, migration for legacy data.
+- Latest commit: (pending this session)
+- API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 
 ## Current blocker / status
 - No blocker. Lint clean.
@@ -32,4 +32,4 @@
 1. Read `cursoragent-context.md`.
 2. Read this file.
 3. Read latest note in `agent-handoffs/branches/submenu--departmentdetails-ui/sessions/`.
-4. Add persistence/API integration for Department Details form and collections.
+4. Implement additional validation for multi-entry popups as user provides required fields.

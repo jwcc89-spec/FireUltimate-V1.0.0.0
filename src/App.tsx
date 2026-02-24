@@ -471,6 +471,24 @@ function readDepartmentDetailsDraft(): Record<string, unknown> {
     return {};
   }
 }
+
+function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
+  const d = raw && typeof raw === "object" ? raw : {};
+  const personnelRaw = d.personnelRecords;
+  const personnelRecords = Array.isArray(personnelRaw)
+    ? personnelRaw.map((entry: Record<string, unknown>) => ({
+        name: String(entry?.name ?? ""),
+        shift: String(entry?.shift ?? ""),
+        apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
+        station: String(entry?.station ?? ""),
+        userType: String(entry?.userType ?? ""),
+        qualifications: Array.isArray(entry?.qualifications)
+          ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+          : [],
+      }))
+    : [];
+  return { ...d, personnelRecords };
+}
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -8466,7 +8484,7 @@ function NerisReportFormPage({
 }
 
 function DepartmentDetailsPage() {
-  const initialDepartmentDraft = readDepartmentDetailsDraft();
+  const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
   const [departmentName, setDepartmentName] = useState(String(initialDepartmentDraft.departmentName ?? ""));
   const [departmentStreet, setDepartmentStreet] = useState(String(initialDepartmentDraft.departmentStreet ?? ""));
   const [departmentCity, setDepartmentCity] = useState(String(initialDepartmentDraft.departmentCity ?? ""));
@@ -8656,6 +8674,61 @@ function DepartmentDetailsPage() {
       }
     };
     void fetchEntityOptions();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadFromApi = async () => {
+      try {
+        const response = await fetch("/api/department-details");
+        if (!response.ok || !isMounted) return;
+        const json = (await response.json()) as { ok?: boolean; data?: Record<string, unknown> };
+        if (!json?.ok || !json?.data || !isMounted) return;
+        const d = normalizeDepartmentDraft(json.data);
+        setDepartmentName(String(d.departmentName ?? ""));
+        setDepartmentStreet(String(d.departmentStreet ?? ""));
+        setDepartmentCity(String(d.departmentCity ?? ""));
+        setDepartmentState(String(d.departmentState ?? ""));
+        setDepartmentZipCode(String(d.departmentZipCode ?? ""));
+        setDepartmentTimeZone(String(d.departmentTimeZone ?? ""));
+        setMainContactName(String(d.mainContactName ?? ""));
+        setMainContactPhone(String(d.mainContactPhone ?? ""));
+        setSecondaryContactName(String(d.secondaryContactName ?? ""));
+        setSecondaryContactPhone(String(d.secondaryContactPhone ?? ""));
+        setDepartmentLogoFileName(String(d.departmentLogoFileName ?? "No file selected"));
+        setStationRecords(
+          Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [],
+        );
+        setApparatusRecords(
+          Array.isArray(d.apparatusRecords) ? (d.apparatusRecords as DepartmentApparatusRecord[]) : [],
+        );
+        setShiftInformationEntries(
+          Array.isArray(d.shiftInformationEntries)
+            ? (d.shiftInformationEntries as ShiftInformationEntry[])
+            : [],
+        );
+        setPersonnelRecords(
+          Array.isArray(d.personnelRecords) ? (d.personnelRecords as DepartmentPersonnelRecord[]) : [],
+        );
+        setPersonnelQualifications(
+          Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
+        );
+        setUserTypeValues(
+          Array.isArray(d.userTypeValues) && (d.userTypeValues as string[]).length > 0
+            ? (d.userTypeValues as string[])
+            : [...DEFAULT_USER_TYPE_VALUES],
+        );
+        setSelectedMutualAidIds(
+          Array.isArray(d.selectedMutualAidIds) ? (d.selectedMutualAidIds as string[]) : [],
+        );
+      } catch {
+        // Keep localStorage initial values.
+      }
+    };
+    void loadFromApi();
     return () => {
       isMounted = false;
     };
@@ -8993,29 +9066,34 @@ function DepartmentDetailsPage() {
     if (typeof window === "undefined") {
       return;
     }
-    window.localStorage.setItem(
-      DEPARTMENT_DETAILS_STORAGE_KEY,
-      JSON.stringify({
-        departmentName,
-        departmentStreet,
-        departmentCity,
-        departmentState,
-        departmentZipCode,
-        departmentTimeZone,
-        mainContactName,
-        mainContactPhone,
-        secondaryContactName,
-        secondaryContactPhone,
-        departmentLogoFileName,
-        stationRecords,
-        apparatusRecords,
-        shiftInformationEntries,
-        personnelRecords,
-        personnelQualifications,
-        userTypeValues,
-        selectedMutualAidIds,
-      }),
-    );
+    const payload = {
+      departmentName,
+      departmentStreet,
+      departmentCity,
+      departmentState,
+      departmentZipCode,
+      departmentTimeZone,
+      mainContactName,
+      mainContactPhone,
+      secondaryContactName,
+      secondaryContactPhone,
+      departmentLogoFileName,
+      stationRecords,
+      apparatusRecords,
+      shiftInformationEntries,
+      personnelRecords,
+      personnelQualifications,
+      userTypeValues,
+      selectedMutualAidIds,
+    };
+    window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(payload));
+    fetch("/api/department-details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    }).catch(() => {
+      // API unavailable; localStorage already saved.
+    });
   }, [
     apparatusRecords,
     departmentCity,
