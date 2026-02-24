@@ -5761,34 +5761,73 @@ function NerisReportFormPage({
       "/api/neris/export",
       "/api/neris/validate",
     );
-    const response = await fetch(validateUrl, {
-      method: "POST",
-      headers: requestConfig.headers,
-      body: JSON.stringify(requestConfig.payload),
-    });
-    const responseText = await response.text();
-    const responseJson = parseJsonResponseText(responseText);
-    const apiIssues = extractProxyApiIssues(responseJson);
-    if (apiIssues.length > 0) {
-      return apiIssues;
+
+    try {
+      const response = await fetch(validateUrl, {
+        method: "POST",
+        headers: requestConfig.headers,
+        body: JSON.stringify(requestConfig.payload),
+      });
+      const responseText = await response.text();
+      const responseJson = parseJsonResponseText(responseText);
+      const apiIssues = extractProxyApiIssues(responseJson);
+      if (apiIssues.length > 0) {
+        return apiIssues;
+      }
+      if (response.ok) {
+        return [];
+      }
+      if (response.status === 404 || response.status === 405) {
+        // If proxy validate isn't available yet, continue with export path.
+        return [];
+      }
+      if (response.status === 422) {
+        return [
+          `API - Validation failed (${response.status}). Review field values and required formats before export.`,
+        ];
+      }
+
+      const statusText = response.statusText.trim()
+        ? response.statusText
+        : response.status === 500
+          ? "Internal Server Error"
+          : "Request Failed";
+      const proxyMessage =
+        typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
+          ? responseJson.message.trim()
+          : "";
+      const troubleshootingMessage =
+        responseJson?.troubleshooting &&
+        typeof responseJson.troubleshooting === "object" &&
+        typeof (responseJson.troubleshooting as Record<string, unknown>).message === "string"
+          ? (((responseJson.troubleshooting as Record<string, unknown>).message as string).trim())
+          : "";
+      const responseSummary =
+        proxyMessage || troubleshootingMessage || responseText.slice(0, 240);
+
+      if (response.status === 500 && !responseSummary) {
+        throw new Error(
+          "Pre-export validation failed (500 Internal Server Error). No response details were returned. If using local proxy, confirm `npm run proxy` is running and check the proxy terminal logs.",
+        );
+      }
+
+      throw new Error(
+        `Pre-export validation failed (${response.status} ${statusText}). ${
+          responseSummary || "No response details."
+        }`,
+      );
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        (error.message.startsWith("Pre-export validation failed") ||
+          error.message.startsWith("Pre-export validation request failed"))
+      ) {
+        throw error;
+      }
+      const reason =
+        error instanceof Error ? error.message : "Unknown validation request error.";
+      throw new Error(`Pre-export validation request failed. ${reason}`);
     }
-    if (response.ok) {
-      return [];
-    }
-    if (response.status === 404 || response.status === 405) {
-      // If proxy validate isn't available yet, continue with export path.
-      return [];
-    }
-    if (response.status === 422) {
-      return [
-        `API - Validation failed (${response.status}). Review field values and required formats before export.`,
-      ];
-    }
-    throw new Error(
-      `Pre-export validation failed (${response.status} ${response.statusText}). ${
-        responseText.slice(0, 240) || "No response details."
-      }`,
-    );
   };
 
   const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
