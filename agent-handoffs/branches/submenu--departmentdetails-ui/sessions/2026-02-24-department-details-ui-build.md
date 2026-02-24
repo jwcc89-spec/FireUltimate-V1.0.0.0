@@ -25,6 +25,14 @@
     - Moved Add action to toolbar and changed lower-row action button to Edit.
     - Added personnel assignment dropdowns in the edit screen (Shift, Apparatus, Station, User Type).
     - Connected uploaded logo image to sidebar top-left branding preview.
+  - Applied follow-up UX refinements:
+    - Added Time Zone DD-S (GMT list) at department level and personnel level.
+    - Save Department Details now persists form/editor state in localStorage.
+    - Personnel/Apparatus/Stations now use dropdown-first DD-S/DD-M behavior (no inline entry list under controls).
+    - Add in Personnel now opens a dedicated popup with required name plus assignment fields.
+    - Shift Information location changed to optional DD-S sourced from Stations.
+    - Removed extra lower Close buttons where requested.
+    - Mutual Aid Departments now try loading from `/api/neris/debug/entities` and fall back to valid FD ID options.
 - Files changed:
   - `src/appData.ts`
   - `src/App.tsx`
@@ -45,6 +53,7 @@
   - Lint passed with no errors.
   - Expected changes are present in app data, page component, styling, and docs file.
   - Expanded workflow update remains lint clean.
+  - Follow-up refinement pass remains lint clean.
 
 ## Git status
 - Commit(s) created:

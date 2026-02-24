@@ -11,6 +11,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Department Address - City | `departmentAddressCity` |
 | Department Address - State | `departmentAddressState` |
 | Department Address - Zip Code | `departmentAddressZipCode` |
+| Department Time Zone (DD-S) | `departmentTimeZone` |
 | Main Contact Name | `mainContactName` |
 | Main Contact Phone Number | `mainContactPhoneNumber` |
 | Secondary Contact Name | `secondaryContactName` |
@@ -50,4 +51,6 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 ## Notes
 
 - Personnel/Apparatus/Stations editors now support DD-S and DD-M interaction modes.
-- Detailed credentials schema for personnel is planned for the next phase.
+- Personnel add/edit popup now includes core assignment fields to avoid blank personnel records.
+- Mutual Aid Departments are sourced from `/api/neris/debug/entities` when available and fall back to valid FD ID options if unavailable.
+- Clicking **Save Department Details** stores values to browser localStorage (`fire-ultimate-department-details`).

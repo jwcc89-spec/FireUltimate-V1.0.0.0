@@ -239,6 +239,20 @@ interface ShiftInformationEntry {
   location: string;
 }
 
+interface DepartmentPersonnelRecord {
+  name: string;
+  shift: string;
+  apparatusAssignment: string;
+  station: string;
+  userType: string;
+  timeZone: string;
+}
+
+interface DepartmentNerisEntityOption {
+  id: string;
+  name: string;
+}
+
 interface DepartmentCollectionDefinition {
   key: DepartmentCollectionKey;
   label: string;
@@ -256,6 +270,7 @@ const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
 const DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY = "fire-ultimate-department-logo-data-url";
+const DEPARTMENT_DETAILS_STORAGE_KEY = "fire-ultimate-department-details";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -405,6 +420,32 @@ const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
   "Custom",
 ];
 const DEFAULT_USER_TYPE_VALUES = ["Admin", "Sub Admin", "Secretary", "User"];
+const GMT_TIMEZONE_OPTIONS = Array.from({ length: 27 }, (_, index) => {
+  const offset = index - 12;
+  const sign = offset >= 0 ? "+" : "-";
+  const hours = Math.abs(offset).toString().padStart(2, "0");
+  return `GMT${sign}${hours}:00`;
+});
+const DEPARTMENT_ENTITY_FALLBACK_OPTIONS: DepartmentNerisEntityOption[] = [
+  { id: "FD00001001", name: "Fallback Fire Department 1" },
+  { id: "FD00001002", name: "Fallback Fire Department 2" },
+  { id: "FD00001003", name: "Fallback Fire Department 3" },
+];
+
+function readDepartmentDetailsDraft(): Record<string, unknown> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(DEPARTMENT_DETAILS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -8400,25 +8441,99 @@ function NerisReportFormPage({
 }
 
 function DepartmentDetailsPage() {
-  const [departmentName, setDepartmentName] = useState("");
-  const [departmentStreet, setDepartmentStreet] = useState("");
-  const [departmentCity, setDepartmentCity] = useState("");
-  const [departmentState, setDepartmentState] = useState("");
-  const [departmentZipCode, setDepartmentZipCode] = useState("");
-  const [mainContactName, setMainContactName] = useState("");
-  const [mainContactPhone, setMainContactPhone] = useState("");
-  const [secondaryContactName, setSecondaryContactName] = useState("");
-  const [secondaryContactPhone, setSecondaryContactPhone] = useState("");
-  const [departmentLogoFileName, setDepartmentLogoFileName] = useState("No file selected");
-  const [departmentCollections, setDepartmentCollections] = useState({
-    personnel: [],
-    apparatus: [],
-    stations: [],
-    mutualAidDepartments: [],
+  const initialDepartmentDraft = readDepartmentDetailsDraft();
+
+  const [departmentName, setDepartmentName] = useState(
+    String(initialDepartmentDraft.departmentName ?? ""),
+  );
+  const [departmentStreet, setDepartmentStreet] = useState(
+    String(initialDepartmentDraft.departmentStreet ?? ""),
+  );
+  const [departmentCity, setDepartmentCity] = useState(
+    String(initialDepartmentDraft.departmentCity ?? ""),
+  );
+  const [departmentState, setDepartmentState] = useState(
+    String(initialDepartmentDraft.departmentState ?? ""),
+  );
+  const [departmentZipCode, setDepartmentZipCode] = useState(
+    String(initialDepartmentDraft.departmentZipCode ?? ""),
+  );
+  const [departmentTimeZone, setDepartmentTimeZone] = useState(
+    String(initialDepartmentDraft.departmentTimeZone ?? ""),
+  );
+  const [mainContactName, setMainContactName] = useState(
+    String(initialDepartmentDraft.mainContactName ?? ""),
+  );
+  const [mainContactPhone, setMainContactPhone] = useState(
+    String(initialDepartmentDraft.mainContactPhone ?? ""),
+  );
+  const [secondaryContactName, setSecondaryContactName] = useState(
+    String(initialDepartmentDraft.secondaryContactName ?? ""),
+  );
+  const [secondaryContactPhone, setSecondaryContactPhone] = useState(
+    String(initialDepartmentDraft.secondaryContactPhone ?? ""),
+  );
+  const [departmentLogoFileName, setDepartmentLogoFileName] = useState(
+    String(initialDepartmentDraft.departmentLogoFileName ?? "No file selected"),
+  );
+  const [personnelRecords, setPersonnelRecords] = useState<DepartmentPersonnelRecord[]>(
+    Array.isArray(initialDepartmentDraft.personnelRecords)
+      ? (initialDepartmentDraft.personnelRecords as DepartmentPersonnelRecord[])
+      : [],
+  );
+  const [apparatusList, setApparatusList] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.apparatusList)
+      ? (initialDepartmentDraft.apparatusList as string[])
+      : [],
+  );
+  const [stationList, setStationList] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.stationList)
+      ? (initialDepartmentDraft.stationList as string[])
+      : [],
+  );
+  const [shiftInformationEntries, setShiftInformationEntries] = useState<ShiftInformationEntry[]>(
+    Array.isArray(initialDepartmentDraft.shiftInformationEntries)
+      ? (initialDepartmentDraft.shiftInformationEntries as ShiftInformationEntry[])
+      : [],
+  );
+  const [userTypeValues, setUserTypeValues] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.userTypeValues) &&
+      initialDepartmentDraft.userTypeValues.length > 0
+      ? (initialDepartmentDraft.userTypeValues as string[])
+      : [...DEFAULT_USER_TYPE_VALUES],
+  );
+  const [mutualAidOptions, setMutualAidOptions] = useState<DepartmentNerisEntityOption[]>(
+    DEPARTMENT_ENTITY_FALLBACK_OPTIONS,
+  );
+  const [selectedMutualAidIds, setSelectedMutualAidIds] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.selectedMutualAidIds)
+      ? (initialDepartmentDraft.selectedMutualAidIds as string[])
+      : [],
+  );
+  const [activeCollectionEditor, setActiveCollectionEditor] =
+    useState<DepartmentCollectionKey | null>(null);
+  const [isMultiEditMode, setIsMultiEditMode] = useState(false);
+  const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
+  const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
+  const [isPersonnelFormOpen, setIsPersonnelFormOpen] = useState(false);
+  const [isSimpleEntryModalOpen, setIsSimpleEntryModalOpen] = useState(false);
+  const [simpleEntryDraft, setSimpleEntryDraft] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
+  const [personnelDraft, setPersonnelDraft] = useState<DepartmentPersonnelRecord>({
+    name: "",
+    shift: "",
+    apparatusAssignment: "",
+    station: "",
+    userType: "",
+    timeZone: "",
   });
-  const [shiftInformationEntries, setShiftInformationEntries] = useState<
-    ShiftInformationEntry[]
-  >([]);
+  const [personnelBulkDraft, setPersonnelBulkDraft] = useState({
+    shift: "",
+    apparatusAssignment: "",
+    station: "",
+    userType: "",
+    timeZone: "",
+  });
   const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>({
     shiftType: "",
     shiftDuration: "",
@@ -8427,24 +8542,10 @@ function DepartmentDetailsPage() {
     location: "",
   });
   const [editingShiftIndex, setEditingShiftIndex] = useState<number | null>(null);
-  const [userTypeValues, setUserTypeValues] = useState<string[]>([
-    ...DEFAULT_USER_TYPE_VALUES,
-  ]);
   const [userTypeDraft, setUserTypeDraft] = useState("");
   const [editingUserTypeIndex, setEditingUserTypeIndex] = useState<number | null>(null);
-  const [activeCollectionEditor, setActiveCollectionEditor] =
-    useState<DepartmentCollectionKey | null>(null);
-  const [collectionDraft, setCollectionDraft] = useState("");
-  const [isMultiEditMode, setIsMultiEditMode] = useState(false);
-  const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
-  const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
-  const [isEditScreenOpen, setIsEditScreenOpen] = useState(false);
-  const [editEntryDrafts, setEditEntryDrafts] = useState<string[]>([]);
-  const [personnelShiftValue, setPersonnelShiftValue] = useState("");
-  const [personnelApparatusValue, setPersonnelApparatusValue] = useState("");
-  const [personnelStationValue, setPersonnelStationValue] = useState("");
-  const [personnelUserTypeValue, setPersonnelUserTypeValue] = useState("");
-  const [statusMessage, setStatusMessage] = useState("");
+  const [editingSimpleIndex, setEditingSimpleIndex] = useState<number | null>(null);
+  const [editingPersonnelIndex, setEditingPersonnelIndex] = useState<number | null>(null);
 
   const activeCollectionDefinition = useMemo(
     () =>
@@ -8456,23 +8557,65 @@ function DepartmentDetailsPage() {
     [activeCollectionEditor],
   );
 
+  const isPersonnelEditor = activeCollectionEditor === "personnel";
+  const isApparatusEditor = activeCollectionEditor === "apparatus";
+  const isStationsEditor = activeCollectionEditor === "stations";
+  const isMutualAidEditor = activeCollectionEditor === "mutualAidDepartments";
   const isShiftEditor = activeCollectionEditor === "shiftInformation";
   const isUserTypeEditor = activeCollectionEditor === "userType";
-  const isSimpleListEditor =
-    Boolean(activeCollectionEditor) && !isShiftEditor && !isUserTypeEditor;
-  const activeSimpleCollectionKey = isSimpleListEditor
-    ? (activeCollectionEditor as keyof typeof departmentCollections)
-    : null;
-  const activeCollectionItems = activeSimpleCollectionKey
-    ? departmentCollections[activeSimpleCollectionKey]
-    : [];
+  const isSimpleCollectionEditor = isApparatusEditor || isStationsEditor;
+  const simpleCollectionItems = isApparatusEditor ? apparatusList : stationList;
   const shiftOptionValues = shiftInformationEntries.map((entry) => {
     const recurrenceLabel =
       entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
         ? entry.recurrenceCustomValue
         : entry.recurrence;
-    return `${entry.shiftType} | ${entry.shiftDuration} | ${recurrenceLabel} | ${entry.location}`;
+    return `${entry.shiftType} | ${entry.shiftDuration} | ${recurrenceLabel}${
+      entry.location.trim().length > 0 ? ` | ${entry.location}` : ""
+    }`;
   });
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchEntityOptions = async () => {
+      try {
+        const response = await fetch("/api/neris/debug/entities");
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          neris?: { entities?: Array<Record<string, unknown>> };
+        };
+        const rawEntities = Array.isArray(payload.neris?.entities)
+          ? payload.neris.entities
+          : [];
+        const options = rawEntities
+          .map((entry) => {
+            const id = String(entry.neris_id ?? "").trim();
+            const name = String(
+              entry.name ?? entry.entity_name ?? entry.department_name ?? "",
+            ).trim();
+            if (!/^FD\d{8}$/.test(id)) {
+              return null;
+            }
+            return {
+              id,
+              name: name.length > 0 ? name : `Department ${id}`,
+            } as DepartmentNerisEntityOption;
+          })
+          .filter((entry): entry is DepartmentNerisEntityOption => Boolean(entry));
+        if (isMounted && options.length > 0) {
+          setMutualAidOptions(options);
+        }
+      } catch {
+        // Keep fallback options when proxy/API is unavailable.
+      }
+    };
+    void fetchEntityOptions();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
   const handleLogoSelection = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -8494,137 +8637,175 @@ function DepartmentDetailsPage() {
 
   const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
     setActiveCollectionEditor(collectionKey);
-    setCollectionDraft("");
     setIsMultiEditMode(false);
     setSelectedSingleIndex(null);
     setSelectedMultiIndices([]);
-    setIsEditScreenOpen(false);
-    setEditEntryDrafts([]);
+    setIsPersonnelFormOpen(false);
+    setIsSimpleEntryModalOpen(false);
   };
 
   const closeCollectionEditor = () => {
     setActiveCollectionEditor(null);
-    setCollectionDraft("");
     setIsMultiEditMode(false);
     setSelectedSingleIndex(null);
     setSelectedMultiIndices([]);
-    setIsEditScreenOpen(false);
-    setEditEntryDrafts([]);
-    setEditingShiftIndex(null);
-    setEditingUserTypeIndex(null);
-    setPersonnelShiftValue("");
-    setPersonnelApparatusValue("");
-    setPersonnelStationValue("");
-    setPersonnelUserTypeValue("");
+    setIsPersonnelFormOpen(false);
+    setIsSimpleEntryModalOpen(false);
+    setEditingSimpleIndex(null);
+    setEditingPersonnelIndex(null);
   };
 
-  const addCollectionItem = () => {
-    const trimmed = collectionDraft.trim();
-    if (!activeSimpleCollectionKey || !trimmed) {
-      return;
-    }
-    setDepartmentCollections((previous) => ({
-      ...previous,
-      [activeSimpleCollectionKey]: [...previous[activeSimpleCollectionKey], trimmed],
-    }));
-    setCollectionDraft("");
-  };
-
-  const toggleMultiIndex = (index: number) => {
-    setSelectedMultiIndices((previous) =>
-      previous.includes(index)
-        ? previous.filter((entryIndex) => entryIndex !== index)
-        : [...previous, index],
+  const setSelectionFromMultiSelect = (
+    event: ChangeEvent<HTMLSelectElement>,
+    setter: (indices: number[]) => void,
+  ) => {
+    setter(
+      Array.from(event.target.selectedOptions)
+        .map((option) => Number.parseInt(option.value, 10))
+        .filter((value) => Number.isFinite(value)),
     );
   };
 
-  const openEditScreen = (entryIndex?: number) => {
-    if (!activeSimpleCollectionKey) {
-      return;
-    }
-    const items = departmentCollections[activeSimpleCollectionKey];
-    if (!items.length) {
-      return;
-    }
+  const openSimpleAddModal = () => {
+    setSimpleEntryDraft("");
+    setEditingSimpleIndex(null);
+    setIsSimpleEntryModalOpen(true);
+  };
 
-    if (!isMultiEditMode) {
-      const nextSingleIndex =
-        typeof entryIndex === "number" ? entryIndex : selectedSingleIndex ?? 0;
-      setSelectedSingleIndex(nextSingleIndex);
-      setEditEntryDrafts([items[nextSingleIndex] ?? ""]);
-    } else {
-      const selected =
-        selectedMultiIndices.length > 0 ? selectedMultiIndices : entryIndex !== undefined ? [entryIndex] : [];
-      if (selected.length === 0) {
+  const openSimpleEditModal = () => {
+    if (isMultiEditMode) {
+      if (selectedMultiIndices.length === 0) {
         return;
       }
-      setSelectedMultiIndices(selected);
-      setEditEntryDrafts(selected.map((index) => items[index] ?? ""));
-    }
-
-    setIsEditScreenOpen(true);
-  };
-
-  const saveEditedEntries = () => {
-    if (!activeSimpleCollectionKey) {
+      setSimpleEntryDraft("");
+      setEditingSimpleIndex(-1);
+      setIsSimpleEntryModalOpen(true);
       return;
     }
-    setDepartmentCollections((previous) => ({
-      ...previous,
-      [activeSimpleCollectionKey]: previous[activeSimpleCollectionKey].map(
-        (entry, currentIndex) => {
-          if (!isMultiEditMode && selectedSingleIndex === currentIndex) {
-            return editEntryDrafts[0]?.trim() || entry;
-          }
-          if (isMultiEditMode) {
-            const multiIndex = selectedMultiIndices.indexOf(currentIndex);
-            if (multiIndex >= 0) {
-              return editEntryDrafts[multiIndex]?.trim() || entry;
-            }
-          }
+    if (selectedSingleIndex === null || !simpleCollectionItems[selectedSingleIndex]) {
+      return;
+    }
+    setSimpleEntryDraft(simpleCollectionItems[selectedSingleIndex]);
+    setEditingSimpleIndex(selectedSingleIndex);
+    setIsSimpleEntryModalOpen(true);
+  };
+
+  const saveSimpleEntry = () => {
+    const trimmed = simpleEntryDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+    if (isApparatusEditor) {
+      setApparatusList((previous) =>
+        editingSimpleIndex === null
+          ? [...previous, trimmed]
+          : editingSimpleIndex === -1
+            ? previous.map((entry, index) =>
+                selectedMultiIndices.includes(index) ? trimmed : entry,
+              )
+          : previous.map((entry, index) => (index === editingSimpleIndex ? trimmed : entry)),
+      );
+    } else if (isStationsEditor) {
+      setStationList((previous) =>
+        editingSimpleIndex === null
+          ? [...previous, trimmed]
+          : editingSimpleIndex === -1
+            ? previous.map((entry, index) =>
+                selectedMultiIndices.includes(index) ? trimmed : entry,
+              )
+          : previous.map((entry, index) => (index === editingSimpleIndex ? trimmed : entry)),
+      );
+    }
+    setIsSimpleEntryModalOpen(false);
+  };
+
+  const openPersonnelAddModal = () => {
+    setPersonnelDraft({
+      name: "",
+      shift: "",
+      apparatusAssignment: "",
+      station: "",
+      userType: "",
+      timeZone: departmentTimeZone || "",
+    });
+    setEditingPersonnelIndex(null);
+    setIsPersonnelFormOpen(true);
+  };
+
+  const openPersonnelEditModal = () => {
+    if (!isMultiEditMode) {
+      if (selectedSingleIndex === null || !personnelRecords[selectedSingleIndex]) {
+        return;
+      }
+      setEditingPersonnelIndex(selectedSingleIndex);
+      setPersonnelDraft(personnelRecords[selectedSingleIndex]);
+      setIsPersonnelFormOpen(true);
+      return;
+    }
+    if (selectedMultiIndices.length === 0) {
+      return;
+    }
+    setPersonnelBulkDraft({
+      shift: "",
+      apparatusAssignment: "",
+      station: "",
+      userType: "",
+      timeZone: "",
+    });
+    setIsPersonnelFormOpen(true);
+  };
+
+  const savePersonnelForm = () => {
+    if (!isMultiEditMode) {
+      if (!personnelDraft.name.trim()) {
+        return;
+      }
+      const nextValue: DepartmentPersonnelRecord = {
+        ...personnelDraft,
+        name: personnelDraft.name.trim(),
+      };
+      setPersonnelRecords((previous) =>
+        editingPersonnelIndex === null
+          ? [...previous, nextValue]
+          : previous.map((entry, index) => (index === editingPersonnelIndex ? nextValue : entry)),
+      );
+      setIsPersonnelFormOpen(false);
+      return;
+    }
+
+    setPersonnelRecords((previous) =>
+      previous.map((entry, index) => {
+        if (!selectedMultiIndices.includes(index)) {
           return entry;
-        },
-      ),
-    }));
-    setIsEditScreenOpen(false);
-  };
-
-  const removeCollectionItem = (index: number) => {
-    if (!activeSimpleCollectionKey) {
-      return;
-    }
-    setDepartmentCollections((previous) => ({
-      ...previous,
-      [activeSimpleCollectionKey]: previous[activeSimpleCollectionKey].filter(
-        (_, currentIndex) => currentIndex !== index,
-      ),
-    }));
-    setSelectedSingleIndex((previous) => (previous === index ? null : previous));
-    setSelectedMultiIndices((previous) =>
-      previous.filter((entryIndex) => entryIndex !== index),
+        }
+        return {
+          ...entry,
+          shift: personnelBulkDraft.shift || entry.shift,
+          apparatusAssignment:
+            personnelBulkDraft.apparatusAssignment || entry.apparatusAssignment,
+          station: personnelBulkDraft.station || entry.station,
+          userType: personnelBulkDraft.userType || entry.userType,
+          timeZone: personnelBulkDraft.timeZone || entry.timeZone,
+        };
+      }),
     );
+    setIsPersonnelFormOpen(false);
   };
 
   const addShiftInformationEntry = () => {
-    if (
-      !shiftDraft.shiftType.trim() ||
-      !shiftDraft.shiftDuration.trim() ||
-      !shiftDraft.location.trim()
-    ) {
+    if (!shiftDraft.shiftType.trim() || !shiftDraft.shiftDuration.trim()) {
       return;
     }
     if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
       return;
     }
-
     const nextValue = {
       ...shiftDraft,
       shiftType: shiftDraft.shiftType.trim(),
       shiftDuration: shiftDraft.shiftDuration.trim(),
-      location: shiftDraft.location.trim(),
       recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
+      location: shiftDraft.location.trim(),
     };
-
     if (editingShiftIndex === null) {
       setShiftInformationEntries((previous) => [...previous, nextValue]);
     } else {
@@ -8647,22 +8828,42 @@ function DepartmentDetailsPage() {
     if (!trimmed) {
       return;
     }
-    if (editingUserTypeIndex === null) {
-      setUserTypeValues((previous) => [...previous, trimmed]);
-    } else {
-      setUserTypeValues((previous) =>
-        previous.map((entry, index) => (index === editingUserTypeIndex ? trimmed : entry)),
-      );
-    }
+    setUserTypeValues((previous) =>
+      editingUserTypeIndex === null
+        ? [...previous, trimmed]
+        : previous.map((entry, index) => (index === editingUserTypeIndex ? trimmed : entry)),
+    );
     setUserTypeDraft("");
     setEditingUserTypeIndex(null);
   };
 
   const handleDepartmentDetailsSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setStatusMessage(
-      "Department details saved in prototype mode. API/storage persistence will be added next.",
-    );
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem(
+        DEPARTMENT_DETAILS_STORAGE_KEY,
+        JSON.stringify({
+          departmentName,
+          departmentStreet,
+          departmentCity,
+          departmentState,
+          departmentZipCode,
+          departmentTimeZone,
+          mainContactName,
+          mainContactPhone,
+          secondaryContactName,
+          secondaryContactPhone,
+          departmentLogoFileName,
+          personnelRecords,
+          apparatusList,
+          stationList,
+          shiftInformationEntries,
+          userTypeValues,
+          selectedMutualAidIds,
+        }),
+      );
+    }
+    setStatusMessage("Department details saved locally in this browser.");
   };
 
   return (
@@ -8672,7 +8873,7 @@ function DepartmentDetailsPage() {
           <h1>Admin Functions | Department Details</h1>
           <p>
             Maintain core department information for use throughout the program,
-            including contacts, address, and list-based department resources.
+            including contacts, address, timezone, and managed resource lists.
           </p>
         </div>
       </header>
@@ -8734,6 +8935,20 @@ function DepartmentDetailsPage() {
                   />
                 </label>
               </div>
+
+              <label htmlFor="department-time-zone">Time Zone (DD-S)</label>
+              <select
+                id="department-time-zone"
+                value={departmentTimeZone}
+                onChange={(event) => setDepartmentTimeZone(event.target.value)}
+              >
+                <option value="">Select time zone</option>
+                {GMT_TIMEZONE_OPTIONS.map((option) => (
+                  <option key={`dept-tz-${option}`} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
             </div>
           </article>
 
@@ -8768,7 +8983,6 @@ function DepartmentDetailsPage() {
                 onChange={(event) => setMainContactName(event.target.value)}
                 placeholder="Enter main contact name"
               />
-
               <label htmlFor="main-contact-phone">Main Contact Phone Number</label>
               <input
                 id="main-contact-phone"
@@ -8793,7 +9007,6 @@ function DepartmentDetailsPage() {
                 onChange={(event) => setSecondaryContactName(event.target.value)}
                 placeholder="Enter secondary contact name"
               />
-
               <label htmlFor="secondary-contact-phone">Secondary Contact Phone</label>
               <input
                 id="secondary-contact-phone"
@@ -8810,10 +9023,6 @@ function DepartmentDetailsPage() {
           <div className="panel-header">
             <h2>Department Multi-Entry Lists</h2>
           </div>
-          <p className="panel-description">
-            Use the edit buttons to open each management screen and add or update
-            list entries.
-          </p>
           <div className="department-collection-grid">
             {DEPARTMENT_COLLECTION_DEFINITIONS.map((definition) => (
               <div key={definition.key} className="department-collection-card">
@@ -8827,16 +9036,15 @@ function DepartmentDetailsPage() {
                     {definition.editButtonLabel}
                   </button>
                 </div>
-                <p>{definition.helperText}</p>
                 <p className="field-hint">
                   {definition.key === "personnel"
-                    ? `Total Personnel: ${departmentCollections.personnel.length}`
+                    ? `Total Personnel: ${personnelRecords.length}`
                     : definition.key === "apparatus"
-                      ? `Total Apparatus: ${departmentCollections.apparatus.length}`
+                      ? `Total Apparatus: ${apparatusList.length}`
                       : definition.key === "stations"
-                        ? `Total Stations: ${departmentCollections.stations.length}`
+                        ? `Total Stations: ${stationList.length}`
                         : definition.key === "mutualAidDepartments"
-                          ? `Total Mutual Aid Departments: ${departmentCollections.mutualAidDepartments.length}`
+                          ? `Total Mutual Aid Departments: ${selectedMutualAidIds.length}`
                           : definition.key === "shiftInformation"
                             ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
                             : `Total User Types: ${userTypeValues.length}`}
@@ -8855,12 +9063,7 @@ function DepartmentDetailsPage() {
       </form>
 
       {activeCollectionEditor && activeCollectionDefinition ? (
-        <div
-          className="department-editor-backdrop"
-          role="dialog"
-          aria-modal="true"
-          aria-label={`${activeCollectionDefinition.label} editor`}
-        >
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
           <article className="panel department-editor-modal">
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
@@ -8873,221 +9076,165 @@ function DepartmentDetailsPage() {
               </button>
             </div>
 
-            <p className="panel-description">{activeCollectionDefinition.helperText}</p>
-
-            {isSimpleListEditor ? (
+            {isPersonnelEditor ? (
               <>
-                <div className="department-editor-toolbar">
-                  <div className="department-dd-mode-badge">{isMultiEditMode ? "DD-M" : "DD-S"}</div>
-                  <div className="department-editor-toolbar-actions">
-                    <button
-                      type="button"
-                      className="secondary-button compact-button"
-                      onClick={addCollectionItem}
-                    >
-                      Add
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button compact-button"
-                      onClick={() => {
-                        setIsMultiEditMode((previous) => !previous);
-                        setSelectedSingleIndex(null);
-                        setSelectedMultiIndices([]);
-                        setIsEditScreenOpen(false);
-                      }}
-                    >
-                      Edit Multiple
-                    </button>
-                    <button
-                      type="button"
-                      className="secondary-button compact-button"
-                      onClick={closeCollectionEditor}
-                    >
-                      Close
-                    </button>
-                  </div>
-                </div>
-
-                <div className="department-editor-add-row">
-                  <input
-                    type="text"
-                    value={collectionDraft}
-                    onChange={(event) => setCollectionDraft(event.target.value)}
-                    placeholder={`Add ${activeCollectionDefinition.label.toLowerCase()} entry`}
-                  />
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={openPersonnelAddModal}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className={`secondary-button compact-button ${
+                      isMultiEditMode ? "department-toggle-active" : ""
+                    }`}
+                    onClick={() => {
+                      setIsMultiEditMode((previous) => !previous);
+                      setSelectedSingleIndex(null);
+                      setSelectedMultiIndices([]);
+                    }}
+                  >
+                    Edit Multiple
+                  </button>
                   <button
                     type="button"
                     className="primary-button compact-button"
-                    onClick={openEditScreen}
+                    onClick={openPersonnelEditModal}
                   >
                     Edit
                   </button>
                 </div>
 
-                {activeCollectionItems.length > 0 ? (
-                  <ul className="department-editor-list">
-                    {activeCollectionItems.map((entry, index) => (
-                      <li key={`${activeCollectionEditor}-${index}`}>
-                        <label className="department-selection-row">
-                          <input
-                            type={isMultiEditMode ? "checkbox" : "radio"}
-                            name={`department-selection-${activeCollectionEditor}`}
-                            checked={
-                              isMultiEditMode
-                                ? selectedMultiIndices.includes(index)
-                                : selectedSingleIndex === index
-                            }
-                            onChange={() => {
-                              if (isMultiEditMode) {
-                                toggleMultiIndex(index);
-                              } else {
-                                setSelectedSingleIndex(index);
-                                openEditScreen(index);
-                              }
-                            }}
-                          />
-                          <span>{entry}</span>
-                        </label>
-                        <div className="department-row-actions">
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() => openEditScreen(index)}
-                          >
-                            Edit
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() => removeCollectionItem(index)}
-                          >
-                            Remove
-                          </button>
-                        </div>
-                      </li>
+                {!isMultiEditMode ? (
+                  <select
+                    className="department-select-box"
+                    value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
+                    onChange={(event) =>
+                      setSelectedSingleIndex(
+                        event.target.value === "" ? null : Number.parseInt(event.target.value, 10),
+                      )
+                    }
+                  >
+                    <option value="">Select personnel</option>
+                    {personnelRecords.map((entry, index) => (
+                      <option key={`personnel-dds-${entry.name}-${index}`} value={String(index)}>
+                        {entry.name}
+                      </option>
                     ))}
-                  </ul>
+                  </select>
                 ) : (
-                  <p className="field-hint">
-                    No {activeCollectionDefinition.label.toLowerCase()} entries yet.
-                  </p>
+                  <select
+                    multiple
+                    className="department-select-box department-select-multi"
+                    value={selectedMultiIndices.map((index) => String(index))}
+                    onChange={(event) =>
+                      setSelectionFromMultiSelect(event, setSelectedMultiIndices)
+                    }
+                  >
+                    {personnelRecords.map((entry, index) => (
+                      <option key={`personnel-ddm-${entry.name}-${index}`} value={String(index)}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </select>
                 )}
+              </>
+            ) : null}
 
-                {isEditScreenOpen ? (
-                  <div className="department-edit-screen">
-                    <div className="panel-header">
-                      <h3>Edit {activeCollectionDefinition.label}</h3>
-                    </div>
+            {isSimpleCollectionEditor ? (
+              <>
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={openSimpleAddModal}
+                  >
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className={`secondary-button compact-button ${
+                      isMultiEditMode ? "department-toggle-active" : ""
+                    }`}
+                    onClick={() => {
+                      setIsMultiEditMode((previous) => !previous);
+                      setSelectedSingleIndex(null);
+                      setSelectedMultiIndices([]);
+                    }}
+                  >
+                    Edit Multiple
+                  </button>
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={openSimpleEditModal}
+                  >
+                    Edit
+                  </button>
+                </div>
 
-                    {collectionDraft.trim().length > 0 ? (
-                      <p className="field-hint">
-                        Click save to create new entry: <strong>{collectionDraft.trim()}</strong>
-                      </p>
-                    ) : null}
+                {!isMultiEditMode ? (
+                  <select
+                    className="department-select-box"
+                    value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
+                    onChange={(event) =>
+                      setSelectedSingleIndex(
+                        event.target.value === "" ? null : Number.parseInt(event.target.value, 10),
+                      )
+                    }
+                  >
+                    <option value="">
+                      Select {isApparatusEditor ? "apparatus" : "station"}
+                    </option>
+                    {simpleCollectionItems.map((entry, index) => (
+                      <option key={`simple-dds-${entry}-${index}`} value={String(index)}>
+                        {entry}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <select
+                    multiple
+                    className="department-select-box department-select-multi"
+                    value={selectedMultiIndices.map((index) => String(index))}
+                    onChange={(event) =>
+                      setSelectionFromMultiSelect(event, setSelectedMultiIndices)
+                    }
+                  >
+                    {simpleCollectionItems.map((entry, index) => (
+                      <option key={`simple-ddm-${entry}-${index}`} value={String(index)}>
+                        {entry}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </>
+            ) : null}
 
-                    {editEntryDrafts.length > 0
-                      ? editEntryDrafts.map((value, editIndex) => (
-                          <input
-                            key={`edit-draft-${editIndex}`}
-                            type="text"
-                            value={value}
-                            onChange={(event) =>
-                              setEditEntryDrafts((previous) =>
-                                previous.map((entry, index) =>
-                                  index === editIndex ? event.target.value : entry,
-                                ),
-                              )
-                            }
-                          />
-                        ))
-                      : null}
-
-                    {activeCollectionEditor === "personnel" ? (
-                      <div className="department-edit-grid">
-                        <label>
-                          Shift (DD-S)
-                          <select
-                            value={personnelShiftValue}
-                            onChange={(event) => setPersonnelShiftValue(event.target.value)}
-                          >
-                            <option value="">Select shift</option>
-                            {shiftOptionValues.map((option) => (
-                              <option key={`shift-option-${option}`} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Apparatus Assignment (DD-S)
-                          <select
-                            value={personnelApparatusValue}
-                            onChange={(event) => setPersonnelApparatusValue(event.target.value)}
-                          >
-                            <option value="">Select apparatus</option>
-                            {departmentCollections.apparatus.map((option) => (
-                              <option key={`apparatus-option-${option}`} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          Station (DD-S)
-                          <select
-                            value={personnelStationValue}
-                            onChange={(event) => setPersonnelStationValue(event.target.value)}
-                          >
-                            <option value="">Select station</option>
-                            {departmentCollections.stations.map((option) => (
-                              <option key={`station-option-${option}`} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                        <label>
-                          User Type (DD-S)
-                          <select
-                            value={personnelUserTypeValue}
-                            onChange={(event) => setPersonnelUserTypeValue(event.target.value)}
-                          >
-                            <option value="">Select user type</option>
-                            {userTypeValues.map((option) => (
-                              <option key={`user-type-option-${option}`} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
-                        </label>
-                      </div>
-                    ) : null}
-
-                    <div className="department-editor-toolbar-actions">
-                      <button
-                        type="button"
-                        className="secondary-button compact-button"
-                        onClick={() => {
-                          if (collectionDraft.trim().length > 0) {
-                            addCollectionItem();
-                            setCollectionDraft("");
-                          }
-                          saveEditedEntries();
-                        }}
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        className="secondary-button compact-button"
-                        onClick={() => setIsEditScreenOpen(false)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
+            {isMutualAidEditor ? (
+              <>
+                <p className="field-hint">
+                  Source: `/api/neris/debug/entities` (fallback values are used if unavailable).
+                </p>
+                <select
+                  multiple
+                  className="department-select-box department-select-multi"
+                  value={selectedMutualAidIds}
+                  onChange={(event) =>
+                    setSelectedMutualAidIds(
+                      Array.from(event.target.selectedOptions).map((option) => option.value),
+                    )
+                  }
+                >
+                  {mutualAidOptions.map((option) => (
+                    <option key={`mutual-aid-${option.id}`} value={option.id}>
+                      {option.name} ({option.id})
+                    </option>
+                  ))}
+                </select>
               </>
             ) : null}
 
@@ -9150,14 +9297,12 @@ function DepartmentDetailsPage() {
                             recurrenceCustomValue: event.target.value,
                           }))
                         }
-                        placeholder="Describe custom recurrence"
                       />
                     </label>
                   ) : null}
                   <label>
-                    Location
-                    <input
-                      type="text"
+                    Location (DD-S)
+                    <select
                       value={shiftDraft.location}
                       onChange={(event) =>
                         setShiftDraft((previous) => ({
@@ -9165,10 +9310,16 @@ function DepartmentDetailsPage() {
                           location: event.target.value,
                         }))
                       }
-                    />
+                    >
+                      <option value="">Select location (optional)</option>
+                      {stationList.map((station) => (
+                        <option key={`shift-location-${station}`} value={station}>
+                          {station}
+                        </option>
+                      ))}
+                    </select>
                   </label>
                 </div>
-
                 <div className="department-editor-toolbar-actions">
                   <button
                     type="button"
@@ -9177,26 +9328,17 @@ function DepartmentDetailsPage() {
                   >
                     {editingShiftIndex === null ? "Add Shift Information" : "Save Shift Information"}
                   </button>
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={closeCollectionEditor}
-                  >
-                    Close
-                  </button>
                 </div>
-
                 {shiftInformationEntries.length > 0 ? (
                   <ul className="department-editor-list">
                     {shiftInformationEntries.map((entry, index) => (
                       <li key={`shift-entry-${index}`}>
                         <span>
                           {entry.shiftType} | {entry.shiftDuration} |{" "}
-                          {entry.recurrence === "Custom" &&
-                          entry.recurrenceCustomValue.trim().length > 0
+                          {entry.recurrence === "Custom" && entry.recurrenceCustomValue
                             ? entry.recurrenceCustomValue
-                            : entry.recurrence}{" "}
-                          | {entry.location}
+                            : entry.recurrence}
+                          {entry.location ? ` | ${entry.location}` : ""}
                         </span>
                         <div className="department-row-actions">
                           <button
@@ -9224,74 +9366,294 @@ function DepartmentDetailsPage() {
                       </li>
                     ))}
                   </ul>
-                ) : (
-                  <p className="field-hint">No shift information entries yet.</p>
-                )}
+                ) : null}
               </>
+            ) : null}
+
+            {isUserTypeEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <input
+                    type="text"
+                    value={userTypeDraft}
+                    onChange={(event) => setUserTypeDraft(event.target.value)}
+                    placeholder="Add or edit user type"
+                  />
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={addOrUpdateUserType}
+                  >
+                    {editingUserTypeIndex === null ? "Add User Type" : "Save User Type"}
+                  </button>
+                </div>
+                <ul className="department-editor-list">
+                  {userTypeValues.map((entry, index) => (
+                    <li key={`user-type-${index}`}>
+                      <span>{entry}</span>
+                      <div className="department-row-actions">
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => {
+                            setUserTypeDraft(entry);
+                            setEditingUserTypeIndex(index);
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() =>
+                            setUserTypeValues((previous) =>
+                              previous.filter((_, currentIndex) => currentIndex !== index),
+                            )
+                          }
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : null}
+          </article>
+        </div>
+      ) : null}
+
+      {isSimpleEntryModalOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>{editingSimpleIndex === null ? "Add Entry" : "Edit Entry"}</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setIsSimpleEntryModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="department-editor-add-row">
+              <input
+                type="text"
+                value={simpleEntryDraft}
+                onChange={(event) => setSimpleEntryDraft(event.target.value)}
+                placeholder="Entry name"
+              />
+              <button type="button" className="primary-button compact-button" onClick={saveSimpleEntry}>
+                Save
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+
+      {isPersonnelFormOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>{!isMultiEditMode ? "Personnel Entry" : "Edit Multiple Personnel"}</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setIsPersonnelFormOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+
+            {!isMultiEditMode ? (
+              <div className="department-edit-grid">
+                <label>
+                  Personnel Name
+                  <input
+                    type="text"
+                    value={personnelDraft.name}
+                    onChange={(event) =>
+                      setPersonnelDraft((previous) => ({ ...previous, name: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Shift (DD-S)
+                  <select
+                    value={personnelDraft.shift}
+                    onChange={(event) =>
+                      setPersonnelDraft((previous) => ({ ...previous, shift: event.target.value }))
+                    }
+                  >
+                    <option value="">Select shift</option>
+                    {shiftOptionValues.map((option) => (
+                      <option key={`personnel-shift-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Apparatus Assignment (DD-S)
+                  <select
+                    value={personnelDraft.apparatusAssignment}
+                    onChange={(event) =>
+                      setPersonnelDraft((previous) => ({
+                        ...previous,
+                        apparatusAssignment: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">Select apparatus</option>
+                    {apparatusList.map((option) => (
+                      <option key={`personnel-apparatus-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Station (DD-S)
+                  <select
+                    value={personnelDraft.station}
+                    onChange={(event) =>
+                      setPersonnelDraft((previous) => ({ ...previous, station: event.target.value }))
+                    }
+                  >
+                    <option value="">Select station</option>
+                    {stationList.map((option) => (
+                      <option key={`personnel-station-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  User Type (DD-S)
+                  <select
+                    value={personnelDraft.userType}
+                    onChange={(event) =>
+                      setPersonnelDraft((previous) => ({ ...previous, userType: event.target.value }))
+                    }
+                  >
+                    <option value="">Select user type</option>
+                    {userTypeValues.map((option) => (
+                      <option key={`personnel-usertype-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Time Zone (DD-S)
+                  <select
+                    value={personnelDraft.timeZone}
+                    onChange={(event) =>
+                      setPersonnelDraft((previous) => ({ ...previous, timeZone: event.target.value }))
+                    }
+                  >
+                    <option value="">Select timezone</option>
+                    {GMT_TIMEZONE_OPTIONS.map((option) => (
+                      <option key={`personnel-tz-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             ) : (
-              isUserTypeEditor ? (
-                <>
-                  <div className="department-editor-add-row">
-                    <input
-                      type="text"
-                      value={userTypeDraft}
-                      onChange={(event) => setUserTypeDraft(event.target.value)}
-                      placeholder="Add or edit user type"
-                    />
-                    <button
-                      type="button"
-                      className="primary-button compact-button"
-                      onClick={addOrUpdateUserType}
-                    >
-                      {editingUserTypeIndex === null ? "Add User Type" : "Save User Type"}
-                    </button>
-                  </div>
-                  <div className="department-editor-toolbar-actions">
-                    <button
-                      type="button"
-                      className="secondary-button compact-button"
-                      onClick={closeCollectionEditor}
-                    >
-                      Close
-                    </button>
-                  </div>
-                  {userTypeValues.length > 0 ? (
-                    <ul className="department-editor-list">
-                      {userTypeValues.map((entry, index) => (
-                        <li key={`user-type-${index}`}>
-                          <span>{entry}</span>
-                          <div className="department-row-actions">
-                            <button
-                              type="button"
-                              className="secondary-button compact-button"
-                              onClick={() => {
-                                setUserTypeDraft(entry);
-                                setEditingUserTypeIndex(index);
-                              }}
-                            >
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              className="secondary-button compact-button"
-                              onClick={() =>
-                                setUserTypeValues((previous) =>
-                                  previous.filter((_, currentIndex) => currentIndex !== index),
-                                )
-                              }
-                            >
-                              Remove
-                            </button>
-                          </div>
-                        </li>
-                      ))}
-                    </ul>
-                  ) : (
-                    <p className="field-hint">No user types yet.</p>
-                  )}
-                </>
-              ) : null
+              <div className="department-edit-grid">
+                <label>
+                  Shift (DD-S)
+                  <select
+                    value={personnelBulkDraft.shift}
+                    onChange={(event) =>
+                      setPersonnelBulkDraft((previous) => ({ ...previous, shift: event.target.value }))
+                    }
+                  >
+                    <option value="">No change</option>
+                    {shiftOptionValues.map((option) => (
+                      <option key={`personnel-bulk-shift-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Apparatus Assignment (DD-S)
+                  <select
+                    value={personnelBulkDraft.apparatusAssignment}
+                    onChange={(event) =>
+                      setPersonnelBulkDraft((previous) => ({
+                        ...previous,
+                        apparatusAssignment: event.target.value,
+                      }))
+                    }
+                  >
+                    <option value="">No change</option>
+                    {apparatusList.map((option) => (
+                      <option key={`personnel-bulk-apparatus-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Station (DD-S)
+                  <select
+                    value={personnelBulkDraft.station}
+                    onChange={(event) =>
+                      setPersonnelBulkDraft((previous) => ({ ...previous, station: event.target.value }))
+                    }
+                  >
+                    <option value="">No change</option>
+                    {stationList.map((option) => (
+                      <option key={`personnel-bulk-station-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  User Type (DD-S)
+                  <select
+                    value={personnelBulkDraft.userType}
+                    onChange={(event) =>
+                      setPersonnelBulkDraft((previous) => ({ ...previous, userType: event.target.value }))
+                    }
+                  >
+                    <option value="">No change</option>
+                    {userTypeValues.map((option) => (
+                      <option key={`personnel-bulk-usertype-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Time Zone (DD-S)
+                  <select
+                    value={personnelBulkDraft.timeZone}
+                    onChange={(event) =>
+                      setPersonnelBulkDraft((previous) => ({ ...previous, timeZone: event.target.value }))
+                    }
+                  >
+                    <option value="">No change</option>
+                    {GMT_TIMEZONE_OPTIONS.map((option) => (
+                      <option key={`personnel-bulk-tz-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
             )}
+
+            <div className="department-editor-toolbar-actions">
+              <button type="button" className="primary-button compact-button" onClick={savePersonnelForm}>
+                Save
+              </button>
+            </div>
           </article>
         </div>
       ) : null}

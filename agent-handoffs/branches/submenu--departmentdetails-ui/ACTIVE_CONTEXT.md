@@ -4,19 +4,20 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details advanced workflow update: sidebar logo replacement from upload, DD-S/DD-M editing patterns, and expanded multi-entry modules (Shift Information and User Type).
+- Department Details workflow refinement pass: timezone DD-S, persisted save behavior, revised Personnel/Apparatus/Stations DD-S/DD-M UX, and mutual-aid NERIS-source options with fallback.
 
 ## Latest known status
-- Latest commit before this update: 74fd7e6 - Add Department Details admin submenu UI scaffold.
-- Working tree includes DD-S/DD-M and shift/user-type workflow updates pending commit.
+- Latest commit before this update: 5acd837 - Expand Department Details editor workflows and sidebar logo behavior.
+- Working tree includes requested UX adjustments and persistence changes pending commit.
 
 ## Current blocker / status
-- No blocker. Lint clean after expanded workflow updates.
+- No blocker. Lint clean after workflow refinement updates.
 
 ## External dependency status
 - 
 
 ## Recent key commits (latest first)
+- 5acd837 Expand Department Details editor workflows and sidebar logo behavior.
 - 74fd7e6 Add Department Details admin submenu UI scaffold.
 - dce98ef ACTIVE_CONTEXT: latest commit 52cb8b4
 - 52cb8b4 ACTIVE_CONTEXT: set latest commit to a6d3b2b

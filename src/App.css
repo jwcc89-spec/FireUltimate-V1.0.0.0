@@ -1245,6 +1245,26 @@ tbody tr:last-of-type td {
   flex-wrap: wrap;
 }
 
+.department-toggle-active {
+  border-color: #2563eb;
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.department-select-box {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.department-select-box.department-select-multi {
+  min-height: 170px;
+}
+
 .department-dd-mode-badge {
   border: 1px solid #bfdbfe;
   border-radius: 999px;
