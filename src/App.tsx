@@ -409,19 +409,48 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_neris_id",
   "primary_incident_type",
   "additional_incident_types",
+  "special_incident_modifiers",
+  "incident_actions_taken",
+  "incident_noaction",
+  "incident_people_present",
+  "incident_displaced_number",
+  "incident_displaced_cause",
+  "narrative_outcome",
+  "narrative_obstacles",
   "incident_time_call_create",
   "incident_time_call_answered",
   "incident_time_call_arrival",
+  "incident_time_unit_dispatched",
+  "incident_time_unit_enroute",
+  "incident_time_unit_on_scene",
+  "incident_time_unit_clear",
+  "incident_time_clear",
   "incident_location_address",
   "dispatch_location_address",
+  "location_place_type",
+  "location_use_primary",
+  "location_use_secondary",
+  "location_vacancy_cause",
   "location_state",
   "location_country",
+  "location_direction_of_travel",
+  "location_cross_street_type",
+  "location_postal_code",
+  "location_county",
+  "dispatch_center_id",
   "dispatch_determinate_code",
   "initial_dispatch_code",
   "dispatch_final_disposition",
   "dispatch_automatic_alarm",
+  "incident_has_aid",
+  "incident_aid_agency_type",
+  "incident_aid_direction",
+  "incident_aid_type",
+  "incident_aid_department_name",
+  "incident_aid_nonfd",
   "resource_units_json",
   "resource_primary_unit_id",
+  "resource_primary_unit_response_mode",
   "resource_additional_units",
   "resource_primary_unit_staffing",
 ]);
@@ -5932,6 +5961,94 @@ function NerisReportFormPage({
     };
   };
 
+  const extractAidSummaries = (value: unknown): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const summaries = value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return "";
+        }
+        const candidate = entry as Record<string, unknown>;
+        const department =
+          typeof candidate.department_neris_id === "string"
+            ? candidate.department_neris_id.trim()
+            : "";
+        const aidType = typeof candidate.aid_type === "string" ? candidate.aid_type.trim() : "";
+        const direction =
+          typeof candidate.aid_direction === "string" ? candidate.aid_direction.trim() : "";
+        const parts = [direction, aidType, department].filter((part) => part.length > 0);
+        return parts.join(" | ");
+      })
+      .filter((entry) => entry.length > 0);
+    return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
+  };
+
+  const extractActionNoActionSummary = (value: unknown): string => {
+    if (!value || typeof value !== "object") {
+      return "";
+    }
+    const actionNoAction =
+      (value as Record<string, unknown>).action_noaction &&
+      typeof (value as Record<string, unknown>).action_noaction === "object"
+        ? ((value as Record<string, unknown>).action_noaction as Record<string, unknown>)
+        : null;
+    if (!actionNoAction) {
+      return "";
+    }
+    const type = typeof actionNoAction.type === "string" ? actionNoAction.type.trim() : "";
+    if (type === "ACTION") {
+      const actions = Array.isArray(actionNoAction.actions)
+        ? (actionNoAction.actions as unknown[])
+            .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
+            .map((entry) => entry.trim())
+        : [];
+      return actions.length > 0 ? actions.join(", ") : "Action selected";
+    }
+    if (type === "NOACTION") {
+      const noActionType =
+        typeof actionNoAction.noaction_type === "string"
+          ? actionNoAction.noaction_type.trim()
+          : "";
+      return noActionType ? `No Action: ${noActionType}` : "No Action selected";
+    }
+    return "";
+  };
+
+  const extractLocationUseSummary = (value: unknown): string[] => {
+    if (!value || typeof value !== "object") {
+      return [];
+    }
+    const candidate = value as Record<string, unknown>;
+    const summary: string[] = [];
+    const useType = typeof candidate.use_type === "string" ? candidate.use_type.trim() : "";
+    const secondaryUse =
+      typeof candidate.secondary_use === "string" ? candidate.secondary_use.trim() : "";
+    const vacancyCause =
+      typeof candidate.vacancy_cause === "string" ? candidate.vacancy_cause.trim() : "";
+    if (useType) {
+      summary.push(`Primary: ${useType}`);
+    }
+    if (secondaryUse) {
+      summary.push(`Secondary: ${secondaryUse}`);
+    }
+    if (vacancyCause) {
+      summary.push(`Vacancy: ${vacancyCause}`);
+    }
+    const inUse =
+      candidate.in_use && typeof candidate.in_use === "object"
+        ? (candidate.in_use as Record<string, unknown>)
+        : null;
+    if (inUse && typeof inUse.in_use === "boolean") {
+      summary.push(`In Use: ${inUse.in_use ? "Yes" : "No"}`);
+    }
+    if (inUse && typeof inUse.intended === "boolean") {
+      summary.push(`As Intended: ${inUse.intended ? "Yes" : "No"}`);
+    }
+    return summary;
+  };
+
   const buildCompareRow = (
     id: string,
     label: string,
@@ -5997,6 +6114,20 @@ function NerisReportFormPage({
     const retrievedDispatchUnits = extractUnitSummaries(
       readPathValue(retrievedIncident, ["dispatch", "unit_responses"]),
     );
+    const submittedActionSummary = extractActionNoActionSummary(
+      readPathValue(submittedPayload, ["actions_tactics"]),
+    );
+    const retrievedActionSummary = extractActionNoActionSummary(
+      readPathValue(retrievedIncident, ["actions_tactics"]),
+    );
+    const submittedAidSummary = extractAidSummaries(readPathValue(submittedPayload, ["aids"]));
+    const retrievedAidSummary = extractAidSummaries(readPathValue(retrievedIncident, ["aids"]));
+    const submittedLocationUseSummary = extractLocationUseSummary(
+      readPathValue(submittedPayload, ["base", "location_use"]),
+    );
+    const retrievedLocationUseSummary = extractLocationUseSummary(
+      readPathValue(retrievedIncident, ["base", "location_use"]),
+    );
 
     return [
       buildCompareRow(
@@ -6019,6 +6150,43 @@ function NerisReportFormPage({
         retrievedAdditionalTypes,
       ),
       buildCompareRow(
+        "special-modifiers",
+        "Special Incident Modifier(s)",
+        readPathValue(submittedPayload, ["special_modifiers"]),
+        readPathValue(retrievedIncident, ["special_modifiers"]),
+      ),
+      buildCompareRow("actions-or-no-action", "Actions / No Action", submittedActionSummary, retrievedActionSummary),
+      buildCompareRow(
+        "people-present",
+        "Were people present?",
+        readPathValue(submittedPayload, ["base", "people_present"]),
+        readPathValue(retrievedIncident, ["base", "people_present"]),
+      ),
+      buildCompareRow(
+        "displaced-count",
+        "Number of People Displaced",
+        readPathValue(submittedPayload, ["base", "displacement_count"]),
+        readPathValue(retrievedIncident, ["base", "displacement_count"]),
+      ),
+      buildCompareRow(
+        "displacement-causes",
+        "Displacement Cause(s)",
+        readPathValue(submittedPayload, ["base", "displacement_causes"]),
+        readPathValue(retrievedIncident, ["base", "displacement_causes"]),
+      ),
+      buildCompareRow(
+        "narrative-outcome",
+        "Narrative - Outcome",
+        readPathValue(submittedPayload, ["base", "outcome_narrative"]),
+        readPathValue(retrievedIncident, ["base", "outcome_narrative"]),
+      ),
+      buildCompareRow(
+        "narrative-obstacles",
+        "Narrative - Obstacles",
+        readPathValue(submittedPayload, ["base", "impediment_narrative"]),
+        readPathValue(retrievedIncident, ["base", "impediment_narrative"]),
+      ),
+      buildCompareRow(
         "incident-address-street",
         "Incident Address - Street",
         readPathValue(submittedPayload, ["base", "location", "street"]),
@@ -6037,6 +6205,30 @@ function NerisReportFormPage({
         readPathValue(retrievedIncident, ["base", "location", "state"]),
       ),
       buildCompareRow(
+        "incident-address-postal",
+        "Incident Address - Postal Code",
+        readPathValue(submittedPayload, ["base", "location", "postal_code"]),
+        readPathValue(retrievedIncident, ["base", "location", "postal_code"]),
+      ),
+      buildCompareRow(
+        "incident-address-county",
+        "Incident Address - County",
+        readPathValue(submittedPayload, ["base", "location", "county"]),
+        readPathValue(retrievedIncident, ["base", "location", "county"]),
+      ),
+      buildCompareRow(
+        "incident-place-type",
+        "Incident Place Type",
+        readPathValue(submittedPayload, ["base", "location", "place_type"]),
+        readPathValue(retrievedIncident, ["base", "location", "place_type"]),
+      ),
+      buildCompareRow(
+        "incident-location-use",
+        "Incident Location Use",
+        submittedLocationUseSummary,
+        retrievedLocationUseSummary,
+      ),
+      buildCompareRow(
         "dispatch-incident-number",
         "Dispatch Incident Number",
         readPathValue(submittedPayload, ["dispatch", "incident_number"]),
@@ -6047,6 +6239,18 @@ function NerisReportFormPage({
         "Dispatch Code",
         readPathValue(submittedPayload, ["dispatch", "incident_code"]),
         readPathValue(retrievedIncident, ["dispatch", "incident_code"]),
+      ),
+      buildCompareRow(
+        "dispatch-center-id",
+        "Dispatch Center ID",
+        readPathValue(submittedPayload, ["dispatch", "center_id"]),
+        readPathValue(retrievedIncident, ["dispatch", "center_id"]),
+      ),
+      buildCompareRow(
+        "dispatch-clear-time",
+        "Incident Clear Time",
+        readPathValue(submittedPayload, ["dispatch", "incident_clear"]),
+        readPathValue(retrievedIncident, ["dispatch", "incident_clear"]),
       ),
       buildCompareRow(
         "dispatch-auto-alarm",
@@ -6083,6 +6287,25 @@ function NerisReportFormPage({
         "Dispatch Location - State",
         readPathValue(submittedPayload, ["dispatch", "location", "state"]),
         readPathValue(retrievedIncident, ["dispatch", "location", "state"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-postal",
+        "Dispatch Location - Postal Code",
+        readPathValue(submittedPayload, ["dispatch", "location", "postal_code"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "postal_code"]),
+      ),
+      buildCompareRow(
+        "dispatch-location-county",
+        "Dispatch Location - County",
+        readPathValue(submittedPayload, ["dispatch", "location", "county"]),
+        readPathValue(retrievedIncident, ["dispatch", "location", "county"]),
+      ),
+      buildCompareRow("aid-fire-department", "Aid (Fire Department)", submittedAidSummary, retrievedAidSummary),
+      buildCompareRow(
+        "aid-non-fd",
+        "Aid (Non FD)",
+        readPathValue(submittedPayload, ["nonfd_aids"]),
+        readPathValue(retrievedIncident, ["nonfd_aids"]),
       ),
     ];
   };

@@ -8,6 +8,7 @@ const DEFAULT_PROXY_PORT = 8787;
 const TOKEN_REFRESH_BUFFER_MS = 60_000;
 const NERIS_ENTITY_ID_PATTERN = /^(FD|VN|FM|FA)\d{8}$/;
 const NERIS_DEPARTMENT_ID_PATTERN = /^FD\d{8}$/;
+const NERIS_AID_DEPARTMENT_ID_PATTERN = /^(FD|FM)\d{8}$/;
 const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
 const NERIS_STATE_CODES = new Set([
   "AL",
@@ -184,6 +185,29 @@ function toIsoDateTime(value, fallbackIsoDateTime) {
   return parsed.toISOString();
 }
 
+function toIsoDateTimeOrNull(value) {
+  const trimmed = trimValue(value);
+  if (!trimmed) {
+    return null;
+  }
+  const parsed = new Date(trimmed);
+  if (Number.isNaN(parsed.getTime())) {
+    return null;
+  }
+  return parsed.toISOString();
+}
+
+function yesNoToBoolean(value) {
+  const normalized = trimValue(value).toUpperCase();
+  if (normalized === "YES") {
+    return true;
+  }
+  if (normalized === "NO") {
+    return false;
+  }
+  return null;
+}
+
 function normalizeStateCode(rawValue, fallbackValue) {
   const fallback = trimValue(fallbackValue).toUpperCase();
   const fallbackNormalized = NERIS_STATE_CODES.has(fallback) ? fallback : "NY";
@@ -284,7 +308,7 @@ function parseUnitList(rawValue) {
     return [];
   }
   return normalized
-    .split(",")
+    .split(/[,\n\r;]+/)
     .map((segment) => segment.trim())
     .filter((segment) => segment.length > 0);
 }
@@ -300,7 +324,17 @@ function toNonNegativeInt(value) {
 function extractUnitResponses(formValues, incidentSnapshot) {
   const unitsFromJson = [];
   const staffingByUnitId = new Map();
+  const responseModeByUnitId = new Map();
+  const dispatchTimeByUnitId = new Map();
+  const enrouteTimeByUnitId = new Map();
+  const onSceneTimeByUnitId = new Map();
+  const clearTimeByUnitId = new Map();
+  const canceledEnrouteByUnitId = new Map();
   const resourceUnitsJsonRaw = trimValue(formValues.resource_units_json);
+  const defaultUnitDispatchTime = toIsoDateTimeOrNull(formValues.incident_time_unit_dispatched);
+  const defaultUnitEnrouteTime = toIsoDateTimeOrNull(formValues.incident_time_unit_enroute);
+  const defaultUnitOnSceneTime = toIsoDateTimeOrNull(formValues.incident_time_unit_on_scene);
+  const defaultUnitClearTime = toIsoDateTimeOrNull(formValues.incident_time_unit_clear);
   if (resourceUnitsJsonRaw) {
     try {
       const parsed = JSON.parse(resourceUnitsJsonRaw);
@@ -318,6 +352,35 @@ function extractUnitResponses(formValues, incidentSnapshot) {
           if (staffingCandidate !== null) {
             staffingByUnitId.set(unitId, staffingCandidate);
           }
+
+          const responseModeCandidate = normalizeEnumValue(entry.responseMode);
+          if (responseModeCandidate) {
+            responseModeByUnitId.set(unitId, responseModeCandidate);
+          }
+
+          const dispatchTimeCandidate = toIsoDateTimeOrNull(entry.dispatchTime);
+          if (dispatchTimeCandidate) {
+            dispatchTimeByUnitId.set(unitId, dispatchTimeCandidate);
+          }
+          const enrouteTimeCandidate = toIsoDateTimeOrNull(entry.enrouteTime);
+          if (enrouteTimeCandidate) {
+            enrouteTimeByUnitId.set(unitId, enrouteTimeCandidate);
+          }
+          const onSceneTimeCandidate = toIsoDateTimeOrNull(entry.onSceneTime);
+          if (onSceneTimeCandidate) {
+            onSceneTimeByUnitId.set(unitId, onSceneTimeCandidate);
+          }
+          const clearTimeCandidate = toIsoDateTimeOrNull(entry.clearTime);
+          if (clearTimeCandidate) {
+            clearTimeByUnitId.set(unitId, clearTimeCandidate);
+          }
+          if (entry.isCanceledEnroute === true) {
+            const canceledTimestamp =
+              enrouteTimeCandidate || dispatchTimeCandidate || defaultUnitEnrouteTime;
+            if (canceledTimestamp) {
+              canceledEnrouteByUnitId.set(unitId, canceledTimestamp);
+            }
+          }
         });
       }
     } catch {
@@ -329,6 +392,7 @@ function extractUnitResponses(formValues, incidentSnapshot) {
   const additionalUnits = parseUnitList(formValues.resource_additional_units);
   const assignedUnits = parseUnitList(incidentSnapshot.assignedUnits);
   const fallbackReportedUnitId = firstAssignedUnit(incidentSnapshot.assignedUnits);
+  const primaryResponseMode = normalizeEnumValue(formValues.resource_primary_unit_response_mode);
 
   const orderedUnitIds = Array.from(
     new Set([
@@ -344,6 +408,22 @@ function extractUnitResponses(formValues, incidentSnapshot) {
   if (primaryUnitId && primaryStaffing !== null && !staffingByUnitId.has(primaryUnitId)) {
     staffingByUnitId.set(primaryUnitId, primaryStaffing);
   }
+  if (primaryUnitId && primaryResponseMode && !responseModeByUnitId.has(primaryUnitId)) {
+    responseModeByUnitId.set(primaryUnitId, primaryResponseMode);
+  }
+
+  if (primaryUnitId && defaultUnitDispatchTime && !dispatchTimeByUnitId.has(primaryUnitId)) {
+    dispatchTimeByUnitId.set(primaryUnitId, defaultUnitDispatchTime);
+  }
+  if (primaryUnitId && defaultUnitEnrouteTime && !enrouteTimeByUnitId.has(primaryUnitId)) {
+    enrouteTimeByUnitId.set(primaryUnitId, defaultUnitEnrouteTime);
+  }
+  if (primaryUnitId && defaultUnitOnSceneTime && !onSceneTimeByUnitId.has(primaryUnitId)) {
+    onSceneTimeByUnitId.set(primaryUnitId, defaultUnitOnSceneTime);
+  }
+  if (primaryUnitId && defaultUnitClearTime && !clearTimeByUnitId.has(primaryUnitId)) {
+    clearTimeByUnitId.set(primaryUnitId, defaultUnitClearTime);
+  }
 
   if (!orderedUnitIds.length) {
     return [{ reported_unit_id: "UNSPECIFIED_UNIT" }];
@@ -356,6 +436,30 @@ function extractUnitResponses(formValues, incidentSnapshot) {
     const staffing = staffingByUnitId.get(unitId);
     if (typeof staffing === "number") {
       response.staffing = staffing;
+    }
+    const responseMode = responseModeByUnitId.get(unitId);
+    if (responseMode) {
+      response.response_mode = responseMode;
+    }
+    const dispatchTime = dispatchTimeByUnitId.get(unitId);
+    if (dispatchTime) {
+      response.dispatch = dispatchTime;
+    }
+    const enrouteTime = enrouteTimeByUnitId.get(unitId);
+    if (enrouteTime) {
+      response.enroute_to_scene = enrouteTime;
+    }
+    const onSceneTime = onSceneTimeByUnitId.get(unitId);
+    if (onSceneTime) {
+      response.on_scene = onSceneTime;
+    }
+    const clearTime = clearTimeByUnitId.get(unitId);
+    if (clearTime) {
+      response.unit_clear = clearTime;
+    }
+    const canceledTime = canceledEnrouteByUnitId.get(unitId);
+    if (canceledTime) {
+      response.canceled_enroute = canceledTime;
     }
     return response;
   });
@@ -601,6 +705,33 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   dispatchLocation.state = normalizedLocationState;
   dispatchLocation.country = normalizedLocationCountry;
 
+  const postalCode = trimValue(formValues.location_postal_code);
+  if (postalCode) {
+    baseLocation.postal_code = postalCode;
+    dispatchLocation.postal_code = postalCode;
+  }
+  const county = trimValue(formValues.location_county);
+  if (county) {
+    baseLocation.county = county;
+    dispatchLocation.county = county;
+  }
+  const placeType = normalizeEnumValue(formValues.location_place_type);
+  if (placeType) {
+    baseLocation.place_type = placeType;
+    dispatchLocation.place_type = placeType;
+  }
+  const directionOfTravel = normalizeEnumValue(formValues.location_direction_of_travel);
+  if (directionOfTravel) {
+    baseLocation.direction_of_travel = directionOfTravel;
+    dispatchLocation.direction_of_travel = directionOfTravel;
+  }
+  const crossStreetType = normalizeEnumValue(formValues.location_cross_street_type);
+  if (crossStreetType) {
+    const crossStreetPayload = [{ cross_street_modifier: crossStreetType }];
+    baseLocation.cross_streets = crossStreetPayload;
+    dispatchLocation.cross_streets = crossStreetPayload;
+  }
+
   const additionalIncidentTypes = csvToEnumValues(formValues.additional_incident_types)
     .filter((entry) => entry !== primaryIncidentType)
     .slice(0, 2);
@@ -614,6 +745,46 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
       type: entry,
     })),
   ];
+
+  const specialModifiers = csvToEnumValues(formValues.special_incident_modifiers);
+  const actionValues = csvToEnumValues(formValues.incident_actions_taken);
+  const noActionValue = normalizeEnumValue(formValues.incident_noaction);
+  let actionsTactics = null;
+  if (actionValues.length > 0) {
+    actionsTactics = {
+      action_noaction: {
+        type: "ACTION",
+        actions: actionValues,
+      },
+    };
+  } else if (noActionValue) {
+    actionsTactics = {
+      action_noaction: {
+        type: "NOACTION",
+        noaction_type: noActionValue,
+      },
+    };
+  }
+
+  const peoplePresent = yesNoToBoolean(formValues.incident_people_present);
+  const displacedCount = toNonNegativeInt(formValues.incident_displaced_number);
+  const displacementCauses = csvToEnumValues(formValues.incident_displaced_cause);
+  const outcomeNarrative = trimValue(formValues.narrative_outcome);
+  const impedimentNarrative = trimValue(formValues.narrative_obstacles);
+
+  const locationUse = {};
+  const locationUsePrimary = normalizeEnumValue(formValues.location_use_primary);
+  const locationUseSecondary = normalizeEnumValue(formValues.location_use_secondary);
+  const locationVacancyCause = normalizeEnumValue(formValues.location_vacancy_cause);
+  if (locationUsePrimary) {
+    locationUse.use_type = locationUsePrimary;
+  }
+  if (locationUseSecondary) {
+    locationUse.secondary_use = locationUseSecondary;
+  }
+  if (locationVacancyCause) {
+    locationUse.vacancy_cause = locationVacancyCause;
+  }
 
   const unitResponses = extractUnitResponses(formValues, incidentSnapshot);
 
@@ -645,16 +816,105 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   if (automaticAlarm === "NO") {
     dispatchPayload.automatic_alarm = false;
   }
+  const dispatchCenterId = trimValue(formValues.dispatch_center_id);
+  if (dispatchCenterId) {
+    dispatchPayload.center_id = dispatchCenterId;
+  }
+  const incidentClearTime = toIsoDateTimeOrNull(formValues.incident_time_clear);
+  if (incidentClearTime) {
+    dispatchPayload.incident_clear = incidentClearTime;
+  }
 
-  return {
-    base: {
-      department_neris_id: departmentNerisId,
-      incident_number: incidentNumber,
-      location: baseLocation,
-    },
+  const nonFdAids =
+    trimValue(formValues.incident_aid_agency_type).toUpperCase() === "NON_FD_AID"
+      ? csvToEnumValues(formValues.incident_aid_nonfd)
+      : [];
+
+  const aidEntries = [];
+  if (trimValue(formValues.incident_aid_agency_type).toUpperCase() === "FIRE_DEPARTMENT") {
+    const direction = normalizeEnumValue(formValues.incident_aid_direction);
+    const aidType = normalizeEnumValue(formValues.incident_aid_type);
+    const department = trimValue(formValues.incident_aid_department_name);
+    if (direction && aidType && NERIS_AID_DEPARTMENT_ID_PATTERN.test(department)) {
+      aidEntries.push({
+        department_neris_id: department,
+        aid_type: aidType,
+        aid_direction: direction,
+      });
+    }
+  }
+  const additionalAidEntries = Array.isArray(body.additionalAidEntries)
+    ? body.additionalAidEntries
+    : [];
+  additionalAidEntries.forEach((entry) => {
+    if (!entry || typeof entry !== "object") {
+      return;
+    }
+    const direction = normalizeEnumValue(entry.aidDirection);
+    const aidType = normalizeEnumValue(entry.aidType);
+    const department = trimValue(entry.aidDepartment);
+    if (!direction || !aidType || !NERIS_AID_DEPARTMENT_ID_PATTERN.test(department)) {
+      return;
+    }
+    aidEntries.push({
+      department_neris_id: department,
+      aid_type: aidType,
+      aid_direction: direction,
+    });
+  });
+
+  const uniqueAidEntries = Array.from(
+    new Map(
+      aidEntries.map((entry) => [
+        `${entry.department_neris_id}|${entry.aid_type}|${entry.aid_direction}`,
+        entry,
+      ]),
+    ).values(),
+  );
+
+  const basePayload = {
+    department_neris_id: departmentNerisId,
+    incident_number: incidentNumber,
+    location: baseLocation,
+  };
+  if (typeof peoplePresent === "boolean") {
+    basePayload.people_present = peoplePresent;
+  }
+  if (typeof displacedCount === "number") {
+    basePayload.displacement_count = displacedCount;
+  }
+  if (displacementCauses.length > 0) {
+    basePayload.displacement_causes = displacementCauses;
+  }
+  if (outcomeNarrative) {
+    basePayload.outcome_narrative = outcomeNarrative;
+  }
+  if (impedimentNarrative) {
+    basePayload.impediment_narrative = impedimentNarrative;
+  }
+  if (Object.keys(locationUse).length > 0) {
+    basePayload.location_use = locationUse;
+  }
+
+  const payload = {
+    base: basePayload,
     incident_types: incidentTypes,
     dispatch: dispatchPayload,
   };
+  if (specialModifiers.length > 0) {
+    payload.special_modifiers = specialModifiers;
+  }
+  if (actionsTactics) {
+    payload.actions_tactics = actionsTactics;
+  }
+  if (uniqueAidEntries.length > 0) {
+    payload.aids = uniqueAidEntries;
+  }
+  if (nonFdAids.length > 0) {
+    payload.nonfd_aids = nonFdAids;
+  }
+
+  return payload;
 }
 
 app.get("/api/neris/health", (request, response) => {
