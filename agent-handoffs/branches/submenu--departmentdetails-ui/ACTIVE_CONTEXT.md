@@ -7,7 +7,7 @@
 - Department details UI (handoff folder initialized; branch created from main)
 
 ## Latest known status
-- Latest commit: f5be94b - Add handoff folder for submenu/departmentdetails-ui (ACTIVE_CONTEXT, session note, COPY_PASTE_START_PROMPT)
+- Latest commit: a6d3b2b - Update ACTIVE_CONTEXT and session note with latest commit and next steps
 
 ## Current blocker / status
 - None. Handoff structure ready; ready for department details UI feature work.
@@ -16,6 +16,7 @@
 - 
 
 ## Recent key commits (latest first)
+- a6d3b2b Update ACTIVE_CONTEXT and session note with latest commit and next steps
 - f5be94b Add handoff folder for submenu/departmentdetails-ui (ACTIVE_CONTEXT, session note, COPY_PASTE_START_PROMPT)
 
 ## Next agent should do this first
