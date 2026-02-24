@@ -402,6 +402,7 @@ const RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS: NerisValueOption[] = [
   { value: "UNKNOWN", label: "Unknown" },
 ];
 const NERIS_INCIDENT_ID_PATTERN = /^FD\d{8}\|[\w\-:]+\|\d{10}$/;
+const NERIS_AID_DEPARTMENT_ID_PATTERN = /^(FD|FM)\d{8}$/;
 const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_internal_id",
   "dispatch_internal_id",
@@ -422,7 +423,9 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_time_call_arrival",
   "incident_time_unit_dispatched",
   "incident_time_unit_enroute",
+  "incident_time_unit_staged",
   "incident_time_unit_on_scene",
+  "incident_time_unit_canceled",
   "incident_time_unit_clear",
   "incident_time_clear",
   "incident_location_address",
@@ -430,6 +433,8 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "location_place_type",
   "location_use_primary",
   "location_use_secondary",
+  "location_in_use",
+  "location_used_as_intended",
   "location_vacancy_cause",
   "location_state",
   "location_country",
@@ -531,9 +536,12 @@ interface ResourceUnitEntry {
   unitType: string;
   staffing: string;
   responseMode: string;
+  transportMode: string;
   dispatchTime: string;
   enrouteTime: string;
+  stagedTime: string;
   onSceneTime: string;
+  canceledTime: string;
   clearTime: string;
   isCanceledEnroute: boolean;
   isComplete: boolean;
@@ -771,7 +779,14 @@ function addMinutesToResourceDateTime(value: string, minutesToAdd: number): stri
 
 function resourceUnitValidationErrorKey(
   unitEntryId: string,
-  field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+  field:
+    | "personnel"
+    | "dispatchTime"
+    | "enrouteTime"
+    | "stagedTime"
+    | "onSceneTime"
+    | "canceledTime"
+    | "clearTime",
 ): string {
   return `resource_unit_validation_${unitEntryId}_${field}`;
 }
@@ -4053,6 +4068,9 @@ function NerisReportFormPage({
       aidDepartment: entry.aidDepartment,
     })),
   );
+  const [aidDepartmentOptions, setAidDepartmentOptions] = useState<NerisValueOption[]>(() =>
+    getNerisValueOptions("aid_department"),
+  );
   const [showDirectionOfTravelField, setShowDirectionOfTravelField] = useState<boolean>(
     () =>
       (persistedDraft?.formValues.location_direction_of_travel ?? "").trim().length >
@@ -4113,9 +4131,12 @@ function NerisReportFormPage({
         unitType: inferResourceUnitTypeValue(option.value, source?.unitType, unitTypeOptions),
         staffing: getStaffingValueForUnit(option.value, ""),
         responseMode: "",
+        transportMode: "",
         dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
         enrouteTime: "",
+        stagedTime: "",
         onSceneTime: "",
+        canceledTime: "",
         clearTime: "",
         isCanceledEnroute: false,
         isComplete: false,
@@ -4160,6 +4181,7 @@ function NerisReportFormPage({
           unitType: normalizedUnitType,
           staffing: getStaffingValueForUnit(unitId, personnel),
           responseMode: item.responseMode?.trim() ?? "",
+          transportMode: item.transportMode?.trim() ?? "",
           dispatchTime: toResourceDateTimeInputValue(
             item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
             resourceFallbackDate,
@@ -4168,8 +4190,16 @@ function NerisReportFormPage({
             item.enrouteTime?.trim() ?? "",
             resourceFallbackDate,
           ),
+          stagedTime: toResourceDateTimeInputValue(
+            item.stagedTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
           onSceneTime: toResourceDateTimeInputValue(
             item.onSceneTime?.trim() ?? "",
+            resourceFallbackDate,
+          ),
+          canceledTime: toResourceDateTimeInputValue(
+            item.canceledTime?.trim() ?? "",
             resourceFallbackDate,
           ),
           clearTime: toResourceDateTimeInputValue(item.clearTime?.trim() ?? "", resourceFallbackDate),
@@ -4510,10 +4540,12 @@ function NerisReportFormPage({
       ["location_place_type", 5],
       ["location_use_primary", 6],
       ["location_use_secondary", 7],
-      ["location_vacancy_cause", 8],
-      ["location_direction_of_travel", 9],
-      ["location_cross_street_type", 10],
-      ["location_notes", 11],
+      ["location_in_use", 8],
+      ["location_used_as_intended", 9],
+      ["location_vacancy_cause", 10],
+      ["location_direction_of_travel", 11],
+      ["location_cross_street_type", 12],
+      ["location_notes", 13],
     ]);
 
     return [...sectionFields].sort((left, right) => {
@@ -4572,6 +4604,98 @@ function NerisReportFormPage({
     ],
   );
 
+  useEffect(() => {
+    let isCancelled = false;
+    const fallbackOptions = getNerisValueOptions("aid_department");
+    const exportUrl = (nerisExportSettings.exportUrl ?? "").trim();
+    if (!exportUrl.startsWith("/api/neris/")) {
+      setAidDepartmentOptions(fallbackOptions);
+      return () => {
+        isCancelled = true;
+      };
+    }
+
+    const loadAidDepartmentOptions = async () => {
+      try {
+        const response = await fetch("/api/neris/debug/entities");
+        const responseText = await response.text();
+        if (!response.ok) {
+          if (!isCancelled) {
+            setAidDepartmentOptions(fallbackOptions);
+          }
+          return;
+        }
+
+        const parsed = (() => {
+          if (!responseText) {
+            return null;
+          }
+          try {
+            return JSON.parse(responseText) as Record<string, unknown>;
+          } catch {
+            return null;
+          }
+        })();
+        const neris =
+          parsed?.neris && typeof parsed.neris === "object"
+            ? (parsed.neris as Record<string, unknown>)
+            : null;
+        const entities = Array.isArray(neris?.entities) ? (neris?.entities as unknown[]) : [];
+        const apiOptions = entities
+          .map((entry) => {
+            if (!entry || typeof entry !== "object") {
+              return null;
+            }
+            const candidate = entry as Record<string, unknown>;
+            const departmentId =
+              typeof candidate.neris_id === "string" ? candidate.neris_id.trim() : "";
+            if (!NERIS_AID_DEPARTMENT_ID_PATTERN.test(departmentId)) {
+              return null;
+            }
+            const departmentName =
+              typeof candidate.name === "string" && candidate.name.trim().length > 0
+                ? candidate.name.trim()
+                : departmentId;
+            return {
+              value: departmentId,
+              label: `${departmentId} - ${departmentName}`,
+            } as NerisValueOption;
+          })
+          .filter((option): option is NerisValueOption => Boolean(option));
+
+        const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
+        if (
+          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
+          !apiOptions.some((option) => option.value === requestedEntityId)
+        ) {
+          apiOptions.unshift({
+            value: requestedEntityId,
+            label: `${requestedEntityId} - Current export department`,
+          });
+        }
+
+        const dedupedOptions = Array.from(
+          new Map(
+            [...apiOptions, ...fallbackOptions].map((option) => [option.value, option]),
+          ).values(),
+        );
+        if (!isCancelled) {
+          setAidDepartmentOptions(dedupedOptions);
+        }
+      } catch {
+        if (!isCancelled) {
+          setAidDepartmentOptions(fallbackOptions);
+        }
+      }
+    };
+
+    void loadAidDepartmentOptions();
+
+    return () => {
+      isCancelled = true;
+    };
+  }, [nerisExportSettings.exportUrl, nerisExportSettings.vendorCode]);
+
   const updateFieldValue = (fieldId: string, value: string) => {
     const sanitizedValue =
       fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
@@ -4584,6 +4708,8 @@ function NerisReportFormPage({
         (sanitizedValue.trim().length === 0 ||
           Number.parseInt(sanitizedValue, 10) <= 0)) ||
       (fieldId === "incident_people_present" && sanitizedValue === "NO");
+    const shouldClearLocationUsedAsIntended =
+      fieldId === "location_in_use" && sanitizedValue !== "YES";
     const shouldClearAidFields =
       (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
       (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
@@ -4604,6 +4730,9 @@ function NerisReportFormPage({
       }
       if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
         nextValues.incident_displaced_number = "";
+      }
+      if (shouldClearLocationUsedAsIntended) {
+        nextValues.location_used_as_intended = "";
       }
       if (fieldId === "incident_has_aid" && sanitizedValue === "NO") {
         nextValues.incident_aid_agency_type = "";
@@ -4641,6 +4770,8 @@ function NerisReportFormPage({
         fieldId === "incident_people_present" &&
         sanitizedValue === "NO" &&
         Boolean(previous.incident_displaced_number);
+      const hasLocationUsedAsIntendedError =
+        shouldClearLocationUsedAsIntended && Boolean(previous.location_used_as_intended);
       const hasAidErrors =
         shouldClearAidFields &&
         (Boolean(previous.incident_aid_agency_type) ||
@@ -4654,6 +4785,7 @@ function NerisReportFormPage({
         !hasActionsError &&
         !hasDisplacementCauseError &&
         !hasDisplacementNumberError &&
+        !hasLocationUsedAsIntendedError &&
         !hasAidErrors
       ) {
         return previous;
@@ -4671,6 +4803,9 @@ function NerisReportFormPage({
       }
       if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
         delete next.incident_displaced_number;
+      }
+      if (shouldClearLocationUsedAsIntended) {
+        delete next.location_used_as_intended;
       }
       if (shouldClearAidFields) {
         delete next.incident_aid_agency_type;
@@ -4836,7 +4971,14 @@ function NerisReportFormPage({
     const errors: Record<string, string> = {};
     const customIssueLabelsByFieldId: Record<string, string> = {};
     const addResourceError = (
-      field: "personnel" | "dispatchTime" | "enrouteTime" | "onSceneTime" | "clearTime",
+      field:
+        | "personnel"
+        | "dispatchTime"
+        | "enrouteTime"
+        | "stagedTime"
+        | "onSceneTime"
+        | "canceledTime"
+        | "clearTime",
       fieldLabel: string,
       message: string,
     ) => {
@@ -4923,15 +5065,27 @@ function NerisReportFormPage({
         value: unitEntry.onSceneTime,
       },
       {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "stagedTime"),
+        label: "Unit staged time",
+        customIssueLabel: `Resources - ${unitLabel}: Staged time`,
+        value: unitEntry.stagedTime,
+      },
+      {
+        key: resourceUnitValidationErrorKey(unitEntry.id, "canceledTime"),
+        label: "Unit canceled time",
+        customIssueLabel: `Resources - ${unitLabel}: Canceled time`,
+        value: unitEntry.canceledTime,
+      },
+      {
         key: resourceUnitValidationErrorKey(unitEntry.id, "clearTime"),
         label: "Unit clear time",
         customIssueLabel: `Resources - ${unitLabel}: Clear time`,
         value: unitEntry.clearTime,
       },
       {
-        key: "time_incident_clear",
+        key: "incident_time_clear",
         label: "Incident clear time",
-        value: formValues.time_incident_clear ?? "",
+        value: formValues.incident_time_clear ?? formValues.time_incident_clear ?? "",
       },
     ];
 
@@ -4984,9 +5138,12 @@ function NerisReportFormPage({
         unitType: unit.unitType,
         staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
         responseMode: unit.responseMode,
+        transportMode: unit.transportMode,
         dispatchTime: unit.dispatchTime,
         enrouteTime: unit.enrouteTime,
+        stagedTime: unit.stagedTime,
         onSceneTime: unit.onSceneTime,
+        canceledTime: unit.canceledTime,
         clearTime: unit.clearTime,
         isCanceledEnroute: unit.isCanceledEnroute,
         isComplete: unit.isComplete,
@@ -5069,9 +5226,12 @@ function NerisReportFormPage({
       | "unitType"
       | "staffing"
       | "responseMode"
+      | "transportMode"
       | "dispatchTime"
       | "enrouteTime"
+      | "stagedTime"
       | "onSceneTime"
+      | "canceledTime"
       | "clearTime"
       | "personnel"
       | "reportWriter"
@@ -5107,7 +5267,9 @@ function NerisReportFormPage({
               }
               if (
                 field === "enrouteTime" ||
+                field === "stagedTime" ||
                 field === "onSceneTime" ||
+                field === "canceledTime" ||
                 field === "clearTime"
               ) {
                 return {
@@ -5210,6 +5372,7 @@ function NerisReportFormPage({
                 return {
                   ...entry,
                   isCanceledEnroute: false,
+                  canceledTime: "",
                 };
               }
 
@@ -5221,10 +5384,18 @@ function NerisReportFormPage({
                 entry.clearTime,
                 resourceFallbackDate,
               );
+              const normalizedCanceled = toResourceDateTimeInputValue(
+                entry.canceledTime,
+                resourceFallbackDate,
+              );
               return {
                 ...entry,
                 isCanceledEnroute: true,
                 dispatchTime: normalizedDispatch,
+                canceledTime:
+                  normalizedCanceled || normalizedDispatch
+                    ? normalizedCanceled || addMinutesToResourceDateTime(normalizedDispatch, 1)
+                    : "",
                 clearTime:
                   normalizedClear || normalizedDispatch
                     ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
@@ -5730,6 +5901,19 @@ function NerisReportFormPage({
       );
     }
 
+    const timezoneSourceDate = (() => {
+      const dispatchTime = (formValues.incident_time_call_create ?? "").trim();
+      if (!dispatchTime) {
+        return new Date();
+      }
+      const parsed = new Date(dispatchTime);
+      if (Number.isNaN(parsed.getTime())) {
+        return new Date();
+      }
+      return parsed;
+    })();
+    const clientUtcOffsetMinutes = timezoneSourceDate.getTimezoneOffset();
+
     const payload = {
       callNumber: detailForSideEffects.callNumber,
       reportStatus,
@@ -5749,6 +5933,7 @@ function NerisReportFormPage({
         apiVersionHeaderValue,
         existingIncidentNerisId,
         allowUpdateFallback: true,
+        clientUtcOffsetMinutes,
       },
       additionalAidEntries: buildStoredAdditionalAidEntries(),
     };
@@ -5985,6 +6170,34 @@ function NerisReportFormPage({
     return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
   };
 
+  const extractUnitFieldSummaries = (
+    value: unknown,
+    field: "response_mode" | "transport_mode" | "dispatch" | "enroute_to_scene" | "staging" | "on_scene" | "canceled_enroute" | "unit_clear",
+  ): string[] => {
+    if (!Array.isArray(value)) {
+      return [];
+    }
+    const summaries = value
+      .map((entry) => {
+        if (!entry || typeof entry !== "object") {
+          return "";
+        }
+        const candidate = entry as Record<string, unknown>;
+        const reportedUnitId =
+          typeof candidate.reported_unit_id === "string" ? candidate.reported_unit_id.trim() : "";
+        const unitNerisId =
+          typeof candidate.unit_neris_id === "string" ? candidate.unit_neris_id.trim() : "";
+        const unitLabel = reportedUnitId || unitNerisId || "Unknown unit";
+        const rawFieldValue = candidate[field];
+        if (typeof rawFieldValue !== "string" || rawFieldValue.trim().length === 0) {
+          return "";
+        }
+        return `${unitLabel}: ${rawFieldValue.trim()}`;
+      })
+      .filter((entry) => entry.length > 0);
+    return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
+  };
+
   const extractActionNoActionSummary = (value: unknown): string => {
     if (!value || typeof value !== "object") {
       return "";
@@ -6114,6 +6327,40 @@ function NerisReportFormPage({
     const retrievedDispatchUnits = extractUnitSummaries(
       readPathValue(retrievedIncident, ["dispatch", "unit_responses"]),
     );
+    const submittedDispatchUnitResponses = readPathValue(submittedPayload, ["dispatch", "unit_responses"]);
+    const retrievedDispatchUnitResponses = readPathValue(retrievedIncident, ["dispatch", "unit_responses"]);
+    const submittedResponseModes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "response_mode",
+    );
+    const retrievedResponseModes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "response_mode",
+    );
+    const submittedTransportModes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "transport_mode",
+    );
+    const retrievedTransportModes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "transport_mode",
+    );
+    const submittedStagedTimes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "staging",
+    );
+    const retrievedStagedTimes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "staging",
+    );
+    const submittedCanceledTimes = extractUnitFieldSummaries(
+      submittedDispatchUnitResponses,
+      "canceled_enroute",
+    );
+    const retrievedCanceledTimes = extractUnitFieldSummaries(
+      retrievedDispatchUnitResponses,
+      "canceled_enroute",
+    );
     const submittedActionSummary = extractActionNoActionSummary(
       readPathValue(submittedPayload, ["actions_tactics"]),
     );
@@ -6154,6 +6401,7 @@ function NerisReportFormPage({
         "Special Incident Modifier(s)",
         readPathValue(submittedPayload, ["special_modifiers"]),
         readPathValue(retrievedIncident, ["special_modifiers"]),
+        "Some special modifiers are incident-type dependent and may be ignored by NERIS.",
       ),
       buildCompareRow("actions-or-no-action", "Actions / No Action", submittedActionSummary, retrievedActionSummary),
       buildCompareRow(
@@ -6269,6 +6517,30 @@ function NerisReportFormPage({
         "Dispatch Unit Staffing",
         submittedDispatchUnits.staffing,
         retrievedDispatchUnits.staffing,
+      ),
+      buildCompareRow(
+        "dispatch-unit-response-mode",
+        "Dispatch Unit Response Mode",
+        submittedResponseModes,
+        retrievedResponseModes,
+      ),
+      buildCompareRow(
+        "dispatch-unit-transport-mode",
+        "Dispatch Unit Transport Mode",
+        submittedTransportModes,
+        retrievedTransportModes,
+      ),
+      buildCompareRow(
+        "dispatch-unit-staged-time",
+        "Dispatch Unit Staged Time",
+        submittedStagedTimes,
+        retrievedStagedTimes,
+      ),
+      buildCompareRow(
+        "dispatch-unit-canceled-time",
+        "Dispatch Unit Canceled Time",
+        submittedCanceledTimes,
+        retrievedCanceledTimes,
       ),
       buildCompareRow(
         "dispatch-location-street",
@@ -6986,6 +7258,14 @@ function NerisReportFormPage({
       (field.id === "location_use_primary" || field.id === "location_use_secondary") &&
       field.inputKind === "select" &&
       field.optionsKey === "location_use";
+    const isLocationInUseField =
+      field.id === "location_in_use" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
+    const isLocationUsedAsIntendedField =
+      field.id === "location_used_as_intended" &&
+      field.inputKind === "select" &&
+      field.optionsKey === "yes_no";
     const isNoActionReasonField =
       field.id === "incident_noaction" &&
       field.inputKind === "select" &&
@@ -7038,7 +7318,11 @@ function NerisReportFormPage({
     const isNoActionReasonDisabled = (formValues.incident_actions_taken ?? "").trim().length > 0;
     const isActionsTakenDisabled = hasNoActionSelected;
     const isSingleChoiceButtonField =
-      isNoActionReasonField || isAutomaticAlarmField || isPeoplePresentField;
+      isNoActionReasonField ||
+      isAutomaticAlarmField ||
+      isPeoplePresentField ||
+      isLocationInUseField ||
+      isLocationUsedAsIntendedField;
     const displacedNumberValue = Number.parseInt(
       (formValues.incident_displaced_number ?? "").trim(),
       10,
@@ -7064,6 +7348,12 @@ function NerisReportFormPage({
       return null;
     }
     if (field.id === "location_cross_street_type" && !showCrossStreetTypeField) {
+      return null;
+    }
+    if (
+      isLocationUsedAsIntendedField &&
+      (formValues.location_in_use ?? "").trim() !== "YES"
+    ) {
       return null;
     }
     if (currentSection.id === "resources" && field.id.startsWith("resource_")) {
@@ -7258,7 +7548,7 @@ function NerisReportFormPage({
                 <NerisFlatSingleOptionSelect
                   inputId={`${inputId}-aid-department`}
                   value={formValues.incident_aid_department_name ?? ""}
-                  options={getNerisValueOptions("aid_department")}
+                  options={aidDepartmentOptions}
                   onChange={(nextValue) =>
                     updateFieldValue("incident_aid_department_name", nextValue)
                   }
@@ -7321,7 +7611,7 @@ function NerisReportFormPage({
                         <NerisFlatSingleOptionSelect
                           inputId={`${inputId}-additional-aid-department-${entryIndex}`}
                           value={entry.aidDepartment}
-                          options={getNerisValueOptions("aid_department")}
+                          options={aidDepartmentOptions}
                           onChange={(nextValue) =>
                             updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
                           }
@@ -8525,9 +8815,13 @@ function NerisReportFormPage({
                     const enrouteTimeError =
                       sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime")] ??
                       "";
+                    const stagedTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "stagedTime")] ?? "";
                     const onSceneTimeError =
                       sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime")] ??
                       "";
+                    const canceledTimeError =
+                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "canceledTime")] ?? "";
                     const clearTimeError =
                       sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "clearTime")] ?? "";
 
@@ -8564,8 +8858,16 @@ function NerisReportFormPage({
                                 <strong>{toResourceSummaryTime(unitEntry.enrouteTime)}</strong>
                               </div>
                               <div className="neris-resource-time-item">
+                                <span>Staged</span>
+                                <strong>{toResourceSummaryTime(unitEntry.stagedTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
                                 <span>On Scene</span>
                                 <strong>{toResourceSummaryTime(unitEntry.onSceneTime)}</strong>
+                              </div>
+                              <div className="neris-resource-time-item">
+                                <span>Canceled</span>
+                                <strong>{toResourceSummaryTime(unitEntry.canceledTime)}</strong>
                               </div>
                               <div className="neris-resource-time-item">
                                 <span>Clear</span>
@@ -8621,6 +8923,33 @@ function NerisReportFormPage({
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "responseMode",
+                                            isSelected ? "" : option.value,
+                                          )
+                                        }
+                                      >
+                                        {option.label}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                              <div className="neris-resource-field field-span-two">
+                                <label>Transport Mode (to hospital)</label>
+                                <div className="neris-single-choice-row" role="group" aria-label="Unit transport mode">
+                                  {responseModeOptions.map((option) => {
+                                    const isSelected = option.value === unitEntry.transportMode;
+                                    return (
+                                      <button
+                                        key={`${unitEntry.id}-transport-mode-${option.value}`}
+                                        type="button"
+                                        className={`neris-single-choice-button${
+                                          isSelected ? " selected" : ""
+                                        }`}
+                                        aria-pressed={isSelected}
+                                        onClick={() =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "transportMode",
                                             isSelected ? "" : option.value,
                                           )
                                         }
@@ -8723,6 +9052,24 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label>
+                                    Staged
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.stagedTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "stagedTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {stagedTimeError ? (
+                                      <small className="field-error">{stagedTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
                                     On Scene
                                     <input
                                       type="datetime-local"
@@ -8738,6 +9085,24 @@ function NerisReportFormPage({
                                     />
                                     {onSceneTimeError ? (
                                       <small className="field-error">{onSceneTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label>
+                                    Canceled
+                                    <input
+                                      type="datetime-local"
+                                      step={1}
+                                      value={unitEntry.canceledTime}
+                                      onChange={(event) =>
+                                        updateResourceUnitField(
+                                          unitEntry.id,
+                                          "canceledTime",
+                                          event.target.value,
+                                        )
+                                      }
+                                    />
+                                    {canceledTimeError ? (
+                                      <small className="field-error">{canceledTimeError}</small>
                                     ) : null}
                                   </label>
                                   <label>

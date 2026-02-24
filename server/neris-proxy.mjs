@@ -173,10 +173,49 @@ function csvToEnumValues(rawValue) {
   );
 }
 
-function toIsoDateTime(value, fallbackIsoDateTime) {
+function parseLocalDateTimeWithOffset(value, utcOffsetMinutes) {
+  const trimmed = trimValue(value);
+  const localMatch = trimmed.match(
+    /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/,
+  );
+  if (!localMatch) {
+    return "";
+  }
+  const year = Number.parseInt(localMatch[1] ?? "", 10);
+  const month = Number.parseInt(localMatch[2] ?? "", 10);
+  const day = Number.parseInt(localMatch[3] ?? "", 10);
+  const hour = Number.parseInt(localMatch[4] ?? "", 10);
+  const minute = Number.parseInt(localMatch[5] ?? "", 10);
+  const second = Number.parseInt(localMatch[6] ?? "0", 10);
+  if (
+    [year, month, day, hour, minute, second].some((numberValue) =>
+      Number.isNaN(numberValue),
+    )
+  ) {
+    return "";
+  }
+  const normalizedOffset =
+    Number.isFinite(utcOffsetMinutes) && Math.abs(utcOffsetMinutes) <= 840
+      ? utcOffsetMinutes
+      : 0;
+  const utcTimestampMs =
+    Date.UTC(year, month - 1, day, hour, minute, second) +
+    normalizedOffset * 60 * 1000;
+  const parsed = new Date(utcTimestampMs);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+  return parsed.toISOString();
+}
+
+function toIsoDateTime(value, fallbackIsoDateTime, utcOffsetMinutes = 0) {
   const trimmed = trimValue(value);
   if (!trimmed) {
     return fallbackIsoDateTime;
+  }
+  const localWithOffset = parseLocalDateTimeWithOffset(trimmed, utcOffsetMinutes);
+  if (localWithOffset) {
+    return localWithOffset;
   }
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
@@ -185,10 +224,14 @@ function toIsoDateTime(value, fallbackIsoDateTime) {
   return parsed.toISOString();
 }
 
-function toIsoDateTimeOrNull(value) {
+function toIsoDateTimeOrNull(value, utcOffsetMinutes = 0) {
   const trimmed = trimValue(value);
   if (!trimmed) {
     return null;
+  }
+  const localWithOffset = parseLocalDateTimeWithOffset(trimmed, utcOffsetMinutes);
+  if (localWithOffset) {
+    return localWithOffset;
   }
   const parsed = new Date(trimmed);
   if (Number.isNaN(parsed.getTime())) {
@@ -206,6 +249,20 @@ function yesNoToBoolean(value) {
     return false;
   }
   return null;
+}
+
+function normalizeAidDepartmentId(rawValue, fallbackEntityId) {
+  const trimmed = trimValue(rawValue);
+  if (NERIS_AID_DEPARTMENT_ID_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+  if (
+    trimmed.toUpperCase().startsWith("FD_") &&
+    NERIS_AID_DEPARTMENT_ID_PATTERN.test(trimValue(fallbackEntityId))
+  ) {
+    return trimValue(fallbackEntityId);
+  }
+  return "";
 }
 
 function normalizeStateCode(rawValue, fallbackValue) {
@@ -321,20 +378,43 @@ function toNonNegativeInt(value) {
   return parsed;
 }
 
-function extractUnitResponses(formValues, incidentSnapshot) {
+function extractUnitResponses(formValues, incidentSnapshot, utcOffsetMinutes = 0) {
   const unitsFromJson = [];
   const staffingByUnitId = new Map();
   const responseModeByUnitId = new Map();
+  const transportModeByUnitId = new Map();
   const dispatchTimeByUnitId = new Map();
   const enrouteTimeByUnitId = new Map();
+  const stagingTimeByUnitId = new Map();
   const onSceneTimeByUnitId = new Map();
   const clearTimeByUnitId = new Map();
   const canceledEnrouteByUnitId = new Map();
+  const explicitCanceledEnrouteByUnitId = new Map();
   const resourceUnitsJsonRaw = trimValue(formValues.resource_units_json);
-  const defaultUnitDispatchTime = toIsoDateTimeOrNull(formValues.incident_time_unit_dispatched);
-  const defaultUnitEnrouteTime = toIsoDateTimeOrNull(formValues.incident_time_unit_enroute);
-  const defaultUnitOnSceneTime = toIsoDateTimeOrNull(formValues.incident_time_unit_on_scene);
-  const defaultUnitClearTime = toIsoDateTimeOrNull(formValues.incident_time_unit_clear);
+  const defaultUnitDispatchTime = toIsoDateTimeOrNull(
+    formValues.incident_time_unit_dispatched,
+    utcOffsetMinutes,
+  );
+  const defaultUnitEnrouteTime = toIsoDateTimeOrNull(
+    formValues.incident_time_unit_enroute,
+    utcOffsetMinutes,
+  );
+  const defaultUnitStagingTime = toIsoDateTimeOrNull(
+    formValues.incident_time_unit_staged,
+    utcOffsetMinutes,
+  );
+  const defaultUnitOnSceneTime = toIsoDateTimeOrNull(
+    formValues.incident_time_unit_on_scene,
+    utcOffsetMinutes,
+  );
+  const defaultUnitClearTime = toIsoDateTimeOrNull(
+    formValues.incident_time_unit_clear,
+    utcOffsetMinutes,
+  );
+  const defaultUnitCanceledTime = toIsoDateTimeOrNull(
+    formValues.incident_time_unit_canceled,
+    utcOffsetMinutes,
+  );
   if (resourceUnitsJsonRaw) {
     try {
       const parsed = JSON.parse(resourceUnitsJsonRaw);
@@ -357,26 +437,42 @@ function extractUnitResponses(formValues, incidentSnapshot) {
           if (responseModeCandidate) {
             responseModeByUnitId.set(unitId, responseModeCandidate);
           }
+          const transportModeCandidate = normalizeEnumValue(entry.transportMode);
+          if (transportModeCandidate) {
+            transportModeByUnitId.set(unitId, transportModeCandidate);
+          }
 
-          const dispatchTimeCandidate = toIsoDateTimeOrNull(entry.dispatchTime);
+          const dispatchTimeCandidate = toIsoDateTimeOrNull(entry.dispatchTime, utcOffsetMinutes);
           if (dispatchTimeCandidate) {
             dispatchTimeByUnitId.set(unitId, dispatchTimeCandidate);
           }
-          const enrouteTimeCandidate = toIsoDateTimeOrNull(entry.enrouteTime);
+          const enrouteTimeCandidate = toIsoDateTimeOrNull(entry.enrouteTime, utcOffsetMinutes);
           if (enrouteTimeCandidate) {
             enrouteTimeByUnitId.set(unitId, enrouteTimeCandidate);
           }
-          const onSceneTimeCandidate = toIsoDateTimeOrNull(entry.onSceneTime);
+          const stagingTimeCandidate = toIsoDateTimeOrNull(entry.stagingTime, utcOffsetMinutes);
+          if (stagingTimeCandidate) {
+            stagingTimeByUnitId.set(unitId, stagingTimeCandidate);
+          }
+          const onSceneTimeCandidate = toIsoDateTimeOrNull(entry.onSceneTime, utcOffsetMinutes);
           if (onSceneTimeCandidate) {
             onSceneTimeByUnitId.set(unitId, onSceneTimeCandidate);
           }
-          const clearTimeCandidate = toIsoDateTimeOrNull(entry.clearTime);
+          const clearTimeCandidate = toIsoDateTimeOrNull(entry.clearTime, utcOffsetMinutes);
           if (clearTimeCandidate) {
             clearTimeByUnitId.set(unitId, clearTimeCandidate);
           }
+          const canceledTimeCandidate = toIsoDateTimeOrNull(entry.canceledTime, utcOffsetMinutes);
+          if (canceledTimeCandidate) {
+            explicitCanceledEnrouteByUnitId.set(unitId, canceledTimeCandidate);
+          }
           if (entry.isCanceledEnroute === true) {
             const canceledTimestamp =
-              enrouteTimeCandidate || dispatchTimeCandidate || defaultUnitEnrouteTime;
+              canceledTimeCandidate ||
+              enrouteTimeCandidate ||
+              dispatchTimeCandidate ||
+              defaultUnitCanceledTime ||
+              defaultUnitEnrouteTime;
             if (canceledTimestamp) {
               canceledEnrouteByUnitId.set(unitId, canceledTimestamp);
             }
@@ -418,11 +514,17 @@ function extractUnitResponses(formValues, incidentSnapshot) {
   if (primaryUnitId && defaultUnitEnrouteTime && !enrouteTimeByUnitId.has(primaryUnitId)) {
     enrouteTimeByUnitId.set(primaryUnitId, defaultUnitEnrouteTime);
   }
+  if (primaryUnitId && defaultUnitStagingTime && !stagingTimeByUnitId.has(primaryUnitId)) {
+    stagingTimeByUnitId.set(primaryUnitId, defaultUnitStagingTime);
+  }
   if (primaryUnitId && defaultUnitOnSceneTime && !onSceneTimeByUnitId.has(primaryUnitId)) {
     onSceneTimeByUnitId.set(primaryUnitId, defaultUnitOnSceneTime);
   }
   if (primaryUnitId && defaultUnitClearTime && !clearTimeByUnitId.has(primaryUnitId)) {
     clearTimeByUnitId.set(primaryUnitId, defaultUnitClearTime);
+  }
+  if (primaryUnitId && defaultUnitCanceledTime && !canceledEnrouteByUnitId.has(primaryUnitId)) {
+    canceledEnrouteByUnitId.set(primaryUnitId, defaultUnitCanceledTime);
   }
 
   if (!orderedUnitIds.length) {
@@ -441,6 +543,10 @@ function extractUnitResponses(formValues, incidentSnapshot) {
     if (responseMode) {
       response.response_mode = responseMode;
     }
+    const transportMode = transportModeByUnitId.get(unitId);
+    if (transportMode) {
+      response.transport_mode = transportMode;
+    }
     const dispatchTime = dispatchTimeByUnitId.get(unitId);
     if (dispatchTime) {
       response.dispatch = dispatchTime;
@@ -448,6 +554,10 @@ function extractUnitResponses(formValues, incidentSnapshot) {
     const enrouteTime = enrouteTimeByUnitId.get(unitId);
     if (enrouteTime) {
       response.enroute_to_scene = enrouteTime;
+    }
+    const stagingTime = stagingTimeByUnitId.get(unitId);
+    if (stagingTime) {
+      response.staging = stagingTime;
     }
     const onSceneTime = onSceneTimeByUnitId.get(unitId);
     if (onSceneTime) {
@@ -460,6 +570,10 @@ function extractUnitResponses(formValues, incidentSnapshot) {
     const canceledTime = canceledEnrouteByUnitId.get(unitId);
     if (canceledTime) {
       response.canceled_enroute = canceledTime;
+    }
+    const explicitCanceledTime = explicitCanceledEnrouteByUnitId.get(unitId);
+    if (explicitCanceledTime) {
+      response.canceled_enroute = explicitCanceledTime;
     }
     return response;
   });
@@ -630,10 +744,20 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   const body = exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
   const formValues =
     body.formValues && typeof body.formValues === "object" ? body.formValues : {};
+  const integration =
+    body.integration && typeof body.integration === "object" ? body.integration : {};
   const incidentSnapshot =
     body.incidentSnapshot && typeof body.incidentSnapshot === "object"
       ? body.incidentSnapshot
       : {};
+  const clientUtcOffsetMinutesRaw = Number.parseInt(
+    String(integration.clientUtcOffsetMinutes ?? ""),
+    10,
+  );
+  const clientUtcOffsetMinutes =
+    Number.isFinite(clientUtcOffsetMinutesRaw) && Math.abs(clientUtcOffsetMinutesRaw) <= 840
+      ? clientUtcOffsetMinutesRaw
+      : 0;
 
   const callNumber = trimValue(body.callNumber);
   const incidentNumber = trimValue(formValues.incident_internal_id) || callNumber;
@@ -676,9 +800,21 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   }
 
   const nowIso = new Date().toISOString();
-  const callCreate = toIsoDateTime(formValues.incident_time_call_create, nowIso);
-  const callAnswered = toIsoDateTime(formValues.incident_time_call_answered, callCreate);
-  const callArrival = toIsoDateTime(formValues.incident_time_call_arrival, callAnswered);
+  const callCreate = toIsoDateTime(
+    formValues.incident_time_call_create,
+    nowIso,
+    clientUtcOffsetMinutes,
+  );
+  const callAnswered = toIsoDateTime(
+    formValues.incident_time_call_answered,
+    callCreate,
+    clientUtcOffsetMinutes,
+  );
+  const callArrival = toIsoDateTime(
+    formValues.incident_time_call_arrival,
+    callAnswered,
+    clientUtcOffsetMinutes,
+  );
 
   const baseLocation = parseLocationFromAddress(
     trimValue(formValues.incident_location_address) || trimValue(incidentSnapshot.address),
@@ -776,6 +912,8 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   const locationUsePrimary = normalizeEnumValue(formValues.location_use_primary);
   const locationUseSecondary = normalizeEnumValue(formValues.location_use_secondary);
   const locationVacancyCause = normalizeEnumValue(formValues.location_vacancy_cause);
+  const locationInUse = yesNoToBoolean(formValues.location_in_use);
+  const locationUsedAsIntended = yesNoToBoolean(formValues.location_used_as_intended);
   if (locationUsePrimary) {
     locationUse.use_type = locationUsePrimary;
   }
@@ -785,8 +923,17 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   if (locationVacancyCause) {
     locationUse.vacancy_cause = locationVacancyCause;
   }
+  if (typeof locationInUse === "boolean") {
+    const inUsePayload = {
+      in_use: locationInUse,
+    };
+    if (locationInUse && typeof locationUsedAsIntended === "boolean") {
+      inUsePayload.intended = locationUsedAsIntended;
+    }
+    locationUse.in_use = inUsePayload;
+  }
 
-  const unitResponses = extractUnitResponses(formValues, incidentSnapshot);
+  const unitResponses = extractUnitResponses(formValues, incidentSnapshot, clientUtcOffsetMinutes);
 
   const dispatchPayload = {
     incident_number: dispatchIncidentNumber,
@@ -820,7 +967,10 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   if (dispatchCenterId) {
     dispatchPayload.center_id = dispatchCenterId;
   }
-  const incidentClearTime = toIsoDateTimeOrNull(formValues.incident_time_clear);
+  const incidentClearTime = toIsoDateTimeOrNull(
+    formValues.incident_time_clear || formValues.time_incident_clear,
+    clientUtcOffsetMinutes,
+  );
   if (incidentClearTime) {
     dispatchPayload.incident_clear = incidentClearTime;
   }
@@ -834,8 +984,8 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   if (trimValue(formValues.incident_aid_agency_type).toUpperCase() === "FIRE_DEPARTMENT") {
     const direction = normalizeEnumValue(formValues.incident_aid_direction);
     const aidType = normalizeEnumValue(formValues.incident_aid_type);
-    const department = trimValue(formValues.incident_aid_department_name);
-    if (direction && aidType && NERIS_AID_DEPARTMENT_ID_PATTERN.test(department)) {
+    const department = normalizeAidDepartmentId(formValues.incident_aid_department_name, entityId);
+    if (direction && aidType && department) {
       aidEntries.push({
         department_neris_id: department,
         aid_type: aidType,
@@ -852,8 +1002,8 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     }
     const direction = normalizeEnumValue(entry.aidDirection);
     const aidType = normalizeEnumValue(entry.aidType);
-    const department = trimValue(entry.aidDepartment);
-    if (!direction || !aidType || !NERIS_AID_DEPARTMENT_ID_PATTERN.test(department)) {
+    const department = normalizeAidDepartmentId(entry.aidDepartment, entityId);
+    if (!direction || !aidType || !department) {
       return;
     }
     aidEntries.push({
