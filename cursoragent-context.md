@@ -52,7 +52,7 @@
 25. Use approved UI pattern naming consistently:
     - Core field styles:
       - `DD-S` = Dropdown Single (one value from flat list)
-      - `DD-M` = Dropdown Multi (multiple values from flat list)
+      - `DD-M` = Dropdown Multi (multiple values from flat list). **Implementation:** Use `NerisFlatMultiOptionSelect` for flat option lists (pill-style trigger, search, scrollable options panel). Use `NerisGroupedOptionSelect` with `mode="multi"` for grouped/categorical options. When DD-M or DD-S appears inside a modal or scrollable container, pass `usePortal` so the panel renders via `createPortal` into `document.body`—avoids clipping and prevents the container from expanding when the dropdown opens.
       - `DD-GS` = Dropdown Grouped Single (one value from grouped categories)
       - `DD-GM` = Dropdown Grouped Multi (multiple values from grouped categories)
       - `RL` = Reveal Link (blue clickable toggle for optional fields)
@@ -63,6 +63,7 @@
     - Reusable workflow/layout styles:
       - `UB-CARD` = expandable bordered unit block card
       - `STAT-CHIP` = completion status chip
+      - `CLICKABLE-LIST` = clickable table rows for collection selection (e.g. Edit Apparatus). Each row shows the primary identifier (e.g. Unit ID) in the first column and a grid of field values in the second column. Uses `clickable-row`, `clickable-row-selected`, `dispatch-info-cell`, and a collection-specific grid (e.g. `department-apparatus-grid-line`). Same styling as Incident Report Queue in NERIS Submenu. **Click-to-edit:** clicking a row immediately opens the entry/edit form (no separate Edit button click required). **Headers must be resizable** (drag the `|` separator between columns) and **reorderable** (Edit button opens field editor panel with drag handles to reorder columns), matching Incidents Submenu behavior.
       - `TIME-EDIT` = editable time panel
       - `PRS-EMPTY` = large gray empty-personnel state
       - `RL-BOX` = boxed reveal-link trigger
@@ -71,38 +72,39 @@
       1) propose short code,
       2) define it in one line,
       3) append it to this style dictionary immediately.
-26. Request/implementation mapping format must be:
+26. For collection editors (Edit Apparatus, Edit Stations, Edit Personnel): when selecting a single item to edit, use `CLICKABLE-LIST` instead of a dropdown—each unit/record in a separate row with all field values visible, styled like Incident Report Queue rows (`clickable-row`, `clickable-row-selected`, `dispatch-info-cell`, collection-specific grid). Row click must immediately open the entry/edit form (click-to-edit). Headers must support resizing (column resizer) and reordering (Edit button + drag-order list), matching Incidents Submenu.
+27. Request/implementation mapping format must be:
     - `[Section] -> [Field] -> [Style Code] -> [Behavior notes]`
     - Example: `Location -> Place Type -> DD-S`
-27. For `RL` behavior, keep clickable wording visible and toggle fields show/hide on repeated click.
-28. Prefer custom dropdown components over native HTML `<select>` for consistent styling.
-29. PILL behavior must support toggle-off (click selected option again to deselect).
+28. For `RL` behavior, keep clickable wording visible and toggle fields show/hide on repeated click.
+29. Prefer custom dropdown components over native HTML `<select>` for consistent styling.
+30. PILL behavior must support toggle-off (click selected option again to deselect).
 
 ## 7) Workflow/testing expectations
-30. Run lint/build checks after edits when possible.
-31. Provide copy/paste test checklists.
-32. If errors occur, request full (not truncated) error output.
-33. If issue is external (e.g., vendor/API permissions), say so explicitly and provide support-ready summary text.
+31. Run lint/build checks after edits when possible.
+32. Provide copy/paste test checklists.
+33. If errors occur, request full (not truncated) error output.
+34. If issue is external (e.g., vendor/API permissions), say so explicitly and provide support-ready summary text.
 
 ## 8) Product constraints/preferences
-34. Keep role model simple for now: Admin + User.
-35. Continue UI buildout in parallel with API integration.
-36. Use server-side proxy/security best practices (avoid exposing secrets in frontend).
-37. If a proposed task is likely unrelated to the current error, state that clearly and recommend best route.
+35. Keep role model simple for now: Admin + User.
+36. Continue UI buildout in parallel with API integration.
+37. Use server-side proxy/security best practices (avoid exposing secrets in frontend).
+38. If a proposed task is likely unrelated to the current error, state that clearly and recommend best route.
 
 ## 9) User environment constraints
-38. Prefer instructions compatible with locked-down/work environments (no admin rights assumed).
-39. Provide fallback command alternatives if a command fails.
+39. Prefer instructions compatible with locked-down/work environments (no admin rights assumed).
+40. Provide fallback command alternatives if a command fails.
 
 ## 10) Session handoff workflow
-40. At session start, read:
+41. At session start, read:
     - this file
     - `agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md`
     - latest note in `agent-handoffs/branches/<branch-slug>/sessions/`
-41. Before ending session:
+42. Before ending session:
     - update branch `ACTIVE_CONTEXT.md`
     - add a new timestamped session note in that same branch folder
-42. Standard startup/continuation prompts are in `agent-handoffs/QUICK_PROMPTS.md`:
+43. Standard startup/continuation prompts are in `agent-handoffs/QUICK_PROMPTS.md`:
     - Prompt #2 = new agent bootstrap flow
     - Prompt #3 = cloud continuation flow after Cursor work
-43. Include branch, commit hash, blockers, and exact next actions in every handoff.
+44. Include branch, commit hash, blockers, and exact next actions in every handoff.

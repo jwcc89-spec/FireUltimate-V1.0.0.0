@@ -1188,6 +1188,8 @@ tbody tr:last-of-type td {
   gap: 0.7rem;
 }
 
+/* DD-M/DD-S dropdown panels in department editor: render in portal to avoid clipping and box expansion */
+
 .department-editor-add-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1263,6 +1265,69 @@ tbody tr:last-of-type td {
 
 .department-select-box.department-select-multi {
   min-height: 170px;
+}
+
+.department-apparatus-list-wrapper {
+  margin-top: 0.5rem;
+}
+
+.department-apparatus-list-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.department-apparatus-list-wrapper .table-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.department-apparatus-grid-line {
+  display: grid;
+  grid-template-columns: var(
+    --apparatus-grid-columns,
+    minmax(120px, 1.2fr) minmax(70px, 0.6fr) minmax(140px, 1.4fr) minmax(100px, 0.9fr)
+  );
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-apparatus-header-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding-right: 0.42rem;
+  overflow: visible;
+}
+
+.department-apparatus-header-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-apparatus-grid-header {
+  color: #64748b;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.department-apparatus-field {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-apparatus-empty {
+  color: #64748b;
+  font-size: 0.85rem;
+  padding: 1rem;
+  text-align: center;
 }
 
 .department-dd-mode-badge {
@@ -1843,6 +1908,14 @@ tbody tr:last-of-type td {
 .clickable-row:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: -2px;
+}
+
+.clickable-row-selected td {
+  background-color: #dbeafe;
+}
+
+.clickable-row-selected:hover td {
+  background-color: #bfdbfe;
 }
 
 .call-number-text {

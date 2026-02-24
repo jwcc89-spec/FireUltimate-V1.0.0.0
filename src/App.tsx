@@ -6,10 +6,12 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Bell,
   ChevronDown,
@@ -393,6 +395,21 @@ const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   lastUpdated: 140,
 };
 const NERIS_QUEUE_FIELD_ORDER: IncidentCallFieldId[] = [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
+type ApparatusGridFieldId = "unitType" | "minPersonnel" | "personnelRequirements" | "station";
+const APPARATUS_GRID_FIELD_ORDER: ApparatusGridFieldId[] = [
+  "unitType",
+  "minPersonnel",
+  "personnelRequirements",
+  "station",
+];
+const MIN_APPARATUS_FIELD_WIDTH = 70;
+const MAX_APPARATUS_FIELD_WIDTH = 320;
+const DEFAULT_APPARATUS_FIELD_WIDTHS: Record<ApparatusGridFieldId, number> = {
+  unitType: 120,
+  minPersonnel: 90,
+  personnelRequirements: 160,
+  station: 110,
+};
 const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   {
     key: "stations",
@@ -3772,6 +3789,8 @@ interface NerisFlatMultiOptionSelectProps {
   onChange: (nextValue: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
+  maxSelections?: number;
+  usePortal?: boolean;
   disabled?: boolean;
 }
 
@@ -3782,12 +3801,17 @@ function NerisFlatMultiOptionSelect({
   onChange,
   placeholder,
   searchPlaceholder,
+  maxSelections,
+  usePortal = false,
   disabled = false,
 }: NerisFlatMultiOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
   const selectedValues = Array.from(
     new Set(
@@ -3799,6 +3823,8 @@ function NerisFlatMultiOptionSelect({
     ),
   );
   const selectedValueSet = new Set<string>(selectedValues);
+  const selectionLimitReached =
+    typeof maxSelections === "number" && selectedValueSet.size >= maxSelections;
   const selectedOptions = selectedValues
     .map((selectedValue) => options.find((option) => option.value === selectedValue))
     .filter((option): option is NerisValueOption => Boolean(option));
@@ -3811,12 +3837,27 @@ function NerisFlatMultiOptionSelect({
       )
     : options;
 
+  useLayoutEffect(() => {
+    if (!isOpen || !usePortal || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPanelStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    });
+  }, [isOpen, usePortal]);
+
   useEffect(() => {
     if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inPanel = panelRef.current?.contains(target);
+      if (!inContainer && !inPanel) {
         setIsOpen(false);
       }
     };
@@ -3834,6 +3875,7 @@ function NerisFlatMultiOptionSelect({
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         id={inputId}
         type="button"
         className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
@@ -3874,6 +3916,85 @@ function NerisFlatMultiOptionSelect({
       </button>
 
       {isOpen && !disabled ? (
+        usePortal ? (
+          createPortal(
+            <div
+              ref={panelRef}
+              className="neris-incident-type-select-panel"
+              style={panelStyle}
+            >
+              <div className="neris-incident-type-search-row">
+                <Search size={14} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  placeholder={searchPlaceholder ?? "Search options..."}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {typeof maxSelections === "number" ? (
+                <p
+                  className={`neris-incident-type-selection-limit${
+                    selectionLimitReached ? " reached" : ""
+                  }`}
+                >
+                  Selected {selectedValueSet.size} of {maxSelections} allowed.
+                </p>
+              ) : null}
+              <div className="neris-incident-type-options-scroll" role="listbox">
+            {filteredOptions.length ? (
+              <div className="neris-incident-type-item-list">
+                {filteredOptions.map((option) => {
+                  const isSelected = selectedValueSet.has(option.value);
+                  const isDisabled =
+                    selectionLimitReached && !isSelected;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
+                      aria-selected={isSelected}
+                      disabled={isDisabled}
+                      onClick={() => {
+                        if (isDisabled) return;
+                        const nextSelected = new Set(selectedValueSet);
+                        if (nextSelected.has(option.value)) {
+                          nextSelected.delete(option.value);
+                        } else {
+                          nextSelected.add(option.value);
+                        }
+                        const nextOrderedValues = options
+                          .map((entry) => entry.value)
+                          .filter((entryValue) => nextSelected.has(entryValue));
+                        onChange(nextOrderedValues.join(","));
+                      }}
+                    >
+                      <span className="neris-incident-type-item-checkbox">
+                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                      </span>
+                      <span>{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="neris-incident-type-empty">No options match your search.</p>
+            )}
+          </div>
+            </div>,
+            document.body,
+          )
+        ) : (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
@@ -3894,18 +4015,31 @@ function NerisFlatMultiOptionSelect({
               </button>
             ) : null}
           </div>
+          {typeof maxSelections === "number" ? (
+            <p
+              className={`neris-incident-type-selection-limit${
+                selectionLimitReached ? " reached" : ""
+              }`}
+            >
+              Selected {selectedValueSet.size} of {maxSelections} allowed.
+            </p>
+          ) : null}
           <div className="neris-incident-type-options-scroll" role="listbox">
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = selectedValueSet.has(option.value);
+                  const isDisabled =
+                    selectionLimitReached && !isSelected;
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}`}
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
                       aria-selected={isSelected}
+                      disabled={isDisabled}
                       onClick={() => {
+                        if (isDisabled) return;
                         const nextSelected = new Set(selectedValueSet);
                         if (nextSelected.has(option.value)) {
                           nextSelected.delete(option.value);
@@ -3931,6 +4065,7 @@ function NerisFlatMultiOptionSelect({
             )}
           </div>
         </div>
+        )
       ) : null}
     </div>
   );
@@ -3943,6 +4078,7 @@ interface NerisFlatSingleOptionSelectProps {
   onChange: (nextValue: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
+  usePortal?: boolean;
   disabled?: boolean;
   isOptionDisabled?: (optionValue: string) => boolean;
   allowClear?: boolean;
@@ -3955,14 +4091,18 @@ function NerisFlatSingleOptionSelect({
   onChange,
   placeholder,
   searchPlaceholder,
+  usePortal = false,
   disabled = false,
   isOptionDisabled,
   allowClear = false,
 }: NerisFlatSingleOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
   const normalizedValue = normalizeNerisEnumValue(value);
   const selectedOption = options.find((option) => option.value === normalizedValue);
@@ -3975,12 +4115,27 @@ function NerisFlatSingleOptionSelect({
       )
     : options;
 
+  useLayoutEffect(() => {
+    if (!isOpen || !usePortal || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    setPanelStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      zIndex: 9999,
+    });
+  }, [isOpen, usePortal]);
+
   useEffect(() => {
     if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inPanel = panelRef.current?.contains(target);
+      if (!inContainer && !inPanel) {
         setIsOpen(false);
       }
     };
@@ -3998,6 +4153,7 @@ function NerisFlatSingleOptionSelect({
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         id={inputId}
         type="button"
         className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
@@ -4034,6 +4190,82 @@ function NerisFlatSingleOptionSelect({
       </button>
 
       {isOpen && !disabled ? (
+        usePortal ? (
+          createPortal(
+            <div
+              ref={panelRef}
+              className="neris-incident-type-select-panel"
+              style={panelStyle}
+            >
+              <div className="neris-incident-type-search-row">
+                <Search size={14} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  placeholder={searchPlaceholder ?? "Search options..."}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {allowClear && normalizedValue ? (
+                <div className="neris-single-select-clear-row">
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => {
+                      onChange("");
+                      setIsOpen(false);
+                      setSearchTerm("");
+                    }}
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              ) : null}
+              <div className="neris-incident-type-options-scroll" role="listbox">
+                {filteredOptions.length ? (
+                  <div className="neris-incident-type-item-list">
+                    {filteredOptions.map((option) => {
+                      const isSelected = option.value === normalizedValue;
+                      const optionDisabled = Boolean(isOptionDisabled?.(option.value));
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`neris-incident-type-item${isSelected ? " selected" : ""}${
+                            optionDisabled ? " disabled" : ""
+                          }`}
+                          aria-selected={isSelected}
+                          aria-disabled={optionDisabled}
+                          onClick={() => {
+                            if (optionDisabled) return;
+                            onChange(option.value);
+                            setIsOpen(false);
+                            setSearchTerm("");
+                          }}
+                        >
+                          <span>{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="neris-incident-type-empty">No options match your search.</p>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        ) : (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
@@ -4103,6 +4335,7 @@ function NerisFlatSingleOptionSelect({
             )}
           </div>
         </div>
+        )
       ) : null}
     </div>
   );
@@ -8580,8 +8813,125 @@ function DepartmentDetailsPage() {
   const [editingQualificationIndex, setEditingQualificationIndex] = useState<number | null>(null);
   const [dragQualificationIndex, setDragQualificationIndex] = useState<number | null>(null);
   const [autoSaveTick, setAutoSaveTick] = useState(0);
+  const [apparatusFieldWidths, setApparatusFieldWidths] = useState<Record<ApparatusGridFieldId, number>>(
+    () => ({ ...DEFAULT_APPARATUS_FIELD_WIDTHS }),
+  );
+  const [apparatusFieldOrder, setApparatusFieldOrder] = useState<ApparatusGridFieldId[]>(() => [
+    ...APPARATUS_GRID_FIELD_ORDER,
+  ]);
+  const [isApparatusFieldEditorOpen, setIsApparatusFieldEditorOpen] = useState(false);
+  const [dragApparatusFieldId, setDragApparatusFieldId] = useState<ApparatusGridFieldId | null>(null);
+  const activeApparatusResizeField = useRef<{
+    fieldId: ApparatusGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
+  const apparatusFieldLabelById = useMemo(
+    () =>
+      ({
+        unitType: "Unit Type",
+        minPersonnel: "Min Personnel",
+        personnelRequirements: "Personnel Requirements",
+        station: "Station",
+      }) as Record<ApparatusGridFieldId, string>,
+    [],
+  );
+  const getApparatusFieldValue = useCallback(
+    (apparatus: DepartmentApparatusRecord, fieldId: ApparatusGridFieldId): string => {
+      switch (fieldId) {
+        case "unitType":
+          return (unitTypeOptions.find((o) => o.value === apparatus.unitType)?.label ?? apparatus.unitType) || "—";
+        case "minPersonnel":
+          return String(apparatus.minimumPersonnel);
+        case "personnelRequirements":
+          return apparatus.personnelRequirements.length > 0 ? apparatus.personnelRequirements.join(", ") : "—";
+        case "station":
+          return apparatus.station || "—";
+        default:
+          return "—";
+      }
+    },
+    [unitTypeOptions],
+  );
+  const apparatusGridStyle = useMemo(
+    () =>
+      ({
+        "--apparatus-grid-columns": apparatusFieldOrder
+          .map((fieldId) => {
+            const width = apparatusFieldWidths[fieldId] ?? DEFAULT_APPARATUS_FIELD_WIDTHS[fieldId];
+            const clampedWidth = Math.min(
+              MAX_APPARATUS_FIELD_WIDTH,
+              Math.max(MIN_APPARATUS_FIELD_WIDTH, width),
+            );
+            return `${clampedWidth}px`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [apparatusFieldOrder, apparatusFieldWidths],
+  );
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeApparatusResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_APPARATUS_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+      setApparatusFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeApparatusResizeField.current) {
+        return;
+      }
+      activeApparatusResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
+  const startApparatusFieldResize = (
+    fieldId: ApparatusGridFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeApparatusResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth: apparatusFieldWidths[fieldId] ?? DEFAULT_APPARATUS_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+  const handleApparatusFieldDrop = (targetFieldId: ApparatusGridFieldId) => {
+    if (!dragApparatusFieldId || dragApparatusFieldId === targetFieldId) {
+      return;
+    }
+    const fromIndex = apparatusFieldOrder.indexOf(dragApparatusFieldId);
+    const toIndex = apparatusFieldOrder.indexOf(targetFieldId);
+    if (fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+    const nextOrder = [...apparatusFieldOrder];
+    nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(toIndex, 0, dragApparatusFieldId);
+    setApparatusFieldOrder(nextOrder);
+    setDragApparatusFieldId(null);
+  };
   const activeCollectionDefinition = useMemo(
     () =>
       activeCollectionEditor
@@ -8819,20 +9169,22 @@ function DepartmentDetailsPage() {
     setIsEntryFormOpen(true);
   };
 
-  const openEditForm = () => {
+  const openEditForm = (clickedIndex?: number) => {
     if (!isMultiEditMode) {
-      if (selectedSingleIndex === null) {
+      const index = clickedIndex ?? selectedSingleIndex;
+      if (index === null) {
         return;
       }
-      setEditingIndex(selectedSingleIndex);
-      if (isStationsEditor && stationRecords[selectedSingleIndex]) {
-        setStationDraft(stationRecords[selectedSingleIndex]!);
+      setSelectedSingleIndex(index);
+      setEditingIndex(index);
+      if (isStationsEditor && stationRecords[index]) {
+        setStationDraft(stationRecords[index]!);
       }
-      if (isApparatusEditor && apparatusRecords[selectedSingleIndex]) {
-        setApparatusDraft(apparatusRecords[selectedSingleIndex]!);
+      if (isApparatusEditor && apparatusRecords[index]) {
+        setApparatusDraft(apparatusRecords[index]!);
       }
-      if (isPersonnelEditor && personnelRecords[selectedSingleIndex]) {
-        setPersonnelDraft(personnelRecords[selectedSingleIndex]!);
+      if (isPersonnelEditor && personnelRecords[index]) {
+        setPersonnelDraft(personnelRecords[index]!);
       }
       setIsEntryFormOpen(true);
       return;
@@ -9312,32 +9664,159 @@ function DepartmentDetailsPage() {
                   >
                     Edit Multiple
                   </button>
-                  <button type="button" className="primary-button compact-button" onClick={openEditForm}>
+                  <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
                     Edit
                   </button>
                 </div>
 
                 {!isMultiEditMode ? (
-                  <select
-                    className="department-select-box"
-                    value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
-                    onChange={(event) =>
-                      setSelectedSingleIndex(event.target.value === "" ? null : Number.parseInt(event.target.value, 10))
-                    }
-                  >
-                    <option value="">
-                      {isPersonnelEditor
-                        ? "Select personnel"
-                        : isApparatusEditor
-                          ? "Select apparatus"
-                          : "Select station"}
-                    </option>
-                    {(isPersonnelEditor ? personnelRecords.map((entry) => entry.name) : isApparatusEditor ? apparatusNames : stationNames).map((entry, index) => (
-                      <option key={`collection-single-${entry}-${index}`} value={String(index)}>
-                        {entry}
+                  isApparatusEditor ? (
+                    <div className="department-apparatus-list-wrapper">
+                      <div className="department-apparatus-list-header">
+                        {isApparatusFieldEditorOpen ? (
+                          <button
+                            type="button"
+                            className="primary-button compact-button"
+                            onClick={() => setIsApparatusFieldEditorOpen(false)}
+                          >
+                            Save
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => setIsApparatusFieldEditorOpen(true)}
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
+                      {isApparatusFieldEditorOpen ? (
+                        <div className="field-editor-panel">
+                          <p>Drag rows using the handle to reorder apparatus list columns.</p>
+                          <ul className="drag-order-list">
+                            {apparatusFieldOrder.map((fieldId) => (
+                              <li
+                                key={`apparatus-order-${fieldId}`}
+                                draggable
+                                onDragStart={() => setDragApparatusFieldId(fieldId)}
+                                onDragEnd={() => setDragApparatusFieldId(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => handleApparatusFieldDrop(fieldId)}
+                              >
+                                <div className="drag-order-row">
+                                  <span>{apparatusFieldLabelById[fieldId]}</span>
+                                  <span className="drag-handle" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                  </span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Unit ID</th>
+                              <th>
+                                <div
+                                  className="department-apparatus-grid-line department-apparatus-grid-header"
+                                  style={apparatusGridStyle}
+                                >
+                                  {apparatusFieldOrder.map((fieldId, idx) => (
+                                    <span
+                                      key={`apparatus-header-${fieldId}`}
+                                      className={`department-apparatus-field department-apparatus-header-field`}
+                                    >
+                                      <span className="department-apparatus-header-label">
+                                        {apparatusFieldLabelById[fieldId]}
+                                      </span>
+                                      {idx < apparatusFieldOrder.length - 1 ? (
+                                        <span
+                                          className="dispatch-column-resizer"
+                                          role="separator"
+                                          aria-label={`Resize ${apparatusFieldLabelById[fieldId]} column`}
+                                          aria-orientation="vertical"
+                                          onPointerDown={(event) => startApparatusFieldResize(fieldId, event)}
+                                          title={`Drag to resize ${apparatusFieldLabelById[fieldId]}`}
+                                        >
+                                          |
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  ))}
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {apparatusRecords.length === 0 ? (
+                              <tr>
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  No apparatus units. Click Add to create one.
+                                </td>
+                              </tr>
+                            ) : (
+                            apparatusRecords.map((apparatus, index) => (
+                              <tr
+                                key={`apparatus-row-${index}-${apparatus.unitId}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openEditForm(index)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openEditForm(index);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{apparatus.unitId || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div className="department-apparatus-grid-line" style={apparatusGridStyle}>
+                                      {apparatusFieldOrder.map((fieldId) => (
+                                        <span
+                                          key={`apparatus-${index}-${fieldId}`}
+                                          className="department-apparatus-field"
+                                        >
+                                          {getApparatusFieldValue(apparatus, fieldId)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : (
+                    <select
+                      className="department-select-box"
+                      value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
+                      onChange={(event) =>
+                        setSelectedSingleIndex(event.target.value === "" ? null : Number.parseInt(event.target.value, 10))
+                      }
+                    >
+                      <option value="">
+                        {isPersonnelEditor ? "Select personnel" : "Select station"}
                       </option>
-                    ))}
-                  </select>
+                      {(isPersonnelEditor ? personnelRecords.map((entry) => entry.name) : stationNames).map((entry, index) => (
+                        <option key={`collection-single-${entry}-${index}`} value={String(index)}>
+                          {entry}
+                        </option>
+                      ))}
+                    </select>
+                  )
                 ) : (
                   <select
                     multiple
@@ -9442,14 +9921,18 @@ function DepartmentDetailsPage() {
                   ) : null}
                   <label>
                     Location
-                    <select value={shiftDraft.location} onChange={(event) => setShiftDraft((previous) => ({ ...previous, location: event.target.value }))}>
-                      <option value="">Select station (optional)</option>
-                      {stationNames.map((station) => (
-                        <option key={`shift-station-${station}`} value={station}>
-                          {station}
-                        </option>
-                      ))}
-                    </select>
+                    <NerisFlatSingleOptionSelect
+                      inputId="shift-location"
+                      value={shiftDraft.location}
+                      options={stationNames.map((s) => ({ value: s, label: s }))}
+                      onChange={(nextValue) =>
+                        setShiftDraft((previous) => ({ ...previous, location: nextValue }))
+                      }
+                      placeholder="Select station (optional)"
+                      searchPlaceholder="Search stations..."
+                      allowClear
+                      usePortal
+                    />
                   </label>
                 </div>
                 <div className="department-editor-toolbar-actions">
@@ -9548,6 +10031,7 @@ function DepartmentDetailsPage() {
                 }
                 placeholder="Select mutual aid department(s)"
                 searchPlaceholder="Search departments..."
+                usePortal
               />
             ) : null}
 
@@ -9626,14 +10110,18 @@ function DepartmentDetailsPage() {
                 ) : null}
                 <label>
                   Unit Type
-                  <select value={apparatusDraft.unitType} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, unitType: event.target.value }))}>
-                    <option value="">Select unit type</option>
-                    {unitTypeOptions.map((option) => (
-                      <option key={`unit-type-${option.value}`} value={option.label}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                  <NerisFlatSingleOptionSelect
+                    inputId="apparatus-unit-type"
+                    value={apparatusDraft.unitType}
+                    options={unitTypeOptions}
+                    onChange={(nextValue) =>
+                      setApparatusDraft((previous) => ({ ...previous, unitType: nextValue }))
+                    }
+                    placeholder="Select unit type"
+                    searchPlaceholder="Search unit types..."
+                    allowClear
+                    usePortal
+                  />
                 </label>
                 <label>
                   Minimum Personnel
@@ -9650,7 +10138,7 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
-                  Personnel Requirements (DD-M)
+                  Personnel Requirements
                   <NerisFlatMultiOptionSelect
                     inputId="apparatus-personnel-requirements"
                     value={apparatusDraft.personnelRequirements.join(",")}
@@ -9666,18 +10154,24 @@ function DepartmentDetailsPage() {
                     }
                     placeholder="Select personnel requirement(s)"
                     searchPlaceholder="Search qualifications..."
+                    maxSelections={Math.max(0, apparatusDraft.minimumPersonnel)}
+                    usePortal
                   />
                 </label>
                 <label>
                   Station
-                  <select value={apparatusDraft.station} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, station: event.target.value }))}>
-                    <option value="">Select station</option>
-                    {stationNames.map((station) => (
-                      <option key={`apparatus-station-${station}`} value={station}>
-                        {station}
-                      </option>
-                    ))}
-                  </select>
+                  <NerisFlatSingleOptionSelect
+                    inputId="apparatus-station"
+                    value={apparatusDraft.station}
+                    options={stationNames.map((s) => ({ value: s, label: s }))}
+                    onChange={(nextValue) =>
+                      setApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                    }
+                    placeholder="Select station"
+                    searchPlaceholder="Search stations..."
+                    allowClear
+                    usePortal
+                  />
                 </label>
               </div>
             ) : null}
@@ -9728,21 +10222,22 @@ function DepartmentDetailsPage() {
                 </label>
                 <label>
                   Station
-                  <select
+                  <NerisFlatSingleOptionSelect
+                    inputId="personnel-station"
                     value={!isMultiEditMode ? personnelDraft.station : personnelBulkDraft.station}
-                    onChange={(event) =>
-                      !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, station: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, station: event.target.value }))
-                    }
-                  >
-                    <option value="">{isMultiEditMode ? "No change" : "Select station"}</option>
-                    {stationNames.map((option) => (
-                      <option key={`personnel-station-${option}`} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    options={stationNames.map((s) => ({ value: s, label: s }))}
+                    onChange={(nextValue) => {
+                      if (!isMultiEditMode) {
+                        setPersonnelDraft((previous) => ({ ...previous, station: nextValue }));
+                      } else {
+                        setPersonnelBulkDraft((previous) => ({ ...previous, station: nextValue }));
+                      }
+                    }}
+                    placeholder={isMultiEditMode ? "No change" : "Select station"}
+                    searchPlaceholder="Search stations..."
+                    allowClear
+                    usePortal
+                  />
                 </label>
                 <label>
                   User Type
@@ -9763,7 +10258,7 @@ function DepartmentDetailsPage() {
                   </select>
                 </label>
                 <label>
-                  Qualifications (DD-M)
+                  Qualifications
                   <NerisFlatMultiOptionSelect
                     inputId="personnel-qualifications"
                     value={
@@ -9782,6 +10277,7 @@ function DepartmentDetailsPage() {
                     }}
                     placeholder="Select qualification(s)"
                     searchPlaceholder="Search qualifications..."
+                    usePortal
                   />
                   {personnelQualifications.length === 0 ? (
                     <small className="field-hint">Add qualifications in Personnel Qualifications first.</small>
