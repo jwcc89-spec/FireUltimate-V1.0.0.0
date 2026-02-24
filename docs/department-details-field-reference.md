@@ -69,9 +69,11 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Apparatus Assignment (DD-S) | `assignedApparatus` | `apparatus` values |
 | Station (DD-S) | `assignedStation` | `stations` values |
 | User Type (DD-S) | `assignedUserType` | `userType` values |
+| Qualifications (DD-M) | `qualifications` | `personnelQualifications` values |
 
 ## Notes
 
+- Personnel records include a `qualifications` array (DD-M) linking to `personnelQualifications`. Legacy records without this field are migrated on load.
 - Personnel/Apparatus/Stations editors support DD-S and DD-M interaction modes.
 - Personnel add/edit popup now includes core assignment fields to avoid blank personnel records.
 - Personnel assignment timezone is removed; personnel inherit department timezone.

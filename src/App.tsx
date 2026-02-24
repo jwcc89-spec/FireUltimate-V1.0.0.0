@@ -247,6 +247,8 @@ interface DepartmentPersonnelRecord {
   apparatusAssignment: string;
   station: string;
   userType: string;
+  /** DD-M: credentials/qualifications from personnelQualifications list */
+  qualifications: string[];
 }
 
 interface DepartmentStationRecord {
@@ -8485,9 +8487,20 @@ function DepartmentDetailsPage() {
   const [shiftInformationEntries, setShiftInformationEntries] = useState<ShiftInformationEntry[]>(
     Array.isArray(initialDepartmentDraft.shiftInformationEntries) ? (initialDepartmentDraft.shiftInformationEntries as ShiftInformationEntry[]) : [],
   );
-  const [personnelRecords, setPersonnelRecords] = useState<DepartmentPersonnelRecord[]>(
-    Array.isArray(initialDepartmentDraft.personnelRecords) ? (initialDepartmentDraft.personnelRecords as DepartmentPersonnelRecord[]) : [],
-  );
+  const [personnelRecords, setPersonnelRecords] = useState<DepartmentPersonnelRecord[]>(() => {
+    const raw = initialDepartmentDraft.personnelRecords;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry: Record<string, unknown>) => ({
+      name: String(entry.name ?? ""),
+      shift: String(entry.shift ?? ""),
+      apparatusAssignment: String(entry.apparatusAssignment ?? ""),
+      station: String(entry.station ?? ""),
+      userType: String(entry.userType ?? ""),
+      qualifications: Array.isArray(entry.qualifications)
+        ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+        : [],
+    }));
+  });
   const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
   );
@@ -8533,12 +8546,14 @@ function DepartmentDetailsPage() {
     apparatusAssignment: "",
     station: "",
     userType: "",
+    qualifications: [],
   });
   const [personnelBulkDraft, setPersonnelBulkDraft] = useState({
     shift: "",
     apparatusAssignment: "",
     station: "",
     userType: "",
+    qualifications: [] as string[],
   });
   const [userTypeDraft, setUserTypeDraft] = useState("");
   const [qualificationDraft, setQualificationDraft] = useState("");
@@ -8718,12 +8733,14 @@ function DepartmentDetailsPage() {
         apparatusAssignment: "",
         station: "",
         userType: "",
+        qualifications: [],
       });
       setPersonnelBulkDraft({
         shift: "",
         apparatusAssignment: "",
         station: "",
         userType: "",
+        qualifications: [],
       });
     }
     setIsEntryFormOpen(true);
@@ -8777,6 +8794,7 @@ function DepartmentDetailsPage() {
         apparatusAssignment: "",
         station: "",
         userType: "",
+        qualifications: [],
       });
     }
     setIsEntryFormOpen(true);
@@ -8870,7 +8888,11 @@ function DepartmentDetailsPage() {
       if (!personnelDraft.name.trim()) {
         return;
       }
-      const normalized = { ...personnelDraft, name: personnelDraft.name.trim() };
+      const normalized = {
+        ...personnelDraft,
+        name: personnelDraft.name.trim(),
+        qualifications: personnelDraft.qualifications ?? [],
+      };
       setPersonnelRecords((previous) =>
         editingIndex === null
           ? [...previous, normalized]
@@ -8889,6 +8911,10 @@ function DepartmentDetailsPage() {
               personnelBulkDraft.apparatusAssignment || entry.apparatusAssignment,
             station: personnelBulkDraft.station || entry.station,
             userType: personnelBulkDraft.userType || entry.userType,
+            qualifications:
+              personnelBulkDraft.qualifications.length > 0
+                ? personnelBulkDraft.qualifications
+                : entry.qualifications,
           };
         }),
       );
@@ -9659,6 +9685,36 @@ function DepartmentDetailsPage() {
                       </option>
                     ))}
                   </select>
+                </label>
+                <label>
+                  Qualifications (DD-M)
+                  <select
+                    multiple
+                    value={!isMultiEditMode ? personnelDraft.qualifications : personnelBulkDraft.qualifications}
+                    onChange={(event) =>
+                      !isMultiEditMode
+                        ? setPersonnelDraft((previous) => ({
+                            ...previous,
+                            qualifications: Array.from(event.target.selectedOptions).map((opt) => opt.value),
+                          }))
+                        : setPersonnelBulkDraft((previous) => ({
+                            ...previous,
+                            qualifications: Array.from(event.target.selectedOptions).map((opt) => opt.value),
+                          }))
+                    }
+                    className="department-select-box department-select-multi"
+                  >
+                    {personnelQualifications.map((qualification) => (
+                      <option key={`personnel-qual-${qualification}`} value={qualification}>
+                        {qualification}
+                      </option>
+                    ))}
+                  </select>
+                  <small className="field-hint">
+                    {personnelQualifications.length === 0
+                      ? "Add qualifications in Personnel Qualifications first."
+                      : "Hold Ctrl/Cmd to select multiple."}
+                  </small>
                 </label>
               </div>
             ) : null}

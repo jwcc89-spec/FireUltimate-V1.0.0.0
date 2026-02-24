@@ -4,14 +4,14 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details UX alignment pass: local-labeled GMT options, Station/Apparatus structured DD-S/DD-M editing popups, new section grouping (Department Details/Resources/Access), and field-map updates.
+- Department Details: personnel credential schema (qualifications DD-M) and persistence for DD-S/DD-M edit flows.
 
 ## Latest known status
-- Latest commit before this update: dd18782 - Refine Department Details DD-S/DD-M workflows and persistence.
-- Working tree includes structured Stations/Apparatus forms and updated timezone labels pending commit.
+- Latest commit: (pending this session)
+- Personnel credential schema implemented: `qualifications: string[]` on Personnel records, DD-M field in edit form, migration for legacy data.
 
 ## Current blocker / status
-- No blocker. Lint clean after UX alignment updates.
+- No blocker. Lint clean.
 
 ## External dependency status
 - 
@@ -29,4 +29,4 @@
 1. Read `cursoragent-context.md`.
 2. Read this file.
 3. Read latest note in `agent-handoffs/branches/submenu--departmentdetails-ui/sessions/`.
-4. Continue with personnel credential schema and persistence logic for DD-S/DD-M edit flows.
+4. Add persistence/API integration for Department Details form and collections.
