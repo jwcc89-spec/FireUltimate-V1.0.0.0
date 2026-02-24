@@ -45,13 +45,14 @@ After I answer:
 3) If branch handoff folder does not exist, create it:
    - agent-handoffs/branches/<branch-slug>/
    - agent-handoffs/branches/<branch-slug>/sessions/
-   - agent-handoffs/branches/<branch-slug>/sessions/<timestamp>-<agent>
+   - agent-handoffs/branches/<branch-slug>/conversations/
    - create ACTIVE_CONTEXT.md from agent-handoffs/ACTIVE_CONTEXT_TEMPLATE.md
    - create first session note from agent-handoffs/HANDOFF_TEMPLATE.md
 4) Read these files first:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
    - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
+   - latest conversation in agent-handoffs/branches/<branch-slug>/conversations/
 5) Before coding, summarize:
    - current branch + latest commit
    - what previous agent completed
@@ -142,7 +143,7 @@ MANDATORY FIRST RESPONSE:
 After I answer:
 1) Update agent-handoffs/branches/<branch-slug>/active_context.md
 2) finalize session note
-3) Create or update a copy of all conversation history as a backup in agent-handoffs/branches/<branch-slug>/sessions/<timestamp>-<agent>/conversation.md
+3) Create or update a copy of all conversation history as a backup in agent-handoffs/branches/<branch-slug>/conversations/<timestamp>-<agent>-conversation.md
 
 ```
 
