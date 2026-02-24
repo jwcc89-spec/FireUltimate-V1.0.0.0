@@ -4,10 +4,11 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details: API persistence (GET/POST) with localStorage fallback.
+- Department Details: DD-M style alignment (pill-style dropdown matching NERIS Additional Incident Types).
 
 ## Latest known status
-- Latest commit: 0c06c19 - ACTIVE_CONTEXT: latest bf26a49
+- Latest commit: (pending this session)
+- DD-M fields now use NerisFlatMultiOptionSelect (pill-style dropdown with search, matching NERIS Additional Incident Types).
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 
 ## Current blocker / status

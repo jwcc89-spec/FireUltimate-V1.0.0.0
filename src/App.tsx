@@ -9534,20 +9534,21 @@ function DepartmentDetailsPage() {
             ) : null}
 
             {isMutualAidEditor ? (
-              <select
-                multiple
-                className="department-select-box department-select-multi"
-                value={selectedMutualAidIds}
-                onChange={(event) =>
-                  setSelectedMutualAidIds(Array.from(event.target.selectedOptions).map((option) => option.value))
+              <NerisFlatMultiOptionSelect
+                inputId="mutual-aid-departments"
+                value={selectedMutualAidIds.join(",")}
+                options={mutualAidOptions.map((o) => ({
+                  value: o.id,
+                  label: `${o.name} (${o.id})`,
+                }))}
+                onChange={(nextValue) =>
+                  setSelectedMutualAidIds(
+                    nextValue.split(",").map((s) => s.trim()).filter(Boolean),
+                  )
                 }
-              >
-                {mutualAidOptions.map((option) => (
-                  <option key={`mutual-aid-option-${option.id}`} value={option.id}>
-                    {option.name} ({option.id})
-                  </option>
-                ))}
-              </select>
+                placeholder="Select mutual aid department(s)"
+                searchPlaceholder="Search departments..."
+              />
             ) : null}
 
             {isUserTypeEditor ? (
@@ -9649,26 +9650,23 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
-                  Personnel Requirements
-                  <select
-                    multiple
-                    value={apparatusDraft.personnelRequirements}
-                    onChange={(event) =>
+                  Personnel Requirements (DD-M)
+                  <NerisFlatMultiOptionSelect
+                    inputId="apparatus-personnel-requirements"
+                    value={apparatusDraft.personnelRequirements.join(",")}
+                    options={personnelQualifications.map((q) => ({ value: q, label: q }))}
+                    onChange={(nextValue) =>
                       setApparatusDraft((previous) => ({
                         ...previous,
-                        personnelRequirements: Array.from(event.target.selectedOptions).map(
-                          (option) => option.value,
-                        ),
+                        personnelRequirements: nextValue
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
                       }))
                     }
-                    className="department-select-box department-select-multi"
-                  >
-                    {personnelQualifications.map((qualification) => (
-                      <option key={`apparatus-qual-${qualification}`} value={qualification}>
-                        {qualification}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder="Select personnel requirement(s)"
+                    searchPlaceholder="Search qualifications..."
+                  />
                 </label>
                 <label>
                   Station
@@ -9766,33 +9764,28 @@ function DepartmentDetailsPage() {
                 </label>
                 <label>
                   Qualifications (DD-M)
-                  <select
-                    multiple
-                    value={!isMultiEditMode ? personnelDraft.qualifications : personnelBulkDraft.qualifications}
-                    onChange={(event) =>
+                  <NerisFlatMultiOptionSelect
+                    inputId="personnel-qualifications"
+                    value={
                       !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({
-                            ...previous,
-                            qualifications: Array.from(event.target.selectedOptions).map((opt) => opt.value),
-                          }))
-                        : setPersonnelBulkDraft((previous) => ({
-                            ...previous,
-                            qualifications: Array.from(event.target.selectedOptions).map((opt) => opt.value),
-                          }))
+                        ? personnelDraft.qualifications.join(",")
+                        : personnelBulkDraft.qualifications.join(",")
                     }
-                    className="department-select-box department-select-multi"
-                  >
-                    {personnelQualifications.map((qualification) => (
-                      <option key={`personnel-qual-${qualification}`} value={qualification}>
-                        {qualification}
-                      </option>
-                    ))}
-                  </select>
-                  <small className="field-hint">
-                    {personnelQualifications.length === 0
-                      ? "Add qualifications in Personnel Qualifications first."
-                      : "Hold Ctrl/Cmd to select multiple."}
-                  </small>
+                    options={personnelQualifications.map((q) => ({ value: q, label: q }))}
+                    onChange={(nextValue) => {
+                      const arr = nextValue.split(",").map((s) => s.trim()).filter(Boolean);
+                      if (!isMultiEditMode) {
+                        setPersonnelDraft((previous) => ({ ...previous, qualifications: arr }));
+                      } else {
+                        setPersonnelBulkDraft((previous) => ({ ...previous, qualifications: arr }));
+                      }
+                    }}
+                    placeholder="Select qualification(s)"
+                    searchPlaceholder="Search qualifications..."
+                  />
+                  {personnelQualifications.length === 0 ? (
+                    <small className="field-hint">Add qualifications in Personnel Qualifications first.</small>
+                  ) : null}
                 </label>
               </div>
             ) : null}

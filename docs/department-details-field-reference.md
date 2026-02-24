@@ -74,6 +74,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 ## Notes
 
 - Personnel records include a `qualifications` array (DD-M) linking to `personnelQualifications`. Legacy records without this field are migrated on load.
+- DD-M fields (Personnel Requirements, Personnel Qualifications, Mutual Aid Departments) use the same pill-style dropdown as Additional Incident Types in NERIS Core Tab (`NerisFlatMultiOptionSelect`).
 - Personnel/Apparatus/Stations editors support DD-S and DD-M interaction modes.
 - Personnel add/edit popup now includes core assignment fields to avoid blank personnel records.
 - Personnel assignment timezone is removed; personnel inherit department timezone.
