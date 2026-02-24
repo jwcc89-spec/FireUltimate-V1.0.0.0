@@ -4,20 +4,19 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department details UI (branch handoff folder initialized; branch may need to be created from main)
+- Department details UI (handoff folder initialized; branch created from main)
 
 ## Latest known status
-- Branch not yet created locally. Repo current branch: main.
-- Latest commit on main: ac67e07 - Delete agent-handoffs/sessions/.gitkeep
+- Latest commit: f5be94b - Add handoff folder for submenu/departmentdetails-ui (ACTIVE_CONTEXT, session note, COPY_PASTE_START_PROMPT)
 
 ## Current blocker / status
-- None. Handoff structure ready; awaiting branch creation or checkout.
+- None. Handoff structure ready; ready for department details UI feature work.
 
 ## External dependency status
 - 
 
 ## Recent key commits (latest first)
-- (branch does not exist yet)
+- f5be94b Add handoff folder for submenu/departmentdetails-ui (ACTIVE_CONTEXT, session note, COPY_PASTE_START_PROMPT)
 
 ## Next agent should do this first
 1. Read `cursoragent-context.md`.

@@ -30,16 +30,16 @@
   - Current branch: main. Branch submenu/departmentdetails-ui not in list.
 
 ## Git status
-- Commit(s) created: (pending)
-- Pushed to: -
+- Commit(s) created: f5be94b - Add handoff folder for submenu/departmentdetails-ui (ACTIVE_CONTEXT, session note, COPY_PASTE_START_PROMPT)
+- Pushed to: (pending push to origin)
 
 ## Open issues / blockers
-- Branch submenu/departmentdetails-ui does not exist. User may need to create it (e.g. from main) or pull from remote if it exists elsewhere.
+- None.
 
 ## Next steps for next agent
-1. Confirm with user whether to create branch submenu/departmentdetails-ui from main or switch if it appears later.
-2. Read cursoragent-context.md, this branch's ACTIVE_CONTEXT.md, and latest session note.
-3. Proceed with department details UI implementation per user direction.
+1. Read cursoragent-context.md, this branch's ACTIVE_CONTEXT.md, and latest session note.
+2. Proceed with department details UI implementation per user direction.
+3. After changes: update session note and ACTIVE_CONTEXT.md; before stopping commit + push and report branch, commit hash, changed files, next-step checklist.
 
 ## Notes for user communication
 - What user should test next: N/A (handoff setup only).
