@@ -40,4 +40,3 @@
 2. Read this file and the latest session note in `agent-handoffs/branches/submenu--neris-all/sessions/`.
 3. Read latest branch conversation backup in `agent-handoffs/branches/submenu--neris-all/conversations/`.
 4. Continue only from current user-prioritized NERIS/UI work without changing branches.
-
