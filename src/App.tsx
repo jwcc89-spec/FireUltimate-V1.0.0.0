@@ -3923,7 +3923,7 @@ function NerisFlatMultiOptionSelect({
           createPortal(
             <div
               ref={panelRef}
-              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
+              className="neris-incident-type-select-panel"
               style={panelStyle}
               onWheel={(e) => e.stopPropagation()}
             >
