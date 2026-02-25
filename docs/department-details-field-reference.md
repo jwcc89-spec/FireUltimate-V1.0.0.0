@@ -28,7 +28,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Personnel Qualifications | `personnelQualifications` | Use **Edit Personnel Qualifications**; list view, click row to edit, drag handle to reorder (order = hierarchy for scheduling) |
 | Mutual Aid Departments | `mutualAidDepartments` | Use **Edit Mutual Aid Departments** button to open add/update screen |
 | Shift Information | `shiftInformation` | Use **Edit Shift Information**; CLICKABLE-LIST with click-to-edit |
-| User Type | `userType` | Use **Edit User Type** for defaults and custom role values |
+| User Type | `userType` | Use **Edit User Type**; CLICKABLE-LIST with click-to-edit |
 
 ## Shift Information Entry Fields
 

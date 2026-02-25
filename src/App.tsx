@@ -3841,7 +3841,7 @@ function NerisFlatMultiOptionSelect({
     if (!isOpen || !usePortal || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const maxPanelHeight = Math.min(400, Math.max(200, spaceBelow));
+    const maxPanelHeight = Math.min(480, Math.max(280, spaceBelow));
     setPanelStyle({
       position: "fixed",
       top: rect.bottom + 4,
@@ -4122,7 +4122,7 @@ function NerisFlatSingleOptionSelect({
     if (!isOpen || !usePortal || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const maxPanelHeight = Math.min(400, Math.max(200, spaceBelow));
+    const maxPanelHeight = Math.min(480, Math.max(280, spaceBelow));
     setPanelStyle({
       position: "fixed",
       top: rect.bottom + 4,
@@ -9127,6 +9127,13 @@ function DepartmentDetailsPage() {
   const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
     setActiveCollectionEditor(collectionKey);
     resetEditorSelection();
+    if (collectionKey === "userType") {
+      setUserTypeDraft("");
+    }
+    if (collectionKey === "personnelQualifications") {
+      setQualificationDraft("");
+      setEditingQualificationIndex(null);
+    }
   };
 
   const closeCollectionEditor = () => {
@@ -10232,12 +10239,65 @@ function DepartmentDetailsPage() {
             ) : null}
 
             {isUserTypeEditor ? (
-              <div className="department-editor-add-row">
-                <input type="text" value={userTypeDraft} onChange={(event) => setUserTypeDraft(event.target.value)} placeholder="User type value" />
-                <button type="button" className="primary-button compact-button" onClick={addOrUpdateUserType}>
-                  {editingIndex === null ? "Add User Type" : "Save User Type"}
-                </button>
-              </div>
+              <>
+                <div className="department-editor-add-row">
+                  <input type="text" value={userTypeDraft} onChange={(event) => setUserTypeDraft(event.target.value)} placeholder="User type value" />
+                  <button type="button" className="primary-button compact-button" onClick={addOrUpdateUserType}>
+                    {editingIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  Click a row to edit.
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>User Type</th>
+                          <th style={{ width: "80px" }}>Order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userTypeValues.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className="department-apparatus-empty">
+                              No user types. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          userTypeValues.map((userType, index) => (
+                            <tr
+                              key={`user-type-${userType}-${index}`}
+                              className={`clickable-row ${editingIndex === index ? "clickable-row-selected" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingIndex(index);
+                                setUserTypeDraft(userType);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingIndex(index);
+                                  setUserTypeDraft(userType);
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong className="call-number-text">{userType || "—"}</strong>
+                              </td>
+                              <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
+                                {index + 1}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
             ) : null}
           </article>
         </div>

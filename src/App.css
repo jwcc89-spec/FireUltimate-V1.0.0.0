@@ -1547,6 +1547,8 @@ tbody tr:last-of-type td {
 .neris-incident-type-select-panel-portal .neris-incident-type-options-scroll {
   flex: 1 1 0;
   min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .neris-incident-type-search-row {
