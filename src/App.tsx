@@ -3925,6 +3925,7 @@ function NerisFlatMultiOptionSelect({
               ref={panelRef}
               className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
               style={panelStyle}
+              onWheel={(e) => e.stopPropagation()}
             >
               <div className="neris-incident-type-search-row">
                 <Search size={14} />
@@ -3954,7 +3955,7 @@ function NerisFlatMultiOptionSelect({
                   Selected {selectedValueSet.size} of {maxSelections} allowed.
                 </p>
               ) : null}
-              <div className="neris-incident-type-options-scroll" role="listbox">
+              <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
@@ -4027,7 +4028,7 @@ function NerisFlatMultiOptionSelect({
               Selected {selectedValueSet.size} of {maxSelections} allowed.
             </p>
           ) : null}
-          <div className="neris-incident-type-options-scroll" role="listbox">
+          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
@@ -4200,8 +4201,9 @@ function NerisFlatSingleOptionSelect({
           createPortal(
             <div
               ref={panelRef}
-              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
+              className="neris-incident-type-select-panel"
               style={panelStyle}
+              onWheel={(e) => e.stopPropagation()}
             >
               <div className="neris-incident-type-search-row">
                 <Search size={14} />
@@ -4237,7 +4239,7 @@ function NerisFlatSingleOptionSelect({
                   </button>
                 </div>
               ) : null}
-              <div className="neris-incident-type-options-scroll" role="listbox">
+              <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
                 {filteredOptions.length ? (
                   <div className="neris-incident-type-item-list">
                     {filteredOptions.map((option) => {
@@ -4307,7 +4309,7 @@ function NerisFlatSingleOptionSelect({
               </button>
             </div>
           ) : null}
-          <div className="neris-incident-type-options-scroll" role="listbox">
+          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
@@ -10501,20 +10503,21 @@ function DepartmentDetailsPage() {
                 </label>
                 <label>
                   User Type
-                  <NerisFlatSingleOptionSelect
-                    inputId="personnel-user-type"
+                  <select
                     value={!isMultiEditMode ? personnelDraft.userType : personnelBulkDraft.userType}
-                    options={userTypeValues.map((o) => ({ value: o, label: o }))}
-                    onChange={(nextValue) =>
+                    onChange={(event) =>
                       !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, userType: nextValue }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: nextValue }))
+                        ? setPersonnelDraft((previous) => ({ ...previous, userType: event.target.value }))
+                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: event.target.value }))
                     }
-                    placeholder={isMultiEditMode ? "No change" : "Select user type"}
-                    searchPlaceholder="Search user types..."
-                    allowClear
-                    usePortal
-                  />
+                  >
+                    <option value="">{isMultiEditMode ? "No change" : "Select user type"}</option>
+                    {userTypeValues.map((option) => (
+                      <option key={`personnel-user-type-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
                 </label>
                 <label className="department-qualifications-field-label">
                   Qualifications (select all that apply)
