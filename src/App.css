@@ -1538,6 +1538,17 @@ tbody tr:last-of-type td {
   overflow: hidden;
 }
 
+.neris-incident-type-select-panel-portal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.neris-incident-type-select-panel-portal .neris-incident-type-options-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 .neris-incident-type-search-row {
   display: flex;
   align-items: center;

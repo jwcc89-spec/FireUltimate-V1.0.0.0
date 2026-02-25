@@ -1,0 +1,20 @@
+{
+  "departmentName": "",
+  "departmentStreet": "",
+  "departmentCity": "",
+  "departmentState": "",
+  "departmentZipCode": "",
+  "departmentTimeZone": "",
+  "mainContactName": "",
+  "mainContactPhone": "",
+  "secondaryContactName": "",
+  "secondaryContactPhone": "",
+  "departmentLogoFileName": "No file selected",
+  "stationRecords": [],
+  "apparatusRecords": [],
+  "shiftInformationEntries": [],
+  "personnelRecords": [],
+  "personnelQualifications": [],
+  "userTypeValues": ["Admin", "User"],
+  "selectedMutualAidIds": []
+}

@@ -58,7 +58,7 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | Unit ID | `unitId` |
 | Unit Type | `unitType` |
 | Minimum Personnel | `minimumPersonnel` |
-| Personnel Requirements (DD-M) | `personnelRequirements` (must match `minimumPersonnel` selection count) |
+| Minimum Requirements (DD-M) | `personnelRequirements` (must match `minimumPersonnel` selection count) |
 | Station (DD-S) | `station` |
 
 ## Personnel Assignment Fields (Edit Screen)

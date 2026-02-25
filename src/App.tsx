@@ -3840,11 +3840,14 @@ function NerisFlatMultiOptionSelect({
   useLayoutEffect(() => {
     if (!isOpen || !usePortal || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const maxPanelHeight = Math.min(400, Math.max(200, spaceBelow));
     setPanelStyle({
       position: "fixed",
       top: rect.bottom + 4,
       left: rect.left,
       width: rect.width,
+      maxHeight: `${maxPanelHeight}px`,
       zIndex: 9999,
     });
   }, [isOpen, usePortal]);
@@ -3920,7 +3923,7 @@ function NerisFlatMultiOptionSelect({
           createPortal(
             <div
               ref={panelRef}
-              className="neris-incident-type-select-panel"
+              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
               style={panelStyle}
             >
               <div className="neris-incident-type-search-row">
@@ -4118,11 +4121,14 @@ function NerisFlatSingleOptionSelect({
   useLayoutEffect(() => {
     if (!isOpen || !usePortal || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const maxPanelHeight = Math.min(400, Math.max(200, spaceBelow));
     setPanelStyle({
       position: "fixed",
       top: rect.bottom + 4,
       left: rect.left,
       width: rect.width,
+      maxHeight: `${maxPanelHeight}px`,
       zIndex: 9999,
     });
   }, [isOpen, usePortal]);
@@ -8833,7 +8839,7 @@ function DepartmentDetailsPage() {
       ({
         unitType: "Unit Type",
         minPersonnel: "Min Personnel",
-        personnelRequirements: "Personnel Requirements",
+        personnelRequirements: "Minimum Requirements",
         station: "Station",
       }) as Record<ApparatusGridFieldId, string>,
     [],
@@ -8943,6 +8949,14 @@ function DepartmentDetailsPage() {
   const stationNames = useMemo(
     () => stationRecords.map((station) => station.name).filter((name) => name.trim().length > 0),
     [stationRecords],
+  );
+  const sortedStationRecords = useMemo(
+    () => [...stationRecords].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })),
+    [stationRecords],
+  );
+  const sortedApparatusRecords = useMemo(
+    () => [...apparatusRecords].sort((a, b) => (a.unitId || "").localeCompare(b.unitId || "", undefined, { sensitivity: "base" })),
+    [apparatusRecords],
   );
   const apparatusNames = useMemo(
     () =>
@@ -9265,7 +9279,7 @@ function DepartmentDetailsPage() {
       }
       if (apparatusDraft.personnelRequirements.length !== apparatusDraft.minimumPersonnel) {
         setStatusMessage(
-          "Personnel Requirements selection count must match Minimum Personnel.",
+          "Minimum Requirements selection count must match Minimum Personnel.",
         );
         return;
       }
@@ -9754,24 +9768,26 @@ function DepartmentDetailsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {apparatusRecords.length === 0 ? (
+                            {sortedApparatusRecords.length === 0 ? (
                               <tr>
                                 <td colSpan={2} className="department-apparatus-empty">
                                   No apparatus units. Click Add to create one.
                                 </td>
                               </tr>
                             ) : (
-                            apparatusRecords.map((apparatus, index) => (
+                            sortedApparatusRecords.map((apparatus) => {
+                              const originalIndex = apparatusRecords.findIndex((a) => a === apparatus);
+                              return (
                               <tr
-                                key={`apparatus-row-${index}-${apparatus.unitId}`}
-                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                key={`apparatus-row-${originalIndex}-${apparatus.unitId}`}
+                                className={`clickable-row ${selectedSingleIndex === originalIndex ? "clickable-row-selected" : ""}`}
                                 role="button"
                                 tabIndex={0}
-                                onClick={() => openEditForm(index)}
+                                onClick={() => openEditForm(originalIndex)}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
-                                    openEditForm(index);
+                                    openEditForm(originalIndex);
                                   }
                                 }}
                               >
@@ -9783,7 +9799,7 @@ function DepartmentDetailsPage() {
                                     <div className="department-apparatus-grid-line" style={apparatusGridStyle}>
                                       {apparatusFieldOrder.map((fieldId) => (
                                         <span
-                                          key={`apparatus-${index}-${fieldId}`}
+                                          key={`apparatus-${originalIndex}-${fieldId}`}
                                           className="department-apparatus-field"
                                         >
                                           {getApparatusFieldValue(apparatus, fieldId)}
@@ -9793,7 +9809,8 @@ function DepartmentDetailsPage() {
                                   </div>
                                 </td>
                               </tr>
-                            ))
+                              );
+                            })
                             )}
                           </tbody>
                         </table>
@@ -9818,24 +9835,26 @@ function DepartmentDetailsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {stationRecords.length === 0 ? (
+                            {sortedStationRecords.length === 0 ? (
                               <tr>
                                 <td colSpan={2} className="department-apparatus-empty">
                                   No stations. Click Add to create one.
                                 </td>
                               </tr>
                             ) : (
-                              stationRecords.map((station, index) => (
+                              sortedStationRecords.map((station) => {
+                                const originalIndex = stationRecords.findIndex((s) => s === station);
+                                return (
                                 <tr
-                                  key={`station-row-${index}-${station.name}`}
-                                  className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                  key={`station-row-${originalIndex}-${station.name}`}
+                                  className={`clickable-row ${selectedSingleIndex === originalIndex ? "clickable-row-selected" : ""}`}
                                   role="button"
                                   tabIndex={0}
-                                  onClick={() => openEditForm(index)}
+                                  onClick={() => openEditForm(originalIndex)}
                                   onKeyDown={(event) => {
                                     if (event.key === "Enter" || event.key === " ") {
                                       event.preventDefault();
-                                      openEditForm(index);
+                                      openEditForm(originalIndex);
                                     }
                                   }}
                                 >
@@ -9854,7 +9873,8 @@ function DepartmentDetailsPage() {
                                     </div>
                                   </td>
                                 </tr>
-                              ))
+                                );
+                              })
                             )}
                           </tbody>
                         </table>
@@ -10091,18 +10111,6 @@ function DepartmentDetailsPage() {
 
             {isQualificationsEditor ? (
               <>
-                <div className="department-editor-toolbar-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={() => {
-                      setEditingQualificationIndex(null);
-                      setQualificationDraft("");
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
                 <div className="department-editor-add-row">
                   <input
                     type="text"
@@ -10115,7 +10123,7 @@ function DepartmentDetailsPage() {
                     className="primary-button compact-button"
                     onClick={addQualification}
                   >
-                    {editingQualificationIndex === null ? "Save" : "Update"}
+                    {editingQualificationIndex === null ? "Add" : "Update"}
                   </button>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
@@ -10326,7 +10334,7 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
-                  Personnel Requirements
+                  Minimum Requirements (select all that apply)
                   <NerisFlatMultiOptionSelect
                     inputId="apparatus-personnel-requirements"
                     value={apparatusDraft.personnelRequirements.join(",")}
@@ -10446,7 +10454,7 @@ function DepartmentDetailsPage() {
                   </select>
                 </label>
                 <label>
-                  Qualifications
+                  Qualifications (select all that apply)
                   <NerisFlatMultiOptionSelect
                     inputId="personnel-qualifications"
                     value={

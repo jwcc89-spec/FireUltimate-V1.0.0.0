@@ -4,10 +4,10 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details: Edit Stations, Shift Information, Personnel Qualifications now use CLICKABLE-LIST pattern (click-to-edit).
+- Department Details: persistence file, Personnel Qualifications UX, Minimum Requirements label, dropdown scroll, alphabetical sorting.
 
 ## Latest known status
-- Latest commit: d06e2ae - Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST pattern.
+- Latest commit: (pending) - Data persistence, Personnel Qualifications Add, Minimum Requirements, (select all that apply), dropdown scroll, Stations/Apparatus sort.
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 - Lint and build: passing.
 
