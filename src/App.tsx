@@ -9799,24 +9799,131 @@ function DepartmentDetailsPage() {
                         </table>
                       </div>
                     </div>
-                  ) : (
-                    <select
-                      className="department-select-box"
-                      value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
-                      onChange={(event) =>
-                        setSelectedSingleIndex(event.target.value === "" ? null : Number.parseInt(event.target.value, 10))
-                      }
-                    >
-                      <option value="">
-                        {isPersonnelEditor ? "Select personnel" : "Select station"}
-                      </option>
-                      {(isPersonnelEditor ? personnelRecords.map((entry) => entry.name) : stationNames).map((entry, index) => (
-                        <option key={`collection-single-${entry}-${index}`} value={String(index)}>
-                          {entry}
-                        </option>
-                      ))}
-                    </select>
-                  )
+                  ) : isStationsEditor ? (
+                    <div className="department-apparatus-list-wrapper">
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Station Name</th>
+                              <th>
+                                <div className="department-station-grid-line department-station-grid-header">
+                                  <span>Address</span>
+                                  <span>City</span>
+                                  <span>State</span>
+                                  <span>Phone</span>
+                                  <span>Mobile Phone</span>
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {stationRecords.length === 0 ? (
+                              <tr>
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  No stations. Click Add to create one.
+                                </td>
+                              </tr>
+                            ) : (
+                              stationRecords.map((station, index) => (
+                                <tr
+                                  key={`station-row-${index}-${station.name}`}
+                                  className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openEditForm(index)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      openEditForm(index);
+                                    }
+                                  }}
+                                >
+                                  <td>
+                                    <strong className="call-number-text">{station.name || "—"}</strong>
+                                  </td>
+                                  <td>
+                                    <div className="dispatch-info-cell">
+                                      <div className="department-station-grid-line">
+                                        <span className="department-apparatus-field">{station.address || "—"}</span>
+                                        <span className="department-apparatus-field">{station.city || "—"}</span>
+                                        <span className="department-apparatus-field">{station.state || "—"}</span>
+                                        <span className="department-apparatus-field">{station.phone || "—"}</span>
+                                        <span className="department-apparatus-field">{station.mobilePhone || "—"}</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : isPersonnelEditor ? (
+                    <div className="department-apparatus-list-wrapper">
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Name</th>
+                              <th>
+                                <div className="department-personnel-grid-line department-personnel-grid-header">
+                                  <span>Shift</span>
+                                  <span>Apparatus</span>
+                                  <span>Station</span>
+                                  <span>User Type</span>
+                                  <span>Qualifications</span>
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {personnelRecords.length === 0 ? (
+                              <tr>
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  No personnel. Click Add to create one.
+                                </td>
+                              </tr>
+                            ) : (
+                              personnelRecords.map((personnel, index) => (
+                                <tr
+                                  key={`personnel-row-${index}-${personnel.name}`}
+                                  className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openEditForm(index)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      openEditForm(index);
+                                    }
+                                  }}
+                                >
+                                  <td>
+                                    <strong className="call-number-text">{personnel.name || "—"}</strong>
+                                  </td>
+                                  <td>
+                                    <div className="dispatch-info-cell">
+                                      <div className="department-personnel-grid-line">
+                                        <span className="department-apparatus-field">{personnel.shift || "—"}</span>
+                                        <span className="department-apparatus-field">{personnel.apparatusAssignment || "—"}</span>
+                                        <span className="department-apparatus-field">{personnel.station || "—"}</span>
+                                        <span className="department-apparatus-field">{personnel.userType || "—"}</span>
+                                        <span className="department-apparatus-field">
+                                          {personnel.qualifications.length > 0 ? personnel.qualifications.join(", ") : "—"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null
                 ) : (
                   <select
                     multiple
@@ -9854,36 +9961,75 @@ function DepartmentDetailsPage() {
                   >
                     Add
                   </button>
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={() => {
-                      if (selectedSingleIndex === null || !shiftInformationEntries[selectedSingleIndex]) {
-                        return;
-                      }
-                      setEditingIndex(selectedSingleIndex);
-                      setShiftDraft(shiftInformationEntries[selectedSingleIndex]!);
-                    }}
-                  >
-                    Edit
-                  </button>
                 </div>
-                <select
-                  className="department-select-box"
-                  value={selectedSingleIndex !== null ? String(selectedSingleIndex) : ""}
-                  onChange={(event) =>
-                    setSelectedSingleIndex(
-                      event.target.value === "" ? null : Number.parseInt(event.target.value, 10),
-                    )
-                  }
-                >
-                  <option value="">Select shift entry</option>
-                  {shiftOptionValues.map((entry, index) => (
-                    <option key={`shift-entry-${index}`} value={String(index)}>
-                      {entry}
-                    </option>
-                  ))}
-                </select>
+                <div className="department-apparatus-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Shift Type</th>
+                          <th>
+                            <div className="department-shift-grid-line department-shift-grid-header">
+                              <span>Duration</span>
+                              <span>Recurrence</span>
+                              <span>Location</span>
+                            </div>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shiftInformationEntries.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className="department-apparatus-empty">
+                              No shift entries. Click Add to create one.
+                            </td>
+                          </tr>
+                        ) : (
+                          shiftInformationEntries.map((entry, index) => {
+                            const recurrenceLabel =
+                              entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
+                                ? entry.recurrenceCustomValue
+                                : entry.recurrence;
+                            return (
+                              <tr
+                                key={`shift-row-${index}-${entry.shiftType}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  setSelectedSingleIndex(index);
+                                  setEditingIndex(index);
+                                  setShiftDraft(entry);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    setSelectedSingleIndex(index);
+                                    setEditingIndex(index);
+                                    setShiftDraft(entry);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{entry.shiftType || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div className="department-shift-grid-line">
+                                      <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
+                                      <span className="department-apparatus-field">{recurrenceLabel}</span>
+                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
                 <div className="department-edit-grid">
                   <label>
                     Shift Type
@@ -9972,47 +10118,89 @@ function DepartmentDetailsPage() {
                     {editingQualificationIndex === null ? "Save" : "Update"}
                   </button>
                 </div>
-                <ul className="department-editor-list">
-                  {personnelQualifications.map((qualification, index) => (
-                    <li
-                      key={`qualification-${qualification}-${index}`}
-                      draggable
-                      onDragStart={() => setDragQualificationIndex(index)}
-                      onDragOver={(event) => event.preventDefault()}
-                      onDrop={() => {
-                        if (dragQualificationIndex === null || dragQualificationIndex === index) {
-                          return;
-                        }
-                        setPersonnelQualifications((previous) => {
-                          const next = [...previous];
-                          const [moved] = next.splice(dragQualificationIndex, 1);
-                          if (!moved) {
-                            return previous;
-                          }
-                          next.splice(index, 0, moved);
-                          return next;
-                        });
-                        setDragQualificationIndex(null);
-                        setAutoSaveTick((previous) => previous + 1);
-                        setStatusMessage("Auto-saved.");
-                      }}
-                    >
-                      <span>{qualification}</span>
-                      <div className="department-row-actions">
-                        <button
-                          type="button"
-                          className="secondary-button compact-button"
-                          onClick={() => {
-                            setEditingQualificationIndex(index);
-                            setQualificationDraft(qualification);
-                          }}
-                        >
-                          Edit
-                        </button>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  Click a row to edit. Drag rows to reorder (order establishes hierarchy for scheduling).
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: "32px" }} aria-label="Drag to reorder" />
+                          <th>Qualification</th>
+                          <th style={{ width: "80px" }}>Order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {personnelQualifications.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="department-apparatus-empty">
+                              No qualifications. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          personnelQualifications.map((qualification, index) => (
+                            <tr
+                              key={`qualification-${qualification}-${index}`}
+                              className={`clickable-row ${editingQualificationIndex === index ? "clickable-row-selected" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingQualificationIndex(index);
+                                setQualificationDraft(qualification);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingQualificationIndex(index);
+                                  setQualificationDraft(qualification);
+                                }
+                              }}
+                            >
+                              <td
+                                className="department-qualification-drag-cell"
+                                onClick={(e) => e.stopPropagation()}
+                                draggable
+                                onDragStart={() => setDragQualificationIndex(index)}
+                                onDragEnd={() => setDragQualificationIndex(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => {
+                                  if (dragQualificationIndex === null || dragQualificationIndex === index) {
+                                    return;
+                                  }
+                                  setPersonnelQualifications((previous) => {
+                                    const next = [...previous];
+                                    const [moved] = next.splice(dragQualificationIndex, 1);
+                                    if (!moved) {
+                                      return previous;
+                                    }
+                                    next.splice(index, 0, moved);
+                                    return next;
+                                  });
+                                  setDragQualificationIndex(null);
+                                  setAutoSaveTick((previous) => previous + 1);
+                                  setStatusMessage("Auto-saved.");
+                                }}
+                              >
+                                <span className="drag-handle" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </span>
+                              </td>
+                              <td>
+                                <strong className="call-number-text">{qualification || "—"}</strong>
+                              </td>
+                              <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
+                                {index + 1}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
               </>
             ) : null}
 

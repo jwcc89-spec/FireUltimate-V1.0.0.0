@@ -1330,6 +1330,59 @@ tbody tr:last-of-type td {
   text-align: center;
 }
 
+.department-station-grid-line {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(80px, 0.8fr) minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(90px, 0.9fr);
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-shift-grid-line {
+  display: grid;
+  grid-template-columns: minmax(60px, 0.6fr) minmax(100px, 0.9fr) minmax(90px, 0.8fr);
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-personnel-grid-line {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(140px, 1.4fr);
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-personnel-grid-header {
+  color: #64748b;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.department-station-grid-header,
+.department-shift-grid-header {
+  color: #64748b;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.department-qualifications-list-wrapper .table-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.department-qualifications-list-wrapper {
+  margin-top: 0.5rem;
+}
+
+.department-qualification-drag-cell {
+  cursor: grab;
+  vertical-align: middle;
+  padding: 0.35rem;
+}
+
+.department-qualification-drag-cell:active {
+  cursor: grabbing;
+}
+
 .department-dd-mode-badge {
   border: 1px solid #bfdbfe;
   border-radius: 999px;

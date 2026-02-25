@@ -24,10 +24,10 @@ This file lists the current fields in `Admin Functions > Department Details` so 
 | --- | --- | --- |
 | Personnel | `personnel` | Use **Edit Personnel** button to open add/update screen |
 | Apparatus | `apparatus` | Use **Edit Apparatus** button to open add/update screen |
-| Stations | `stations` | Use **Edit Stations** button to open add/update screen |
-| Personnel Qualifications | `personnelQualifications` | Use **Edit Personnel Qualifications** to add, view, edit, and drag-reorder qualification values |
+| Stations | `stations` | Use **Edit Stations** button; CLICKABLE-LIST with click-to-edit |
+| Personnel Qualifications | `personnelQualifications` | Use **Edit Personnel Qualifications**; list view, click row to edit, drag handle to reorder (order = hierarchy for scheduling) |
 | Mutual Aid Departments | `mutualAidDepartments` | Use **Edit Mutual Aid Departments** button to open add/update screen |
-| Shift Information | `shiftInformation` | Use **Edit Shift Information** for Shift Type, Shift Duration, Recurrence, and Location |
+| Shift Information | `shiftInformation` | Use **Edit Shift Information**; CLICKABLE-LIST with click-to-edit |
 | User Type | `userType` | Use **Edit User Type** for defaults and custom role values |
 
 ## Shift Information Entry Fields
