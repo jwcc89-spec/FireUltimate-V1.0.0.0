@@ -1,13 +1,13 @@
 # Active Context Snapshot (submenu/departmentdetails-ui)
 
 ## Current branch
-- submenu/departmentdetails-ui (synced with cursor/submenu-department-details-b46e)
+- submenu/departmentdetails-ui
 
 ## Current focus
 - Department Details: Edit Stations, Shift Information, Personnel Qualifications now use CLICKABLE-LIST pattern (click-to-edit).
 
 ## Latest known status
-- Latest commit: 88a4562 - Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST pattern.
+- Latest commit: d06e2ae - Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST pattern.
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 - Lint and build: passing.
 
@@ -18,7 +18,8 @@
 - 
 
 ## Recent key commits (latest first)
-- 88a4562 Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST
+- d06e2ae ACTIVE_CONTEXT + session note: add commit 88a4562
+- cc7df5f Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST
 - c5fd5d7 Revise guidelines for session management and validation
 - 6e9ef95 Update handoff template for clarity and formatting
 - 3f56271 Align Department Details DD-M fields to NERIS Additional Incident Types style
