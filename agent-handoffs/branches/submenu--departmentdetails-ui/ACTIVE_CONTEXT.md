@@ -4,12 +4,13 @@
 - submenu/departmentdetails-ui
 
 ## Current focus
-- Department Details: persistence file, Personnel Qualifications UX, Minimum Requirements label, dropdown scroll, alphabetical sorting.
+- Department Details: CLICKABLE-LIST patterns, dropdown scroll fixes, persistence, Unit Type scroll styling as reference.
 
 ## Latest known status
-- Latest commit: d6a763c - Data persistence, Personnel Qualifications Add, Minimum Requirements, (select all that apply), dropdown scroll, Stations/Apparatus sort.
+- Latest commit: 2ecffa4 - Match Minimum Requirements and Qualifications scroll styling to Unit Type.
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 - Lint and build: passing.
+- Unit Type (Apparatus Entry) scroll works correctly; do not change. Minimum Requirements and Qualifications use same scroll styling.
 
 ## Current blocker / status
 - No blocker.
@@ -18,14 +19,13 @@
 - 
 
 ## Recent key commits (latest first)
+- 2ecffa4 Match Minimum Requirements and Qualifications scroll styling to Unit Type
+- 1221c57 Fix dropdown scroll: prevent page scroll when scrolling inside dropdowns
+- 752e361 Fix Apparatus Save, Minimum Requirements, dropdown scroll/clipping
+- db82d1a Fix Personnel Qualifications dropdown clipping; Apparatus Minimum Requirements hint
+- f6074cf Mutual Aid dropdown scroll fix; User Type → CLICKABLE-LIST
 - d6a763c Department Details: persistence, Personnel Qualifications UX, Minimum Requirements, dropdown scroll, sort
-- d06e2ae ACTIVE_CONTEXT + session note: add commit 88a4562
 - cc7df5f Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST
-- c5fd5d7 Revise guidelines for session management and validation
-- 6e9ef95 Update handoff template for clarity and formatting
-- 3f56271 Align Department Details DD-M fields to NERIS Additional Incident Types style
-- bf26a49 Add Department Details API persistence (GET/POST) with localStorage fallback
-- 74fd7e6 Add Department Details admin submenu UI scaffold
 
 ## Next agent should do this first
 1. Read `cursoragent-context.md`.
