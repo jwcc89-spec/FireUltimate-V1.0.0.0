@@ -28,13 +28,15 @@ Before doing any feature work, understand the Branch Rules:
    - report branch, commit hash, changed files, and next-step checklist
 
 After acknowledging the rules above:
+
 1) Continue from the current blcoker only (do no restart solved work).
+2) sync latest code for <branch-slug> (fetch/pull)
 2) Validate changes (build/test/lint as appropriate), then report clearly.
 3) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
 4) Before ending:
    - update session note + branch ACTIVE_CONTEXT.md
    - commit + push on <branch-slug>
    - report branch, commit hash, changed files, and next-step checklist
-Before any feature work, do this in order.
+
 
 ```
