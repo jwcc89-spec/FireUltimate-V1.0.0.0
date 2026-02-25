@@ -7,7 +7,7 @@
 - Department Details: persistence file, Personnel Qualifications UX, Minimum Requirements label, dropdown scroll, alphabetical sorting.
 
 ## Latest known status
-- Latest commit: (pending) - Data persistence, Personnel Qualifications Add, Minimum Requirements, (select all that apply), dropdown scroll, Stations/Apparatus sort.
+- Latest commit: d6a763c - Data persistence, Personnel Qualifications Add, Minimum Requirements, (select all that apply), dropdown scroll, Stations/Apparatus sort.
 - API integration: `/api/department-details` GET on load, POST on save. Server stores in `data/department-details.json`.
 - Lint and build: passing.
 
@@ -18,6 +18,7 @@
 - 
 
 ## Recent key commits (latest first)
+- d6a763c Department Details: persistence, Personnel Qualifications UX, Minimum Requirements, dropdown scroll, sort
 - d06e2ae ACTIVE_CONTEXT + session note: add commit 88a4562
 - cc7df5f Edit Stations, Shift Information, Personnel Qualifications → CLICKABLE-LIST
 - c5fd5d7 Revise guidelines for session management and validation
