@@ -36,8 +36,8 @@
   - Build: success (vite build completed)
 
 ## Git status
-- Commit(s) created: (pending)
-- Pushed to: (pending)
+- Commit(s) created: 7d7c29c
+- Pushed to: origin cursor/submenu-department-details-b46e
 
 ## Open issues / blockers
 - None. Next implementation step (validation for multi-entry popups) awaits user specification of required fields.
