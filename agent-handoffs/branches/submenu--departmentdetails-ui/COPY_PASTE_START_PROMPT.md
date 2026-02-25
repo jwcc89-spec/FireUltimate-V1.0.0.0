@@ -20,7 +20,7 @@ Before doing any feature work, understand the Branch Rules:
 5) Follow beginner-friendly communication and explain commands clearly.
 6) After meaningful changes:
    - update session note
-   - keep ACTIVE_CONTEXT.md current
+   - keep agent-handoffs/branches/submenu--departmentdetails-ui/ACTIVE_CONTEXT.md current
 7) Before stopping:
    - update agent-handoffs/branches/submenu--departmentdetails-ui/ACTIVE_CONTEXT.md
    - finalize session note
@@ -29,9 +29,10 @@ Before doing any feature work, understand the Branch Rules:
 
 After acknowledging the rules above:
 1) Continue from the current blcoker only (do no restart solved work).
-2) Validate changes (build/test/lint as appropriate), then report clearly.
-3) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
-4) Before ending:
+2) Sync latest Code for submenu/departmentdetails-ui
+3) Validate changes (build/test/lint as appropriate), then report clearly.
+4) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
+5) Before ending:
    - update session note + branch ACTIVE_CONTEXT.md
    - commit + push on submenu/departmentdetails-ui
    - report branch, commit hash, changed files, and next-step checklist
