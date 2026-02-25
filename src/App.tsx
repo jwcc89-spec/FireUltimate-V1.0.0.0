@@ -3848,7 +3848,7 @@ function NerisFlatMultiOptionSelect({
       left: rect.left,
       width: rect.width,
       maxHeight: `${maxPanelHeight}px`,
-      zIndex: 9999,
+      zIndex: 100000,
     });
   }, [isOpen, usePortal]);
 
@@ -4129,7 +4129,7 @@ function NerisFlatSingleOptionSelect({
       left: rect.left,
       width: rect.width,
       maxHeight: `${maxPanelHeight}px`,
-      zIndex: 9999,
+      zIndex: 100000,
     });
   }, [isOpen, usePortal]);
 
@@ -10413,6 +10413,9 @@ function DepartmentDetailsPage() {
                     maxSelections={Math.max(0, apparatusDraft.minimumPersonnel)}
                     usePortal
                   />
+                  {personnelQualifications.length === 0 ? (
+                    <small className="field-hint">Add qualifications in Edit Personnel Qualifications first.</small>
+                  ) : null}
                 </label>
                 <label>
                   Station
@@ -10513,7 +10516,7 @@ function DepartmentDetailsPage() {
                     ))}
                   </select>
                 </label>
-                <label>
+                <label className="department-qualifications-field-label">
                   Qualifications (select all that apply)
                   <NerisFlatMultiOptionSelect
                     inputId="personnel-qualifications"

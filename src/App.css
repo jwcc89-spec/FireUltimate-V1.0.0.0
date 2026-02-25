@@ -1190,6 +1190,11 @@ tbody tr:last-of-type td {
 
 /* DD-M/DD-S dropdown panels in department editor: render in portal to avoid clipping and box expansion */
 
+.department-qualifications-field-label {
+  overflow: visible;
+  contain: none;
+}
+
 .department-editor-add-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
@@ -1542,6 +1547,7 @@ tbody tr:last-of-type td {
   display: flex;
   flex-direction: column;
   min-height: 0;
+  z-index: 100000;
 }
 
 .neris-incident-type-select-panel-portal .neris-incident-type-options-scroll {
