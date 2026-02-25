@@ -3824,7 +3824,7 @@ function NerisFlatMultiOptionSelect({
   );
   const selectedValueSet = new Set<string>(selectedValues);
   const selectionLimitReached =
-    typeof maxSelections === "number" && selectedValueSet.size >= maxSelections;
+    typeof maxSelections === "number" && maxSelections > 0 && selectedValueSet.size >= maxSelections;
   const selectedOptions = selectedValues
     .map((selectedValue) => options.find((option) => option.value === selectedValue))
     .filter((option): option is NerisValueOption => Boolean(option));
@@ -4200,7 +4200,7 @@ function NerisFlatSingleOptionSelect({
           createPortal(
             <div
               ref={panelRef}
-              className="neris-incident-type-select-panel"
+              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
               style={panelStyle}
             >
               <div className="neris-incident-type-search-row">
@@ -9284,7 +9284,8 @@ function DepartmentDetailsPage() {
       if (!apparatusDraft.unitId.trim() || !apparatusDraft.unitType.trim()) {
         return;
       }
-      if (apparatusDraft.personnelRequirements.length !== apparatusDraft.minimumPersonnel) {
+      const minReq = Number.isFinite(apparatusDraft.minimumPersonnel) ? apparatusDraft.minimumPersonnel : 0;
+      if (apparatusDraft.personnelRequirements.length !== minReq) {
         setStatusMessage(
           "Minimum Requirements selection count must match Minimum Personnel.",
         );
@@ -10410,7 +10411,7 @@ function DepartmentDetailsPage() {
                     }
                     placeholder="Select personnel requirement(s)"
                     searchPlaceholder="Search qualifications..."
-                    maxSelections={Math.max(0, apparatusDraft.minimumPersonnel)}
+                    maxSelections={apparatusDraft.minimumPersonnel > 0 ? apparatusDraft.minimumPersonnel : undefined}
                     usePortal
                   />
                   {personnelQualifications.length === 0 ? (
@@ -10500,21 +10501,20 @@ function DepartmentDetailsPage() {
                 </label>
                 <label>
                   User Type
-                  <select
+                  <NerisFlatSingleOptionSelect
+                    inputId="personnel-user-type"
                     value={!isMultiEditMode ? personnelDraft.userType : personnelBulkDraft.userType}
-                    onChange={(event) =>
+                    options={userTypeValues.map((o) => ({ value: o, label: o }))}
+                    onChange={(nextValue) =>
                       !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, userType: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: event.target.value }))
+                        ? setPersonnelDraft((previous) => ({ ...previous, userType: nextValue }))
+                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: nextValue }))
                     }
-                  >
-                    <option value="">{isMultiEditMode ? "No change" : "Select user type"}</option>
-                    {userTypeValues.map((option) => (
-                      <option key={`personnel-user-type-${option}`} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
+                    placeholder={isMultiEditMode ? "No change" : "Select user type"}
+                    searchPlaceholder="Search user types..."
+                    allowClear
+                    usePortal
+                  />
                 </label>
                 <label className="department-qualifications-field-label">
                   Qualifications (select all that apply)
