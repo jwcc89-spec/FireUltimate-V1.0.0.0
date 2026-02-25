@@ -4,7 +4,7 @@
 Before doing any feature work, understand the Branch Rules:
 
 1) Stay on branch: <branch-slug> unless I explicitly tell you to switch.
-2) Use branch slug: submenu--departmentdetails-ui
+2) Use branch slug: <branch-slug>
 3) Read continuity docs:
    - cursoragent-context.md
    - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
