@@ -2295,6 +2295,178 @@ body.resource-personnel-modal-open {
   max-width: 64ch;
 }
 
+.neris-incident-test-response {
+  margin-top: 0.4rem;
+  max-width: 72ch;
+}
+
+.neris-incident-test-response summary {
+  cursor: pointer;
+  color: #1d4ed8;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.neris-incident-test-response .export-attempt-json {
+  margin-top: 0.38rem;
+}
+
+.neris-incident-compare {
+  margin-top: 0.5rem;
+  border: 1px solid #dbe2ec;
+  background-color: #ffffff;
+  padding: 0.7rem;
+  display: grid;
+  gap: 0.58rem;
+  max-width: 74rem;
+}
+
+.neris-incident-compare-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.neris-incident-compare-header h2 {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.neris-incident-compare-header p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.79rem;
+  font-weight: 600;
+}
+
+.neris-incident-compare-list {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.neris-incident-compare-row {
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background-color: #f8fafc;
+  padding: 0.58rem;
+  display: grid;
+  gap: 0.45rem;
+}
+
+.neris-incident-compare-row-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.neris-incident-compare-row-top h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.neris-incident-compare-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.16rem 0.52rem;
+  font-size: 0.69rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.neris-incident-compare-badge-match {
+  background-color: #dcfce7;
+  color: #166534;
+}
+
+.neris-incident-compare-badge-different {
+  background-color: #fee2e2;
+  color: #b91c1c;
+}
+
+.neris-incident-compare-values {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.48rem;
+}
+
+.neris-incident-compare-values > div {
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background-color: #ffffff;
+  padding: 0.43rem 0.5rem;
+}
+
+.neris-incident-compare-values span {
+  display: inline-block;
+  font-size: 0.68rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 700;
+}
+
+.neris-incident-compare-values p {
+  margin: 0.22rem 0 0;
+  color: #0f172a;
+  font-size: 0.8rem;
+  line-height: 1.32;
+}
+
+.neris-incident-compare-help-text {
+  margin: 0;
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.neris-incident-compare-unmapped {
+  border-top: 1px dashed #dbe2ec;
+  padding-top: 0.5rem;
+  display: grid;
+  gap: 0.32rem;
+}
+
+.neris-incident-compare-unmapped h3 {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.82rem;
+}
+
+.neris-incident-compare-unmapped p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.76rem;
+  line-height: 1.35;
+}
+
+.neris-incident-compare-unmapped-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.neris-incident-compare-unmapped-pill {
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background-color: #f1f5f9;
+  color: #334155;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.2rem 0.52rem;
+}
+
+@media (max-width: 860px) {
+  .neris-incident-compare-values {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .neris-status-select {
   border: 1px solid #cbd5e1;
   border-radius: 9px;
@@ -3178,6 +3350,44 @@ body.resource-personnel-modal-open {
 .validation-issue-list li {
   color: #9a3412;
   font-size: 0.78rem;
+}
+
+.neris-required-matrix {
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.52rem 0.65rem;
+}
+
+.neris-required-matrix summary {
+  cursor: pointer;
+  font-weight: 700;
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+.neris-required-matrix-grid {
+  margin-top: 0.56rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.6rem;
+}
+
+.neris-required-matrix-grid strong {
+  font-size: 0.78rem;
+  color: #1e293b;
+}
+
+.neris-required-matrix-grid ul {
+  margin: 0.35rem 0 0;
+  padding-left: 1rem;
+  display: grid;
+  gap: 0.18rem;
+}
+
+.neris-required-matrix-grid li {
+  font-size: 0.76rem;
+  color: #334155;
 }
 
 .validation-modal-backdrop {
