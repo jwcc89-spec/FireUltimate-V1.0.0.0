@@ -4,11 +4,14 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
+import { createPortal } from "react-dom";
 import {
   Bell,
   ChevronDown,
@@ -143,6 +146,15 @@ interface IncidentCallDetailPageProps {
   callNumber: string;
 }
 
+interface IncidentCompareRow {
+  id: string;
+  label: string;
+  submittedValue: string;
+  retrievedValue: string;
+  status: "match" | "different";
+  helpText?: string;
+}
+
 interface MenuDisplayCardsProps {
   menu: MainMenu;
   role: UserRole;
@@ -222,15 +234,68 @@ interface NerisExportRecord {
   submittedPayloadPreview: string;
 }
 
-type IncidentCompareStatus = "match" | "different";
+type DepartmentCollectionKey =
+  | "stations"
+  | "apparatus"
+  | "shiftInformation"
+  | "personnel"
+  | "personnelQualifications"
+  | "mutualAidDepartments"
+  | "userType";
 
-interface IncidentCompareRow {
+type ShiftRecurrencePreset =
+  | "Daily"
+  | "Every other Day"
+  | "Every 2 days"
+  | "Every 3 days"
+  | "Custom";
+
+interface ShiftInformationEntry {
+  shiftType: string;
+  shiftDuration: number;
+  recurrence: ShiftRecurrencePreset;
+  recurrenceCustomValue: string;
+  location: string;
+}
+
+interface DepartmentPersonnelRecord {
+  name: string;
+  shift: string;
+  apparatusAssignment: string;
+  station: string;
+  userType: string;
+  /** DD-M: credentials/qualifications from personnelQualifications list */
+  qualifications: string[];
+}
+
+interface DepartmentStationRecord {
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+  phone: string;
+  mobilePhone: string;
+}
+
+interface DepartmentApparatusRecord {
+  unitId: string;
+  unitType: string;
+  minimumPersonnel: number;
+  personnelRequirements: string[];
+  station: string;
+}
+
+interface DepartmentNerisEntityOption {
   id: string;
+  name: string;
+  state?: string;
+}
+
+interface DepartmentCollectionDefinition {
+  key: DepartmentCollectionKey;
   label: string;
-  submittedValue: string;
-  retrievedValue: string;
-  status: IncidentCompareStatus;
-  helpText?: string;
+  editButtonLabel: string;
+  helperText: string;
 }
 
 const SESSION_STORAGE_KEY = "fire-ultimate-session";
@@ -242,6 +307,8 @@ const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
 const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
+const DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY = "fire-ultimate-department-logo-data-url";
+const DEPARTMENT_DETAILS_STORAGE_KEY = "fire-ultimate-department-details";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -344,6 +411,117 @@ const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   lastUpdated: 140,
 };
 const NERIS_QUEUE_FIELD_ORDER: IncidentCallFieldId[] = [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
+type ApparatusGridFieldId = "unitType" | "minPersonnel" | "personnelRequirements" | "station";
+const APPARATUS_GRID_FIELD_ORDER: ApparatusGridFieldId[] = [
+  "unitType",
+  "minPersonnel",
+  "personnelRequirements",
+  "station",
+];
+const MIN_APPARATUS_FIELD_WIDTH = 70;
+const MAX_APPARATUS_FIELD_WIDTH = 320;
+const DEFAULT_APPARATUS_FIELD_WIDTHS: Record<ApparatusGridFieldId, number> = {
+  unitType: 120,
+  minPersonnel: 90,
+  personnelRequirements: 160,
+  station: 110,
+};
+const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
+  {
+    key: "stations",
+    label: "Stations",
+    editButtonLabel: "Edit Stations",
+    helperText: "",
+  },
+  {
+    key: "apparatus",
+    label: "Apparatus",
+    editButtonLabel: "Edit Apparatus",
+    helperText: "",
+  },
+  {
+    key: "shiftInformation",
+    label: "Shift Information",
+    editButtonLabel: "Edit Shift Information",
+    helperText: "",
+  },
+  {
+    key: "personnel",
+    label: "Personnel",
+    editButtonLabel: "Edit Personnel",
+    helperText: "",
+  },
+  {
+    key: "personnelQualifications",
+    label: "Personnel Qualifications",
+    editButtonLabel: "Edit Personnel Qualifications",
+    helperText: "",
+  },
+  {
+    key: "mutualAidDepartments",
+    label: "Mutual Aid Departments",
+    editButtonLabel: "Edit Mutual Aid Departments",
+    helperText: "",
+  },
+  {
+    key: "userType",
+    label: "User Type",
+    editButtonLabel: "Edit User Type",
+    helperText: "",
+  },
+];
+const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
+  "Daily",
+  "Every other Day",
+  "Every 2 days",
+  "Every 3 days",
+  "Custom",
+];
+const DEFAULT_USER_TYPE_VALUES = ["Admin", "Sub Admin", "Secretary", "User"];
+const GMT_TIMEZONE_OPTIONS = [
+  "GMT-05:00 Eastern",
+  "GMT-06:00 Central",
+  "GMT-07:00 Mountain",
+  "GMT-08:00 Pacific",
+] as const;
+const DEPARTMENT_ENTITY_FALLBACK_OPTIONS: DepartmentNerisEntityOption[] = [
+  { id: "FD00001001", name: "Fallback Fire Department 1", state: "Unknown" },
+  { id: "FD00001002", name: "Fallback Fire Department 2", state: "Unknown" },
+  { id: "FD00001003", name: "Fallback Fire Department 3", state: "Unknown" },
+];
+
+function readDepartmentDetailsDraft(): Record<string, unknown> {
+  if (typeof window === "undefined") {
+    return {};
+  }
+  try {
+    const raw = window.localStorage.getItem(DEPARTMENT_DETAILS_STORAGE_KEY);
+    if (!raw) {
+      return {};
+    }
+    return JSON.parse(raw) as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+}
+
+function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
+  const d = raw && typeof raw === "object" ? raw : {};
+  const personnelRaw = d.personnelRecords;
+  const personnelRecords = Array.isArray(personnelRaw)
+    ? personnelRaw.map((entry: Record<string, unknown>) => ({
+        name: String(entry?.name ?? ""),
+        shift: String(entry?.shift ?? ""),
+        apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
+        station: String(entry?.station ?? ""),
+        userType: String(entry?.userType ?? ""),
+        qualifications: Array.isArray(entry?.qualifications)
+          ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+          : [],
+      }))
+    : [];
+  return { ...d, personnelRecords };
+}
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -1618,6 +1796,12 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     null,
   );
   const sidebarWidthRef = useRef(sidebarWidth);
+  const [departmentLogoDataUrl, setDepartmentLogoDataUrl] = useState<string>(() => {
+    if (typeof window === "undefined") {
+      return "";
+    }
+    return window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "";
+  });
 
   const location = useLocation();
   const navigate = useNavigate();
@@ -1687,6 +1871,22 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   }, [sidebarWidth]);
 
   useEffect(() => {
+    const handleDepartmentLogoUpdate = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      setDepartmentLogoDataUrl(
+        window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "",
+      );
+    };
+
+    window.addEventListener("department-logo-updated", handleDepartmentLogoUpdate);
+    return () => {
+      window.removeEventListener("department-logo-updated", handleDepartmentLogoUpdate);
+    };
+  }, []);
+
+  useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const activeResize = activeSidebarResize.current;
       if (!activeResize) {
@@ -1748,7 +1948,15 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
       <aside className={`sidebar ${mobileNavOpen ? "open" : ""}`}>
         <div className="sidebar-brand">
           <div className="sidebar-logo">
-            <Shield size={18} />
+            {departmentLogoDataUrl ? (
+              <img
+                src={departmentLogoDataUrl}
+                alt="Department logo"
+                className="sidebar-logo-image"
+              />
+            ) : (
+              <Shield size={18} />
+            )}
           </div>
           <div>
             <strong>Fire Ultimate</strong>
@@ -3114,7 +3322,7 @@ function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
   );
 }
 
-type NerisGroupedOptionVariant = "incidentType" | "actionTactic";
+type NerisGroupedOptionVariant = "incidentType" | "actionTactic" | "entityByState";
 
 const INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
   HAZSIT: "HazMat",
@@ -3130,10 +3338,25 @@ const CORE_SECTION_FIELD_HEADERS: Record<string, string> = {
   incident_has_aid: "AID GIVEN / RECEIVED",
 };
 
+const US_STATE_CODE_TO_NAME: Record<string, string> = {
+  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado",
+  CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia",
+  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky",
+  LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota",
+  MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
+  NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota",
+  OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
+  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia",
+  WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
+};
+
 function getNerisGroupedCategoryLabel(
   categoryKey: string,
   variant: NerisGroupedOptionVariant,
 ): string {
+  if (variant === "entityByState") {
+    return US_STATE_CODE_TO_NAME[categoryKey] ?? categoryKey;
+  }
   if (variant === "incidentType" && INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey]) {
     return INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey];
   }
@@ -3145,6 +3368,9 @@ function getNerisGroupedSubgroupKey(
   rawSubgroupKey: string | undefined,
   variant: NerisGroupedOptionVariant,
 ): string {
+  if (variant === "entityByState") {
+    return rawSubgroupKey ?? "OTHER";
+  }
   if (rawSubgroupKey) {
     return rawSubgroupKey;
   }
@@ -3174,6 +3400,9 @@ function getNerisGroupedLeafLabel(
   option: NerisValueOption,
   variant: NerisGroupedOptionVariant,
 ): string {
+  if (variant === "entityByState") {
+    return option.label;
+  }
   if (segments.length > 2) {
     return segments.slice(2).map(formatNerisEnumSegment).join(" / ");
   }
@@ -3190,6 +3419,9 @@ function getNerisGroupedSelectedLabel(
   option: NerisValueOption,
   variant: NerisGroupedOptionVariant,
 ): string {
+  if (variant === "entityByState") {
+    return option.label;
+  }
   const segments = option.value
     .split("||")
     .map((segment) => segment.trim())
@@ -3229,6 +3461,7 @@ interface NerisGroupedOptionSelectProps {
   maxSelections?: number;
   showCheckboxes?: boolean;
   disabled?: boolean;
+  usePortal?: boolean;
 }
 
 function NerisGroupedOptionSelect({
@@ -3243,9 +3476,13 @@ function NerisGroupedOptionSelect({
   maxSelections,
   showCheckboxes = false,
   disabled = false,
+  usePortal = false,
 }: NerisGroupedOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
@@ -3344,6 +3581,10 @@ function NerisGroupedOptionSelect({
           options: GroupedLeafOption[];
         }>
       >((groupAccumulator, [subgroupKey, subgroupOptions]) => {
+        if (variant === "entityByState") {
+          subgroupOptions.forEach((item) => directOptions.push(item));
+          return groupAccumulator;
+        }
         if (variant === "actionTactic" && subgroupOptions.length === 1) {
           const onlyOption = subgroupOptions[0];
           if (onlyOption) {
@@ -3375,12 +3616,33 @@ function NerisGroupedOptionSelect({
     });
   }, [options, normalizedSearch, variant]);
 
+  useLayoutEffect(() => {
+    if (!isOpen || !usePortal || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const maxPanelHeight = Math.min(480, Math.max(320, spaceBelow));
+    setPanelStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 280),
+      minHeight: "280px",
+      maxHeight: `${maxPanelHeight}px`,
+      display: "flex",
+      flexDirection: "column",
+      zIndex: 100000,
+    });
+  }, [isOpen, usePortal]);
+
   useEffect(() => {
     if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inPanel = panelRef.current?.contains(target);
+      if (!inContainer && !inPanel) {
         setIsOpen(false);
       }
     };
@@ -3422,6 +3684,7 @@ function NerisGroupedOptionSelect({
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         id={inputId}
         type="button"
         className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
@@ -3480,28 +3743,35 @@ function NerisGroupedOptionSelect({
       </button>
 
       {isOpen && !disabled ? (
-        <div className="neris-incident-type-select-panel">
-          <div className="neris-incident-type-search-row">
-            <Search size={14} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchTerm}
-              placeholder={searchPlaceholder ?? "Search options..."}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-            {searchTerm ? (
-              <button
-                type="button"
-                className="neris-incident-type-search-clear"
-                onClick={() => setSearchTerm("")}
-              >
-                Clear
-              </button>
-            ) : null}
-          </div>
+        usePortal ? (
+          createPortal(
+            <div
+              ref={panelRef}
+              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
+              style={panelStyle}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              <div className="neris-incident-type-search-row">
+                <Search size={14} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  placeholder={searchPlaceholder ?? "Search options..."}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
 
-          {mode === "multi" && typeof maxSelections === "number" ? (
+              {mode === "multi" && typeof maxSelections === "number" ? (
             <p
               className={`neris-incident-type-selection-limit${
                 selectionLimitReached ? " reached" : ""
@@ -3511,7 +3781,7 @@ function NerisGroupedOptionSelect({
             </p>
           ) : null}
 
-          <div className="neris-incident-type-options-scroll" role="listbox">
+          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
             {groupedOptions.length ? (
               groupedOptions.map((category) => {
                 const categoryCollapsed =
@@ -3679,7 +3949,196 @@ function NerisGroupedOptionSelect({
               <p className="neris-incident-type-empty">No options match your search.</p>
             )}
           </div>
-        </div>
+            </div>,
+            document.body,
+          )
+        ) : (
+          <div className="neris-incident-type-select-panel">
+            <div className="neris-incident-type-search-row">
+              <Search size={14} />
+              <input
+                ref={searchInputRef}
+                type="text"
+                value={searchTerm}
+                placeholder={searchPlaceholder ?? "Search options..."}
+                onChange={(event) => setSearchTerm(event.target.value)}
+              />
+              {searchTerm ? (
+                <button
+                  type="button"
+                  className="neris-incident-type-search-clear"
+                  onClick={() => setSearchTerm("")}
+                >
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            {mode === "multi" && typeof maxSelections === "number" ? (
+              <p
+                className={`neris-incident-type-selection-limit${
+                  selectionLimitReached ? " reached" : ""
+                }`}
+              >
+                Selected {selectedValueSet.size} of {maxSelections} allowed.
+              </p>
+            ) : null}
+            <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
+              {groupedOptions.length ? (
+                groupedOptions.map((category) => {
+                  const categoryCollapsed =
+                    normalizedSearch.length === 0 && collapsedCategories[category.categoryKey] !== false;
+                  return (
+                    <section key={category.categoryKey} className="neris-incident-type-group">
+                      <button
+                        type="button"
+                        className="neris-incident-type-group-button"
+                        onClick={() => handleToggleCategory(category.categoryKey)}
+                      >
+                        {categoryCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
+                        <span>{category.categoryLabel}</span>
+                        <strong>{category.optionCount}</strong>
+                      </button>
+                      {!categoryCollapsed ? (
+                        <>
+                          {category.directOptions.length ? (
+                            <div className="neris-incident-type-item-list">
+                              {category.directOptions.map(({ option, leafLabel }) => {
+                                const isSelected =
+                                  mode === "single"
+                                    ? option.value === normalizedSelectedValue
+                                    : selectedValueSet.has(option.value);
+                                const isDisabled =
+                                  mode === "multi" &&
+                                  typeof maxSelections === "number" &&
+                                  selectedValueSet.size >= maxSelections &&
+                                  !isSelected;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    type="button"
+                                    className={`neris-incident-type-item neris-incident-type-item-main${
+                                      isSelected ? " selected" : ""
+                                    }${isDisabled ? " disabled" : ""}`}
+                                    aria-selected={isSelected}
+                                    aria-disabled={isDisabled}
+                                    onClick={() => {
+                                      if (isDisabled) return;
+                                      if (mode === "single") {
+                                        onChange(option.value);
+                                        setIsOpen(false);
+                                        setSearchTerm("");
+                                        return;
+                                      }
+                                      const nextSelected = new Set(selectedValueSet);
+                                      if (nextSelected.has(option.value)) {
+                                        nextSelected.delete(option.value);
+                                      } else {
+                                        nextSelected.add(option.value);
+                                      }
+                                      const nextOrderedValues = options
+                                        .map((entry) => entry.value)
+                                        .filter((entryValue) => nextSelected.has(entryValue));
+                                      onChange(nextOrderedValues.join(","));
+                                    }}
+                                  >
+                                    {showCheckboxes ? (
+                                      <span className="neris-incident-type-item-checkbox">
+                                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                                      </span>
+                                    ) : null}
+                                    <span>{leafLabel}</span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                          {category.subgroups.map((subgroup) => {
+                            const subgroupCollapseKey = `${category.categoryKey}::${subgroup.subgroupKey}`;
+                            const subgroupCollapsed =
+                              normalizedSearch.length === 0 &&
+                              Boolean(collapsedSubgroups[subgroupCollapseKey]);
+                            return (
+                              <div key={subgroupCollapseKey} className="neris-incident-type-subgroup-container">
+                                <button
+                                  type="button"
+                                  className="neris-incident-type-subgroup-button"
+                                  onClick={() =>
+                                    handleToggleSubgroup(category.categoryKey, subgroup.subgroupKey)
+                                  }
+                                >
+                                  {subgroupCollapsed ? (
+                                    <ChevronRight size={13} />
+                                  ) : (
+                                    <ChevronDown size={13} />
+                                  )}
+                                  <span>{subgroup.subgroupLabel}</span>
+                                </button>
+                                {!subgroupCollapsed ? (
+                                  <div className="neris-incident-type-item-list">
+                                    {subgroup.options.map(({ option, leafLabel }) => {
+                                      const isSelected =
+                                        mode === "single"
+                                          ? option.value === normalizedSelectedValue
+                                          : selectedValueSet.has(option.value);
+                                      const isDisabled =
+                                        mode === "multi" &&
+                                        typeof maxSelections === "number" &&
+                                        selectedValueSet.size >= maxSelections &&
+                                        !isSelected;
+                                      return (
+                                        <button
+                                          key={option.value}
+                                          type="button"
+                                          className={`neris-incident-type-item${
+                                            isSelected ? " selected" : ""
+                                          }${isDisabled ? " disabled" : ""}`}
+                                          aria-selected={isSelected}
+                                          aria-disabled={isDisabled}
+                                          onClick={() => {
+                                            if (isDisabled) return;
+                                            if (mode === "single") {
+                                              onChange(option.value);
+                                              setIsOpen(false);
+                                              setSearchTerm("");
+                                              return;
+                                            }
+                                            const nextSelected = new Set(selectedValueSet);
+                                            if (nextSelected.has(option.value)) {
+                                              nextSelected.delete(option.value);
+                                            } else {
+                                              nextSelected.add(option.value);
+                                            }
+                                            const nextOrderedValues = options
+                                              .map((entry) => entry.value)
+                                              .filter((entryValue) => nextSelected.has(entryValue));
+                                            onChange(nextOrderedValues.join(","));
+                                          }}
+                                        >
+                                          {showCheckboxes ? (
+                                            <span className="neris-incident-type-item-checkbox">
+                                              <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                                            </span>
+                                          ) : null}
+                                          <span>{leafLabel}</span>
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </>
+                      ) : null}
+                    </section>
+                  );
+                })
+              ) : (
+                <p className="neris-incident-type-empty">No options match your search.</p>
+              )}
+            </div>
+          </div>
+        )
       ) : null}
     </div>
   );
@@ -3692,6 +4151,8 @@ interface NerisFlatMultiOptionSelectProps {
   onChange: (nextValue: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
+  maxSelections?: number;
+  usePortal?: boolean;
   disabled?: boolean;
   isOptionDisabled?: (optionValue: string) => boolean;
 }
@@ -3703,13 +4164,18 @@ function NerisFlatMultiOptionSelect({
   onChange,
   placeholder,
   searchPlaceholder,
+  maxSelections,
+  usePortal = false,
   disabled = false,
   isOptionDisabled,
 }: NerisFlatMultiOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
   const selectedValues = Array.from(
     new Set(
@@ -3721,6 +4187,8 @@ function NerisFlatMultiOptionSelect({
     ),
   );
   const selectedValueSet = new Set<string>(selectedValues);
+  const selectionLimitReached =
+    typeof maxSelections === "number" && maxSelections > 0 && selectedValueSet.size >= maxSelections;
   const selectedOptions = selectedValues
     .map((selectedValue) => options.find((option) => option.value === selectedValue))
     .filter((option): option is NerisValueOption => Boolean(option));
@@ -3733,12 +4201,34 @@ function NerisFlatMultiOptionSelect({
       )
     : options;
 
+  useLayoutEffect(() => {
+    if (!isOpen || !usePortal || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const maxPanelHeight = Math.min(480, Math.max(320, spaceBelow));
+    const minPanelHeight = 280;
+    setPanelStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: Math.max(rect.width, 280),
+      minHeight: `${Math.min(minPanelHeight, maxPanelHeight)}px`,
+      maxHeight: `${maxPanelHeight}px`,
+      display: "flex",
+      flexDirection: "column",
+      zIndex: 100000,
+    });
+  }, [isOpen, usePortal]);
+
   useEffect(() => {
     if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inPanel = panelRef.current?.contains(target);
+      if (!inContainer && !inPanel) {
         setIsOpen(false);
       }
     };
@@ -3756,6 +4246,7 @@ function NerisFlatMultiOptionSelect({
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         id={inputId}
         type="button"
         className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
@@ -3796,6 +4287,87 @@ function NerisFlatMultiOptionSelect({
       </button>
 
       {isOpen && !disabled ? (
+        usePortal ? (
+          createPortal(
+            <div
+              ref={panelRef}
+              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
+              style={panelStyle}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              <div className="neris-incident-type-search-row">
+                <Search size={14} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  placeholder={searchPlaceholder ?? "Search options..."}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {typeof maxSelections === "number" ? (
+                <p
+                  className={`neris-incident-type-selection-limit${
+                    selectionLimitReached ? " reached" : ""
+                  }`}
+                >
+                  Selected {selectedValueSet.size} of {maxSelections} allowed.
+                </p>
+              ) : null}
+              <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
+            {filteredOptions.length ? (
+              <div className="neris-incident-type-item-list">
+                {filteredOptions.map((option) => {
+                  const isSelected = selectedValueSet.has(option.value);
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
+                  const isDisabled =
+                    (selectionLimitReached && !isSelected) || optionDisabled;
+                  return (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
+                      aria-selected={isSelected}
+                      disabled={isDisabled}
+                      onClick={() => {
+                        if (isDisabled) return;
+                        const nextSelected = new Set(selectedValueSet);
+                        if (nextSelected.has(option.value)) {
+                          nextSelected.delete(option.value);
+                        } else {
+                          nextSelected.add(option.value);
+                        }
+                        const nextOrderedValues = options
+                          .map((entry) => entry.value)
+                          .filter((entryValue) => nextSelected.has(entryValue));
+                        onChange(nextOrderedValues.join(","));
+                      }}
+                    >
+                      <span className="neris-incident-type-item-checkbox">
+                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
+                      </span>
+                      <span>{option.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="neris-incident-type-empty">No options match your search.</p>
+            )}
+          </div>
+            </div>,
+            document.body,
+          )
+        ) : (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
@@ -3816,25 +4388,32 @@ function NerisFlatMultiOptionSelect({
               </button>
             ) : null}
           </div>
-          <div className="neris-incident-type-options-scroll" role="listbox">
+          {typeof maxSelections === "number" ? (
+            <p
+              className={`neris-incident-type-selection-limit${
+                selectionLimitReached ? " reached" : ""
+              }`}
+            >
+              Selected {selectedValueSet.size} of {maxSelections} allowed.
+            </p>
+          ) : null}
+          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = selectedValueSet.has(option.value);
-                  const optionDisabled = Boolean(isOptionDisabled?.(option.value)) && !isSelected;
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
+                  const isDisabled =
+                    (selectionLimitReached && !isSelected) || optionDisabled;
                   return (
                     <button
                       key={option.value}
                       type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${
-                        optionDisabled ? " disabled" : ""
-                      }`}
+                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
                       aria-selected={isSelected}
-                      disabled={optionDisabled}
+                      disabled={isDisabled}
                       onClick={() => {
-                        if (optionDisabled) {
-                          return;
-                        }
+                        if (isDisabled) return;
                         const nextSelected = new Set(selectedValueSet);
                         if (nextSelected.has(option.value)) {
                           nextSelected.delete(option.value);
@@ -3860,6 +4439,7 @@ function NerisFlatMultiOptionSelect({
             )}
           </div>
         </div>
+        )
       ) : null}
     </div>
   );
@@ -3872,6 +4452,7 @@ interface NerisFlatSingleOptionSelectProps {
   onChange: (nextValue: string) => void;
   placeholder?: string;
   searchPlaceholder?: string;
+  usePortal?: boolean;
   disabled?: boolean;
   isOptionDisabled?: (optionValue: string) => boolean;
   allowClear?: boolean;
@@ -3884,14 +4465,18 @@ function NerisFlatSingleOptionSelect({
   onChange,
   placeholder,
   searchPlaceholder,
+  usePortal = false,
   disabled = false,
   isOptionDisabled,
   allowClear = false,
 }: NerisFlatSingleOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const triggerRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const [isOpen, setIsOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
   const normalizedValue = normalizeNerisEnumValue(value);
   const selectedOption = options.find((option) => option.value === normalizedValue);
@@ -3904,12 +4489,30 @@ function NerisFlatSingleOptionSelect({
       )
     : options;
 
+  useLayoutEffect(() => {
+    if (!isOpen || !usePortal || !triggerRef.current) return;
+    const rect = triggerRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const maxPanelHeight = Math.min(480, Math.max(280, spaceBelow));
+    setPanelStyle({
+      position: "fixed",
+      top: rect.bottom + 4,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: `${maxPanelHeight}px`,
+      zIndex: 100000,
+    });
+  }, [isOpen, usePortal]);
+
   useEffect(() => {
     if (!isOpen || disabled) {
       return;
     }
     const handlePointerDown = (event: PointerEvent) => {
-      if (!containerRef.current?.contains(event.target as Node)) {
+      const target = event.target as Node;
+      const inContainer = containerRef.current?.contains(target);
+      const inPanel = panelRef.current?.contains(target);
+      if (!inContainer && !inPanel) {
         setIsOpen(false);
       }
     };
@@ -3927,6 +4530,7 @@ function NerisFlatSingleOptionSelect({
   return (
     <div className="neris-incident-type-select" ref={containerRef}>
       <button
+        ref={triggerRef}
         id={inputId}
         type="button"
         className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
@@ -3963,6 +4567,83 @@ function NerisFlatSingleOptionSelect({
       </button>
 
       {isOpen && !disabled ? (
+        usePortal ? (
+          createPortal(
+            <div
+              ref={panelRef}
+              className="neris-incident-type-select-panel"
+              style={panelStyle}
+              onWheel={(e) => e.stopPropagation()}
+            >
+              <div className="neris-incident-type-search-row">
+                <Search size={14} />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  value={searchTerm}
+                  placeholder={searchPlaceholder ?? "Search options..."}
+                  onChange={(event) => setSearchTerm(event.target.value)}
+                />
+                {searchTerm ? (
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => setSearchTerm("")}
+                  >
+                    Clear
+                  </button>
+                ) : null}
+              </div>
+              {allowClear && normalizedValue ? (
+                <div className="neris-single-select-clear-row">
+                  <button
+                    type="button"
+                    className="neris-incident-type-search-clear"
+                    onClick={() => {
+                      onChange("");
+                      setIsOpen(false);
+                      setSearchTerm("");
+                    }}
+                  >
+                    Clear selection
+                  </button>
+                </div>
+              ) : null}
+              <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
+                {filteredOptions.length ? (
+                  <div className="neris-incident-type-item-list">
+                    {filteredOptions.map((option) => {
+                      const isSelected = option.value === normalizedValue;
+                      const optionDisabled = Boolean(isOptionDisabled?.(option.value));
+                      return (
+                        <button
+                          key={option.value}
+                          type="button"
+                          className={`neris-incident-type-item${isSelected ? " selected" : ""}${
+                            optionDisabled ? " disabled" : ""
+                          }`}
+                          aria-selected={isSelected}
+                          aria-disabled={optionDisabled}
+                          onClick={() => {
+                            if (optionDisabled) return;
+                            onChange(option.value);
+                            setIsOpen(false);
+                            setSearchTerm("");
+                          }}
+                        >
+                          <span>{option.label}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="neris-incident-type-empty">No options match your search.</p>
+                )}
+              </div>
+            </div>,
+            document.body,
+          )
+        ) : (
         <div className="neris-incident-type-select-panel">
           <div className="neris-incident-type-search-row">
             <Search size={14} />
@@ -3998,7 +4679,7 @@ function NerisFlatSingleOptionSelect({
               </button>
             </div>
           ) : null}
-          <div className="neris-incident-type-options-scroll" role="listbox">
+          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
             {filteredOptions.length ? (
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
@@ -4032,6 +4713,7 @@ function NerisFlatSingleOptionSelect({
             )}
           </div>
         </div>
+        )
       ) : null}
     </div>
   );
@@ -9705,6 +10387,1983 @@ function NerisReportFormPage({
   );
 }
 
+function DepartmentDetailsPage() {
+  const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
+  const [departmentName, setDepartmentName] = useState(String(initialDepartmentDraft.departmentName ?? ""));
+  const [departmentStreet, setDepartmentStreet] = useState(String(initialDepartmentDraft.departmentStreet ?? ""));
+  const [departmentCity, setDepartmentCity] = useState(String(initialDepartmentDraft.departmentCity ?? ""));
+  const [departmentState, setDepartmentState] = useState(String(initialDepartmentDraft.departmentState ?? ""));
+  const [departmentZipCode, setDepartmentZipCode] = useState(String(initialDepartmentDraft.departmentZipCode ?? ""));
+  const [departmentTimeZone, setDepartmentTimeZone] = useState(String(initialDepartmentDraft.departmentTimeZone ?? ""));
+  const [mainContactName, setMainContactName] = useState(String(initialDepartmentDraft.mainContactName ?? ""));
+  const [mainContactPhone, setMainContactPhone] = useState(String(initialDepartmentDraft.mainContactPhone ?? ""));
+  const [secondaryContactName, setSecondaryContactName] = useState(String(initialDepartmentDraft.secondaryContactName ?? ""));
+  const [secondaryContactPhone, setSecondaryContactPhone] = useState(String(initialDepartmentDraft.secondaryContactPhone ?? ""));
+  const [departmentLogoFileName, setDepartmentLogoFileName] = useState(String(initialDepartmentDraft.departmentLogoFileName ?? "No file selected"));
+  const [stationRecords, setStationRecords] = useState<DepartmentStationRecord[]>(
+    Array.isArray(initialDepartmentDraft.stationRecords) ? (initialDepartmentDraft.stationRecords as DepartmentStationRecord[]) : [],
+  );
+  const [apparatusRecords, setApparatusRecords] = useState<DepartmentApparatusRecord[]>(
+    Array.isArray(initialDepartmentDraft.apparatusRecords) ? (initialDepartmentDraft.apparatusRecords as DepartmentApparatusRecord[]) : [],
+  );
+  const [shiftInformationEntries, setShiftInformationEntries] = useState<ShiftInformationEntry[]>(
+    Array.isArray(initialDepartmentDraft.shiftInformationEntries) ? (initialDepartmentDraft.shiftInformationEntries as ShiftInformationEntry[]) : [],
+  );
+  const [personnelRecords, setPersonnelRecords] = useState<DepartmentPersonnelRecord[]>(() => {
+    const raw = initialDepartmentDraft.personnelRecords;
+    if (!Array.isArray(raw)) return [];
+    return raw.map((entry: Record<string, unknown>) => ({
+      name: String(entry.name ?? ""),
+      shift: String(entry.shift ?? ""),
+      apparatusAssignment: String(entry.apparatusAssignment ?? ""),
+      station: String(entry.station ?? ""),
+      userType: String(entry.userType ?? ""),
+      qualifications: Array.isArray(entry.qualifications)
+        ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+        : [],
+    }));
+  });
+  const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
+  );
+  const [userTypeValues, setUserTypeValues] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.userTypeValues) && initialDepartmentDraft.userTypeValues.length > 0
+      ? (initialDepartmentDraft.userTypeValues as string[])
+      : [...DEFAULT_USER_TYPE_VALUES],
+  );
+  const [mutualAidOptions, setMutualAidOptions] = useState<DepartmentNerisEntityOption[]>(DEPARTMENT_ENTITY_FALLBACK_OPTIONS);
+  const [selectedMutualAidIds, setSelectedMutualAidIds] = useState<string[]>(
+    Array.isArray(initialDepartmentDraft.selectedMutualAidIds) ? (initialDepartmentDraft.selectedMutualAidIds as string[]) : [],
+  );
+  const [activeCollectionEditor, setActiveCollectionEditor] = useState<DepartmentCollectionKey | null>(null);
+  const [isMultiEditMode, setIsMultiEditMode] = useState(false);
+  const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
+  const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
+  const [statusMessage, setStatusMessage] = useState("");
+  const [stationDraft, setStationDraft] = useState<DepartmentStationRecord>({
+    name: "",
+    address: "",
+    city: "",
+    state: "",
+    phone: "",
+    mobilePhone: "",
+  });
+  const [apparatusDraft, setApparatusDraft] = useState<DepartmentApparatusRecord>({
+    unitId: "",
+    unitType: "",
+    minimumPersonnel: 0,
+    personnelRequirements: [],
+    station: "",
+  });
+  const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>({
+    shiftType: "",
+    shiftDuration: 0,
+    recurrence: "Daily",
+    recurrenceCustomValue: "",
+    location: "",
+  });
+  const [personnelDraft, setPersonnelDraft] = useState<DepartmentPersonnelRecord>({
+    name: "",
+    shift: "",
+    apparatusAssignment: "",
+    station: "",
+    userType: "",
+    qualifications: [],
+  });
+  const [personnelBulkDraft, setPersonnelBulkDraft] = useState({
+    shift: "",
+    apparatusAssignment: "",
+    station: "",
+    userType: "",
+    qualifications: [] as string[],
+  });
+  const [userTypeDraft, setUserTypeDraft] = useState("");
+  const [qualificationDraft, setQualificationDraft] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
+  const [editingQualificationIndex, setEditingQualificationIndex] = useState<number | null>(null);
+  const [dragQualificationIndex, setDragQualificationIndex] = useState<number | null>(null);
+  const [dragUserTypeIndex, setDragUserTypeIndex] = useState<number | null>(null);
+  const [autoSaveTick, setAutoSaveTick] = useState(0);
+  const [apparatusFieldWidths, setApparatusFieldWidths] = useState<Record<ApparatusGridFieldId, number>>(
+    () => ({ ...DEFAULT_APPARATUS_FIELD_WIDTHS }),
+  );
+  const [apparatusFieldOrder, setApparatusFieldOrder] = useState<ApparatusGridFieldId[]>(() => [
+    ...APPARATUS_GRID_FIELD_ORDER,
+  ]);
+  const [isApparatusFieldEditorOpen, setIsApparatusFieldEditorOpen] = useState(false);
+  const [dragApparatusFieldId, setDragApparatusFieldId] = useState<ApparatusGridFieldId | null>(null);
+  const activeApparatusResizeField = useRef<{
+    fieldId: ApparatusGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+
+  const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
+  const apparatusFieldLabelById = useMemo(
+    () =>
+      ({
+        unitType: "Unit Type",
+        minPersonnel: "Min Personnel",
+        personnelRequirements: "Minimum Requirements",
+        station: "Station",
+      }) as Record<ApparatusGridFieldId, string>,
+    [],
+  );
+  const getApparatusFieldValue = useCallback(
+    (apparatus: DepartmentApparatusRecord, fieldId: ApparatusGridFieldId): string => {
+      switch (fieldId) {
+        case "unitType":
+          return (unitTypeOptions.find((o) => o.value === apparatus.unitType)?.label ?? apparatus.unitType) || "—";
+        case "minPersonnel":
+          return String(apparatus.minimumPersonnel);
+        case "personnelRequirements":
+          return apparatus.personnelRequirements.length > 0 ? apparatus.personnelRequirements.join(", ") : "—";
+        case "station":
+          return apparatus.station || "—";
+        default:
+          return "—";
+      }
+    },
+    [unitTypeOptions],
+  );
+  const apparatusGridStyle = useMemo(
+    () =>
+      ({
+        "--apparatus-grid-columns": apparatusFieldOrder
+          .map((fieldId) => {
+            const width = apparatusFieldWidths[fieldId] ?? DEFAULT_APPARATUS_FIELD_WIDTHS[fieldId];
+            const clampedWidth = Math.min(
+              MAX_APPARATUS_FIELD_WIDTH,
+              Math.max(MIN_APPARATUS_FIELD_WIDTH, width),
+            );
+            return `${clampedWidth}px`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [apparatusFieldOrder, apparatusFieldWidths],
+  );
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeApparatusResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_APPARATUS_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+      setApparatusFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeApparatusResizeField.current) {
+        return;
+      }
+      activeApparatusResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
+  const startApparatusFieldResize = (
+    fieldId: ApparatusGridFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeApparatusResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth: apparatusFieldWidths[fieldId] ?? DEFAULT_APPARATUS_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+  const handleApparatusFieldDrop = (targetFieldId: ApparatusGridFieldId) => {
+    if (!dragApparatusFieldId || dragApparatusFieldId === targetFieldId) {
+      return;
+    }
+    const fromIndex = apparatusFieldOrder.indexOf(dragApparatusFieldId);
+    const toIndex = apparatusFieldOrder.indexOf(targetFieldId);
+    if (fromIndex < 0 || toIndex < 0) {
+      return;
+    }
+    const nextOrder = [...apparatusFieldOrder];
+    nextOrder.splice(fromIndex, 1);
+    nextOrder.splice(toIndex, 0, dragApparatusFieldId);
+    setApparatusFieldOrder(nextOrder);
+    setDragApparatusFieldId(null);
+  };
+  const activeCollectionDefinition = useMemo(
+    () =>
+      activeCollectionEditor
+        ? DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === activeCollectionEditor)
+        : undefined,
+    [activeCollectionEditor],
+  );
+
+  const stationNames = useMemo(
+    () => stationRecords.map((station) => station.name).filter((name) => name.trim().length > 0),
+    [stationRecords],
+  );
+  const sortedStationRecords = useMemo(
+    () => [...stationRecords].sort((a, b) => (a.name || "").localeCompare(b.name || "", undefined, { sensitivity: "base" })),
+    [stationRecords],
+  );
+  const sortedApparatusRecords = useMemo(
+    () => [...apparatusRecords].sort((a, b) => (a.unitId || "").localeCompare(b.unitId || "", undefined, { sensitivity: "base" })),
+    [apparatusRecords],
+  );
+  const apparatusNames = useMemo(
+    () =>
+      apparatusRecords
+        .map((apparatus) => `${apparatus.unitId}${apparatus.unitType ? ` (${apparatus.unitType})` : ""}`)
+        .filter((entry) => entry.trim().length > 0),
+    [apparatusRecords],
+  );
+  const shiftOptionValues = useMemo(
+    () =>
+      shiftInformationEntries.map((entry) => {
+        const recurrenceLabel =
+          entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
+            ? entry.recurrenceCustomValue
+            : entry.recurrence;
+        return `${entry.shiftType} | ${entry.shiftDuration} | ${recurrenceLabel}${
+          entry.location.trim().length > 0 ? ` | ${entry.location}` : ""
+        }`;
+      }),
+    [shiftInformationEntries],
+  );
+
+  const detailCardOrder: DepartmentCollectionKey[] = [
+    "stations",
+    "personnelQualifications",
+    "apparatus",
+    "shiftInformation",
+    "personnel",
+  ];
+  const detailCards = detailCardOrder
+    .map((key) =>
+      DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
+    )
+    .filter((definition): definition is DepartmentCollectionDefinition =>
+      Boolean(definition),
+    );
+  const resourceCards = DEPARTMENT_COLLECTION_DEFINITIONS.filter(
+    (definition) => definition.key === "mutualAidDepartments",
+  );
+  const accessCards = DEPARTMENT_COLLECTION_DEFINITIONS.filter(
+    (definition) => definition.key === "userType",
+  );
+
+  const isStationsEditor = activeCollectionEditor === "stations";
+  const isApparatusEditor = activeCollectionEditor === "apparatus";
+  const isPersonnelEditor = activeCollectionEditor === "personnel";
+  const isShiftEditor = activeCollectionEditor === "shiftInformation";
+  const isQualificationsEditor = activeCollectionEditor === "personnelQualifications";
+  const isUserTypeEditor = activeCollectionEditor === "userType";
+  const isMutualAidEditor = activeCollectionEditor === "mutualAidDepartments";
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchEntityOptions = async () => {
+      try {
+        const response = await fetch("/api/neris/debug/entities");
+        if (!response.ok) {
+          return;
+        }
+        const payload = (await response.json()) as {
+          neris?: { entities?: Array<Record<string, unknown>> };
+        };
+        const rawEntities = Array.isArray(payload.neris?.entities) ? payload.neris.entities : [];
+        const options: DepartmentNerisEntityOption[] = rawEntities
+          .map((entry): DepartmentNerisEntityOption | null => {
+            const id = String(entry.neris_id ?? "").trim();
+            const name = String(entry.name ?? entry.entity_name ?? entry.department_name ?? "").trim();
+            const state = String(
+              entry.fd_state ?? entry.state ?? entry.state_code ?? entry.state_abbreviation ?? "",
+            ).trim().toUpperCase().slice(0, 2) || "Unknown";
+            if (!/^FD\d{8}$/.test(id)) {
+              return null;
+            }
+            return { id, name: name.length > 0 ? name : `Department ${id}`, state };
+          })
+          .filter((entry): entry is DepartmentNerisEntityOption => entry !== null);
+        if (isMounted && options.length > 0) {
+          setMutualAidOptions(options);
+        }
+      } catch {
+        // Keep fallback list.
+      }
+    };
+    void fetchEntityOptions();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadFromApi = async () => {
+      try {
+        const response = await fetch("/api/department-details");
+        if (!response.ok || !isMounted) return;
+        const json = (await response.json()) as { ok?: boolean; data?: Record<string, unknown> };
+        if (!json?.ok || !json?.data || !isMounted) return;
+        const d = normalizeDepartmentDraft(json.data);
+        setDepartmentName(String(d.departmentName ?? ""));
+        setDepartmentStreet(String(d.departmentStreet ?? ""));
+        setDepartmentCity(String(d.departmentCity ?? ""));
+        setDepartmentState(String(d.departmentState ?? ""));
+        setDepartmentZipCode(String(d.departmentZipCode ?? ""));
+        setDepartmentTimeZone(String(d.departmentTimeZone ?? ""));
+        setMainContactName(String(d.mainContactName ?? ""));
+        setMainContactPhone(String(d.mainContactPhone ?? ""));
+        setSecondaryContactName(String(d.secondaryContactName ?? ""));
+        setSecondaryContactPhone(String(d.secondaryContactPhone ?? ""));
+        setDepartmentLogoFileName(String(d.departmentLogoFileName ?? "No file selected"));
+        setStationRecords(
+          Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [],
+        );
+        setApparatusRecords(
+          Array.isArray(d.apparatusRecords) ? (d.apparatusRecords as DepartmentApparatusRecord[]) : [],
+        );
+        setShiftInformationEntries(
+          Array.isArray(d.shiftInformationEntries)
+            ? (d.shiftInformationEntries as ShiftInformationEntry[])
+            : [],
+        );
+        setPersonnelRecords(
+          Array.isArray(d.personnelRecords) ? (d.personnelRecords as DepartmentPersonnelRecord[]) : [],
+        );
+        setPersonnelQualifications(
+          Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
+        );
+        setUserTypeValues(
+          Array.isArray(d.userTypeValues) && (d.userTypeValues as string[]).length > 0
+            ? (d.userTypeValues as string[])
+            : [...DEFAULT_USER_TYPE_VALUES],
+        );
+        setSelectedMutualAidIds(
+          Array.isArray(d.selectedMutualAidIds) ? (d.selectedMutualAidIds as string[]) : [],
+        );
+      } catch {
+        // Keep localStorage initial values.
+      }
+    };
+    void loadFromApi();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const handleLogoSelection = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    setDepartmentLogoFileName(file?.name ?? "No file selected");
+    if (!file) {
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (typeof window === "undefined") {
+        return;
+      }
+      const dataUrl = typeof reader.result === "string" ? reader.result : "";
+      window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, dataUrl);
+      window.dispatchEvent(new Event("department-logo-updated"));
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const resetEditorSelection = () => {
+    setIsMultiEditMode(false);
+    setSelectedSingleIndex(null);
+    setSelectedMultiIndices([]);
+    setIsEntryFormOpen(false);
+    setEditingIndex(null);
+  };
+
+  const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
+    setActiveCollectionEditor(collectionKey);
+    resetEditorSelection();
+    if (collectionKey === "userType") {
+      setUserTypeDraft("");
+    }
+    if (collectionKey === "personnelQualifications") {
+      setQualificationDraft("");
+      setEditingQualificationIndex(null);
+    }
+  };
+
+  const closeCollectionEditor = () => {
+    setActiveCollectionEditor(null);
+    resetEditorSelection();
+  };
+
+  const setSelectionFromMultiSelect = (event: ChangeEvent<HTMLSelectElement>) => {
+    setSelectedMultiIndices(
+      Array.from(event.target.selectedOptions)
+        .map((option) => Number.parseInt(option.value, 10))
+        .filter((value) => Number.isFinite(value)),
+    );
+  };
+
+  const openAddForm = () => {
+    setEditingIndex(null);
+    if (isStationsEditor) {
+      setStationDraft({
+        name: "",
+        address: "",
+        city: departmentCity || "",
+        state: departmentState || "",
+        phone: "",
+        mobilePhone: "",
+      });
+    }
+    if (isApparatusEditor) {
+      setApparatusDraft({
+        unitId: "",
+        unitType: "",
+        minimumPersonnel: 0,
+        personnelRequirements: [],
+        station: "",
+      });
+    }
+    if (isPersonnelEditor) {
+      setPersonnelDraft({
+        name: "",
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: "",
+        qualifications: [],
+      });
+      setPersonnelBulkDraft({
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: "",
+        qualifications: [],
+      });
+    }
+    setIsEntryFormOpen(true);
+  };
+
+  const openEditForm = (clickedIndex?: number) => {
+    if (!isMultiEditMode) {
+      const index = clickedIndex ?? selectedSingleIndex;
+      if (index === null) {
+        return;
+      }
+      setSelectedSingleIndex(index);
+      setEditingIndex(index);
+      if (isStationsEditor && stationRecords[index]) {
+        setStationDraft(stationRecords[index]!);
+      }
+      if (isApparatusEditor && apparatusRecords[index]) {
+        setApparatusDraft(apparatusRecords[index]!);
+      }
+      if (isPersonnelEditor && personnelRecords[index]) {
+        setPersonnelDraft(personnelRecords[index]!);
+      }
+      setIsEntryFormOpen(true);
+      return;
+    }
+
+    if (selectedMultiIndices.length === 0) {
+      return;
+    }
+    setEditingIndex(-1);
+    if (isStationsEditor) {
+      setStationDraft({
+        name: "",
+        address: "",
+        city: "",
+        state: "",
+        phone: "",
+        mobilePhone: "",
+      });
+    }
+    if (isApparatusEditor) {
+      setApparatusDraft({
+        unitId: "",
+        unitType: "",
+        minimumPersonnel: 0,
+        personnelRequirements: [],
+        station: "",
+      });
+    }
+    if (isPersonnelEditor) {
+      setPersonnelBulkDraft({
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: "",
+        qualifications: [],
+      });
+    }
+    setIsEntryFormOpen(true);
+  };
+
+  const saveStationForm = () => {
+    if (!isMultiEditMode) {
+      if (!stationDraft.name.trim()) {
+        return;
+      }
+      const normalized = { ...stationDraft, name: stationDraft.name.trim() };
+      setStationRecords((previous) =>
+        editingIndex === null
+          ? [...previous, normalized]
+          : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+      );
+    } else {
+      setStationRecords((previous) =>
+        previous.map((entry, index) => {
+          if (!selectedMultiIndices.includes(index)) {
+            return entry;
+          }
+          return {
+            ...entry,
+            address: stationDraft.address || entry.address,
+            city: stationDraft.city || entry.city,
+            state: stationDraft.state || entry.state,
+            phone: stationDraft.phone || entry.phone,
+            mobilePhone: stationDraft.mobilePhone || entry.mobilePhone,
+          };
+        }),
+      );
+    }
+    setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const saveApparatusForm = () => {
+    if (!isMultiEditMode) {
+      if (!apparatusDraft.unitId.trim() || !apparatusDraft.unitType.trim()) {
+        return;
+      }
+      const minReq = Number.isFinite(apparatusDraft.minimumPersonnel) ? apparatusDraft.minimumPersonnel : 0;
+      if (apparatusDraft.personnelRequirements.length !== minReq) {
+        setStatusMessage(
+          "Minimum Requirements selection count must match Minimum Personnel.",
+        );
+        return;
+      }
+      const normalized = {
+        ...apparatusDraft,
+        unitId: apparatusDraft.unitId.trim(),
+        minimumPersonnel: Number.isFinite(apparatusDraft.minimumPersonnel)
+          ? apparatusDraft.minimumPersonnel
+          : 0,
+      };
+      setApparatusRecords((previous) =>
+        editingIndex === null
+          ? [...previous, normalized]
+          : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+      );
+    } else {
+      setApparatusRecords((previous) =>
+        previous.map((entry, index) => {
+          if (!selectedMultiIndices.includes(index)) {
+            return entry;
+          }
+          return {
+            ...entry,
+            unitType: apparatusDraft.unitType || entry.unitType,
+            minimumPersonnel:
+              apparatusDraft.minimumPersonnel > 0
+                ? apparatusDraft.minimumPersonnel
+                : entry.minimumPersonnel,
+            personnelRequirements:
+              apparatusDraft.personnelRequirements.length > 0
+                ? apparatusDraft.personnelRequirements
+                : entry.personnelRequirements,
+            station: apparatusDraft.station || entry.station,
+          };
+        }),
+      );
+    }
+    setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const savePersonnelForm = () => {
+    if (!isMultiEditMode) {
+      if (!personnelDraft.name.trim()) {
+        return;
+      }
+      const normalized = {
+        ...personnelDraft,
+        name: personnelDraft.name.trim(),
+        qualifications: personnelDraft.qualifications ?? [],
+      };
+      setPersonnelRecords((previous) =>
+        editingIndex === null
+          ? [...previous, normalized]
+          : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+      );
+    } else {
+      setPersonnelRecords((previous) =>
+        previous.map((entry, index) => {
+          if (!selectedMultiIndices.includes(index)) {
+            return entry;
+          }
+          return {
+            ...entry,
+            shift: personnelBulkDraft.shift || entry.shift,
+            apparatusAssignment:
+              personnelBulkDraft.apparatusAssignment || entry.apparatusAssignment,
+            station: personnelBulkDraft.station || entry.station,
+            userType: personnelBulkDraft.userType || entry.userType,
+            qualifications:
+              personnelBulkDraft.qualifications.length > 0
+                ? personnelBulkDraft.qualifications
+                : entry.qualifications,
+          };
+        }),
+      );
+    }
+    setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const addShiftInformationEntry = () => {
+    if (!shiftDraft.shiftType.trim() || shiftDraft.shiftDuration <= 0) {
+      return;
+    }
+    if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
+      return;
+    }
+    const normalized = {
+      ...shiftDraft,
+      shiftType: shiftDraft.shiftType.trim(),
+      shiftDuration: shiftDraft.shiftDuration,
+      recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
+      location: shiftDraft.location.trim(),
+    };
+    setShiftInformationEntries((previous) =>
+      editingIndex === null
+        ? [...previous, normalized]
+        : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+    );
+    setShiftDraft({
+      shiftType: "",
+      shiftDuration: 0,
+      recurrence: "Daily",
+      recurrenceCustomValue: "",
+      location: "",
+    });
+    setEditingIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const addOrUpdateUserType = () => {
+    const trimmed = userTypeDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+    setUserTypeValues((previous) =>
+      editingIndex === null
+        ? [...previous, trimmed]
+        : previous.map((entry, index) => (index === editingIndex ? trimmed : entry)),
+    );
+    setUserTypeDraft("");
+    setEditingIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const addQualification = () => {
+    const trimmed = qualificationDraft.trim();
+    if (!trimmed) {
+      return;
+    }
+    setPersonnelQualifications((previous) =>
+      editingQualificationIndex === null
+        ? [...previous, trimmed]
+        : previous.map((entry, index) =>
+            index === editingQualificationIndex ? trimmed : entry,
+          ),
+    );
+    setQualificationDraft("");
+    setEditingQualificationIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const persistDepartmentDetails = useCallback(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const payload = {
+      departmentName,
+      departmentStreet,
+      departmentCity,
+      departmentState,
+      departmentZipCode,
+      departmentTimeZone,
+      mainContactName,
+      mainContactPhone,
+      secondaryContactName,
+      secondaryContactPhone,
+      departmentLogoFileName,
+      stationRecords,
+      apparatusRecords,
+      shiftInformationEntries,
+      personnelRecords,
+      personnelQualifications,
+      userTypeValues,
+      selectedMutualAidIds,
+    };
+    window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(payload));
+    fetch("/api/department-details", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+      .then((res) => {
+        if (res.ok) {
+          setStatusMessage("Department details saved to file (data/department-details.json).");
+        } else {
+          setStatusMessage("Saved locally. File save failed—ensure npm run proxy is running.");
+        }
+      })
+      .catch(() => {
+        setStatusMessage("Saved locally. File save failed—ensure npm run proxy is running.");
+      });
+  }, [
+    apparatusRecords,
+    departmentCity,
+    departmentLogoFileName,
+    departmentName,
+    departmentState,
+    departmentStreet,
+    departmentTimeZone,
+    departmentZipCode,
+    mainContactName,
+    mainContactPhone,
+    personnelQualifications,
+    personnelRecords,
+    secondaryContactName,
+    secondaryContactPhone,
+    selectedMutualAidIds,
+    shiftInformationEntries,
+    stationRecords,
+    userTypeValues,
+  ]);
+
+  useEffect(() => {
+    if (autoSaveTick === 0) {
+      return;
+    }
+    persistDepartmentDetails();
+  }, [autoSaveTick, persistDepartmentDetails]);
+
+  const handleDepartmentDetailsSave = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    persistDepartmentDetails();
+    setStatusMessage("Saving…");
+  };
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>Admin Functions | Department Details</h1>
+          <p>Department setup and configuration values used throughout the system.</p>
+        </div>
+      </header>
+
+      <form className="panel-grid" onSubmit={handleDepartmentDetailsSave}>
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Department Profile</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="department-name">Department Name</label>
+              <input id="department-name" type="text" value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} />
+              <label htmlFor="department-street">Department Address - Street</label>
+              <input id="department-street" type="text" value={departmentStreet} onChange={(event) => setDepartmentStreet(event.target.value)} />
+              <div className="department-inline-grid">
+                <label htmlFor="department-city">
+                  Department Address - City
+                  <input id="department-city" type="text" value={departmentCity} onChange={(event) => setDepartmentCity(event.target.value)} />
+                </label>
+                <label htmlFor="department-state">
+                  Department Address - State
+                  <input id="department-state" type="text" value={departmentState} onChange={(event) => setDepartmentState(event.target.value)} />
+                </label>
+                <label htmlFor="department-zip">
+                  Department Address - Zip Code
+                  <input id="department-zip" type="text" value={departmentZipCode} onChange={(event) => setDepartmentZipCode(event.target.value)} />
+                </label>
+              </div>
+              <label htmlFor="department-time-zone">Time Zone</label>
+              <select id="department-time-zone" className="department-select-box" value={departmentTimeZone} onChange={(event) => setDepartmentTimeZone(event.target.value)}>
+                <option value="">Select time zone</option>
+                {GMT_TIMEZONE_OPTIONS.map((option) => (
+                  <option key={`dept-timezone-${option}`} value={option}>
+                    {option}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </article>
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Department Logo / Image</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="department-logo-upload">Upload Department Logo/Image</label>
+              <input id="department-logo-upload" type="file" accept="image/*" onChange={handleLogoSelection} />
+              <p className="field-hint">Selected file: {departmentLogoFileName}</p>
+            </div>
+          </article>
+        </section>
+
+        <section className="panel-grid two-column">
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Main Contact</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="main-contact-name">Main Contact Name</label>
+              <input id="main-contact-name" type="text" value={mainContactName} onChange={(event) => setMainContactName(event.target.value)} />
+              <label htmlFor="main-contact-phone">Main Contact Phone Number</label>
+              <input id="main-contact-phone" type="tel" value={mainContactPhone} onChange={(event) => setMainContactPhone(event.target.value)} />
+            </div>
+          </article>
+          <article className="panel">
+            <div className="panel-header">
+              <h2>Secondary Contact</h2>
+            </div>
+            <div className="settings-form">
+              <label htmlFor="secondary-contact-name">Secondary Contact Name</label>
+              <input id="secondary-contact-name" type="text" value={secondaryContactName} onChange={(event) => setSecondaryContactName(event.target.value)} />
+              <label htmlFor="secondary-contact-phone">Secondary Contact Phone</label>
+              <input id="secondary-contact-phone" type="tel" value={secondaryContactPhone} onChange={(event) => setSecondaryContactPhone(event.target.value)} />
+            </div>
+          </article>
+        </section>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Department Details</h2>
+          </div>
+          <div className="department-collection-grid">
+            {detailCards.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p className="field-hint">
+                  {definition.key === "stations"
+                    ? `Total Stations: ${stationRecords.length}`
+                    : definition.key === "apparatus"
+                      ? `Total Apparatus: ${apparatusRecords.length}`
+                      : definition.key === "shiftInformation"
+                        ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
+                        : definition.key === "personnel"
+                          ? `Total Personnel: ${personnelRecords.length}`
+                          : `Total Qualifications: ${personnelQualifications.length}`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Department Resources</h2>
+          </div>
+          <div className="department-collection-grid">
+            {resourceCards.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p className="field-hint">Total Mutual Aid Departments: {selectedMutualAidIds.length}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Department Access</h2>
+          </div>
+          <div className="department-collection-grid">
+            {accessCards.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p className="field-hint">Total User Types: {userTypeValues.length}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <div className="header-actions">
+          <button type="submit" className="primary-button">
+            Save Department Details
+          </button>
+          {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
+        </div>
+      </form>
+
+      {activeCollectionEditor && activeCollectionDefinition ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>{activeCollectionDefinition.label}</h2>
+              <button type="button" className="secondary-button compact-button" onClick={closeCollectionEditor}>
+                Close
+              </button>
+            </div>
+
+            {(isStationsEditor || isApparatusEditor || isPersonnelEditor) ? (
+              <>
+                <div className="department-editor-toolbar-actions">
+                  <button type="button" className="secondary-button compact-button" onClick={openAddForm}>
+                    Add
+                  </button>
+                  <button
+                    type="button"
+                    className={`secondary-button compact-button ${isMultiEditMode ? "department-toggle-active" : ""}`}
+                    onClick={() => {
+                      setIsMultiEditMode((previous) => !previous);
+                      setSelectedSingleIndex(null);
+                      setSelectedMultiIndices([]);
+                    }}
+                  >
+                    Edit Multiple
+                  </button>
+                  <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
+                    Edit
+                  </button>
+                </div>
+
+                {isPersonnelEditor ? (
+                  <div className="department-apparatus-list-wrapper">
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              {isMultiEditMode ? (
+                                <th className="department-personnel-checkbox-col">
+                                  <input
+                                    type="checkbox"
+                                    aria-label="Select all personnel"
+                                    checked={
+                                      personnelRecords.length > 0 &&
+                                      selectedMultiIndices.length === personnelRecords.length
+                                    }
+                                    ref={(el) => {
+                                      if (el) {
+                                        el.indeterminate =
+                                          selectedMultiIndices.length > 0 &&
+                                          selectedMultiIndices.length < personnelRecords.length;
+                                      }
+                                    }}
+                                    onChange={() => {
+                                      if (selectedMultiIndices.length === personnelRecords.length) {
+                                        setSelectedMultiIndices([]);
+                                      } else {
+                                        setSelectedMultiIndices(personnelRecords.map((_, i) => i));
+                                      }
+                                    }}
+                                  />
+                                </th>
+                              ) : null}
+                              <th>Name</th>
+                              <th>
+                                <div className="department-personnel-grid-line department-personnel-grid-header">
+                                  <span>Shift</span>
+                                  <span>Apparatus</span>
+                                  <span>Station</span>
+                                  <span>User Type</span>
+                                  <span>Qualifications</span>
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {personnelRecords.length === 0 ? (
+                              <tr>
+                                <td colSpan={isMultiEditMode ? 3 : 2} className="department-apparatus-empty">
+                                  No personnel. Click Add to create one.
+                                </td>
+                              </tr>
+                            ) : (
+                              personnelRecords.map((personnel, index) => (
+                                <tr
+                                  key={`personnel-row-${index}-${personnel.name}`}
+                                  className={`clickable-row ${!isMultiEditMode && selectedSingleIndex === index ? "clickable-row-selected" : ""} ${isMultiEditMode && selectedMultiIndices.includes(index) ? "clickable-row-selected" : ""}`}
+                                  role={isMultiEditMode ? undefined : "button"}
+                                  tabIndex={isMultiEditMode ? undefined : 0}
+                                  onClick={
+                                    isMultiEditMode
+                                      ? undefined
+                                      : () => openEditForm(index)
+                                  }
+                                  onKeyDown={
+                                    isMultiEditMode
+                                      ? undefined
+                                      : (event) => {
+                                          if (event.key === "Enter" || event.key === " ") {
+                                            event.preventDefault();
+                                            openEditForm(index);
+                                          }
+                                        }
+                                  }
+                                >
+                                  {isMultiEditMode ? (
+                                    <td className="department-personnel-checkbox-col">
+                                      <input
+                                        type="checkbox"
+                                        aria-label={`Select ${personnel.name || "personnel"}`}
+                                        checked={selectedMultiIndices.includes(index)}
+                                        onChange={(e) => {
+                                          e.stopPropagation();
+                                          if (e.target.checked) {
+                                            setSelectedMultiIndices((prev) =>
+                                              [...prev, index].sort((a, b) => a - b),
+                                            );
+                                          } else {
+                                            setSelectedMultiIndices((prev) =>
+                                              prev.filter((i) => i !== index),
+                                            );
+                                          }
+                                        }}
+                                        onClick={(e) => e.stopPropagation()}
+                                      />
+                                    </td>
+                                  ) : null}
+                                  <td>
+                                    <strong className="call-number-text">{personnel.name || "—"}</strong>
+                                  </td>
+                                  <td>
+                                    <div className="dispatch-info-cell">
+                                      <div className="department-personnel-grid-line">
+                                        <span className="department-apparatus-field">{personnel.shift || "—"}</span>
+                                        <span className="department-apparatus-field">{personnel.apparatusAssignment || "—"}</span>
+                                        <span className="department-apparatus-field">{personnel.station || "—"}</span>
+                                        <span className="department-apparatus-field">{personnel.userType || "—"}</span>
+                                        <span className="department-apparatus-field">
+                                          {personnel.qualifications.length > 0 ? personnel.qualifications.join(", ") : "—"}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                ) : (isApparatusEditor || isStationsEditor) && isMultiEditMode ? (
+                  <select
+                    multiple
+                    className="department-select-box department-select-multi"
+                    value={selectedMultiIndices.map((index) => String(index))}
+                    onChange={setSelectionFromMultiSelect}
+                  >
+                    {(isApparatusEditor ? apparatusNames : stationNames).map((entry, index) => (
+                      <option key={`collection-multi-${entry}-${index}`} value={String(index)}>
+                        {entry}
+                      </option>
+                    ))}
+                  </select>
+                ) : !isMultiEditMode && isApparatusEditor ? (
+                    <div className="department-apparatus-list-wrapper">
+                      <div className="department-apparatus-list-header">
+                        {isApparatusFieldEditorOpen ? (
+                          <button
+                            type="button"
+                            className="primary-button compact-button"
+                            onClick={() => setIsApparatusFieldEditorOpen(false)}
+                          >
+                            Save
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => setIsApparatusFieldEditorOpen(true)}
+                          >
+                            Edit
+                          </button>
+                        )}
+                      </div>
+                      {isApparatusFieldEditorOpen ? (
+                        <div className="field-editor-panel">
+                          <p>Drag rows using the handle to reorder apparatus list columns.</p>
+                          <ul className="drag-order-list">
+                            {apparatusFieldOrder.map((fieldId) => (
+                              <li
+                                key={`apparatus-order-${fieldId}`}
+                                draggable
+                                onDragStart={() => setDragApparatusFieldId(fieldId)}
+                                onDragEnd={() => setDragApparatusFieldId(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => handleApparatusFieldDrop(fieldId)}
+                              >
+                                <div className="drag-order-row">
+                                  <span>{apparatusFieldLabelById[fieldId]}</span>
+                                  <span className="drag-handle" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                  </span>
+                                </div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      ) : null}
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Unit ID</th>
+                              <th>
+                                <div
+                                  className="department-apparatus-grid-line department-apparatus-grid-header"
+                                  style={apparatusGridStyle}
+                                >
+                                  {apparatusFieldOrder.map((fieldId, idx) => (
+                                    <span
+                                      key={`apparatus-header-${fieldId}`}
+                                      className={`department-apparatus-field department-apparatus-header-field`}
+                                    >
+                                      <span className="department-apparatus-header-label">
+                                        {apparatusFieldLabelById[fieldId]}
+                                      </span>
+                                      {idx < apparatusFieldOrder.length - 1 ? (
+                                        <span
+                                          className="dispatch-column-resizer"
+                                          role="separator"
+                                          aria-label={`Resize ${apparatusFieldLabelById[fieldId]} column`}
+                                          aria-orientation="vertical"
+                                          onPointerDown={(event) => startApparatusFieldResize(fieldId, event)}
+                                          title={`Drag to resize ${apparatusFieldLabelById[fieldId]}`}
+                                        >
+                                          |
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  ))}
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedApparatusRecords.length === 0 ? (
+                              <tr>
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  No apparatus units. Click Add to create one.
+                                </td>
+                              </tr>
+                            ) : (
+                            sortedApparatusRecords.map((apparatus) => {
+                              const originalIndex = apparatusRecords.findIndex((a) => a === apparatus);
+                              return (
+                              <tr
+                                key={`apparatus-row-${originalIndex}-${apparatus.unitId}`}
+                                className={`clickable-row ${selectedSingleIndex === originalIndex ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openEditForm(originalIndex)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openEditForm(originalIndex);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{apparatus.unitId || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div className="department-apparatus-grid-line" style={apparatusGridStyle}>
+                                      {apparatusFieldOrder.map((fieldId) => (
+                                        <span
+                                          key={`apparatus-${originalIndex}-${fieldId}`}
+                                          className="department-apparatus-field"
+                                        >
+                                          {getApparatusFieldValue(apparatus, fieldId)}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                              );
+                            })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : !isMultiEditMode && isStationsEditor ? (
+                    <div className="department-apparatus-list-wrapper">
+                      <div className="table-wrapper">
+                        <table>
+                          <thead>
+                            <tr>
+                              <th>Station Name</th>
+                              <th>
+                                <div className="department-station-grid-line department-station-grid-header">
+                                  <span>Address</span>
+                                  <span>City</span>
+                                  <span>State</span>
+                                  <span>Phone</span>
+                                  <span>Mobile Phone</span>
+                                </div>
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {sortedStationRecords.length === 0 ? (
+                              <tr>
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  No stations. Click Add to create one.
+                                </td>
+                              </tr>
+                            ) : (
+                              sortedStationRecords.map((station) => {
+                                const originalIndex = stationRecords.findIndex((s) => s === station);
+                                return (
+                                <tr
+                                  key={`station-row-${originalIndex}-${station.name}`}
+                                  className={`clickable-row ${selectedSingleIndex === originalIndex ? "clickable-row-selected" : ""}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openEditForm(originalIndex)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      openEditForm(originalIndex);
+                                    }
+                                  }}
+                                >
+                                  <td>
+                                    <strong className="call-number-text">{station.name || "—"}</strong>
+                                  </td>
+                                  <td>
+                                    <div className="dispatch-info-cell">
+                                      <div className="department-station-grid-line">
+                                        <span className="department-apparatus-field">{station.address || "—"}</span>
+                                        <span className="department-apparatus-field">{station.city || "—"}</span>
+                                        <span className="department-apparatus-field">{station.state || "—"}</span>
+                                        <span className="department-apparatus-field">{station.phone || "—"}</span>
+                                        <span className="department-apparatus-field">{station.mobilePhone || "—"}</span>
+                                      </div>
+                                    </div>
+                                  </td>
+                                </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null}
+              </>
+            ) : null}
+
+            {isShiftEditor ? (
+              <>
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={() => {
+                      setEditingIndex(null);
+                      setSelectedSingleIndex(null);
+                      setShiftDraft({
+                        shiftType: "",
+                        shiftDuration: 0,
+                        recurrence: "Daily",
+                        recurrenceCustomValue: "",
+                        location: "",
+                      });
+                    }}
+                  >
+                    Add
+                  </button>
+                </div>
+                <div className="department-apparatus-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Shift Type</th>
+                          <th>
+                            <div className="department-shift-grid-line department-shift-grid-header">
+                              <span>Duration</span>
+                              <span>Recurrence</span>
+                              <span>Location</span>
+                            </div>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shiftInformationEntries.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className="department-apparatus-empty">
+                              No shift entries. Click Add to create one.
+                            </td>
+                          </tr>
+                        ) : (
+                          shiftInformationEntries.map((entry, index) => {
+                            const recurrenceLabel =
+                              entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
+                                ? entry.recurrenceCustomValue
+                                : entry.recurrence;
+                            return (
+                              <tr
+                                key={`shift-row-${index}-${entry.shiftType}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  setSelectedSingleIndex(index);
+                                  setEditingIndex(index);
+                                  setShiftDraft(entry);
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    setSelectedSingleIndex(index);
+                                    setEditingIndex(index);
+                                    setShiftDraft(entry);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{entry.shiftType || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div className="department-shift-grid-line">
+                                      <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
+                                      <span className="department-apparatus-field">{recurrenceLabel}</span>
+                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+                <div className="department-edit-grid">
+                  <label>
+                    Shift Type
+                    <input type="text" value={shiftDraft.shiftType} onChange={(event) => setShiftDraft((previous) => ({ ...previous, shiftType: event.target.value }))} />
+                  </label>
+                  <label>
+                    Shift Duration
+                    <input
+                      type="number"
+                      min={0}
+                      value={shiftDraft.shiftDuration}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          shiftDuration: Number.parseInt(event.target.value, 10) || 0,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Recurrence
+                    <select value={shiftDraft.recurrence} onChange={(event) => setShiftDraft((previous) => ({ ...previous, recurrence: event.target.value as ShiftRecurrencePreset }))}>
+                      {SHIFT_RECURRENCE_PRESET_OPTIONS.map((option) => (
+                        <option key={`shift-rec-${option}`} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {shiftDraft.recurrence === "Custom" ? (
+                    <label>
+                      Custom Recurrence
+                      <input type="text" value={shiftDraft.recurrenceCustomValue} onChange={(event) => setShiftDraft((previous) => ({ ...previous, recurrenceCustomValue: event.target.value }))} />
+                    </label>
+                  ) : null}
+                  <label>
+                    Location
+                    <NerisFlatSingleOptionSelect
+                      inputId="shift-location"
+                      value={shiftDraft.location}
+                      options={stationNames.map((s) => ({ value: s, label: s }))}
+                      onChange={(nextValue) =>
+                        setShiftDraft((previous) => ({ ...previous, location: nextValue }))
+                      }
+                      placeholder="Select station (optional)"
+                      searchPlaceholder="Search stations..."
+                      allowClear
+                      usePortal
+                    />
+                  </label>
+                </div>
+                <div className="department-editor-toolbar-actions">
+                  <button type="button" className="primary-button compact-button" onClick={addShiftInformationEntry}>
+                    {editingIndex === null ? "Add Shift Information" : "Save Shift Information"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {isQualificationsEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <input
+                    type="text"
+                    value={qualificationDraft}
+                    onChange={(event) => setQualificationDraft(event.target.value)}
+                    placeholder="Qualification name"
+                  />
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={addQualification}
+                  >
+                    {editingQualificationIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  Click a row to edit. Drag rows to reorder (order establishes hierarchy for scheduling).
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: "32px" }} aria-label="Drag to reorder" />
+                          <th>Qualification</th>
+                          <th style={{ width: "80px" }}>Order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {personnelQualifications.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="department-apparatus-empty">
+                              No qualifications. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          personnelQualifications.map((qualification, index) => (
+                            <tr
+                              key={`qualification-${qualification}-${index}`}
+                              className={`clickable-row ${editingQualificationIndex === index ? "clickable-row-selected" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingQualificationIndex(index);
+                                setQualificationDraft(qualification);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingQualificationIndex(index);
+                                  setQualificationDraft(qualification);
+                                }
+                              }}
+                            >
+                              <td
+                                className="department-qualification-drag-cell"
+                                onClick={(e) => e.stopPropagation()}
+                                draggable
+                                onDragStart={() => setDragQualificationIndex(index)}
+                                onDragEnd={() => setDragQualificationIndex(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => {
+                                  if (dragQualificationIndex === null || dragQualificationIndex === index) {
+                                    return;
+                                  }
+                                  setPersonnelQualifications((previous) => {
+                                    const next = [...previous];
+                                    const [moved] = next.splice(dragQualificationIndex, 1);
+                                    if (!moved) {
+                                      return previous;
+                                    }
+                                    next.splice(index, 0, moved);
+                                    return next;
+                                  });
+                                  setDragQualificationIndex(null);
+                                  setAutoSaveTick((previous) => previous + 1);
+                                  setStatusMessage("Auto-saved.");
+                                }}
+                              >
+                                <span className="drag-handle" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </span>
+                              </td>
+                              <td>
+                                <strong className="call-number-text">{qualification || "—"}</strong>
+                              </td>
+                              <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
+                                {index + 1}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {isMutualAidEditor ? (
+              <NerisGroupedOptionSelect
+                inputId="mutual-aid-departments"
+                value={selectedMutualAidIds
+                  .map((id) => {
+                    const opt = mutualAidOptions.find((o) => o.id === id);
+                    return opt ? `${opt.state ?? "Unknown"}||${opt.id}` : "";
+                  })
+                  .filter(Boolean)
+                  .join(",")}
+                options={mutualAidOptions.map((o) => ({
+                  value: `${o.state ?? "Unknown"}||${o.id}`,
+                  label: `${o.name} (${o.id})`,
+                }))}
+                onChange={(nextValue) =>
+                  setSelectedMutualAidIds(
+                    nextValue
+                      .split(",")
+                      .map((s) => {
+                        const parts = s.trim().split("||");
+                        return parts.length >= 2 ? parts[1]!.trim() : parts[0]?.trim() ?? "";
+                      })
+                      .filter(Boolean),
+                  )
+                }
+                mode="multi"
+                variant="entityByState"
+                placeholder="Select mutual aid department(s)"
+                searchPlaceholder="Search departments..."
+                showCheckboxes
+                usePortal
+              />
+            ) : null}
+
+            {isUserTypeEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <input type="text" value={userTypeDraft} onChange={(event) => setUserTypeDraft(event.target.value)} placeholder="User type value" />
+                  <button type="button" className="primary-button compact-button" onClick={addOrUpdateUserType}>
+                    {editingIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  Click a row to edit. Drag rows to reorder (order establishes hierarchy).
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: "32px" }} aria-label="Drag to reorder" />
+                          <th>User Type</th>
+                          <th style={{ width: "80px" }}>Order</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {userTypeValues.length === 0 ? (
+                          <tr>
+                            <td colSpan={3} className="department-apparatus-empty">
+                              No user types. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          userTypeValues.map((userType, index) => (
+                            <tr
+                              key={`user-type-${userType}-${index}`}
+                              className={`clickable-row ${editingIndex === index ? "clickable-row-selected" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingIndex(index);
+                                setUserTypeDraft(userType);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingIndex(index);
+                                  setUserTypeDraft(userType);
+                                }
+                              }}
+                            >
+                              <td
+                                className="department-qualification-drag-cell"
+                                onClick={(e) => e.stopPropagation()}
+                                draggable
+                                onDragStart={() => setDragUserTypeIndex(index)}
+                                onDragEnd={() => setDragUserTypeIndex(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => {
+                                  if (dragUserTypeIndex === null || dragUserTypeIndex === index) {
+                                    return;
+                                  }
+                                  setUserTypeValues((previous) => {
+                                    const next = [...previous];
+                                    const [moved] = next.splice(dragUserTypeIndex, 1);
+                                    if (!moved) {
+                                      return previous;
+                                    }
+                                    next.splice(index, 0, moved);
+                                    return next;
+                                  });
+                                  setDragUserTypeIndex(null);
+                                  setAutoSaveTick((previous) => previous + 1);
+                                  setStatusMessage("Auto-saved.");
+                                }}
+                              >
+                                <span className="drag-handle" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </span>
+                              </td>
+                              <td>
+                                <strong className="call-number-text">{userType || "—"}</strong>
+                              </td>
+                              <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
+                                {index + 1}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </article>
+        </div>
+      ) : null}
+
+      {isEntryFormOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>
+                {isPersonnelEditor
+                  ? isMultiEditMode
+                    ? "Edit Multiple Personnel"
+                    : "Personnel Entry"
+                  : isApparatusEditor
+                    ? isMultiEditMode
+                      ? "Edit Multiple Apparatus"
+                      : "Apparatus Entry"
+                    : isMultiEditMode
+                      ? "Edit Multiple Stations"
+                      : "Station Entry"}
+              </h2>
+              <button type="button" className="secondary-button compact-button" onClick={() => setIsEntryFormOpen(false)}>
+                Close
+              </button>
+            </div>
+
+            {isStationsEditor ? (
+              <div className="department-edit-grid">
+                {!isMultiEditMode ? (
+                  <label>
+                    Station Name
+                    <input type="text" value={stationDraft.name} onChange={(event) => setStationDraft((previous) => ({ ...previous, name: event.target.value }))} />
+                  </label>
+                ) : null}
+                <label>
+                  Address
+                  <input type="text" value={stationDraft.address} onChange={(event) => setStationDraft((previous) => ({ ...previous, address: event.target.value }))} />
+                </label>
+                <label>
+                  City
+                  <input type="text" value={stationDraft.city} onChange={(event) => setStationDraft((previous) => ({ ...previous, city: event.target.value }))} />
+                </label>
+                <label>
+                  State
+                  <input type="text" value={stationDraft.state} onChange={(event) => setStationDraft((previous) => ({ ...previous, state: event.target.value }))} />
+                </label>
+                <label>
+                  Phone
+                  <input type="text" value={stationDraft.phone} onChange={(event) => setStationDraft((previous) => ({ ...previous, phone: event.target.value }))} />
+                </label>
+                <label>
+                  Mobile Phone
+                  <input type="text" value={stationDraft.mobilePhone} onChange={(event) => setStationDraft((previous) => ({ ...previous, mobilePhone: event.target.value }))} />
+                </label>
+              </div>
+            ) : null}
+
+            {isApparatusEditor ? (
+              <div className="department-edit-grid">
+                {!isMultiEditMode ? (
+                  <label>
+                    Unit ID
+                    <input type="text" value={apparatusDraft.unitId} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, unitId: event.target.value }))} />
+                  </label>
+                ) : null}
+                <label>
+                  Unit Type
+                  <NerisFlatSingleOptionSelect
+                    inputId="apparatus-unit-type"
+                    value={apparatusDraft.unitType}
+                    options={unitTypeOptions}
+                    onChange={(nextValue) =>
+                      setApparatusDraft((previous) => ({ ...previous, unitType: nextValue }))
+                    }
+                    placeholder="Select unit type"
+                    searchPlaceholder="Search unit types..."
+                    allowClear
+                    usePortal
+                  />
+                </label>
+                <label>
+                  Minimum Personnel
+                  <input
+                    type="number"
+                    min={0}
+                    value={apparatusDraft.minimumPersonnel}
+                    onChange={(event) =>
+                      setApparatusDraft((previous) => ({
+                        ...previous,
+                        minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Minimum Requirements (select all that apply)
+                  <NerisFlatMultiOptionSelect
+                    inputId="apparatus-personnel-requirements"
+                    value={apparatusDraft.personnelRequirements.join(",")}
+                    options={personnelQualifications.map((q) => ({ value: q, label: q }))}
+                    onChange={(nextValue) =>
+                      setApparatusDraft((previous) => ({
+                        ...previous,
+                        personnelRequirements: nextValue
+                          .split(",")
+                          .map((s) => s.trim())
+                          .filter(Boolean),
+                      }))
+                    }
+                    placeholder="Select personnel requirement(s)"
+                    searchPlaceholder="Search qualifications..."
+                    maxSelections={apparatusDraft.minimumPersonnel > 0 ? apparatusDraft.minimumPersonnel : undefined}
+                    usePortal
+                  />
+                  {personnelQualifications.length === 0 ? (
+                    <small className="field-hint">Add qualifications in Edit Personnel Qualifications first.</small>
+                  ) : null}
+                </label>
+                <label>
+                  Station
+                  <NerisFlatSingleOptionSelect
+                    inputId="apparatus-station"
+                    value={apparatusDraft.station}
+                    options={stationNames.map((s) => ({ value: s, label: s }))}
+                    onChange={(nextValue) =>
+                      setApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                    }
+                    placeholder="Select station"
+                    searchPlaceholder="Search stations..."
+                    allowClear
+                    usePortal
+                  />
+                </label>
+              </div>
+            ) : null}
+
+            {isPersonnelEditor ? (
+              <div className="department-edit-grid">
+                {!isMultiEditMode ? (
+                  <label>
+                    Personnel Name
+                    <input type="text" value={personnelDraft.name} onChange={(event) => setPersonnelDraft((previous) => ({ ...previous, name: event.target.value }))} />
+                  </label>
+                ) : null}
+                <label>
+                  Shift
+                  <select
+                    value={!isMultiEditMode ? personnelDraft.shift : personnelBulkDraft.shift}
+                    onChange={(event) =>
+                      !isMultiEditMode
+                        ? setPersonnelDraft((previous) => ({ ...previous, shift: event.target.value }))
+                        : setPersonnelBulkDraft((previous) => ({ ...previous, shift: event.target.value }))
+                    }
+                  >
+                    <option value="">{isMultiEditMode ? "No change" : "Select shift"}</option>
+                    {shiftOptionValues.map((option) => (
+                      <option key={`personnel-shift-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Apparatus Assignment
+                  <select
+                    value={!isMultiEditMode ? personnelDraft.apparatusAssignment : personnelBulkDraft.apparatusAssignment}
+                    onChange={(event) => {
+                      const nextApparatus = event.target.value;
+                      const matchedApparatus = apparatusRecords.find(
+                        (a) =>
+                          `${a.unitId}${a.unitType ? ` (${a.unitType})` : ""}`.trim() === nextApparatus,
+                      );
+                      const defaultStation = matchedApparatus?.station?.trim() ?? "";
+                      if (!isMultiEditMode) {
+                        setPersonnelDraft((previous) => ({
+                          ...previous,
+                          apparatusAssignment: nextApparatus,
+                          station: defaultStation ? defaultStation : previous.station,
+                        }));
+                      } else {
+                        setPersonnelBulkDraft((previous) => ({
+                          ...previous,
+                          apparatusAssignment: nextApparatus,
+                          station: defaultStation ? defaultStation : previous.station,
+                        }));
+                      }
+                    }}
+                  >
+                    <option value="">{isMultiEditMode ? "No change" : "Select apparatus"}</option>
+                    {apparatusNames.map((option) => (
+                      <option key={`personnel-apparatus-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label>
+                  Station
+                  <NerisFlatSingleOptionSelect
+                    inputId="personnel-station"
+                    value={!isMultiEditMode ? personnelDraft.station : personnelBulkDraft.station}
+                    options={stationNames.map((s) => ({ value: s, label: s }))}
+                    onChange={(nextValue) => {
+                      if (!isMultiEditMode) {
+                        setPersonnelDraft((previous) => ({ ...previous, station: nextValue }));
+                      } else {
+                        setPersonnelBulkDraft((previous) => ({ ...previous, station: nextValue }));
+                      }
+                    }}
+                    placeholder={isMultiEditMode ? "No change" : "Select station"}
+                    searchPlaceholder="Search stations..."
+                    allowClear
+                    usePortal
+                  />
+                </label>
+                <label>
+                  User Type
+                  <select
+                    value={!isMultiEditMode ? personnelDraft.userType : personnelBulkDraft.userType}
+                    onChange={(event) =>
+                      !isMultiEditMode
+                        ? setPersonnelDraft((previous) => ({ ...previous, userType: event.target.value }))
+                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: event.target.value }))
+                    }
+                  >
+                    <option value="">{isMultiEditMode ? "No change" : "Select user type"}</option>
+                    {userTypeValues.map((option) => (
+                      <option key={`personnel-user-type-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="department-qualifications-field-label">
+                  Qualifications (select all that apply)
+                  <NerisFlatMultiOptionSelect
+                    inputId="personnel-qualifications"
+                    value={
+                      !isMultiEditMode
+                        ? personnelDraft.qualifications.join(",")
+                        : personnelBulkDraft.qualifications.join(",")
+                    }
+                    options={personnelQualifications.map((q) => ({ value: q, label: q }))}
+                    onChange={(nextValue) => {
+                      const arr = nextValue.split(",").map((s) => s.trim()).filter(Boolean);
+                      if (!isMultiEditMode) {
+                        setPersonnelDraft((previous) => ({ ...previous, qualifications: arr }));
+                      } else {
+                        setPersonnelBulkDraft((previous) => ({ ...previous, qualifications: arr }));
+                      }
+                    }}
+                    placeholder="Select qualification(s)"
+                    searchPlaceholder="Search qualifications..."
+                    usePortal
+                  />
+                  {personnelQualifications.length === 0 ? (
+                    <small className="field-hint">Add qualifications in Personnel Qualifications first.</small>
+                  ) : null}
+                </label>
+              </div>
+            ) : null}
+
+            <div className="department-editor-toolbar-actions">
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={() => {
+                  if (isStationsEditor) {
+                    saveStationForm();
+                  } else if (isApparatusEditor) {
+                    saveApparatusForm();
+                  } else if (isPersonnelEditor) {
+                    savePersonnelForm();
+                  }
+                }}
+              >
+                Save
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
+    </section>
+  );
+}
+
 function HydrantsAdminPage() {
   const [fileName, setFileName] = useState("No file selected");
   const [statusMessage, setStatusMessage] = useState("");
@@ -10676,6 +13335,10 @@ function RouteResolver({
         nerisExportSettings={nerisExportSettings}
       />
     );
+  }
+
+  if (path === "/admin-functions/department-details") {
+    return <DepartmentDetailsPage />;
   }
 
   if (path === "/admin-functions/hydrants") {

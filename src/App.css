@@ -234,6 +234,13 @@ body.resizing-shell-sidebar {
   color: #93c5fd;
 }
 
+.sidebar-logo-image {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .sidebar-brand strong {
   display: block;
   color: #f8fafc;
@@ -587,6 +594,14 @@ body.resizing-shell-sidebar {
 .customization-form {
   display: grid;
   gap: 0.78rem;
+}
+
+.dashboard-frog-image {
+  display: block;
+  max-width: 280px;
+  height: auto;
+  margin: 0.75rem 0 0;
+  border-radius: 8px;
 }
 
 .page-header h1 {
@@ -1117,6 +1132,339 @@ tbody tr:last-of-type td {
   resize: vertical;
 }
 
+.department-inline-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.department-inline-grid label {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.department-collection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.62rem;
+}
+
+.department-collection-card {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.62rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.department-collection-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.department-collection-card-header h3 {
+  margin: 0;
+  font-size: 0.92rem;
+  color: #0f172a;
+}
+
+.department-collection-card p {
+  margin: 0;
+  color: #475569;
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
+.department-editor-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 72;
+  background-color: rgba(15, 23, 42, 0.52);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.department-editor-modal {
+  width: min(700px, 95vw);
+  max-height: min(85vh, 760px);
+  overflow: auto;
+  display: grid;
+  gap: 0.7rem;
+}
+
+/* DD-M/DD-S dropdown panels in department editor: render in portal to avoid clipping and box expansion */
+
+.department-qualifications-field-label {
+  overflow: visible;
+  contain: none;
+}
+
+.department-editor-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.department-editor-add-row input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.department-editor-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: 0.48rem;
+}
+
+.department-editor-list li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.department-editor-list input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.62rem;
+  font-size: 0.82rem;
+}
+
+.department-editor-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.62rem;
+  flex-wrap: wrap;
+}
+
+.department-editor-toolbar-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.46rem;
+  flex-wrap: wrap;
+}
+
+.department-toggle-active {
+  border-color: #2563eb;
+  background-color: #2563eb;
+  color: #ffffff;
+}
+
+.department-select-box {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.department-select-box.department-select-multi {
+  min-height: 170px;
+}
+
+.department-apparatus-list-wrapper {
+  margin-top: 0.5rem;
+}
+
+.department-apparatus-list-header {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 0.4rem;
+}
+
+.department-apparatus-list-wrapper .table-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.department-apparatus-grid-line {
+  display: grid;
+  grid-template-columns: var(
+    --apparatus-grid-columns,
+    minmax(120px, 1.2fr) minmax(70px, 0.6fr) minmax(140px, 1.4fr) minmax(100px, 0.9fr)
+  );
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-apparatus-header-field {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  padding-right: 0.42rem;
+  overflow: visible;
+}
+
+.department-apparatus-header-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-apparatus-grid-header {
+  color: #64748b;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.department-apparatus-field {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.department-apparatus-empty {
+  color: #64748b;
+  font-size: 0.85rem;
+  padding: 1rem;
+  text-align: center;
+}
+
+.department-station-grid-line {
+  display: grid;
+  grid-template-columns: minmax(100px, 1fr) minmax(80px, 0.8fr) minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(90px, 0.9fr);
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-shift-grid-line {
+  display: grid;
+  grid-template-columns: minmax(60px, 0.6fr) minmax(100px, 0.9fr) minmax(90px, 0.8fr);
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-personnel-checkbox-col {
+  width: 2.5rem;
+  padding: 0.35rem 0.5rem;
+  vertical-align: middle;
+}
+
+.department-personnel-checkbox-col input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.department-personnel-grid-line {
+  display: grid;
+  grid-template-columns: minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(80px, 0.8fr) minmax(90px, 0.9fr) minmax(140px, 1.4fr);
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-personnel-grid-header {
+  color: #64748b;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.department-station-grid-header,
+.department-shift-grid-header {
+  color: #64748b;
+  font-size: 0.73rem;
+  font-weight: 700;
+}
+
+.department-qualifications-list-wrapper .table-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.department-qualifications-list-wrapper {
+  margin-top: 0.5rem;
+}
+
+.department-qualification-drag-cell {
+  cursor: grab;
+  vertical-align: middle;
+  padding: 0.35rem;
+}
+
+.department-qualification-drag-cell:active {
+  cursor: grabbing;
+}
+
+.department-dd-mode-badge {
+  border: 1px solid #bfdbfe;
+  border-radius: 999px;
+  background-color: #eff6ff;
+  color: #1d4ed8;
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.18rem 0.5rem;
+}
+
+.department-selection-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: #0f172a;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.department-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.department-edit-screen {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background-color: #f8fafc;
+  padding: 0.68rem;
+  display: grid;
+  gap: 0.55rem;
+}
+
+.department-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.department-edit-grid label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.department-edit-grid input,
+.department-edit-grid select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+}
+
 .neris-multiselect {
   min-height: 130px;
 }
@@ -1211,6 +1559,20 @@ tbody tr:last-of-type td {
   background-color: #ffffff;
   box-shadow: 0 18px 30px -16px rgba(15, 23, 42, 0.38);
   overflow: hidden;
+}
+
+.neris-incident-type-select-panel-portal {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  z-index: 100000;
+}
+
+.neris-incident-type-select-panel-portal .neris-incident-type-options-scroll {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 
 .neris-incident-type-search-row {
@@ -1636,6 +1998,14 @@ tbody tr:last-of-type td {
 .clickable-row:focus-visible {
   outline: 2px solid #3b82f6;
   outline-offset: -2px;
+}
+
+.clickable-row-selected td {
+  background-color: #dbeafe;
+}
+
+.clickable-row-selected:hover td {
+  background-color: #bfdbfe;
 }
 
 .call-number-text {
@@ -3434,6 +3804,17 @@ body.resource-personnel-modal-open {
   }
 
   .neris-field-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .department-inline-grid,
+  .department-collection-grid,
+  .department-editor-list li,
+  .department-edit-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .department-editor-add-row {
     grid-template-columns: minmax(0, 1fr);
   }
 

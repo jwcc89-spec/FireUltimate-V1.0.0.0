@@ -1,4 +1,6 @@
 import express from "express";
+import fs from "fs";
+import path from "path";
 
 const app = express();
 app.use(express.json({ limit: "4mb" }));
@@ -1249,6 +1251,53 @@ app.get("/api/neris/health", (request, response) => {
     hasDefaultEntityId: Boolean(config.defaultEntityId),
     hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
   });
+});
+
+const DEPARTMENT_DETAILS_FILE = path.resolve(
+  process.cwd(),
+  "data",
+  "department-details.json",
+);
+
+function readDepartmentDetailsFromFile() {
+  try {
+    if (fs.existsSync(DEPARTMENT_DETAILS_FILE)) {
+      const raw = fs.readFileSync(DEPARTMENT_DETAILS_FILE, "utf8");
+      const parsed = JSON.parse(raw);
+      return parsed && typeof parsed === "object" ? parsed : {};
+    }
+  } catch {
+    // Ignore read errors; return empty.
+  }
+  return {};
+}
+
+function writeDepartmentDetailsToFile(data) {
+  const dir = path.dirname(DEPARTMENT_DETAILS_FILE);
+  try {
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(DEPARTMENT_DETAILS_FILE, JSON.stringify(data, null, 2), "utf8");
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+app.get("/api/department-details", (request, response) => {
+  const data = readDepartmentDetailsFromFile();
+  response.json({ ok: true, data });
+});
+
+app.post("/api/department-details", (request, response) => {
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const success = writeDepartmentDetailsToFile(body);
+  if (success) {
+    response.status(200).json({ ok: true });
+  } else {
+    response.status(500).json({ ok: false, message: "Failed to write department details." });
+  }
 });
 
 app.get("/api/neris/debug/entities", async (request, response) => {

@@ -27,3 +27,7 @@ dist-ssr
 .env
 .env.server
 .env.local
+
+# Local department details data (API stores here)
+data/*
+!data/department-details.json
