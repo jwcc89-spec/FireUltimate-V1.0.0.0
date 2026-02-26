@@ -146,6 +146,15 @@ interface IncidentCallDetailPageProps {
   callNumber: string;
 }
 
+interface IncidentCompareRow {
+  id: string;
+  label: string;
+  submittedValue: string;
+  retrievedValue: string;
+  status: "match" | "different";
+  helpText?: string;
+}
+
 interface MenuDisplayCardsProps {
   menu: MainMenu;
   role: UserRole;
@@ -4319,8 +4328,9 @@ function NerisFlatMultiOptionSelect({
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = selectedValueSet.has(option.value);
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
                   const isDisabled =
-                    selectionLimitReached && !isSelected;
+                    (selectionLimitReached && !isSelected) || optionDisabled;
                   return (
                     <button
                       key={option.value}
@@ -4392,8 +4402,9 @@ function NerisFlatMultiOptionSelect({
               <div className="neris-incident-type-item-list">
                 {filteredOptions.map((option) => {
                   const isSelected = selectedValueSet.has(option.value);
+                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
                   const isDisabled =
-                    selectionLimitReached && !isSelected;
+                    (selectionLimitReached && !isSelected) || optionDisabled;
                   return (
                     <button
                       key={option.value}
