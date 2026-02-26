@@ -1,20 +1,322 @@
 {
-  "departmentName": "",
-  "departmentStreet": "",
-  "departmentCity": "",
-  "departmentState": "",
-  "departmentZipCode": "",
-  "departmentTimeZone": "",
-  "mainContactName": "",
-  "mainContactPhone": "",
-  "secondaryContactName": "",
-  "secondaryContactPhone": "",
+  "departmentName": "Kankakee Fire Department",
+  "departmentStreet": "385 E Oak st",
+  "departmentCity": "Kankakee",
+  "departmentState": "IL",
+  "departmentZipCode": "60901",
+  "departmentTimeZone": "GMT-06:00 Central",
+  "mainContactName": "Chief",
+  "mainContactPhone": "8159330450",
+  "secondaryContactName": "Deputy Chief",
+  "secondaryContactPhone": "8159330452",
   "departmentLogoFileName": "No file selected",
-  "stationRecords": [],
-  "apparatusRecords": [],
-  "shiftInformationEntries": [],
-  "personnelRecords": [],
-  "personnelQualifications": [],
-  "userTypeValues": ["Admin", "User"],
+  "stationRecords": [
+    {
+      "name": "Station 4",
+      "address": "196 N Fairmont Ave",
+      "city": "Kankakee",
+      "state": "IL",
+      "phone": "8159363664",
+      "mobilePhone": ""
+    },
+    {
+      "name": "Station 3",
+      "address": "200 W Water St",
+      "city": "Kankakee",
+      "state": "IL",
+      "phone": "8159330455",
+      "mobilePhone": ""
+    },
+    {
+      "name": "Station 5",
+      "address": "1765 W Station St",
+      "city": "Kankakee",
+      "state": "IL",
+      "phone": "8159363665",
+      "mobilePhone": ""
+    },
+    {
+      "name": "Station 6",
+      "address": "895 N Washington Ave",
+      "city": "Kankakee",
+      "state": "IL",
+      "phone": "8159363666",
+      "mobilePhone": ""
+    }
+  ],
+  "apparatusRecords": [
+    {
+      "unitId": "Ambulance 1",
+      "unitType": "ALS_AMB",
+      "minimumPersonnel": 2,
+      "personnelRequirements": [
+        "Lead Paramedic",
+        "EMT-B"
+      ],
+      "station": "Station 3"
+    },
+    {
+      "unitId": "Ambulance 2",
+      "unitType": "ALS_AMB",
+      "minimumPersonnel": 2,
+      "personnelRequirements": [
+        "Lead Paramedic",
+        "EMT-B"
+      ],
+      "station": "Station 4"
+    },
+    {
+      "unitId": "Engine 5",
+      "unitType": "ENGINE_STRUCT",
+      "minimumPersonnel": 2,
+      "personnelRequirements": [
+        "Lieutenant OOR",
+        "Engine 5 Driver"
+      ],
+      "station": "Station 5"
+    },
+    {
+      "unitId": "Engine 6",
+      "unitType": "ENGINE_STRUCT",
+      "minimumPersonnel": 2,
+      "personnelRequirements": [
+        "Lieutenant OOR",
+        "Engine 6 Driver"
+      ],
+      "station": "Station 6"
+    },
+    {
+      "unitId": "Engine 4",
+      "unitType": "ENGINE_STRUCT",
+      "minimumPersonnel": 2,
+      "personnelRequirements": [
+        "Lieutenant OOR",
+        "Engine 4 Driver"
+      ],
+      "station": "Station 4"
+    },
+    {
+      "unitId": "Tower 1",
+      "unitType": "LADDER_TALL",
+      "minimumPersonnel": 0,
+      "personnelRequirements": [],
+      "station": "Station 6"
+    },
+    {
+      "unitId": "Car 6",
+      "unitType": "CHIEF_STAFF_COMMAND",
+      "minimumPersonnel": 1,
+      "personnelRequirements": [
+        "Captain OOR"
+      ],
+      "station": "Station 3"
+    }
+  ],
+  "shiftInformationEntries": [
+    {
+      "shiftType": "A Shift",
+      "shiftDuration": 24,
+      "recurrence": "Every 3 days",
+      "recurrenceCustomValue": "",
+      "location": ""
+    },
+    {
+      "shiftType": "B Shift",
+      "shiftDuration": 24,
+      "recurrence": "Every 3 days",
+      "recurrenceCustomValue": "",
+      "location": ""
+    },
+    {
+      "shiftType": "C Shift",
+      "shiftDuration": 24,
+      "recurrence": "Every 3 days",
+      "recurrenceCustomValue": "",
+      "location": ""
+    },
+    {
+      "shiftType": "D Shift",
+      "shiftDuration": 8,
+      "recurrence": "Daily",
+      "recurrenceCustomValue": "",
+      "location": ""
+    }
+  ],
+  "personnelRecords": [
+    {
+      "name": "Jeremy",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 4 (ENGINE_STRUCT)",
+      "station": "Station 4",
+      "userType": "User",
+      "qualifications": [
+        "Lieutenant"
+      ]
+    },
+    {
+      "name": "Kyle",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 5 (ENGINE_STRUCT)",
+      "station": "Station 5",
+      "userType": "User",
+      "qualifications": [
+        "Captain OOR"
+      ]
+    },
+    {
+      "name": "Chris",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 6 (ENGINE_STRUCT)",
+      "station": "Station 6",
+      "userType": "User",
+      "qualifications": [
+        "Captain OOR"
+      ]
+    },
+    {
+      "name": "Adam",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Car 6 (CHIEF_STAFF_COMMAND)",
+      "station": "Station 3",
+      "userType": "User",
+      "qualifications": [
+        "Captain"
+      ]
+    },
+    {
+      "name": "Dave",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 4 (ENGINE_STRUCT)",
+      "station": "Station 4",
+      "userType": "User",
+      "qualifications": [
+        "Lieutenant OOR"
+      ]
+    },
+    {
+      "name": "Sean",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 5 (ENGINE_STRUCT)",
+      "station": "Station 5",
+      "userType": "User",
+      "qualifications": [
+        "Engine 4 Driver",
+        "Engine 5 Driver",
+        "Engine 6 Driver",
+        "Lead Paramedic"
+      ]
+    },
+    {
+      "name": "Tim",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 6 (ENGINE_STRUCT)",
+      "station": "Station 6",
+      "userType": "User",
+      "qualifications": [
+        "Lieutenant OOR"
+      ]
+    },
+    {
+      "name": "Rick",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Engine 4 Driver"
+      ]
+    },
+    {
+      "name": "Landon",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Engine 5 Driver",
+        "Lead Paramedic",
+        "EMT-P"
+      ]
+    },
+    {
+      "name": "Matt",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Engine 5 Driver",
+        "Engine 6 Driver",
+        "Lead Paramedic",
+        "EMT-P"
+      ]
+    },
+    {
+      "name": "Seth",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "EMT-B",
+        "Firefighter"
+      ]
+    },
+    {
+      "name": "Abraham",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Firefighter"
+      ]
+    },
+    {
+      "name": "Trevor",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Engine 4 Driver",
+        "Engine 5 Driver",
+        "Engine 6 Driver",
+        "Lead Paramedic",
+        "EMT-P"
+      ]
+    },
+    {
+      "name": "Sebastian",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Lead Paramedic",
+        "EMT-P"
+      ]
+    }
+  ],
+  "personnelQualifications": [
+    "Chief",
+    "Captain",
+    "Captain OOR",
+    "Lieutenant",
+    "Lieutenant OOR",
+    "Tower 1 Driver",
+    "Engine 4 Driver",
+    "Engine 5 Driver",
+    "Engine 6 Driver",
+    "Lead Paramedic",
+    "EMT-P",
+    "EMT-B",
+    "Firefighter"
+  ],
+  "userTypeValues": [
+    "Super Admin",
+    "Admin",
+    "User"
+  ],
   "selectedMutualAidIds": []
 }

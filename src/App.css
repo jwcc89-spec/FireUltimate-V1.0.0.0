@@ -596,6 +596,14 @@ body.resizing-shell-sidebar {
   gap: 0.78rem;
 }
 
+.dashboard-frog-image {
+  display: block;
+  max-width: 280px;
+  height: auto;
+  margin: 0.75rem 0 0;
+  border-radius: 8px;
+}
+
 .page-header h1 {
   margin: 0;
   font-size: clamp(1.22rem, 1.8vw, 1.55rem);
@@ -1347,6 +1355,16 @@ tbody tr:last-of-type td {
   grid-template-columns: minmax(60px, 0.6fr) minmax(100px, 0.9fr) minmax(90px, 0.8fr);
   gap: 0.46rem;
   align-items: center;
+}
+
+.department-personnel-checkbox-col {
+  width: 2.5rem;
+  padding: 0.35rem 0.5rem;
+  vertical-align: middle;
+}
+
+.department-personnel-checkbox-col input[type="checkbox"] {
+  cursor: pointer;
 }
 
 .department-personnel-grid-line {
