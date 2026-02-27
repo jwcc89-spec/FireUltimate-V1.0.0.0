@@ -3634,6 +3634,326 @@ body.resource-personnel-modal-open {
   color: #334155;
 }
 
+/* Personnel Schedule (Personnel > Schedule) */
+.personnel-schedule-page .page-header {
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.personnel-schedule-shift-select {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.personnel-schedule-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.personnel-schedule-shift-select label {
+  font-weight: 600;
+  font-size: 0.82rem;
+}
+
+.personnel-schedule-shift-select select {
+  padding: 0.3rem 0.55rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  min-width: 120px;
+}
+
+.personnel-schedule-highlight-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.personnel-schedule-month-nav {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.personnel-schedule-month-label {
+  font-weight: 600;
+  min-width: 140px;
+  text-align: center;
+}
+
+.personnel-schedule-grid-wrapper {
+  overflow-x: auto;
+  margin-top: 1rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.personnel-schedule-grid {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.personnel-schedule-grid th,
+.personnel-schedule-grid td {
+  border: 1px solid #e2e8f0;
+  padding: 0.4rem 0.5rem;
+  vertical-align: top;
+}
+
+.personnel-schedule-col-day,
+.personnel-schedule-col-date {
+  background-color: #d1d5db;
+  font-weight: 600;
+  min-width: 78px;
+  vertical-align: middle;
+  text-align: center;
+}
+
+.personnel-schedule-header-row-day .personnel-schedule-date-col,
+.personnel-schedule-header-row-date .personnel-schedule-date-col {
+  min-width: 64px;
+  text-align: center;
+  color: #b91c1c;
+  font-weight: 700;
+  font-style: italic;
+}
+
+.personnel-schedule-row-label {
+  background-color: #d1d5db;
+  font-weight: 600;
+  min-width: 105px;
+  text-align: center;
+}
+
+.personnel-schedule-apparatus-row .personnel-schedule-row-label {
+  font-weight: 500;
+}
+
+.personnel-schedule-support-start td {
+  border-top-width: 3px;
+}
+
+.personnel-schedule-support-row .personnel-schedule-row-label {
+  font-weight: 700;
+}
+
+.personnel-schedule-day-block {
+  min-width: 80px;
+  min-height: 2.2rem;
+  cursor: pointer;
+  padding: 0.15rem;
+}
+
+.personnel-schedule-day-block:hover {
+  background-color: #f1f5f9;
+}
+
+.personnel-schedule-day-block-invalid {
+  background-color: #fef2f2;
+}
+
+.personnel-schedule-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.personnel-schedule-slot {
+  font-size: 0.68rem;
+  line-height: 1.05;
+  padding: 0.14rem 0.25rem;
+  border-radius: 4px;
+  min-height: 1.05rem;
+  background-color: #fff;
+  border: 1px solid #e2e8f0;
+}
+
+.personnel-schedule-inline-select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  font-size: 0.68rem;
+  line-height: 1.1;
+  padding: 0.08rem 0.2rem;
+}
+
+.personnel-schedule-slot-highlighted {
+  background-color: #fef9c3;
+  border-color: #facc15;
+}
+
+.personnel-schedule-info-input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 3px;
+  font-size: clamp(0.5rem, 0.7vw, 0.68rem);
+  line-height: 1.1;
+  padding: 0.08rem 0.2rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.personnel-schedule-slot-required-empty {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
+.personnel-schedule-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background-color: rgba(15, 23, 42, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.personnel-schedule-modal {
+  background: #fff;
+  border-radius: 8px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  max-width: 900px;
+  width: 90%;
+  max-height: 85vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.personnel-schedule-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 1.25rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.personnel-schedule-modal-header h2 {
+  margin: 0;
+  font-size: 1.1rem;
+}
+
+.personnel-schedule-modal-body {
+  display: grid;
+  grid-template-columns: 1.3fr 1fr;
+  gap: 1.5rem;
+  padding: 1.25rem;
+  overflow: auto;
+}
+
+.personnel-schedule-modal-day-block {
+  min-width: 0;
+}
+
+.personnel-schedule-modal-day-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.75rem;
+}
+
+.personnel-schedule-modal-day-block-header h3 {
+  margin: 0;
+}
+
+.personnel-schedule-modal-day-block h3,
+.personnel-schedule-modal-personnel h3 {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.personnel-schedule-modal-apparatus {
+  margin-bottom: 0.75rem;
+}
+
+.personnel-schedule-modal-apparatus strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.9rem;
+}
+
+.personnel-schedule-modal-slots {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.personnel-schedule-modal-slot {
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+  font-size: 0.74rem;
+  line-height: 1.1;
+  border: 1px solid #e2e8f0;
+  cursor: pointer;
+  min-height: 1.35rem;
+}
+
+.personnel-schedule-modal-slot:hover {
+  background-color: #f8fafc;
+}
+
+.personnel-schedule-slot-drag-over {
+  background-color: #dbeafe;
+  border-color: #3b82f6;
+}
+
+.personnel-schedule-modal-personnel-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.personnel-schedule-modal-personnel {
+  position: sticky;
+  top: 0;
+  align-self: start;
+  max-height: calc(85vh - 170px);
+  overflow: auto;
+  padding-right: 0.25rem;
+}
+
+.personnel-schedule-modal-personnel-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.28rem 0.42rem;
+  margin-bottom: 0.25rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 4px;
+  cursor: grab;
+  font-size: 0.8rem;
+}
+
+.personnel-schedule-modal-personnel-qualification {
+  color: #64748b;
+  font-size: 0.72rem;
+  white-space: nowrap;
+}
+
+.personnel-schedule-modal-personnel-item:active {
+  cursor: grabbing;
+}
+
+.personnel-schedule-personnel-assigned {
+  opacity: 0.7;
+  background-color: #f0fdf4;
+}
+
+.personnel-schedule-empty {
+  text-align: center;
+  padding: 2rem;
+  color: #64748b;
+}
+
 @media (max-width: 1200px) {
   .search-field {
     min-width: 245px;

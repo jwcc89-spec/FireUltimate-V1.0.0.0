@@ -229,7 +229,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Schedule",
         path: "/personnel/schedule",
         summary: "Shift scheduling, swaps, and staffing assignment workflows.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Certifications",
@@ -417,13 +417,6 @@ export const MAIN_MENUS: MainMenu[] = [
         summary:
           "Set department profile information, contacts, address, and managed lists.",
         isBuilt: true,
-        adminOnly: true,
-      },
-      {
-        label: "Scheduling",
-        path: "/admin-functions/scheduling",
-        summary: "Administrative schedule management controls.",
-        isBuilt: false,
         adminOnly: true,
       },
       {

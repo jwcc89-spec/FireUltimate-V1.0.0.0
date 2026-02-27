@@ -240,6 +240,7 @@ type DepartmentCollectionKey =
   | "shiftInformation"
   | "personnel"
   | "personnelQualifications"
+  | "kellyRotation"
   | "mutualAidDepartments"
   | "userType";
 
@@ -256,6 +257,15 @@ interface ShiftInformationEntry {
   recurrence: ShiftRecurrencePreset;
   recurrenceCustomValue: string;
   location: string;
+}
+
+type KellyRotationUnit = "Days" | "Shifts";
+
+interface KellyRotationEntry {
+  personnel: string;
+  repeatsEveryValue: number;
+  repeatsEveryUnit: KellyRotationUnit;
+  startsOn: string;
 }
 
 interface DepartmentPersonnelRecord {
@@ -309,6 +319,7 @@ const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
 const DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY = "fire-ultimate-department-logo-data-url";
 const DEPARTMENT_DETAILS_STORAGE_KEY = "fire-ultimate-department-details";
+const SCHEDULE_ASSIGNMENTS_STORAGE_KEY = "fire-ultimate-schedule-assignments";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -458,6 +469,12 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
     helperText: "",
   },
   {
+    key: "kellyRotation",
+    label: "Kelly Rotation",
+    editButtonLabel: "Edit Kelly Rotation",
+    helperText: "",
+  },
+  {
     key: "mutualAidDepartments",
     label: "Mutual Aid Departments",
     editButtonLabel: "Edit Mutual Aid Departments",
@@ -520,8 +537,27 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
           : [],
       }))
     : [];
-  return { ...d, personnelRecords };
+  const kellyRaw = d.kellyRotations;
+  const kellyRotations = Array.isArray(kellyRaw)
+    ? kellyRaw
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const repeatsEveryValue = Number((entry as { repeatsEveryValue?: unknown }).repeatsEveryValue);
+          const repeatsEveryUnitRaw = String((entry as { repeatsEveryUnit?: unknown }).repeatsEveryUnit ?? "Shifts");
+          const repeatsEveryUnit: KellyRotationUnit =
+            repeatsEveryUnitRaw === "Days" ? "Days" : "Shifts";
+          return {
+            personnel: String((entry as { personnel?: unknown }).personnel ?? ""),
+            repeatsEveryValue: Number.isFinite(repeatsEveryValue) && repeatsEveryValue > 0 ? repeatsEveryValue : 1,
+            repeatsEveryUnit,
+            startsOn: String((entry as { startsOn?: unknown }).startsOn ?? ""),
+          } satisfies KellyRotationEntry;
+        })
+        .filter((entry): entry is KellyRotationEntry => Boolean(entry))
+    : [];
+  return { ...d, personnelRecords, kellyRotations };
 }
+
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -2931,6 +2967,1273 @@ function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
         </article>
       </section>
     </section>
+  );
+}
+
+interface PersonnelScheduleRow {
+  id: string;
+  label: string;
+  rowType: "apparatus" | "support";
+  unitId: string;
+  unitType: string;
+  slotCount: number;
+  minimumPersonnel: number;
+  requiredQualifications: string[];
+  stationName?: string;
+}
+
+const PERSONNEL_SCHEDULE_APPARATUS_ORDER = [
+  "Car 6",
+  "Ambulance 1",
+  "Engine 4",
+  "Ambulance 2",
+  "Engine 5",
+  "Engine 6",
+  "Tower 1",
+] as const;
+
+const PERSONNEL_SCHEDULE_SUPPORT_ROWS: ReadonlyArray<{
+  id: string;
+  label: string;
+  slotCount: number;
+}> = [
+  { id: "support-info", label: "Info", slotCount: 4 },
+  { id: "support-chief-on-call", label: "Chief on Call", slotCount: 1 },
+  { id: "support-vacation", label: "Vacation", slotCount: 2 },
+  { id: "support-kelly-day", label: "Kelly Day", slotCount: 2 },
+  { id: "support-injured", label: "Injured", slotCount: 2 },
+  { id: "support-sick", label: "Sick", slotCount: 2 },
+  { id: "support-other", label: "Other", slotCount: 2 },
+  { id: "support-trade", label: "Trade", slotCount: 8 },
+];
+
+interface PersonnelScheduleData {
+  stations: DepartmentStationRecord[];
+  apparatus: DepartmentApparatusRecord[];
+  personnel: DepartmentPersonnelRecord[];
+  personnelQualifications: string[];
+  kellyRotations: KellyRotationEntry[];
+  shiftEntries: Array<{
+    shiftType: string;
+    shiftDuration: number;
+    recurrence: string;
+    recurrenceCustomValue?: string;
+  }>;
+}
+
+function loadPersonnelScheduleData(): PersonnelScheduleData {
+  const raw = readDepartmentDetailsDraft();
+  const d = raw && typeof raw === "object" ? raw : {};
+  const personnelRaw = d.personnelRecords;
+  const personnel = Array.isArray(personnelRaw)
+    ? personnelRaw.map((entry: Record<string, unknown>) => ({
+        name: String(entry?.name ?? ""),
+        shift: String(entry?.shift ?? ""),
+        apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
+        station: String(entry?.station ?? ""),
+        userType: String(entry?.userType ?? ""),
+        qualifications: Array.isArray(entry?.qualifications)
+          ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+          : [],
+      }))
+    : [];
+  const stations = Array.isArray(d.stationRecords)
+    ? (d.stationRecords as DepartmentStationRecord[])
+    : [];
+  const apparatus = Array.isArray(d.apparatusRecords)
+    ? (d.apparatusRecords as DepartmentApparatusRecord[])
+    : [];
+  const personnelQualifications = Array.isArray(d.personnelQualifications)
+    ? (d.personnelQualifications as string[])
+    : [];
+  const kellyRotations = Array.isArray(d.kellyRotations)
+    ? (d.kellyRotations as KellyRotationEntry[])
+    : [];
+  const shiftEntries = Array.isArray(d.shiftInformationEntries)
+    ? (d.shiftInformationEntries as PersonnelScheduleData["shiftEntries"])
+    : [];
+  return { stations, apparatus, personnel, personnelQualifications, kellyRotations, shiftEntries };
+}
+
+function getSlotCountForApparatus(unitType: string): number {
+  const t = (unitType ?? "").toUpperCase();
+  if (t.includes("AMB")) return 3;
+  if (t.includes("ENGINE")) return 4;
+  if (t.includes("LADDER") || t.includes("TOWER")) return 2;
+  if (t.includes("CHIEF") || t.includes("COMMAND") || t.includes("CAR")) return 1;
+  return 2;
+}
+
+function personnelMatchesShift(personnel: DepartmentPersonnelRecord, shiftType: string): boolean {
+  return personnel.shift?.includes(shiftType) ?? false;
+}
+
+type ScheduleAssignments = Record<string, Record<string, string[]>>;
+
+function loadScheduleAssignments(): ScheduleAssignments {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(SCHEDULE_ASSIGNMENTS_STORAGE_KEY);
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as ScheduleAssignments;
+    return parsed && typeof parsed === "object" ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveScheduleAssignments(data: ScheduleAssignments): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(SCHEDULE_ASSIGNMENTS_STORAGE_KEY, JSON.stringify(data));
+}
+
+function toDateKey(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function toScheduleStorageDateKey(shiftType: string, dateKey: string): string {
+  return `${shiftType}::${dateKey}`;
+}
+
+function getDatesForMonth(year: number, month: number): Date[] {
+  const dates: Date[] = [];
+  const daysInMonth = new Date(year, month + 1, 0).getDate();
+  for (let d = 1; d <= daysInMonth; d++) {
+    dates.push(new Date(year, month, d));
+  }
+  return dates;
+}
+
+function getShiftStartOffsetDays(shiftType: string): number {
+  const normalized = shiftType.trim().toUpperCase();
+  if (normalized.startsWith("C SHIFT")) return 0;
+  if (normalized.startsWith("A SHIFT")) return 1;
+  if (normalized.startsWith("B SHIFT")) return 2;
+  return 0;
+}
+
+function getRecurrenceIntervalDays(entry: PersonnelScheduleData["shiftEntries"][number] | undefined): number {
+  const recurrence = (entry?.recurrence ?? "").trim().toLowerCase();
+  if (!recurrence || recurrence === "daily") return 1;
+  if (recurrence.includes("every other")) return 2;
+  if (recurrence.includes("every 2")) return 2;
+  if (recurrence.includes("every 3")) return 3;
+  if (recurrence.includes("custom")) {
+    const raw = Number((entry?.recurrenceCustomValue ?? "").trim());
+    return Number.isFinite(raw) && raw > 0 ? raw : 1;
+  }
+  return 1;
+}
+
+function comparePersonnelByQualifications(
+  a: DepartmentPersonnelRecord,
+  b: DepartmentPersonnelRecord,
+  qualificationOrder: string[],
+): number {
+  const rankFor = (person: DepartmentPersonnelRecord): number => {
+    if (!Array.isArray(person.qualifications) || person.qualifications.length === 0) return 999;
+    const ranks = person.qualifications
+      .map((q) => qualificationOrder.findIndex((entry) => entry === q))
+      .filter((rank) => rank >= 0);
+    if (ranks.length === 0) return 999;
+    return Math.min(...ranks);
+  };
+  const aRank = rankFor(a);
+  const bRank = rankFor(b);
+  if (aRank !== bRank) return aRank - bRank;
+  if (a.qualifications.length !== b.qualifications.length) {
+    return b.qualifications.length - a.qualifications.length;
+  }
+  return a.name.localeCompare(b.name);
+}
+
+function getBestQualificationRankForPerson(
+  person: DepartmentPersonnelRecord | undefined,
+  qualificationRankMap: Map<string, number>,
+): number {
+  if (!person || !Array.isArray(person.qualifications) || person.qualifications.length === 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+  const ranks = person.qualifications
+    .map((qualification) => qualificationRankMap.get(qualification))
+    .filter((rank): rank is number => rank !== undefined);
+  return ranks.length > 0 ? Math.min(...ranks) : Number.POSITIVE_INFINITY;
+}
+
+function formatSchedulePersonnelDisplayName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const initial = parts[0]?.charAt(0).toUpperCase() ?? "";
+  const lastName = parts.length > 1 ? parts[parts.length - 1]! : parts[0]!;
+  return initial ? `${initial}. ${lastName}` : lastName;
+}
+
+function buildQualificationRankMap(qualificationOrder: string[]): Map<string, number> {
+  const map = new Map<string, number>();
+  qualificationOrder.forEach((qualification, index) => {
+    map.set(qualification, index);
+  });
+  return map;
+}
+
+function getHighestQualificationLabel(
+  person: DepartmentPersonnelRecord,
+  qualificationOrder: string[],
+): string {
+  const rankMap = buildQualificationRankMap(qualificationOrder);
+  let bestRank = Number.POSITIVE_INFINITY;
+  let bestLabel = "";
+  person.qualifications.forEach((qualification) => {
+    const rank = rankMap.get(qualification);
+    if (rank !== undefined && rank < bestRank) {
+      bestRank = rank;
+      bestLabel = qualification;
+    }
+  });
+  return bestLabel || person.qualifications[0] || "";
+}
+
+function requirementsSatisfiedByAssignedPersonnel(
+  requiredQualifications: string[],
+  assignedNames: string[],
+  personnelByName: Map<string, DepartmentPersonnelRecord>,
+  qualificationRankMap: Map<string, number>,
+): boolean {
+  const requirements = requiredQualifications.filter(Boolean);
+  if (requirements.length === 0) {
+    return true;
+  }
+  const assigned = assignedNames
+    .map((name) => personnelByName.get(name))
+    .filter((entry): entry is DepartmentPersonnelRecord => Boolean(entry));
+  if (assigned.length < requirements.length) {
+    return false;
+  }
+  const requirementRanks = requirements.map((qualification) =>
+    qualificationRankMap.get(qualification) ?? Number.POSITIVE_INFINITY,
+  );
+  const assignedBestRanks = assigned.map((person) => {
+    const ranks = person.qualifications
+      .map((qualification) => qualificationRankMap.get(qualification))
+      .filter((rank): rank is number => rank !== undefined);
+    return ranks.length > 0 ? Math.min(...ranks) : Number.POSITIVE_INFINITY;
+  });
+
+  const usedAssigned = new Set<number>();
+  const sortedRequirementIndices = requirementRanks
+    .map((rank, index) => ({ rank, index }))
+    .sort((a, b) => a.rank - b.rank)
+    .map((entry) => entry.index);
+
+  for (const reqIndex of sortedRequirementIndices) {
+    const reqRank = requirementRanks[reqIndex]!;
+    let matchIndex = -1;
+    let bestSlack = Number.POSITIVE_INFINITY;
+    assignedBestRanks.forEach((personRank, personIndex) => {
+      if (usedAssigned.has(personIndex)) return;
+      if (personRank <= reqRank) {
+        const slack = reqRank - personRank;
+        if (slack < bestSlack) {
+          bestSlack = slack;
+          matchIndex = personIndex;
+        }
+      }
+    });
+    if (matchIndex < 0) {
+      return false;
+    }
+    usedAssigned.add(matchIndex);
+  }
+  return true;
+}
+
+function reorderAssignedByRequirementCoverage(
+  requiredQualifications: string[],
+  minimumPersonnel: number,
+  assignedNames: string[],
+  personnelByName: Map<string, DepartmentPersonnelRecord>,
+  qualificationRankMap: Map<string, number>,
+): string[] {
+  const requirements = requiredQualifications.filter(Boolean);
+  if (requirements.length === 0) return assignedNames;
+  const remainingNames = [...assignedNames];
+  const selected: string[] = [];
+  const requirementRanks = requirements
+    .map((qualification) => qualificationRankMap.get(qualification) ?? Number.POSITIVE_INFINITY)
+    .sort((a, b) => a - b);
+  requirementRanks.forEach((reqRank) => {
+    let bestIndex = -1;
+    let bestSlack = Number.POSITIVE_INFINITY;
+    remainingNames.forEach((name, index) => {
+      const person = personnelByName.get(name);
+      if (!person) return;
+      const bestRank = person.qualifications
+        .map((qualification) => qualificationRankMap.get(qualification))
+        .filter((rank): rank is number => rank !== undefined)
+        .reduce((best, rank) => Math.min(best, rank), Number.POSITIVE_INFINITY);
+      if (bestRank <= reqRank) {
+        const slack = reqRank - bestRank;
+        if (slack < bestSlack) {
+          bestSlack = slack;
+          bestIndex = index;
+        }
+      }
+    });
+    if (bestIndex >= 0) {
+      selected.push(remainingNames[bestIndex]!);
+      remainingNames.splice(bestIndex, 1);
+    }
+  });
+  const requiredSlots = Math.max(minimumPersonnel, requirements.length);
+  const inRequired = selected.slice(0, requiredSlots);
+  while (inRequired.length < requiredSlots) {
+    inRequired.push("");
+  }
+  return [...inRequired, ...remainingNames];
+}
+
+function PersonnelSchedulePage() {
+  const [departmentData, setDepartmentData] = useState<PersonnelScheduleData>(() => loadPersonnelScheduleData());
+  const [selectedShift, setSelectedShift] = useState<string>("");
+  const [highlightPersonnelName, setHighlightPersonnelName] = useState("");
+  const [viewDate, setViewDate] = useState(() => new Date());
+  const [isLoading, setIsLoading] = useState(true);
+  const [scheduleAssignments, setScheduleAssignments] = useState<ScheduleAssignments>(() => loadScheduleAssignments());
+  const [editDayBlock, setEditDayBlock] = useState<{ date: Date; dateKey: string } | null>(null);
+  const [activeInlineSlot, setActiveInlineSlot] = useState<{
+    dateKey: string;
+    unitId: string;
+    slotIndex: number;
+  } | null>(null);
+
+  useEffect(() => {
+    let isMounted = true;
+    const load = async () => {
+      try {
+        const res = await fetch("/api/department-details");
+        if (res.ok && isMounted) {
+          const json = (await res.json()) as { ok?: boolean; data?: Record<string, unknown> };
+          if (json?.ok && json?.data && isMounted) {
+            const d = json.data;
+            const personnelRaw = d.personnelRecords;
+            const personnel = Array.isArray(personnelRaw)
+              ? personnelRaw.map((entry: Record<string, unknown>) => ({
+                  name: String(entry?.name ?? ""),
+                  shift: String(entry?.shift ?? ""),
+                  apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
+                  station: String(entry?.station ?? ""),
+                  userType: String(entry?.userType ?? ""),
+                  qualifications: Array.isArray(entry?.qualifications)
+                    ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+                    : [],
+                }))
+              : [];
+            const stations = Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [];
+            const apparatus = Array.isArray(d.apparatusRecords) ? (d.apparatusRecords as DepartmentApparatusRecord[]) : [];
+            const personnelQualifications = Array.isArray(d.personnelQualifications)
+              ? (d.personnelQualifications as string[])
+              : [];
+            const kellyRotations = Array.isArray(d.kellyRotations)
+              ? (d.kellyRotations as KellyRotationEntry[])
+              : [];
+            const shiftEntries = Array.isArray(d.shiftInformationEntries)
+              ? (d.shiftInformationEntries as PersonnelScheduleData["shiftEntries"])
+              : [];
+            setDepartmentData({ stations, apparatus, personnel, personnelQualifications, kellyRotations, shiftEntries });
+          }
+        }
+      } catch {
+        // Keep localStorage data
+      } finally {
+        if (isMounted) setIsLoading(false);
+      }
+    };
+    void load();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  const shiftOptions = useMemo(() => {
+    const ordered = [...departmentData.shiftEntries].sort((a, b) => {
+      const rank = (shiftType: string): number => {
+        const normalized = shiftType.trim().toUpperCase();
+        if (normalized.startsWith("A SHIFT")) return 1;
+        if (normalized.startsWith("B SHIFT")) return 2;
+        if (normalized.startsWith("C SHIFT")) return 3;
+        if (normalized.startsWith("D SHIFT")) return 4;
+        return 99;
+      };
+      return rank(a.shiftType) - rank(b.shiftType);
+    });
+    return ordered.length > 0 ? ordered : departmentData.shiftEntries.slice(0, 4);
+  }, [departmentData.shiftEntries]);
+
+  const effectiveShift = selectedShift || shiftOptions[0]?.shiftType || "";
+  const effectiveShiftEntry = useMemo(
+    () => shiftOptions.find((entry) => entry.shiftType === effectiveShift),
+    [shiftOptions, effectiveShift],
+  );
+
+  const scheduleRows = useMemo((): PersonnelScheduleRow[] => {
+    const apparatusByName = new Map(
+      departmentData.apparatus.map((a) => [String(a.unitId ?? "").trim(), a]),
+    );
+    const rows: PersonnelScheduleRow[] = [];
+
+    PERSONNEL_SCHEDULE_APPARATUS_ORDER.forEach((unitName) => {
+      const app = apparatusByName.get(unitName);
+      if (!app) {
+        return;
+      }
+      const slotCount = getSlotCountForApparatus(app.unitType ?? "");
+      rows.push({
+        id: `app-${unitName}`,
+        label: unitName,
+        rowType: "apparatus",
+        unitId: unitName,
+        unitType: app.unitType ?? "",
+        slotCount,
+        minimumPersonnel: Math.min(app.minimumPersonnel ?? 0, slotCount),
+        requiredQualifications: Array.isArray(app.personnelRequirements)
+          ? app.personnelRequirements.filter(Boolean)
+          : [],
+        stationName: app.station ?? "",
+      });
+    });
+
+    PERSONNEL_SCHEDULE_SUPPORT_ROWS.forEach((row) => {
+      rows.push({
+        id: row.id,
+        label: row.label,
+        rowType: "support",
+        unitId: row.id,
+        unitType: "SUPPORT",
+        slotCount: row.slotCount,
+        minimumPersonnel: 0,
+        requiredQualifications: [],
+      });
+    });
+
+    return rows;
+  }, [departmentData.apparatus]);
+
+  const dates = useMemo(
+    () => getDatesForMonth(viewDate.getFullYear(), viewDate.getMonth()),
+    [viewDate],
+  );
+
+  const activeDateKeys = useMemo(() => {
+    const set = new Set<string>();
+    const intervalDays = getRecurrenceIntervalDays(effectiveShiftEntry);
+    const shiftOffset = getShiftStartOffsetDays(effectiveShift);
+    const anchorUtc = Date.UTC(2026, 0, 1 + shiftOffset);
+    dates.forEach((date) => {
+      if (intervalDays <= 1) {
+        set.add(toDateKey(date));
+        return;
+      }
+      const dateUtc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+      const dayDiff = Math.floor((dateUtc - anchorUtc) / (24 * 60 * 60 * 1000));
+      if (dayDiff >= 0 && dayDiff % intervalDays === 0) {
+        set.add(toDateKey(date));
+      }
+    });
+    return set;
+  }, [dates, effectiveShift, effectiveShiftEntry]);
+
+  const shiftPersonnel = useMemo(
+    () => departmentData.personnel.filter((p) => personnelMatchesShift(p, effectiveShift)),
+    [departmentData.personnel, effectiveShift],
+  );
+  const sortedShiftPersonnel = useMemo(
+    () =>
+      [...shiftPersonnel].sort((a, b) =>
+        comparePersonnelByQualifications(a, b, departmentData.personnelQualifications),
+      ),
+    [shiftPersonnel, departmentData.personnelQualifications],
+  );
+  const personnelByName = useMemo(
+    () => new Map(departmentData.personnel.map((p) => [p.name, p])),
+    [departmentData.personnel],
+  );
+  const qualificationRankMap = useMemo(
+    () => buildQualificationRankMap(departmentData.personnelQualifications),
+    [departmentData.personnelQualifications],
+  );
+  const displayDates = useMemo(
+    () => dates.filter((date) => activeDateKeys.has(toDateKey(date))),
+    [dates, activeDateKeys],
+  );
+  const buildDefaultAssignmentsForDate = useCallback(
+    (dateKey: string): Record<string, string[]> => {
+      const defaults: Record<string, string[]> = {};
+      const dayDate = new Date(`${dateKey}T00:00:00`);
+      scheduleRows.forEach((row) => {
+        if (row.rowType === "apparatus") {
+          const assigned = shiftPersonnel
+            .filter((p) => {
+              const assignment = String(p.apparatusAssignment ?? "");
+              return assignment.startsWith(row.unitId) || assignment.includes(row.unitId);
+            })
+            .map((p) => p.name)
+            .filter(Boolean);
+          defaults[row.unitId] = assigned.slice(0, row.slotCount);
+        } else {
+          defaults[row.unitId] = [];
+        }
+      });
+
+      const kellyRow = scheduleRows.find((row) => row.unitId === "support-kelly-day");
+      if (!kellyRow) {
+        return defaults;
+      }
+      const kellyAssignments: string[] = [];
+      departmentData.kellyRotations.forEach((rotation) => {
+        if (!rotation.personnel || !rotation.startsOn) return;
+        const startsOnDate = new Date(`${rotation.startsOn}T00:00:00`);
+        if (Number.isNaN(startsOnDate.getTime()) || Number.isNaN(dayDate.getTime())) return;
+        const dayDiff = Math.floor(
+          (Date.UTC(dayDate.getFullYear(), dayDate.getMonth(), dayDate.getDate()) -
+            Date.UTC(startsOnDate.getFullYear(), startsOnDate.getMonth(), startsOnDate.getDate())) /
+            (24 * 60 * 60 * 1000),
+        );
+        if (dayDiff < 0) return;
+        const interval = Math.max(1, rotation.repeatsEveryValue);
+        const recurrenceDays = Math.max(1, getRecurrenceIntervalDays(effectiveShiftEntry));
+        const isRotationDay =
+          rotation.repeatsEveryUnit === "Days"
+            ? dayDiff % interval === 0
+            : dayDiff % (interval * recurrenceDays) === 0;
+        if (!isRotationDay) return;
+        const person = personnelByName.get(rotation.personnel);
+        if (!person || !personnelMatchesShift(person, effectiveShift)) return;
+        kellyAssignments.push(rotation.personnel);
+      });
+
+      if (kellyAssignments.length > 0) {
+        scheduleRows
+          .filter((row) => row.rowType === "apparatus")
+          .forEach((row) => {
+            const existing = defaults[row.unitId] ?? [];
+            defaults[row.unitId] = existing.filter((name) => !kellyAssignments.includes(name));
+          });
+        const existingKelly = defaults[kellyRow.unitId] ?? [];
+        defaults[kellyRow.unitId] = [...existingKelly, ...kellyAssignments].slice(0, kellyRow.slotCount);
+      }
+
+      return defaults;
+    },
+    [scheduleRows, shiftPersonnel, departmentData.kellyRotations, effectiveShiftEntry, personnelByName, effectiveShift],
+  );
+  const getKellyRotationPersonnelForDate = useCallback(
+    (dateKey: string): string[] => {
+      const defaults = buildDefaultAssignmentsForDate(dateKey);
+      return defaults["support-kelly-day"]?.filter(Boolean) ?? [];
+    },
+    [buildDefaultAssignmentsForDate],
+  );
+
+  const getAssignmentsForDay = useCallback(
+    (dateKey: string, unitId: string, slotCount: number): string[] => {
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      const dayData = scheduleAssignments[storageDateKey];
+      const unitSlots = dayData?.[unitId];
+      const defaultAssignments = buildDefaultAssignmentsForDate(dateKey);
+      let result = unitSlots && Array.isArray(unitSlots)
+        ? [...unitSlots]
+        : [...(defaultAssignments[unitId] ?? [])];
+      const kellyNames = getKellyRotationPersonnelForDate(dateKey);
+      if (kellyNames.length > 0) {
+        if (unitId === "support-kelly-day") {
+          const merged = [...result];
+          kellyNames.forEach((name) => {
+            if (!merged.includes(name)) {
+              merged.push(name);
+            }
+          });
+          result = merged;
+        } else {
+          result = result.filter((name) => !kellyNames.includes(name));
+        }
+      }
+      while (result.length < slotCount) result.push("");
+      return result.slice(0, slotCount);
+    },
+    [scheduleAssignments, buildDefaultAssignmentsForDate, getKellyRotationPersonnelForDate, effectiveShift],
+  );
+
+  const assignPersonToSlot = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
+      setScheduleAssignments((prev) => {
+        const next = { ...prev };
+        const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+        const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+        const dayDefaults = buildDefaultAssignmentsForDate(dateKey);
+        scheduleRows.forEach((row) => {
+          if (!dayData[row.unitId]) {
+            const defaults = dayDefaults[row.unitId] ?? [];
+            dayData[row.unitId] = defaults.slice(0, row.slotCount);
+          }
+        });
+        for (const [uid, slots] of Object.entries(dayData)) {
+          dayData[uid] = slots.map((s) => (s === personName ? "" : s));
+        }
+        const unitSlots = [...(dayData[unitId] ?? [])];
+        while (unitSlots.length <= slotIndex) unitSlots.push("");
+        unitSlots[slotIndex] = personName;
+        dayData[unitId] = unitSlots;
+        next[storageDateKey] = dayData;
+        saveScheduleAssignments(next);
+        return next;
+      });
+    },
+    [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift],
+  );
+
+  const clearPersonFromDay = useCallback((dateKey: string, personName: string) => {
+    setScheduleAssignments((prev) => {
+      const next = { ...prev };
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+      const dayDefaults = buildDefaultAssignmentsForDate(dateKey);
+      scheduleRows.forEach((row) => {
+        if (!dayData[row.unitId]) {
+          const defaults = dayDefaults[row.unitId] ?? [];
+          dayData[row.unitId] = defaults.slice(0, row.slotCount);
+        }
+      });
+      const newDayData: Record<string, string[]> = {};
+      for (const [uid, slots] of Object.entries(dayData)) {
+        newDayData[uid] = slots.map((s) => (s === personName ? "" : s));
+      }
+      next[storageDateKey] = newDayData;
+      saveScheduleAssignments(next);
+      return next;
+    });
+  }, [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift]);
+
+  const updateTextSlotValue = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number, textValue: string) => {
+      setScheduleAssignments((prev) => {
+        const next = { ...prev };
+        const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+        const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+        const row = scheduleRows.find((entry) => entry.unitId === unitId);
+        if (!row) return prev;
+        if (!dayData[unitId]) {
+          dayData[unitId] = getAssignmentsForDay(dateKey, unitId, row.slotCount);
+        }
+        const unitSlots = [...(dayData[unitId] ?? [])];
+        while (unitSlots.length <= slotIndex) unitSlots.push("");
+        unitSlots[slotIndex] = textValue.slice(0, 25);
+        dayData[unitId] = unitSlots;
+        next[storageDateKey] = dayData;
+        saveScheduleAssignments(next);
+        return next;
+      });
+    },
+    [effectiveShift, scheduleRows, getAssignmentsForDay],
+  );
+
+  const assignedOnDay = useCallback(
+    (dateKey: string): Set<string> => {
+      const names = new Set<string>();
+      for (const row of scheduleRows) {
+        const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+        for (const n of slots) {
+          if (n.trim()) names.add(n);
+        }
+      }
+      return names;
+    },
+    [scheduleRows, getAssignmentsForDay],
+  );
+
+  const getEligibleShiftPersonnelForSlot = useCallback(
+    (dateKey: string, row: PersonnelScheduleRow, currentName: string): DepartmentPersonnelRecord[] => {
+      const alreadyAssigned = assignedOnDay(dateKey);
+      if (currentName.trim()) {
+        alreadyAssigned.delete(currentName.trim());
+      }
+      const requiredRanks = row.requiredQualifications
+        .map((qualification) => qualificationRankMap.get(qualification))
+        .filter((rank): rank is number => rank !== undefined);
+      const worstRequiredRank =
+        requiredRanks.length > 0 ? Math.max(...requiredRanks) : Number.POSITIVE_INFINITY;
+      const requiresQualificationGate =
+        row.rowType === "apparatus" && row.minimumPersonnel > 0 && requiredRanks.length > 0;
+
+      return shiftPersonnel
+        .filter((person) => !alreadyAssigned.has(person.name))
+        .filter((person) => {
+          if (!requiresQualificationGate) return true;
+          const bestRank = getBestQualificationRankForPerson(person, qualificationRankMap);
+          return Number.isFinite(bestRank) && bestRank <= worstRequiredRank;
+        })
+        .sort((a, b) =>
+          comparePersonnelByQualifications(a, b, departmentData.personnelQualifications),
+        );
+    },
+    [
+      assignedOnDay,
+      qualificationRankMap,
+      shiftPersonnel,
+      departmentData.personnelQualifications,
+    ],
+  );
+
+  const normalizeDayAssignmentsForRequirements = useCallback(
+    (dateKey: string) => {
+      setScheduleAssignments((prev) => {
+        const next = { ...prev };
+        const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+        const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+        const dayDefaults = buildDefaultAssignmentsForDate(dateKey);
+        scheduleRows.forEach((row) => {
+          if (!dayData[row.unitId]) {
+            dayData[row.unitId] = (dayDefaults[row.unitId] ?? []).slice(0, row.slotCount);
+          }
+          const current = getAssignmentsForDay(dateKey, row.unitId, row.slotCount).filter((name) => name.trim());
+          if (row.rowType !== "apparatus" || row.minimumPersonnel <= 0) {
+            const padded = [...current];
+            while (padded.length < row.slotCount) padded.push("");
+            dayData[row.unitId] = padded.slice(0, row.slotCount);
+            return;
+          }
+          const ordered = reorderAssignedByRequirementCoverage(
+            row.requiredQualifications.slice(0, row.minimumPersonnel),
+            row.minimumPersonnel,
+            current,
+            personnelByName,
+            qualificationRankMap,
+          );
+          while (ordered.length < row.slotCount) ordered.push("");
+          dayData[row.unitId] = ordered.slice(0, row.slotCount);
+        });
+        next[storageDateKey] = dayData;
+        saveScheduleAssignments(next);
+        return next;
+      });
+    },
+    [scheduleRows, getAssignmentsForDay, personnelByName, qualificationRankMap, buildDefaultAssignmentsForDate, effectiveShift],
+  );
+
+  const importAssignmentsForDay = useCallback(
+    (dateKey: string) => {
+      setScheduleAssignments((previous) => {
+        const next = { ...previous };
+        const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+        const existingDay = { ...(next[storageDateKey] ?? {}) };
+        const defaults = buildDefaultAssignmentsForDate(dateKey);
+
+        scheduleRows.forEach((row) => {
+          // Restore staffing-focused rows from current shift/day defaults.
+          if (row.rowType !== "apparatus" && row.unitId !== "support-kelly-day") {
+            return;
+          }
+          const defaultSlots = (defaults[row.unitId] ?? []).slice(0, row.slotCount);
+          while (defaultSlots.length < row.slotCount) defaultSlots.push("");
+          existingDay[row.unitId] = defaultSlots;
+        });
+
+        next[storageDateKey] = existingDay;
+        saveScheduleAssignments(next);
+        return next;
+      });
+    },
+    [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift],
+  );
+
+  if (isLoading && departmentData.personnel.length === 0) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <h1>Schedule (Personnel)</h1>
+          <p>Loading department details…</p>
+        </header>
+      </section>
+    );
+  }
+
+  return (
+    <section className="page-section personnel-schedule-page">
+      <header className="page-header">
+        <div>
+          <h1>Schedule (Personnel)</h1>
+          <div className="personnel-schedule-shift-select">
+            <div className="personnel-schedule-controls">
+            <select
+              id="personnel-schedule-shift"
+              value={effectiveShift}
+              onChange={(e) => setSelectedShift(e.target.value)}
+            >
+              {shiftOptions.map((opt) => (
+                <option key={opt.shiftType} value={opt.shiftType}>
+                  {opt.shiftType}
+                </option>
+              ))}
+            </select>
+            <div className="personnel-schedule-highlight-row">
+              <select
+                id="personnel-schedule-highlight"
+                value={highlightPersonnelName}
+                onChange={(e) => setHighlightPersonnelName(e.target.value)}
+              >
+                <option value="">Highlight Personnel</option>
+                {sortedShiftPersonnel.map((person) => (
+                  <option key={person.name} value={person.name}>
+                    {person.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setHighlightPersonnelName("")}
+                aria-label="Clear highlighted personnel"
+              >
+                X
+              </button>
+            </div>
+          </div>
+          </div>
+        </div>
+        <div className="header-actions">
+          <div className="personnel-schedule-month-nav">
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1))}
+            >
+              ← Prev
+            </button>
+            <span className="personnel-schedule-month-label">
+              {viewDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+            </span>
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1))}
+            >
+              Next →
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <div className="personnel-schedule-grid-wrapper">
+        <table className="personnel-schedule-grid">
+          <thead>
+            <tr className="personnel-schedule-header-row-day">
+              <th className="personnel-schedule-col-day">DAY</th>
+              {displayDates.map((d) => (
+                <th
+                  key={d.toISOString()}
+                  className="personnel-schedule-date-col"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditDayBlock({ date: d, dateKey: toDateKey(d) })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setEditDayBlock({ date: d, dateKey: toDateKey(d) });
+                    }
+                  }}
+                >
+                  {d.toLocaleDateString("en-US", { weekday: "short" })}
+                </th>
+              ))}
+            </tr>
+            <tr className="personnel-schedule-header-row-date">
+              <th className="personnel-schedule-col-date">DATE</th>
+              {displayDates.map((d) => (
+                <th
+                  key={d.toISOString()}
+                  className="personnel-schedule-date-col"
+                  role="button"
+                  tabIndex={0}
+                  onClick={() => setEditDayBlock({ date: d, dateKey: toDateKey(d) })}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      setEditDayBlock({ date: d, dateKey: toDateKey(d) });
+                    }
+                  }}
+                >
+                  {d.getMonth() + 1}/{d.getDate()}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {scheduleRows.length === 0 ? (
+              <tr>
+                <td colSpan={(displayDates.length + 1) as number} className="personnel-schedule-empty">
+                  No apparatus. Add them in Admin Functions → Department Details.
+                </td>
+              </tr>
+            ) : (
+              scheduleRows.map((row) => (
+                <tr
+                  key={row.id}
+                  className={
+                    row.rowType === "support"
+                      ? `personnel-schedule-support-row${row.id === "support-info" ? " personnel-schedule-support-start" : ""}`
+                      : "personnel-schedule-apparatus-row"
+                  }
+                >
+                  <td className="personnel-schedule-row-label">
+                    {row.label}
+                  </td>
+                  {displayDates.map((date) => {
+                    const dateKey = toDateKey(date);
+                    const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+                    const displaySlots =
+                      row.rowType === "apparatus"
+                        ? [
+                            ...slots
+                              .filter((name) => name.trim().length > 0)
+                              .sort((aName, bName) => {
+                                const aRank = getBestQualificationRankForPerson(
+                                  personnelByName.get(aName),
+                                  qualificationRankMap,
+                                );
+                                const bRank = getBestQualificationRankForPerson(
+                                  personnelByName.get(bName),
+                                  qualificationRankMap,
+                                );
+                                if (aRank !== bRank) return aRank - bRank;
+                                return aName.localeCompare(bName);
+                              }),
+                            ...Array.from(
+                              { length: Math.max(0, row.slotCount - slots.filter((name) => name.trim().length > 0).length) },
+                              () => "",
+                            ),
+                          ]
+                        : slots;
+                    const blockHasQualificationGap =
+                      row.rowType === "apparatus" &&
+                      row.minimumPersonnel > 0 &&
+                      !requirementsSatisfiedByAssignedPersonnel(
+                        row.requiredQualifications.slice(0, row.minimumPersonnel),
+                        slots.filter((name) => name.trim()),
+                        personnelByName,
+                        qualificationRankMap,
+                      );
+                    return (
+                      <td
+                        key={date.toISOString()}
+                        className={`personnel-schedule-day-block ${blockHasQualificationGap ? "personnel-schedule-day-block-invalid" : ""}`}
+                        onDoubleClick={() => setEditDayBlock({ date, dateKey })}
+                      >
+                        <div className="personnel-schedule-slots">
+                          {displaySlots.map((name, slotIdx) => {
+                            const isRequired = slotIdx < row.minimumPersonnel;
+                            const isEmpty = !name.trim();
+                            const isRed = isRequired && isEmpty;
+                            const isInfoRow = row.unitId === "support-info";
+                            const isActiveInlineSelect =
+                              activeInlineSlot?.dateKey === dateKey &&
+                              activeInlineSlot?.unitId === row.unitId &&
+                              activeInlineSlot?.slotIndex === slotIdx;
+                            const eligiblePeople = getEligibleShiftPersonnelForSlot(
+                              dateKey,
+                              row,
+                              name,
+                            );
+                            return (
+                              <div
+                                key={slotIdx}
+                                className={`personnel-schedule-slot ${isRed ? "personnel-schedule-slot-required-empty" : ""} ${
+                                  highlightPersonnelName && name === highlightPersonnelName
+                                    ? "personnel-schedule-slot-highlighted"
+                                    : ""
+                                }`}
+                                onClick={(event) => {
+                                  if (isInfoRow) return;
+                                  event.stopPropagation();
+                                  setActiveInlineSlot({
+                                    dateKey,
+                                    unitId: row.unitId,
+                                    slotIndex: slotIdx,
+                                  });
+                                }}
+                              >
+                                {isInfoRow ? (
+                                  <input
+                                    type="text"
+                                    maxLength={25}
+                                    value={name}
+                                    className="personnel-schedule-info-input"
+                                    placeholder="Type info..."
+                                    onClick={(event) => event.stopPropagation()}
+                                    onChange={(event) =>
+                                      updateTextSlotValue(dateKey, row.unitId, slotIdx, event.target.value)
+                                    }
+                                  />
+                                ) : isActiveInlineSelect ? (
+                                  <select
+                                    className="personnel-schedule-inline-select"
+                                    autoFocus
+                                    value={name}
+                                    onClick={(event) => event.stopPropagation()}
+                                    onBlur={() => setActiveInlineSlot(null)}
+                                    onChange={(event) => {
+                                      const nextName = event.target.value;
+                                      if (!nextName) {
+                                        if (name.trim()) {
+                                          clearPersonFromDay(dateKey, name);
+                                        }
+                                      } else {
+                                        assignPersonToSlot(dateKey, row.unitId, slotIdx, nextName);
+                                      }
+                                      setActiveInlineSlot(null);
+                                    }}
+                                  >
+                                    <option value="">Select personnel</option>
+                                    {eligiblePeople.map((person) => (
+                                      <option key={person.name} value={person.name}>
+                                        {person.name}
+                                      </option>
+                                    ))}
+                                  </select>
+                                ) : (
+                                  (name ? formatSchedulePersonnelDisplayName(name) : "—")
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </td>
+                    );
+                  })}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {editDayBlock ? (
+        <PersonnelScheduleDayBlockModal
+          date={editDayBlock.date}
+          dateKey={editDayBlock.dateKey}
+          scheduleRows={scheduleRows}
+          shiftPersonnel={shiftPersonnel}
+          effectiveShift={effectiveShift}
+          getAssignmentsForDay={getAssignmentsForDay}
+          assignPersonToSlot={assignPersonToSlot}
+          clearPersonFromDay={clearPersonFromDay}
+          updateTextSlotValue={updateTextSlotValue}
+          importAssignmentsForDay={importAssignmentsForDay}
+          assignedOnDay={assignedOnDay}
+          allPersonnel={departmentData.personnel}
+          personnelQualificationOrder={departmentData.personnelQualifications}
+          onClose={() => {
+            normalizeDayAssignmentsForRequirements(editDayBlock.dateKey);
+            setEditDayBlock(null);
+          }}
+        />
+      ) : null}
+    </section>
+  );
+}
+
+interface PersonnelScheduleDayBlockModalProps {
+  date: Date;
+  dateKey: string;
+  scheduleRows: PersonnelScheduleRow[];
+  shiftPersonnel: DepartmentPersonnelRecord[];
+  allPersonnel: DepartmentPersonnelRecord[];
+  personnelQualificationOrder: string[];
+  effectiveShift: string;
+  getAssignmentsForDay: (dateKey: string, unitId: string, slotCount: number) => string[];
+  assignPersonToSlot: (dateKey: string, unitId: string, slotIndex: number, personName: string) => void;
+  clearPersonFromDay: (dateKey: string, personName: string) => void;
+  updateTextSlotValue: (dateKey: string, unitId: string, slotIndex: number, textValue: string) => void;
+  importAssignmentsForDay: (dateKey: string) => void;
+  assignedOnDay: (dateKey: string) => Set<string>;
+  onClose: () => void;
+}
+
+function PersonnelScheduleDayBlockModal({
+  date,
+  dateKey,
+  scheduleRows,
+  shiftPersonnel,
+  allPersonnel,
+  personnelQualificationOrder,
+  effectiveShift,
+  getAssignmentsForDay,
+  assignPersonToSlot,
+  clearPersonFromDay,
+  updateTextSlotValue,
+  importAssignmentsForDay,
+  assignedOnDay,
+  onClose,
+}: PersonnelScheduleDayBlockModalProps) {
+  const [draggedPerson, setDraggedPerson] = useState<string | null>(null);
+  const [dragOverSlot, setDragOverSlot] = useState<{ unitId: string; slotIndex: number } | null>(null);
+  const [showAllPersonnel, setShowAllPersonnel] = useState(false);
+  const assigned = assignedOnDay(dateKey);
+  const visiblePersonnel = useMemo(() => {
+    const base = showAllPersonnel ? allPersonnel : shiftPersonnel;
+    return [...base].sort((a, b) =>
+      comparePersonnelByQualifications(a, b, personnelQualificationOrder),
+    );
+  }, [showAllPersonnel, allPersonnel, shiftPersonnel, personnelQualificationOrder]);
+
+  const handleDrop = useCallback(
+    (unitId: string, slotIndex: number) => {
+      if (!draggedPerson) return;
+      const row = scheduleRows.find((r) => r.unitId === unitId);
+      if (!row) return;
+      const currentSlots = getAssignmentsForDay(dateKey, unitId, row.slotCount);
+      const currentInSlot = currentSlots[slotIndex] ?? "";
+      if (currentInSlot === draggedPerson) {
+        setDraggedPerson(null);
+        setDragOverSlot(null);
+        return;
+      }
+      assignPersonToSlot(dateKey, unitId, slotIndex, draggedPerson);
+      setDraggedPerson(null);
+      setDragOverSlot(null);
+    },
+    [draggedPerson, dateKey, scheduleRows, getAssignmentsForDay, assignPersonToSlot],
+  );
+
+  const handleRemoveFromSlot = useCallback(
+    (unitId: string, slotIndex: number) => {
+      const row = scheduleRows.find((r) => r.unitId === unitId);
+      if (!row) return;
+      const slots = getAssignmentsForDay(dateKey, unitId, row.slotCount);
+      const name = slots[slotIndex] ?? "";
+      if (name) {
+        clearPersonFromDay(dateKey, name);
+      }
+    },
+    [dateKey, scheduleRows, getAssignmentsForDay, clearPersonFromDay],
+  );
+
+  return createPortal(
+    <div
+      className="personnel-schedule-modal-backdrop"
+      role="dialog"
+      aria-modal="true"
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className="personnel-schedule-modal">
+        <div className="personnel-schedule-modal-header">
+          <h2>
+            Assign Personnel — {date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
+          </h2>
+          <button type="button" className="secondary-button compact-button" onClick={onClose}>
+            Close
+          </button>
+        </div>
+        <div className="personnel-schedule-modal-body">
+          <div className="personnel-schedule-modal-day-block">
+            <div className="personnel-schedule-modal-day-block-header">
+              <h3>Day Block</h3>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => importAssignmentsForDay(dateKey)}
+              >
+                Import Assignments
+              </button>
+            </div>
+            {scheduleRows.map((row) => {
+              const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+              return (
+                <div key={row.id} className="personnel-schedule-modal-apparatus">
+                  <strong>{row.label}</strong>
+                  <div className="personnel-schedule-modal-slots">
+                    {slots.map((name, slotIdx) => {
+                      const isRequired = slotIdx < row.minimumPersonnel;
+                      const isEmpty = !name.trim();
+                      const isRed = isRequired && isEmpty;
+                      const isInfoRow = row.unitId === "support-info";
+                      return (
+                        <div
+                          key={slotIdx}
+                          className={`personnel-schedule-modal-slot ${isRed ? "personnel-schedule-slot-required-empty" : ""} ${dragOverSlot?.unitId === row.unitId && dragOverSlot?.slotIndex === slotIdx ? "personnel-schedule-slot-drag-over" : ""}`}
+                          onDragOver={
+                            isInfoRow
+                              ? undefined
+                              : (e) => {
+                                  e.preventDefault();
+                                  setDragOverSlot({ unitId: row.unitId, slotIndex: slotIdx });
+                                }
+                          }
+                          onDragLeave={isInfoRow ? undefined : () => setDragOverSlot(null)}
+                          onDrop={isInfoRow ? undefined : () => handleDrop(row.unitId, slotIdx)}
+                          onClick={isInfoRow ? undefined : () => name && handleRemoveFromSlot(row.unitId, slotIdx)}
+                          title={
+                            isInfoRow
+                              ? "Type note (max 25 chars)"
+                              : name
+                                ? `Click to remove ${name}`
+                                : "Drag personnel here"
+                          }
+                        >
+                          {isInfoRow ? (
+                            <input
+                              type="text"
+                              maxLength={25}
+                              value={name}
+                              className="personnel-schedule-info-input"
+                              placeholder="Type info..."
+                              onChange={(event) =>
+                                updateTextSlotValue(dateKey, row.unitId, slotIdx, event.target.value)
+                              }
+                            />
+                          ) : (
+                            name || "—"
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div className="personnel-schedule-modal-personnel">
+            <h3>Personnel ({effectiveShift})</h3>
+            <button
+              type="button"
+              className="neris-link-button"
+              onClick={() => setShowAllPersonnel((previous) => !previous)}
+            >
+              {showAllPersonnel ? "Hide All Personnel" : "Show All Personnel -> RL"}
+            </button>
+            <ul className="personnel-schedule-modal-personnel-list">
+              {visiblePersonnel.map((p) => (
+                <li
+                  key={p.name}
+                  className={`personnel-schedule-modal-personnel-item ${assigned.has(p.name) ? "personnel-schedule-personnel-assigned" : ""}`}
+                  draggable
+                  onDragStart={() => setDraggedPerson(p.name)}
+                  onDragEnd={() => {
+                    setDraggedPerson(null);
+                    setDragOverSlot(null);
+                  }}
+                >
+                  <span>{p.name}</span>
+                  <small className="personnel-schedule-modal-personnel-qualification">
+                    {getHighestQualificationLabel(p, personnelQualificationOrder) || "No qualification"}
+                  </small>
+                </li>
+              ))}
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -10435,6 +11738,18 @@ function DepartmentDetailsPage() {
   const [selectedMutualAidIds, setSelectedMutualAidIds] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.selectedMutualAidIds) ? (initialDepartmentDraft.selectedMutualAidIds as string[]) : [],
   );
+  const [kellyRotations, setKellyRotations] = useState<KellyRotationEntry[]>(
+    Array.isArray(initialDepartmentDraft.kellyRotations)
+      ? (initialDepartmentDraft.kellyRotations as KellyRotationEntry[])
+      : [],
+  );
+  const [editingKellyRotationIndex, setEditingKellyRotationIndex] = useState<number | null>(null);
+  const [kellyRotationDraft, setKellyRotationDraft] = useState<KellyRotationEntry>({
+    personnel: "",
+    repeatsEveryValue: 14,
+    repeatsEveryUnit: "Shifts",
+    startsOn: "",
+  });
   const [activeCollectionEditor, setActiveCollectionEditor] = useState<DepartmentCollectionKey | null>(null);
   const [isMultiEditMode, setIsMultiEditMode] = useState(false);
   const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
@@ -10644,15 +11959,57 @@ function DepartmentDetailsPage() {
       }),
     [shiftInformationEntries],
   );
+  const sortedPersonnelNames = useMemo(
+    () =>
+      Array.from(
+        new Set(personnelRecords.map((record) => record.name.trim()).filter((name) => name.length > 0)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [personnelRecords],
+  );
+  const addKellyRotation = () => {
+    if (!kellyRotationDraft.personnel.trim() || !kellyRotationDraft.startsOn) {
+      return;
+    }
+    const normalized: KellyRotationEntry = {
+      personnel: kellyRotationDraft.personnel.trim(),
+      repeatsEveryValue: Math.max(1, Math.floor(kellyRotationDraft.repeatsEveryValue || 1)),
+      repeatsEveryUnit: kellyRotationDraft.repeatsEveryUnit,
+      startsOn: kellyRotationDraft.startsOn,
+    };
+    setKellyRotations((previous) =>
+      editingKellyRotationIndex === null
+        ? [...previous.filter((entry) => entry.personnel !== normalized.personnel), normalized]
+        : previous.map((entry, index) => (index === editingKellyRotationIndex ? normalized : entry)),
+    );
+    setKellyRotationDraft({
+      personnel: "",
+      repeatsEveryValue: 14,
+      repeatsEveryUnit: "Shifts",
+      startsOn: "",
+    });
+    setEditingKellyRotationIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
 
   const detailCardOrder: DepartmentCollectionKey[] = [
     "stations",
-    "personnelQualifications",
     "apparatus",
     "shiftInformation",
     "personnel",
   ];
+  const schedulerSettingsCardOrder: DepartmentCollectionKey[] = [
+    "personnelQualifications",
+    "kellyRotation",
+  ];
   const detailCards = detailCardOrder
+    .map((key) =>
+      DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
+    )
+    .filter((definition): definition is DepartmentCollectionDefinition =>
+      Boolean(definition),
+    );
+  const schedulerSettingsCards = schedulerSettingsCardOrder
     .map((key) =>
       DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
     )
@@ -10671,6 +12028,7 @@ function DepartmentDetailsPage() {
   const isPersonnelEditor = activeCollectionEditor === "personnel";
   const isShiftEditor = activeCollectionEditor === "shiftInformation";
   const isQualificationsEditor = activeCollectionEditor === "personnelQualifications";
+  const isKellyRotationEditor = activeCollectionEditor === "kellyRotation";
   const isUserTypeEditor = activeCollectionEditor === "userType";
   const isMutualAidEditor = activeCollectionEditor === "mutualAidDepartments";
 
@@ -10757,6 +12115,9 @@ function DepartmentDetailsPage() {
         setSelectedMutualAidIds(
           Array.isArray(d.selectedMutualAidIds) ? (d.selectedMutualAidIds as string[]) : [],
         );
+        setKellyRotations(
+          Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
+        );
       } catch {
         // Keep localStorage initial values.
       }
@@ -10802,6 +12163,15 @@ function DepartmentDetailsPage() {
     if (collectionKey === "personnelQualifications") {
       setQualificationDraft("");
       setEditingQualificationIndex(null);
+    }
+    if (collectionKey === "kellyRotation") {
+      setEditingKellyRotationIndex(null);
+      setKellyRotationDraft({
+        personnel: "",
+        repeatsEveryValue: 14,
+        repeatsEveryUnit: "Shifts",
+        startsOn: "",
+      });
     }
   };
 
@@ -11004,6 +12374,8 @@ function DepartmentDetailsPage() {
       if (!personnelDraft.name.trim()) {
         return;
       }
+      const previousName =
+        editingIndex !== null ? personnelRecords[editingIndex]?.name.trim() ?? "" : "";
       const normalized = {
         ...personnelDraft,
         name: personnelDraft.name.trim(),
@@ -11014,6 +12386,19 @@ function DepartmentDetailsPage() {
           ? [...previous, normalized]
           : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
       );
+      if (
+        previousName &&
+        normalized.name &&
+        previousName.localeCompare(normalized.name, undefined, { sensitivity: "base" }) !== 0
+      ) {
+        setKellyRotations((previous) =>
+          previous.map((entry) =>
+            entry.personnel.trim() === previousName
+              ? { ...entry, personnel: normalized.name }
+              : entry,
+          ),
+        );
+      }
     } else {
       setPersonnelRecords((previous) =>
         previous.map((entry, index) => {
@@ -11128,6 +12513,7 @@ function DepartmentDetailsPage() {
       personnelQualifications,
       userTypeValues,
       selectedMutualAidIds,
+      kellyRotations,
     };
     window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(payload));
     fetch("/api/department-details", {
@@ -11156,6 +12542,7 @@ function DepartmentDetailsPage() {
     departmentZipCode,
     mainContactName,
     mainContactPhone,
+    kellyRotations,
     personnelQualifications,
     personnelRecords,
     secondaryContactName,
@@ -11283,7 +12670,32 @@ function DepartmentDetailsPage() {
                         ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
                         : definition.key === "personnel"
                           ? `Total Personnel: ${personnelRecords.length}`
+                        : definition.key === "kellyRotation"
+                          ? `Total Kelly Rotations: ${kellyRotations.length}`
                           : `Total Qualifications: ${personnelQualifications.length}`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </article>
+
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Scheduler Settings</h2>
+          </div>
+          <div className="department-collection-grid">
+            {schedulerSettingsCards.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p className="field-hint">
+                  {definition.key === "kellyRotation"
+                    ? `Total Kelly Rotations: ${kellyRotations.length}`
+                    : `Total Qualifications: ${personnelQualifications.length}`}
                 </p>
               </div>
             ))}
@@ -12068,6 +13480,137 @@ function DepartmentDetailsPage() {
                               </td>
                               <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
                                 {index + 1}
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {isKellyRotationEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <select
+                    value={kellyRotationDraft.personnel}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({ ...previous, personnel: event.target.value }))
+                    }
+                  >
+                    <option value="">Select personnel</option>
+                    {sortedPersonnelNames.map((name) => (
+                      <option key={`kelly-person-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    value={kellyRotationDraft.repeatsEveryValue}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({
+                        ...previous,
+                        repeatsEveryValue: Number(event.target.value) || 1,
+                      }))
+                    }
+                    placeholder="Repeats Every"
+                  />
+                  <select
+                    value={kellyRotationDraft.repeatsEveryUnit}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({
+                        ...previous,
+                        repeatsEveryUnit: (event.target.value as KellyRotationUnit) || "Shifts",
+                      }))
+                    }
+                  >
+                    <option value="Days">Days</option>
+                    <option value="Shifts">Shifts</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={kellyRotationDraft.startsOn}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({ ...previous, startsOn: event.target.value }))
+                    }
+                  />
+                  <button type="button" className="primary-button compact-button" onClick={addKellyRotation}>
+                    {editingKellyRotationIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  Click a row to edit.
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Personnel</th>
+                          <th>Repeats Every</th>
+                          <th>Starts On</th>
+                          <th style={{ width: "90px" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {kellyRotations.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="department-apparatus-empty">
+                              No Kelly rotations. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          kellyRotations.map((entry, index) => (
+                            <tr
+                              key={`kelly-rotation-${entry.personnel}-${index}`}
+                              className={`clickable-row ${editingKellyRotationIndex === index ? "clickable-row-selected" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingKellyRotationIndex(index);
+                                setKellyRotationDraft(entry);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingKellyRotationIndex(index);
+                                  setKellyRotationDraft(entry);
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong className="call-number-text">{entry.personnel || "—"}</strong>
+                              </td>
+                              <td>{entry.repeatsEveryValue} {entry.repeatsEveryUnit}</td>
+                              <td>{entry.startsOn || "—"}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setKellyRotations((previous) =>
+                                      previous.filter((_, rotationIndex) => rotationIndex !== index),
+                                    );
+                                    if (editingKellyRotationIndex === index) {
+                                      setEditingKellyRotationIndex(null);
+                                      setKellyRotationDraft({
+                                        personnel: "",
+                                        repeatsEveryValue: 14,
+                                        repeatsEveryUnit: "Shifts",
+                                        startsOn: "",
+                                      });
+                                    }
+                                    setAutoSaveTick((previous) => previous + 1);
+                                    setStatusMessage("Auto-saved.");
+                                  }}
+                                >
+                                  Remove
+                                </button>
                               </td>
                             </tr>
                           ))
@@ -13339,6 +14882,10 @@ function RouteResolver({
 
   if (path === "/admin-functions/department-details") {
     return <DepartmentDetailsPage />;
+  }
+
+  if (path === "/personnel/schedule") {
+    return <PersonnelSchedulePage />;
   }
 
   if (path === "/admin-functions/hydrants") {
