@@ -1290,6 +1290,55 @@ app.get("/api/department-details", (request, response) => {
   response.json({ ok: true, data });
 });
 
+app.post("/api/auth/login", (request, response) => {
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const submittedUsername = String(body.username ?? "").trim().toLowerCase();
+  const submittedPassword = String(body.password ?? "");
+  if (!submittedUsername || !submittedPassword) {
+    response.status(400).json({
+      ok: false,
+      message: "Username and password are required.",
+    });
+    return;
+  }
+
+  const details = readDepartmentDetailsFromFile();
+  const userRecords = Array.isArray(details.userRecords) ? details.userRecords : [];
+  const matchedUser = userRecords.find((candidate) => {
+    if (!candidate || typeof candidate !== "object") {
+      return false;
+    }
+    const candidateUsername = String(candidate.username ?? "").trim().toLowerCase();
+    return candidateUsername === submittedUsername;
+  });
+
+  if (!matchedUser) {
+    response.status(401).json({
+      ok: false,
+      message: "Invalid username or password.",
+    });
+    return;
+  }
+
+  const storedPassword = String(matchedUser.password ?? "");
+  if (!storedPassword || storedPassword !== submittedPassword) {
+    response.status(401).json({
+      ok: false,
+      message: "Invalid username or password.",
+    });
+    return;
+  }
+
+  response.status(200).json({
+    ok: true,
+    user: {
+      name: String(matchedUser.name ?? submittedUsername),
+      userType: String(matchedUser.userType ?? "User"),
+      username: String(matchedUser.username ?? submittedUsername),
+    },
+  });
+});
+
 app.post("/api/department-details", (request, response) => {
   const body = request.body && typeof request.body === "object" ? request.body : {};
   const success = writeDepartmentDetailsToFile(body);

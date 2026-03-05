@@ -47,12 +47,10 @@ import {
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
   DISPATCH_PARSING_PREVIEW,
-  HYDRANT_ADMIN_TABLE_ROWS,
   INCIDENT_CALLS,
   INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
-  SUBMENU_PLACEHOLDER_NOTES,
   getDefaultPathForRole,
   getDisplayCardOptions,
   getIncidentCallDetail,
@@ -68,10 +66,11 @@ import {
   type IncidentStatId,
   type MainMenu,
   type MainMenuId,
-  type NavSubmenu,
   type Tone,
   type UserRole,
 } from "./appData";
+import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
+import { HydrantsAdminPage } from "./HydrantsAdminPage";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
@@ -85,6 +84,40 @@ import {
   type NerisSectionId,
   type NerisValueOption,
 } from "./nerisMetadata";
+import {
+  loadScheduleAssignments,
+  loadScheduleOvertimeSplit,
+  parseAssignedNames,
+  saveScheduleAssignments,
+  saveScheduleOvertimeSplit,
+  type ScheduleAssignments,
+  type ScheduleOvertimeSplit,
+  serializeAssignedNames,
+  toScheduleStorageDateKey,
+} from "./scheduleStorage";
+import {
+  buildQualificationRankMap,
+  comparePersonnelByQualifications,
+  formatSchedulePersonnelDisplayName,
+  getBestQualificationRankForPerson,
+  getDatesForMonth,
+  getHighestQualificationLabel,
+  getRecurrenceIntervalDays,
+  getShiftStartOffsetDays,
+  reorderAssignedByRequirementCoverage,
+  requirementsSatisfiedByAssignedPersonnel,
+  toDateKey,
+} from "./scheduleUtils";
+import {
+  getSlotCountForApparatus,
+  isOverrideSupportPersonnelRow,
+  isSupportPersonnelRow,
+  loadPersonnelScheduleData,
+  personnelMatchesShift,
+  type PersonnelScheduleData,
+  type PersonnelScheduleRow,
+} from "./scheduleDomain";
+import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -94,7 +127,7 @@ interface SessionState {
 }
 
 interface AuthPageProps {
-  onLogin: (username: string, unit: string, role: UserRole) => void;
+  onLogin: (department: string, username: string, password: string) => Promise<string | null>;
 }
 
 interface ShellLayoutProps {
@@ -124,10 +157,6 @@ interface MainMenuLandingPageProps {
   menu: MainMenu;
   role: UserRole;
   submenuVisibility: SubmenuVisibilityMap;
-}
-
-interface SubmenuPlaceholderPageProps {
-  submenu: NavSubmenu;
 }
 
 interface IncidentsListPageProps {
@@ -237,8 +266,12 @@ interface NerisExportRecord {
 type DepartmentCollectionKey =
   | "stations"
   | "apparatus"
+  | "schedulerApparatus"
   | "shiftInformation"
+  | "additionalFields"
+  | "overtimeSetup"
   | "personnel"
+  | "schedulerPersonnel"
   | "personnelQualifications"
   | "kellyRotation"
   | "mutualAidDepartments"
@@ -278,6 +311,13 @@ interface DepartmentPersonnelRecord {
   qualifications: string[];
 }
 
+interface DepartmentUserRecord {
+  name: string;
+  userType: string;
+  username: string;
+  password: string;
+}
+
 interface DepartmentStationRecord {
   name: string;
   address: string;
@@ -289,10 +329,29 @@ interface DepartmentStationRecord {
 
 interface DepartmentApparatusRecord {
   unitId: string;
+  commonName: string;
   unitType: string;
+  make: string;
+  model: string;
+  year: string;
+}
+
+interface SchedulerApparatusRecord {
+  apparatus: string;
   minimumPersonnel: number;
+  maximumPersonnel: number;
   personnelRequirements: string[];
   station: string;
+}
+
+type AdditionalFieldValueMode = "text" | "personnel";
+
+interface AdditionalFieldRecord {
+  id: string;
+  fieldName: string;
+  numberOfSlots: number;
+  valueMode: AdditionalFieldValueMode;
+  personnelOverride: boolean;
 }
 
 interface DepartmentNerisEntityOption {
@@ -319,7 +378,6 @@ const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
 const DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY = "fire-ultimate-department-logo-data-url";
 const DEPARTMENT_DETAILS_STORAGE_KEY = "fire-ultimate-department-details";
-const SCHEDULE_ASSIGNMENTS_STORAGE_KEY = "fire-ultimate-schedule-assignments";
 
 const LEGACY_SESSION_STORAGE_KEYS = ["stationboss-mimic-session"] as const;
 const LEGACY_DISPLAY_CARD_STORAGE_KEYS = ["stationboss-mimic-display-cards"] as const;
@@ -422,21 +480,167 @@ const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   lastUpdated: 140,
 };
 const NERIS_QUEUE_FIELD_ORDER: IncidentCallFieldId[] = [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
-type ApparatusGridFieldId = "unitType" | "minPersonnel" | "personnelRequirements" | "station";
+type ApparatusGridFieldId = "commonName" | "unitType" | "make" | "model" | "year";
 const APPARATUS_GRID_FIELD_ORDER: ApparatusGridFieldId[] = [
+  "commonName",
   "unitType",
-  "minPersonnel",
-  "personnelRequirements",
-  "station",
+  "make",
+  "model",
+  "year",
 ];
 const MIN_APPARATUS_FIELD_WIDTH = 70;
 const MAX_APPARATUS_FIELD_WIDTH = 320;
 const DEFAULT_APPARATUS_FIELD_WIDTHS: Record<ApparatusGridFieldId, number> = {
+  commonName: 150,
   unitType: 120,
-  minPersonnel: 90,
-  personnelRequirements: 160,
-  station: 110,
+  make: 130,
+  model: 130,
+  year: 90,
 };
+type SchedulerApparatusGridFieldId =
+  | "minPersonnel"
+  | "maxPersonnel"
+  | "personnelRequirements"
+  | "station";
+const SCHEDULER_APPARATUS_GRID_FIELD_ORDER: SchedulerApparatusGridFieldId[] = [
+  "minPersonnel",
+  "maxPersonnel",
+  "personnelRequirements",
+  "station",
+];
+const MIN_SCHEDULER_APPARATUS_FIELD_WIDTH = 70;
+const MAX_SCHEDULER_APPARATUS_FIELD_WIDTH = 360;
+const DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS: Record<SchedulerApparatusGridFieldId, number> = {
+  minPersonnel: 110,
+  maxPersonnel: 110,
+  personnelRequirements: 210,
+  station: 120,
+};
+type SchedulerPersonnelGridFieldId = "shift" | "apparatusAssignment" | "station" | "qualifications";
+const SCHEDULER_PERSONNEL_GRID_FIELD_ORDER: SchedulerPersonnelGridFieldId[] = [
+  "shift",
+  "apparatusAssignment",
+  "station",
+  "qualifications",
+];
+const MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH = 80;
+const MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH = 360;
+const DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS: Record<SchedulerPersonnelGridFieldId, number> = {
+  shift: 120,
+  apparatusAssignment: 160,
+  station: 120,
+  qualifications: 210,
+};
+const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
+  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true },
+];
+
+function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
+  if (!Array.isArray(raw)) {
+    return [...DEFAULT_ADDITIONAL_FIELDS];
+  }
+  const parsed = raw
+    .map((entry, index): AdditionalFieldRecord | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const id = String((entry as { id?: unknown }).id ?? `support-custom-${index + 1}`).trim();
+      const fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
+      const valueModeRaw = String((entry as { valueMode?: unknown }).valueMode ?? "personnel").trim().toLowerCase();
+      const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
+      const numberOfSlots = Math.max(1, Math.floor(Number((entry as { numberOfSlots?: unknown }).numberOfSlots ?? 1) || 1));
+      const personnelOverride = Boolean((entry as { personnelOverride?: unknown }).personnelOverride);
+      if (!fieldName) return null;
+      return { id, fieldName, numberOfSlots, valueMode, personnelOverride };
+    })
+    .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
+
+  const hasKelly = parsed.some((entry) => entry.id === "support-kelly-day");
+  if (!hasKelly) {
+    parsed.push(DEFAULT_ADDITIONAL_FIELDS.find((entry) => entry.id === "support-kelly-day")!);
+  }
+  return parsed.length > 0 ? parsed : [...DEFAULT_ADDITIONAL_FIELDS];
+}
+
+function toAdditionalFieldId(fieldName: string): string {
+  const normalized = fieldName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized ? `support-${normalized}` : "support-custom";
+}
+const USER_UI_PREFERENCES_FALLBACK_KEY = "__default__";
+
+function normalizeApparatusFieldWidths(
+  raw: unknown,
+): Record<ApparatusGridFieldId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_APPARATUS_FIELD_WIDTHS };
+  APPARATUS_GRID_FIELD_ORDER.forEach((fieldId) => {
+    const candidate = Number(source[fieldId]);
+    if (Number.isFinite(candidate)) {
+      next[fieldId] = Math.min(
+        MAX_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_APPARATUS_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeSchedulerApparatusFieldWidths(
+  raw: unknown,
+): Record<SchedulerApparatusGridFieldId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS };
+  SCHEDULER_APPARATUS_GRID_FIELD_ORDER.forEach((fieldId) => {
+    const candidate = Number(source[fieldId]);
+    if (Number.isFinite(candidate)) {
+      next[fieldId] = Math.min(
+        MAX_SCHEDULER_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_APPARATUS_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeSchedulerPersonnelFieldWidths(
+  raw: unknown,
+): Record<SchedulerPersonnelGridFieldId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS };
+  SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.forEach((fieldId) => {
+    const candidate = Number(source[fieldId]);
+    if (Number.isFinite(candidate)) {
+      next[fieldId] = Math.min(
+        MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeApparatusFieldOrder(raw: unknown): ApparatusGridFieldId[] {
+  if (!Array.isArray(raw)) {
+    return [...APPARATUS_GRID_FIELD_ORDER];
+  }
+  const parsed = raw.filter((value): value is ApparatusGridFieldId =>
+    APPARATUS_GRID_FIELD_ORDER.includes(value as ApparatusGridFieldId),
+  );
+  const unique = Array.from(new Set(parsed));
+  if (unique.length !== APPARATUS_GRID_FIELD_ORDER.length) {
+    return [...APPARATUS_GRID_FIELD_ORDER];
+  }
+  return unique;
+}
 const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   {
     key: "stations",
@@ -458,8 +662,32 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   },
   {
     key: "personnel",
+    label: "Users",
+    editButtonLabel: "Edit Users",
+    helperText: "",
+  },
+  {
+    key: "schedulerPersonnel",
     label: "Personnel",
     editButtonLabel: "Edit Personnel",
+    helperText: "",
+  },
+  {
+    key: "schedulerApparatus",
+    label: "Apparatus",
+    editButtonLabel: "Edit Apparatus",
+    helperText: "",
+  },
+  {
+    key: "additionalFields",
+    label: "Additional Fields",
+    editButtonLabel: "Edit Additional Fields",
+    helperText: "",
+  },
+  {
+    key: "overtimeSetup",
+    label: "Overtime Setup",
+    editButtonLabel: "Edit Overtime Setup",
     helperText: "",
   },
   {
@@ -524,8 +752,87 @@ function readDepartmentDetailsDraft(): Record<string, unknown> {
 
 function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
   const d = raw && typeof raw === "object" ? raw : {};
+  const legacyApparatusRaw = d.apparatusRecords;
+  const legacyMaxByUnitType = (unitTypeRaw: unknown): number => {
+    const t = String(unitTypeRaw ?? "").toUpperCase();
+    if (t.includes("AMB")) return 3;
+    if (t.includes("ENGINE")) return 4;
+    if (t.includes("LADDER") || t.includes("TOWER")) return 2;
+    if (t.includes("CHIEF") || t.includes("COMMAND") || t.includes("CAR")) return 1;
+    return 2;
+  };
+  const legacyApparatusRecords = Array.isArray(legacyApparatusRaw)
+    ? legacyApparatusRaw
+        .map((entry: Record<string, unknown>) => ({
+          unitId: String(entry?.unitId ?? "").trim(),
+          commonName: String(entry?.commonName ?? entry?.unitId ?? "").trim(),
+          unitType: String(entry?.unitType ?? "").trim(),
+          make: String(entry?.make ?? "").trim(),
+          model: String(entry?.model ?? "").trim(),
+          year: String(entry?.year ?? "").trim(),
+          minimumPersonnel: Number(entry?.minimumPersonnel ?? 0) || 0,
+          personnelRequirements: Array.isArray(entry?.personnelRequirements)
+            ? (entry.personnelRequirements as string[]).filter((q): q is string => typeof q === "string")
+            : [],
+          station: String(entry?.station ?? "").trim(),
+        }))
+        .filter((entry) => entry.unitId.length > 0 || entry.commonName.length > 0)
+    : [];
+  const masterApparatusRaw = d.masterApparatusRecords;
+  const masterApparatusRecords = Array.isArray(masterApparatusRaw)
+    ? masterApparatusRaw
+        .map((entry: Record<string, unknown>) => ({
+          unitId: String(entry?.unitId ?? "").trim(),
+          commonName: String(entry?.commonName ?? "").trim(),
+          unitType: String(entry?.unitType ?? "").trim(),
+          make: String(entry?.make ?? "").trim(),
+          model: String(entry?.model ?? "").trim(),
+          year: String(entry?.year ?? "").trim(),
+        }))
+        .filter((entry) => entry.unitId.length > 0 || entry.commonName.length > 0)
+    : legacyApparatusRecords.map((entry) => ({
+        unitId: entry.unitId,
+        commonName: entry.commonName,
+        unitType: entry.unitType,
+        make: entry.make,
+        model: entry.model,
+        year: entry.year,
+      }));
+  const schedulerApparatusRaw = d.schedulerApparatusRecords;
+  const schedulerApparatusRecords = Array.isArray(schedulerApparatusRaw)
+    ? schedulerApparatusRaw
+        .map((entry: Record<string, unknown>) => {
+          const minimumPersonnel = Number(entry?.minimumPersonnel ?? 0) || 0;
+          const maximumCandidate =
+            Number(entry?.maximumPersonnel ?? entry?.maxPersonnel ?? minimumPersonnel) || 0;
+          return {
+            apparatus: String(entry?.apparatus ?? "").trim(),
+            minimumPersonnel,
+            maximumPersonnel: Math.max(minimumPersonnel, maximumCandidate || 2),
+            personnelRequirements: Array.isArray(entry?.personnelRequirements)
+              ? (entry.personnelRequirements as string[]).filter((q): q is string => typeof q === "string")
+              : [],
+            station: String(entry?.station ?? "").trim(),
+          };
+        })
+        .filter((entry) => entry.apparatus.length > 0)
+    : legacyApparatusRecords.map((entry) => {
+        const minimumPersonnel = entry.minimumPersonnel;
+        const maximumPersonnel = Math.max(
+          minimumPersonnel,
+          legacyMaxByUnitType(entry.unitType),
+        );
+        return {
+          apparatus: entry.commonName || entry.unitId,
+          minimumPersonnel,
+          maximumPersonnel,
+          personnelRequirements: entry.personnelRequirements,
+          station: entry.station,
+        };
+      });
+  const additionalFields = normalizeAdditionalFields(d.additionalFields);
   const personnelRaw = d.personnelRecords;
-  const personnelRecords = Array.isArray(personnelRaw)
+  const legacySchedulerRecords = Array.isArray(personnelRaw)
     ? personnelRaw.map((entry: Record<string, unknown>) => ({
         name: String(entry?.name ?? ""),
         shift: String(entry?.shift ?? ""),
@@ -537,6 +844,59 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
           : [],
       }))
     : [];
+  const userRecordsRaw = d.userRecords;
+  const userRecords = Array.isArray(userRecordsRaw)
+    ? userRecordsRaw
+        .map((entry: Record<string, unknown>) => ({
+          name: String(entry?.name ?? "").trim(),
+          userType: String(entry?.userType ?? "").trim(),
+          username: String(entry?.username ?? "").trim(),
+          password: String(entry?.password ?? ""),
+        }))
+        .filter((entry) => entry.name.length > 0)
+    : legacySchedulerRecords
+        .map((entry) => ({
+          name: String(entry.name ?? "").trim(),
+          userType: String(entry.userType ?? "").trim(),
+          username: "",
+          password: "",
+        }))
+        .filter((entry) => entry.name.length > 0);
+  const schedulerRaw = d.schedulerPersonnelRecords;
+  const schedulerPersonnelSeed = Array.isArray(schedulerRaw)
+    ? schedulerRaw.map((entry: Record<string, unknown>) => ({
+        name: String(entry?.name ?? ""),
+        shift: String(entry?.shift ?? ""),
+        apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
+        station: String(entry?.station ?? ""),
+        userType: String(entry?.userType ?? ""),
+        qualifications: Array.isArray(entry?.qualifications)
+          ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+          : [],
+      }))
+    : legacySchedulerRecords;
+  const schedulerByName = new Map(
+    schedulerPersonnelSeed
+      .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+      .filter(([name]) => name.length > 0),
+  );
+  const schedulerPersonnelRecords = userRecords
+    .map((user) => {
+      const normalizedName = user.name.trim();
+      const match = schedulerByName.get(normalizedName.toLocaleLowerCase());
+      if (match) {
+        return { ...match, name: normalizedName, userType: user.userType };
+      }
+      return {
+        name: normalizedName,
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: user.userType,
+        qualifications: [],
+      } satisfies DepartmentPersonnelRecord;
+    })
+    .filter((entry) => entry.name.length > 0);
   const kellyRaw = d.kellyRotations;
   const kellyRotations = Array.isArray(kellyRaw)
     ? kellyRaw
@@ -555,7 +915,25 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
         })
         .filter((entry): entry is KellyRotationEntry => Boolean(entry))
     : [];
-  return { ...d, personnelRecords, kellyRotations };
+  const schedulerEnabled =
+    typeof d.schedulerEnabled === "boolean"
+      ? d.schedulerEnabled
+      : schedulerPersonnelRecords.length > 0 || kellyRotations.length > 0;
+  const standardOvertimeSlot = Math.max(
+    1,
+    Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
+  );
+  return {
+    ...d,
+    masterApparatusRecords,
+    schedulerApparatusRecords,
+    userRecords,
+    schedulerPersonnelRecords,
+    additionalFields,
+    standardOvertimeSlot,
+    schedulerEnabled,
+    kellyRotations,
+  };
 }
 
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
@@ -1703,23 +2081,32 @@ function getNerisQueueFieldValue(
   return getCallFieldValue(call, fieldId);
 }
 
-function AuthPage({ onLogin }: AuthPageProps) {
-  const [username, setUsername] = useState("");
-  const [unit, setUnit] = useState("");
-  const [securePin, setSecurePin] = useState("");
-  const [role, setRole] = useState<UserRole>("user");
-  const [errorMessage, setErrorMessage] = useState("");
+function mapUserTypeToRole(userType: string): UserRole {
+  return userType.trim().toLowerCase().includes("admin") ? "admin" : "user";
+}
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+function AuthPage({ onLogin }: AuthPageProps) {
+  const [department, setDepartment] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!username.trim() || !unit.trim() || !securePin.trim()) {
-      setErrorMessage("Please provide fire department, username, and password.");
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage("Please provide username and password.");
       return;
     }
 
     setErrorMessage("");
-    onLogin(username.trim().toUpperCase(), unit.trim(), role);
+    setIsSubmitting(true);
+    const loginError = await onLogin(department.trim(), username.trim(), password);
+    if (loginError) {
+      setErrorMessage(loginError);
+    }
+    setIsSubmitting(false);
   };
 
   return (
@@ -1731,12 +2118,12 @@ function AuthPage({ onLogin }: AuthPageProps) {
         </div>
         <h1>Incident-focused workspace with mapping and admin controls</h1>
         <p>
-          This phase adds deeper incident customization, parsing setup previews,
-          and an updated incident detail page layout.
+          Sign in with credentials configured in Admin Functions -&gt; Department
+          Details -&gt; Users.
         </p>
         <ul className="brand-feature-list">
-          <li>Simple login with Admin and User roles</li>
-          <li>User role restricted only from Admin Functions</li>
+          <li>Only saved users can sign in</li>
+          <li>Access level is assigned from each user type</li>
           <li>Settings menu includes profile, display, and logout actions</li>
         </ul>
       </section>
@@ -1747,70 +2134,47 @@ function AuthPage({ onLogin }: AuthPageProps) {
             <ShieldCheck size={24} />
             <div>
               <h2>Sign in to Fire Ultimate</h2>
-              <p>Simple login mode remains active for this prototype.</p>
+              <p>Credentials are validated against saved Users.</p>
             </div>
           </div>
 
-          <label htmlFor="username">Fire Department</label>
+          <label htmlFor="department">Fire Department (optional)</label>
+          <input
+            id="department"
+            name="department"
+            type="text"
+            autoComplete="organization"
+            placeholder="CIFPD"
+            value={department}
+            onChange={(event) => setDepartment(event.target.value)}
+          />
+
+          <label htmlFor="username">Username</label>
           <input
             id="username"
             name="username"
             type="text"
-            autoComplete="organization"
-            placeholder="CIFPD"
+            autoComplete="username"
+            placeholder="chief.jones"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
           />
 
-          <label htmlFor="unit">Username</label>
+          <label htmlFor="password">Password</label>
           <input
-            id="unit"
-            name="unit"
-            type="text"
-            autoComplete="username"
-            placeholder="chief.jones"
-            value={unit}
-            onChange={(event) => setUnit(event.target.value)}
-          />
-
-          <label htmlFor="pin">Password</label>
-          <input
-            id="pin"
-            name="pin"
+            id="password"
+            name="password"
             type="password"
             autoComplete="current-password"
             placeholder="••••••••"
-            value={securePin}
-            onChange={(event) => setSecurePin(event.target.value)}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
-
-          <label>Login Type</label>
-          <div className="role-selector" role="radiogroup" aria-label="Login role">
-            <button
-              type="button"
-              className={`role-choice ${role === "user" ? "active" : ""}`}
-              onClick={() => setRole("user")}
-              aria-pressed={role === "user"}
-            >
-              User
-            </button>
-            <button
-              type="button"
-              className={`role-choice ${role === "admin" ? "active" : ""}`}
-              onClick={() => setRole("admin")}
-              aria-pressed={role === "admin"}
-            >
-              Admin
-            </button>
-          </div>
-          <p className="role-hint">
-            Users can access all modules except Admin Functions.
-          </p>
 
           {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
 
-          <button type="submit" className="primary-button">
-            Login
+          <button type="submit" className="primary-button" disabled={isSubmitting}>
+            {isSubmitting ? "Signing In..." : "Login"}
           </button>
         </form>
       </section>
@@ -1921,7 +2285,6 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
       window.removeEventListener("department-logo-updated", handleDepartmentLogoUpdate);
     };
   }, []);
-
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const activeResize = activeSidebarResize.current;
@@ -2933,379 +3296,60 @@ function MainMenuLandingPage({
   );
 }
 
-function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
-  return (
-    <section className="page-section">
-      <header className="page-header">
-        <div>
-          <h1>{submenu.label}</h1>
-          <p>{submenu.summary}</p>
-        </div>
-      </header>
-
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Module Status</h2>
-          </div>
-          <p className="panel-description">
-            {submenu.isBuilt
-              ? "This submenu includes an initial UI implementation."
-              : "This submenu route is connected with a scaffold placeholder and is ready for detailed build-out."}
-          </p>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Next Build Steps</h2>
-          </div>
-          <ul className="activity-list">
-            {SUBMENU_PLACEHOLDER_NOTES.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </article>
-      </section>
-    </section>
-  );
-}
-
-interface PersonnelScheduleRow {
-  id: string;
-  label: string;
-  rowType: "apparatus" | "support";
-  unitId: string;
-  unitType: string;
-  slotCount: number;
-  minimumPersonnel: number;
-  requiredQualifications: string[];
-  stationName?: string;
-}
-
-const PERSONNEL_SCHEDULE_APPARATUS_ORDER = [
-  "Car 6",
-  "Ambulance 1",
-  "Engine 4",
-  "Ambulance 2",
-  "Engine 5",
-  "Engine 6",
-  "Tower 1",
-] as const;
-
-const PERSONNEL_SCHEDULE_SUPPORT_ROWS: ReadonlyArray<{
-  id: string;
-  label: string;
-  slotCount: number;
-}> = [
-  { id: "support-info", label: "Info", slotCount: 4 },
-  { id: "support-chief-on-call", label: "Chief on Call", slotCount: 1 },
-  { id: "support-vacation", label: "Vacation", slotCount: 2 },
-  { id: "support-kelly-day", label: "Kelly Day", slotCount: 2 },
-  { id: "support-injured", label: "Injured", slotCount: 2 },
-  { id: "support-sick", label: "Sick", slotCount: 2 },
-  { id: "support-other", label: "Other", slotCount: 2 },
-  { id: "support-trade", label: "Trade", slotCount: 8 },
-];
-
-interface PersonnelScheduleData {
-  stations: DepartmentStationRecord[];
-  apparatus: DepartmentApparatusRecord[];
-  personnel: DepartmentPersonnelRecord[];
-  personnelQualifications: string[];
-  kellyRotations: KellyRotationEntry[];
-  shiftEntries: Array<{
-    shiftType: string;
-    shiftDuration: number;
-    recurrence: string;
-    recurrenceCustomValue?: string;
-  }>;
-}
-
-function loadPersonnelScheduleData(): PersonnelScheduleData {
-  const raw = readDepartmentDetailsDraft();
-  const d = raw && typeof raw === "object" ? raw : {};
-  const personnelRaw = d.personnelRecords;
-  const personnel = Array.isArray(personnelRaw)
-    ? personnelRaw.map((entry: Record<string, unknown>) => ({
-        name: String(entry?.name ?? ""),
-        shift: String(entry?.shift ?? ""),
-        apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
-        station: String(entry?.station ?? ""),
-        userType: String(entry?.userType ?? ""),
-        qualifications: Array.isArray(entry?.qualifications)
-          ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
-          : [],
-      }))
-    : [];
-  const stations = Array.isArray(d.stationRecords)
-    ? (d.stationRecords as DepartmentStationRecord[])
-    : [];
-  const apparatus = Array.isArray(d.apparatusRecords)
-    ? (d.apparatusRecords as DepartmentApparatusRecord[])
-    : [];
-  const personnelQualifications = Array.isArray(d.personnelQualifications)
-    ? (d.personnelQualifications as string[])
-    : [];
-  const kellyRotations = Array.isArray(d.kellyRotations)
-    ? (d.kellyRotations as KellyRotationEntry[])
-    : [];
-  const shiftEntries = Array.isArray(d.shiftInformationEntries)
-    ? (d.shiftInformationEntries as PersonnelScheduleData["shiftEntries"])
-    : [];
-  return { stations, apparatus, personnel, personnelQualifications, kellyRotations, shiftEntries };
-}
-
-function getSlotCountForApparatus(unitType: string): number {
-  const t = (unitType ?? "").toUpperCase();
-  if (t.includes("AMB")) return 3;
-  if (t.includes("ENGINE")) return 4;
-  if (t.includes("LADDER") || t.includes("TOWER")) return 2;
-  if (t.includes("CHIEF") || t.includes("COMMAND") || t.includes("CAR")) return 1;
-  return 2;
-}
-
-function personnelMatchesShift(personnel: DepartmentPersonnelRecord, shiftType: string): boolean {
-  return personnel.shift?.includes(shiftType) ?? false;
-}
-
-type ScheduleAssignments = Record<string, Record<string, string[]>>;
-
-function loadScheduleAssignments(): ScheduleAssignments {
-  if (typeof window === "undefined") return {};
-  try {
-    const raw = window.localStorage.getItem(SCHEDULE_ASSIGNMENTS_STORAGE_KEY);
-    if (!raw) return {};
-    const parsed = JSON.parse(raw) as ScheduleAssignments;
-    return parsed && typeof parsed === "object" ? parsed : {};
-  } catch {
-    return {};
-  }
-}
-
-function saveScheduleAssignments(data: ScheduleAssignments): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(SCHEDULE_ASSIGNMENTS_STORAGE_KEY, JSON.stringify(data));
-}
-
-function toDateKey(d: Date): string {
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-}
-
-function toScheduleStorageDateKey(shiftType: string, dateKey: string): string {
-  return `${shiftType}::${dateKey}`;
-}
-
-function getDatesForMonth(year: number, month: number): Date[] {
-  const dates: Date[] = [];
-  const daysInMonth = new Date(year, month + 1, 0).getDate();
-  for (let d = 1; d <= daysInMonth; d++) {
-    dates.push(new Date(year, month, d));
-  }
-  return dates;
-}
-
-function getShiftStartOffsetDays(shiftType: string): number {
-  const normalized = shiftType.trim().toUpperCase();
-  if (normalized.startsWith("C SHIFT")) return 0;
-  if (normalized.startsWith("A SHIFT")) return 1;
-  if (normalized.startsWith("B SHIFT")) return 2;
-  return 0;
-}
-
-function getRecurrenceIntervalDays(entry: PersonnelScheduleData["shiftEntries"][number] | undefined): number {
-  const recurrence = (entry?.recurrence ?? "").trim().toLowerCase();
-  if (!recurrence || recurrence === "daily") return 1;
-  if (recurrence.includes("every other")) return 2;
-  if (recurrence.includes("every 2")) return 2;
-  if (recurrence.includes("every 3")) return 3;
-  if (recurrence.includes("custom")) {
-    const raw = Number((entry?.recurrenceCustomValue ?? "").trim());
-    return Number.isFinite(raw) && raw > 0 ? raw : 1;
-  }
-  return 1;
-}
-
-function comparePersonnelByQualifications(
-  a: DepartmentPersonnelRecord,
-  b: DepartmentPersonnelRecord,
-  qualificationOrder: string[],
-): number {
-  const rankFor = (person: DepartmentPersonnelRecord): number => {
-    if (!Array.isArray(person.qualifications) || person.qualifications.length === 0) return 999;
-    const ranks = person.qualifications
-      .map((q) => qualificationOrder.findIndex((entry) => entry === q))
-      .filter((rank) => rank >= 0);
-    if (ranks.length === 0) return 999;
-    return Math.min(...ranks);
-  };
-  const aRank = rankFor(a);
-  const bRank = rankFor(b);
-  if (aRank !== bRank) return aRank - bRank;
-  if (a.qualifications.length !== b.qualifications.length) {
-    return b.qualifications.length - a.qualifications.length;
-  }
-  return a.name.localeCompare(b.name);
-}
-
-function getBestQualificationRankForPerson(
-  person: DepartmentPersonnelRecord | undefined,
-  qualificationRankMap: Map<string, number>,
-): number {
-  if (!person || !Array.isArray(person.qualifications) || person.qualifications.length === 0) {
-    return Number.POSITIVE_INFINITY;
-  }
-  const ranks = person.qualifications
-    .map((qualification) => qualificationRankMap.get(qualification))
-    .filter((rank): rank is number => rank !== undefined);
-  return ranks.length > 0 ? Math.min(...ranks) : Number.POSITIVE_INFINITY;
-}
-
-function formatSchedulePersonnelDisplayName(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return "";
-  const parts = trimmed.split(/\s+/).filter(Boolean);
-  const initial = parts[0]?.charAt(0).toUpperCase() ?? "";
-  const lastName = parts.length > 1 ? parts[parts.length - 1]! : parts[0]!;
-  return initial ? `${initial}. ${lastName}` : lastName;
-}
-
-function buildQualificationRankMap(qualificationOrder: string[]): Map<string, number> {
-  const map = new Map<string, number>();
-  qualificationOrder.forEach((qualification, index) => {
-    map.set(qualification, index);
-  });
-  return map;
-}
-
-function getHighestQualificationLabel(
-  person: DepartmentPersonnelRecord,
-  qualificationOrder: string[],
-): string {
-  const rankMap = buildQualificationRankMap(qualificationOrder);
-  let bestRank = Number.POSITIVE_INFINITY;
-  let bestLabel = "";
-  person.qualifications.forEach((qualification) => {
-    const rank = rankMap.get(qualification);
-    if (rank !== undefined && rank < bestRank) {
-      bestRank = rank;
-      bestLabel = qualification;
-    }
-  });
-  return bestLabel || person.qualifications[0] || "";
-}
-
-function requirementsSatisfiedByAssignedPersonnel(
-  requiredQualifications: string[],
-  assignedNames: string[],
-  personnelByName: Map<string, DepartmentPersonnelRecord>,
-  qualificationRankMap: Map<string, number>,
-): boolean {
-  const requirements = requiredQualifications.filter(Boolean);
-  if (requirements.length === 0) {
-    return true;
-  }
-  const assigned = assignedNames
-    .map((name) => personnelByName.get(name))
-    .filter((entry): entry is DepartmentPersonnelRecord => Boolean(entry));
-  if (assigned.length < requirements.length) {
-    return false;
-  }
-  const requirementRanks = requirements.map((qualification) =>
-    qualificationRankMap.get(qualification) ?? Number.POSITIVE_INFINITY,
-  );
-  const assignedBestRanks = assigned.map((person) => {
-    const ranks = person.qualifications
-      .map((qualification) => qualificationRankMap.get(qualification))
-      .filter((rank): rank is number => rank !== undefined);
-    return ranks.length > 0 ? Math.min(...ranks) : Number.POSITIVE_INFINITY;
-  });
-
-  const usedAssigned = new Set<number>();
-  const sortedRequirementIndices = requirementRanks
-    .map((rank, index) => ({ rank, index }))
-    .sort((a, b) => a.rank - b.rank)
-    .map((entry) => entry.index);
-
-  for (const reqIndex of sortedRequirementIndices) {
-    const reqRank = requirementRanks[reqIndex]!;
-    let matchIndex = -1;
-    let bestSlack = Number.POSITIVE_INFINITY;
-    assignedBestRanks.forEach((personRank, personIndex) => {
-      if (usedAssigned.has(personIndex)) return;
-      if (personRank <= reqRank) {
-        const slack = reqRank - personRank;
-        if (slack < bestSlack) {
-          bestSlack = slack;
-          matchIndex = personIndex;
-        }
-      }
-    });
-    if (matchIndex < 0) {
-      return false;
-    }
-    usedAssigned.add(matchIndex);
-  }
-  return true;
-}
-
-function reorderAssignedByRequirementCoverage(
-  requiredQualifications: string[],
-  minimumPersonnel: number,
-  assignedNames: string[],
-  personnelByName: Map<string, DepartmentPersonnelRecord>,
-  qualificationRankMap: Map<string, number>,
-): string[] {
-  const requirements = requiredQualifications.filter(Boolean);
-  if (requirements.length === 0) return assignedNames;
-  const remainingNames = [...assignedNames];
-  const selected: string[] = [];
-  const requirementRanks = requirements
-    .map((qualification) => qualificationRankMap.get(qualification) ?? Number.POSITIVE_INFINITY)
-    .sort((a, b) => a - b);
-  requirementRanks.forEach((reqRank) => {
-    let bestIndex = -1;
-    let bestSlack = Number.POSITIVE_INFINITY;
-    remainingNames.forEach((name, index) => {
-      const person = personnelByName.get(name);
-      if (!person) return;
-      const bestRank = person.qualifications
-        .map((qualification) => qualificationRankMap.get(qualification))
-        .filter((rank): rank is number => rank !== undefined)
-        .reduce((best, rank) => Math.min(best, rank), Number.POSITIVE_INFINITY);
-      if (bestRank <= reqRank) {
-        const slack = reqRank - bestRank;
-        if (slack < bestSlack) {
-          bestSlack = slack;
-          bestIndex = index;
-        }
-      }
-    });
-    if (bestIndex >= 0) {
-      selected.push(remainingNames[bestIndex]!);
-      remainingNames.splice(bestIndex, 1);
-    }
-  });
-  const requiredSlots = Math.max(minimumPersonnel, requirements.length);
-  const inRequired = selected.slice(0, requiredSlots);
-  while (inRequired.length < requiredSlots) {
-    inRequired.push("");
-  }
-  return [...inRequired, ...remainingNames];
-}
-
 function PersonnelSchedulePage() {
-  const [departmentData, setDepartmentData] = useState<PersonnelScheduleData>(() => loadPersonnelScheduleData());
+  const [departmentData, setDepartmentData] = useState<PersonnelScheduleData>(() =>
+    loadPersonnelScheduleData({
+      readDepartmentDetailsDraft,
+      normalizeDepartmentDraft,
+      normalizeAdditionalFields,
+    }),
+  );
   const [selectedShift, setSelectedShift] = useState<string>("");
   const [highlightPersonnelName, setHighlightPersonnelName] = useState("");
   const [viewDate, setViewDate] = useState(() => new Date());
   const [isLoading, setIsLoading] = useState(true);
   const [scheduleAssignments, setScheduleAssignments] = useState<ScheduleAssignments>(() => loadScheduleAssignments());
+  const [scheduleOvertimeSplit, setScheduleOvertimeSplit] = useState<ScheduleOvertimeSplit>(() =>
+    loadScheduleOvertimeSplit(),
+  );
+  const [scheduleUndoStack, setScheduleUndoStack] = useState<
+    Array<{ assignments: ScheduleAssignments; overtimeSplit: ScheduleOvertimeSplit; message: string }>
+  >([]);
+  const [lastScheduleAction, setLastScheduleAction] = useState("No changes yet.");
   const [editDayBlock, setEditDayBlock] = useState<{ date: Date; dateKey: string } | null>(null);
   const [activeInlineSlot, setActiveInlineSlot] = useState<{
     dateKey: string;
     unitId: string;
     slotIndex: number;
   } | null>(null);
+  const pushUndoSnapshot = useCallback((message: string) => {
+    setScheduleUndoStack((previous) => [
+      ...previous.slice(-49),
+      {
+        assignments: JSON.parse(JSON.stringify(scheduleAssignments)) as ScheduleAssignments,
+        overtimeSplit: JSON.parse(JSON.stringify(scheduleOvertimeSplit)) as ScheduleOvertimeSplit,
+        message,
+      },
+    ]);
+  }, [scheduleAssignments, scheduleOvertimeSplit]);
+  const applyOvertimeSplitChange = useCallback((next: ScheduleOvertimeSplit) => {
+    setScheduleOvertimeSplit(next);
+    saveScheduleOvertimeSplit(next);
+  }, []);
+  const undoLastScheduleChange = useCallback(() => {
+    setScheduleUndoStack((previous) => {
+      if (previous.length === 0) {
+        return previous;
+      }
+      const snapshot = previous[previous.length - 1]!;
+      setScheduleAssignments(snapshot.assignments);
+      setScheduleOvertimeSplit(snapshot.overtimeSplit);
+      saveScheduleAssignments(snapshot.assignments);
+      saveScheduleOvertimeSplit(snapshot.overtimeSplit);
+      setLastScheduleAction(`Undid: ${snapshot.message}`);
+      return previous.slice(0, -1);
+    });
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -3315,22 +3359,19 @@ function PersonnelSchedulePage() {
         if (res.ok && isMounted) {
           const json = (await res.json()) as { ok?: boolean; data?: Record<string, unknown> };
           if (json?.ok && json?.data && isMounted) {
-            const d = json.data;
-            const personnelRaw = d.personnelRecords;
-            const personnel = Array.isArray(personnelRaw)
-              ? personnelRaw.map((entry: Record<string, unknown>) => ({
-                  name: String(entry?.name ?? ""),
-                  shift: String(entry?.shift ?? ""),
-                  apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
-                  station: String(entry?.station ?? ""),
-                  userType: String(entry?.userType ?? ""),
-                  qualifications: Array.isArray(entry?.qualifications)
-                    ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
-                    : [],
-                }))
+            const d = normalizeDepartmentDraft(json.data);
+            const personnel = Array.isArray(d.schedulerPersonnelRecords)
+              ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
               : [];
             const stations = Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [];
-            const apparatus = Array.isArray(d.apparatusRecords) ? (d.apparatusRecords as DepartmentApparatusRecord[]) : [];
+            const apparatus = Array.isArray(d.schedulerApparatusRecords)
+              ? (d.schedulerApparatusRecords as SchedulerApparatusRecord[])
+              : [];
+            const additionalFields = normalizeAdditionalFields(d.additionalFields);
+            const standardOvertimeSlot = Math.max(
+              1,
+              Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
+            );
             const personnelQualifications = Array.isArray(d.personnelQualifications)
               ? (d.personnelQualifications as string[])
               : [];
@@ -3340,7 +3381,16 @@ function PersonnelSchedulePage() {
             const shiftEntries = Array.isArray(d.shiftInformationEntries)
               ? (d.shiftInformationEntries as PersonnelScheduleData["shiftEntries"])
               : [];
-            setDepartmentData({ stations, apparatus, personnel, personnelQualifications, kellyRotations, shiftEntries });
+            setDepartmentData({
+              stations,
+              apparatus,
+              additionalFields,
+              standardOvertimeSlot,
+              personnel,
+              personnelQualifications,
+              kellyRotations,
+              shiftEntries,
+            });
           }
         }
       } catch {
@@ -3377,23 +3427,19 @@ function PersonnelSchedulePage() {
   );
 
   const scheduleRows = useMemo((): PersonnelScheduleRow[] => {
-    const apparatusByName = new Map(
-      departmentData.apparatus.map((a) => [String(a.unitId ?? "").trim(), a]),
-    );
     const rows: PersonnelScheduleRow[] = [];
-
-    PERSONNEL_SCHEDULE_APPARATUS_ORDER.forEach((unitName) => {
-      const app = apparatusByName.get(unitName);
-      if (!app) {
+    departmentData.apparatus.forEach((app, index) => {
+      const label = String(app.apparatus ?? "").trim();
+      if (!label) {
         return;
       }
-      const slotCount = getSlotCountForApparatus(app.unitType ?? "");
+      const slotCount = getSlotCountForApparatus(app.maximumPersonnel ?? app.minimumPersonnel ?? 0);
       rows.push({
-        id: `app-${unitName}`,
-        label: unitName,
+        id: `app-${index}-${label}`,
+        label,
         rowType: "apparatus",
-        unitId: unitName,
-        unitType: app.unitType ?? "",
+        unitId: label,
+        unitType: "",
         slotCount,
         minimumPersonnel: Math.min(app.minimumPersonnel ?? 0, slotCount),
         requiredQualifications: Array.isArray(app.personnelRequirements)
@@ -3403,21 +3449,24 @@ function PersonnelSchedulePage() {
       });
     });
 
-    PERSONNEL_SCHEDULE_SUPPORT_ROWS.forEach((row) => {
+    departmentData.additionalFields.forEach((row, index) => {
+      const unitId = String(row.id ?? "").trim() || `support-custom-${index + 1}`;
       rows.push({
-        id: row.id,
-        label: row.label,
+        id: unitId,
+        label: row.fieldName,
         rowType: "support",
-        unitId: row.id,
+        unitId,
         unitType: "SUPPORT",
-        slotCount: row.slotCount,
+        slotCount: row.numberOfSlots,
         minimumPersonnel: 0,
         requiredQualifications: [],
+        supportValueMode: row.valueMode,
+        personnelOverride: row.valueMode === "personnel" ? row.personnelOverride : false,
       });
     });
 
     return rows;
-  }, [departmentData.apparatus]);
+  }, [departmentData.apparatus, departmentData.additionalFields]);
 
   const dates = useMemo(
     () => getDatesForMonth(viewDate.getFullYear(), viewDate.getMonth()),
@@ -3563,9 +3612,55 @@ function PersonnelSchedulePage() {
     },
     [scheduleAssignments, buildDefaultAssignmentsForDate, getKellyRotationPersonnelForDate, effectiveShift],
   );
+  const overtimeSplitCount = useMemo(() => {
+    const slotLength = Math.max(1, Math.floor(Number(departmentData.standardOvertimeSlot) || 24));
+    return Math.max(1, Math.floor(24 / slotLength));
+  }, [departmentData.standardOvertimeSlot]);
+  const isOvertimeEnabledForSlot = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number): boolean => {
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      return Boolean(scheduleOvertimeSplit[storageDateKey]?.[unitId]?.[slotIndex]);
+    },
+    [effectiveShift, scheduleOvertimeSplit],
+  );
+  const toggleOvertimeForSlot = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number, enabled: boolean) => {
+      pushUndoSnapshot("Toggle overtime split");
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      const nextSplit: ScheduleOvertimeSplit = {
+        ...scheduleOvertimeSplit,
+        [storageDateKey]: { ...(scheduleOvertimeSplit[storageDateKey] ?? {}) },
+      };
+      const unitFlags = [...(nextSplit[storageDateKey]?.[unitId] ?? [])];
+      while (unitFlags.length <= slotIndex) {
+        unitFlags.push(false);
+      }
+      unitFlags[slotIndex] = enabled;
+      nextSplit[storageDateKey] = { ...(nextSplit[storageDateKey] ?? {}), [unitId]: unitFlags };
+      applyOvertimeSplitChange(nextSplit);
+
+      if (!enabled) {
+        setScheduleAssignments((previous) => {
+          const next = { ...previous };
+          const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+          const unitSlots = [...(dayData[unitId] ?? [])];
+          while (unitSlots.length <= slotIndex) unitSlots.push("");
+          const firstName = parseAssignedNames(unitSlots[slotIndex] ?? "")[0] ?? "";
+          unitSlots[slotIndex] = firstName;
+          dayData[unitId] = unitSlots;
+          next[storageDateKey] = dayData;
+          saveScheduleAssignments(next);
+          return next;
+        });
+      }
+      setLastScheduleAction("Updated overtime split.");
+    },
+    [effectiveShift, scheduleOvertimeSplit, applyOvertimeSplitChange, pushUndoSnapshot],
+  );
 
   const assignPersonToSlot = useCallback(
     (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
+      pushUndoSnapshot("Assign personnel to slot");
       setScheduleAssignments((prev) => {
         const next = { ...prev };
         const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
@@ -3577,42 +3672,84 @@ function PersonnelSchedulePage() {
             dayData[row.unitId] = defaults.slice(0, row.slotCount);
           }
         });
+        const targetRow = scheduleRows.find((row) => row.unitId === unitId);
+        const isTargetSupportPersonnelRow = targetRow ? isSupportPersonnelRow(targetRow) : false;
+        const isTargetOverrideSupportPersonnelRow = targetRow
+          ? isOverrideSupportPersonnelRow(targetRow)
+          : false;
+        const isTargetApparatusRow = targetRow?.rowType === "apparatus";
         for (const [uid, slots] of Object.entries(dayData)) {
-          dayData[uid] = slots.map((s) => (s === personName ? "" : s));
+          const row = scheduleRows.find((candidate) => candidate.unitId === uid);
+          if (!row) {
+            continue;
+          }
+          const shouldClear = isTargetOverrideSupportPersonnelRow
+            ? (row.rowType === "apparatus" || isSupportPersonnelRow(row))
+            : isTargetApparatusRow
+              ? (row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row))
+              : !isTargetSupportPersonnelRow
+                ? (row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row))
+                : false;
+          dayData[uid] = shouldClear
+            ? slots.map((slotValue) => {
+                const remaining = parseAssignedNames(slotValue).filter((name) => name !== personName);
+                return serializeAssignedNames(remaining);
+              })
+            : [...slots];
         }
         const unitSlots = [...(dayData[unitId] ?? [])];
         while (unitSlots.length <= slotIndex) unitSlots.push("");
-        unitSlots[slotIndex] = personName;
+        const targetOvertimeEnabled =
+          targetRow?.rowType === "apparatus" &&
+          slotIndex < (targetRow.minimumPersonnel ?? 0) &&
+          isOvertimeEnabledForSlot(dateKey, unitId, slotIndex);
+        const maxNamesInSlot = targetOvertimeEnabled ? overtimeSplitCount : 1;
+        const existingNames = parseAssignedNames(unitSlots[slotIndex] ?? "");
+        const withoutDuplicates = existingNames.filter((name) => name !== personName);
+        const nextNames = [...withoutDuplicates, personName].slice(0, maxNamesInSlot);
+        unitSlots[slotIndex] = serializeAssignedNames(nextNames);
         dayData[unitId] = unitSlots;
         next[storageDateKey] = dayData;
         saveScheduleAssignments(next);
         return next;
       });
+      setLastScheduleAction("Assigned personnel.");
     },
-    [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift],
+    [
+      scheduleRows,
+      buildDefaultAssignmentsForDate,
+      effectiveShift,
+      isOvertimeEnabledForSlot,
+      overtimeSplitCount,
+      pushUndoSnapshot,
+    ],
   );
 
-  const clearPersonFromDay = useCallback((dateKey: string, personName: string) => {
+  const clearSlotValue = useCallback((dateKey: string, unitId: string, slotIndex: number) => {
+    pushUndoSnapshot("Clear slot");
     setScheduleAssignments((prev) => {
       const next = { ...prev };
       const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
       const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
       const dayDefaults = buildDefaultAssignmentsForDate(dateKey);
-      scheduleRows.forEach((row) => {
-        if (!dayData[row.unitId]) {
-          const defaults = dayDefaults[row.unitId] ?? [];
-          dayData[row.unitId] = defaults.slice(0, row.slotCount);
-        }
-      });
-      const newDayData: Record<string, string[]> = {};
-      for (const [uid, slots] of Object.entries(dayData)) {
-        newDayData[uid] = slots.map((s) => (s === personName ? "" : s));
+      const row = scheduleRows.find((entry) => entry.unitId === unitId);
+      if (!row) {
+        return prev;
       }
-      next[storageDateKey] = newDayData;
+      if (!dayData[unitId]) {
+        const defaults = dayDefaults[unitId] ?? [];
+        dayData[unitId] = defaults.slice(0, row.slotCount);
+      }
+      const unitSlots = [...(dayData[unitId] ?? [])];
+      while (unitSlots.length <= slotIndex) unitSlots.push("");
+      unitSlots[slotIndex] = "";
+      dayData[unitId] = unitSlots;
+      next[storageDateKey] = dayData;
       saveScheduleAssignments(next);
       return next;
     });
-  }, [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift]);
+    setLastScheduleAction("Cleared slot.");
+  }, [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift, pushUndoSnapshot]);
 
   const updateTextSlotValue = useCallback(
     (dateKey: string, unitId: string, slotIndex: number, textValue: string) => {
@@ -3641,9 +3778,14 @@ function PersonnelSchedulePage() {
     (dateKey: string): Set<string> => {
       const names = new Set<string>();
       for (const row of scheduleRows) {
+        const isNameSlot =
+          row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row);
+        if (!isNameSlot) {
+          continue;
+        }
         const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
         for (const n of slots) {
-          if (n.trim()) names.add(n);
+          parseAssignedNames(n).forEach((name) => names.add(name));
         }
       }
       return names;
@@ -3653,9 +3795,21 @@ function PersonnelSchedulePage() {
 
   const getEligibleShiftPersonnelForSlot = useCallback(
     (dateKey: string, row: PersonnelScheduleRow, currentName: string): DepartmentPersonnelRecord[] => {
-      const alreadyAssigned = assignedOnDay(dateKey);
+      const assignedInBlockingRows = new Set<string>();
+      for (const scheduleRow of scheduleRows) {
+        const isBlockingRow =
+          scheduleRow.rowType === "apparatus" ||
+          isOverrideSupportPersonnelRow(scheduleRow);
+        if (!isBlockingRow) {
+          continue;
+        }
+        const slots = getAssignmentsForDay(dateKey, scheduleRow.unitId, scheduleRow.slotCount);
+        slots.forEach((slotValue) => {
+          parseAssignedNames(slotValue).forEach((name) => assignedInBlockingRows.add(name));
+        });
+      }
       if (currentName.trim()) {
-        alreadyAssigned.delete(currentName.trim());
+        parseAssignedNames(currentName).forEach((name) => assignedInBlockingRows.delete(name));
       }
       const requiredRanks = row.requiredQualifications
         .map((qualification) => qualificationRankMap.get(qualification))
@@ -3665,8 +3819,14 @@ function PersonnelSchedulePage() {
       const requiresQualificationGate =
         row.rowType === "apparatus" && row.minimumPersonnel > 0 && requiredRanks.length > 0;
 
+      if (isSupportPersonnelRow(row)) {
+        return [...shiftPersonnel].sort((a, b) =>
+          comparePersonnelByQualifications(a, b, departmentData.personnelQualifications),
+        );
+      }
+
       return shiftPersonnel
-        .filter((person) => !alreadyAssigned.has(person.name))
+        .filter((person) => !assignedInBlockingRows.has(person.name))
         .filter((person) => {
           if (!requiresQualificationGate) return true;
           const bestRank = getBestQualificationRankForPerson(person, qualificationRankMap);
@@ -3677,8 +3837,9 @@ function PersonnelSchedulePage() {
         );
     },
     [
-      assignedOnDay,
       qualificationRankMap,
+      scheduleRows,
+      getAssignmentsForDay,
       shiftPersonnel,
       departmentData.personnelQualifications,
     ],
@@ -3722,6 +3883,7 @@ function PersonnelSchedulePage() {
 
   const importAssignmentsForDay = useCallback(
     (dateKey: string) => {
+      pushUndoSnapshot("Import assignments for day");
       setScheduleAssignments((previous) => {
         const next = { ...previous };
         const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
@@ -3742,8 +3904,9 @@ function PersonnelSchedulePage() {
         saveScheduleAssignments(next);
         return next;
       });
+      setLastScheduleAction("Imported assignments for day.");
     },
-    [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift],
+    [scheduleRows, buildDefaultAssignmentsForDate, effectiveShift, pushUndoSnapshot],
   );
 
   if (isLoading && departmentData.personnel.length === 0) {
@@ -3761,7 +3924,28 @@ function PersonnelSchedulePage() {
     <section className="page-section personnel-schedule-page">
       <header className="page-header">
         <div>
-          <h1>Schedule (Personnel)</h1>
+          <div className="personnel-schedule-title-row">
+            <h1>Schedule (Personnel)</h1>
+            <div className="personnel-schedule-month-nav">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1))}
+              >
+                ← Prev
+              </button>
+              <span className="personnel-schedule-month-label">
+                {viewDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
+              </span>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1))}
+              >
+                Next →
+              </button>
+            </div>
+          </div>
           <div className="personnel-schedule-shift-select">
             <div className="personnel-schedule-controls">
             <select
@@ -3796,29 +3980,17 @@ function PersonnelSchedulePage() {
               >
                 X
               </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={undoLastScheduleChange}
+                disabled={scheduleUndoStack.length === 0}
+              >
+                Undo
+              </button>
             </div>
+            <small className="field-hint">Last action: {lastScheduleAction}</small>
           </div>
-          </div>
-        </div>
-        <div className="header-actions">
-          <div className="personnel-schedule-month-nav">
-            <button
-              type="button"
-              className="secondary-button compact-button"
-              onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1))}
-            >
-              ← Prev
-            </button>
-            <span className="personnel-schedule-month-label">
-              {viewDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })}
-            </span>
-            <button
-              type="button"
-              className="secondary-button compact-button"
-              onClick={() => setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1))}
-            >
-              Next →
-            </button>
           </div>
         </div>
       </header>
@@ -3890,11 +4062,11 @@ function PersonnelSchedulePage() {
                   {displayDates.map((date) => {
                     const dateKey = toDateKey(date);
                     const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+                    const assignedNames = slots.filter((name) => name.trim().length > 0);
                     const displaySlots =
                       row.rowType === "apparatus"
                         ? [
-                            ...slots
-                              .filter((name) => name.trim().length > 0)
+                            ...assignedNames
                               .sort((aName, bName) => {
                                 const aRank = getBestQualificationRankForPerson(
                                   personnelByName.get(aName),
@@ -3908,7 +4080,14 @@ function PersonnelSchedulePage() {
                                 return aName.localeCompare(bName);
                               }),
                             ...Array.from(
-                              { length: Math.max(0, row.slotCount - slots.filter((name) => name.trim().length > 0).length) },
+                              {
+                                // Month/default view shows min slots unless extra personnel are assigned.
+                                length: Math.max(
+                                  0,
+                                  Math.max(row.minimumPersonnel, assignedNames.length) -
+                                    assignedNames.length,
+                                ),
+                              },
                               () => "",
                             ),
                           ]
@@ -3930,10 +4109,11 @@ function PersonnelSchedulePage() {
                       >
                         <div className="personnel-schedule-slots">
                           {displaySlots.map((name, slotIdx) => {
+                            const slotNames = parseAssignedNames(name);
                             const isRequired = slotIdx < row.minimumPersonnel;
                             const isEmpty = !name.trim();
                             const isRed = isRequired && isEmpty;
-                            const isInfoRow = row.unitId === "support-info";
+                            const isTextRow = row.rowType === "support" && row.supportValueMode === "text";
                             const isActiveInlineSelect =
                               activeInlineSlot?.dateKey === dateKey &&
                               activeInlineSlot?.unitId === row.unitId &&
@@ -3947,12 +4127,12 @@ function PersonnelSchedulePage() {
                               <div
                                 key={slotIdx}
                                 className={`personnel-schedule-slot ${isRed ? "personnel-schedule-slot-required-empty" : ""} ${
-                                  highlightPersonnelName && name === highlightPersonnelName
+                                  highlightPersonnelName && slotNames.includes(highlightPersonnelName)
                                     ? "personnel-schedule-slot-highlighted"
                                     : ""
                                 }`}
                                 onClick={(event) => {
-                                  if (isInfoRow) return;
+                                  if (isTextRow) return;
                                   event.stopPropagation();
                                   setActiveInlineSlot({
                                     dateKey,
@@ -3961,7 +4141,7 @@ function PersonnelSchedulePage() {
                                   });
                                 }}
                               >
-                                {isInfoRow ? (
+                                {isTextRow ? (
                                   <input
                                     type="text"
                                     maxLength={25}
@@ -3984,7 +4164,7 @@ function PersonnelSchedulePage() {
                                       const nextName = event.target.value;
                                       if (!nextName) {
                                         if (name.trim()) {
-                                          clearPersonFromDay(dateKey, name);
+                                          clearSlotValue(dateKey, row.unitId, slotIdx);
                                         }
                                       } else {
                                         assignPersonToSlot(dateKey, row.unitId, slotIdx, nextName);
@@ -4000,7 +4180,9 @@ function PersonnelSchedulePage() {
                                     ))}
                                   </select>
                                 ) : (
-                                  (name ? formatSchedulePersonnelDisplayName(name) : "—")
+                                  (slotNames.length > 0
+                                    ? slotNames.map((entry) => formatSchedulePersonnelDisplayName(entry)).join(" / ")
+                                    : "—")
                                 )}
                               </div>
                             );
@@ -4025,12 +4207,20 @@ function PersonnelSchedulePage() {
           effectiveShift={effectiveShift}
           getAssignmentsForDay={getAssignmentsForDay}
           assignPersonToSlot={assignPersonToSlot}
-          clearPersonFromDay={clearPersonFromDay}
+          clearSlotValue={clearSlotValue}
           updateTextSlotValue={updateTextSlotValue}
           importAssignmentsForDay={importAssignmentsForDay}
           assignedOnDay={assignedOnDay}
+          isOvertimeEnabledForSlot={isOvertimeEnabledForSlot}
+          toggleOvertimeForSlot={toggleOvertimeForSlot}
+          overtimeSplitCount={overtimeSplitCount}
+          lastScheduleAction={lastScheduleAction}
+          onUndo={undoLastScheduleChange}
+          canUndo={scheduleUndoStack.length > 0}
           allPersonnel={departmentData.personnel}
           personnelQualificationOrder={departmentData.personnelQualifications}
+          sortPersonnel={comparePersonnelByQualifications}
+          getHighestQualificationLabel={getHighestQualificationLabel}
           onClose={() => {
             normalizeDayAssignmentsForRequirements(editDayBlock.dateKey);
             setEditDayBlock(null);
@@ -4038,202 +4228,6 @@ function PersonnelSchedulePage() {
         />
       ) : null}
     </section>
-  );
-}
-
-interface PersonnelScheduleDayBlockModalProps {
-  date: Date;
-  dateKey: string;
-  scheduleRows: PersonnelScheduleRow[];
-  shiftPersonnel: DepartmentPersonnelRecord[];
-  allPersonnel: DepartmentPersonnelRecord[];
-  personnelQualificationOrder: string[];
-  effectiveShift: string;
-  getAssignmentsForDay: (dateKey: string, unitId: string, slotCount: number) => string[];
-  assignPersonToSlot: (dateKey: string, unitId: string, slotIndex: number, personName: string) => void;
-  clearPersonFromDay: (dateKey: string, personName: string) => void;
-  updateTextSlotValue: (dateKey: string, unitId: string, slotIndex: number, textValue: string) => void;
-  importAssignmentsForDay: (dateKey: string) => void;
-  assignedOnDay: (dateKey: string) => Set<string>;
-  onClose: () => void;
-}
-
-function PersonnelScheduleDayBlockModal({
-  date,
-  dateKey,
-  scheduleRows,
-  shiftPersonnel,
-  allPersonnel,
-  personnelQualificationOrder,
-  effectiveShift,
-  getAssignmentsForDay,
-  assignPersonToSlot,
-  clearPersonFromDay,
-  updateTextSlotValue,
-  importAssignmentsForDay,
-  assignedOnDay,
-  onClose,
-}: PersonnelScheduleDayBlockModalProps) {
-  const [draggedPerson, setDraggedPerson] = useState<string | null>(null);
-  const [dragOverSlot, setDragOverSlot] = useState<{ unitId: string; slotIndex: number } | null>(null);
-  const [showAllPersonnel, setShowAllPersonnel] = useState(false);
-  const assigned = assignedOnDay(dateKey);
-  const visiblePersonnel = useMemo(() => {
-    const base = showAllPersonnel ? allPersonnel : shiftPersonnel;
-    return [...base].sort((a, b) =>
-      comparePersonnelByQualifications(a, b, personnelQualificationOrder),
-    );
-  }, [showAllPersonnel, allPersonnel, shiftPersonnel, personnelQualificationOrder]);
-
-  const handleDrop = useCallback(
-    (unitId: string, slotIndex: number) => {
-      if (!draggedPerson) return;
-      const row = scheduleRows.find((r) => r.unitId === unitId);
-      if (!row) return;
-      const currentSlots = getAssignmentsForDay(dateKey, unitId, row.slotCount);
-      const currentInSlot = currentSlots[slotIndex] ?? "";
-      if (currentInSlot === draggedPerson) {
-        setDraggedPerson(null);
-        setDragOverSlot(null);
-        return;
-      }
-      assignPersonToSlot(dateKey, unitId, slotIndex, draggedPerson);
-      setDraggedPerson(null);
-      setDragOverSlot(null);
-    },
-    [draggedPerson, dateKey, scheduleRows, getAssignmentsForDay, assignPersonToSlot],
-  );
-
-  const handleRemoveFromSlot = useCallback(
-    (unitId: string, slotIndex: number) => {
-      const row = scheduleRows.find((r) => r.unitId === unitId);
-      if (!row) return;
-      const slots = getAssignmentsForDay(dateKey, unitId, row.slotCount);
-      const name = slots[slotIndex] ?? "";
-      if (name) {
-        clearPersonFromDay(dateKey, name);
-      }
-    },
-    [dateKey, scheduleRows, getAssignmentsForDay, clearPersonFromDay],
-  );
-
-  return createPortal(
-    <div
-      className="personnel-schedule-modal-backdrop"
-      role="dialog"
-      aria-modal="true"
-      onClick={(e) => e.target === e.currentTarget && onClose()}
-    >
-      <div className="personnel-schedule-modal">
-        <div className="personnel-schedule-modal-header">
-          <h2>
-            Assign Personnel — {date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric", year: "numeric" })}
-          </h2>
-          <button type="button" className="secondary-button compact-button" onClick={onClose}>
-            Close
-          </button>
-        </div>
-        <div className="personnel-schedule-modal-body">
-          <div className="personnel-schedule-modal-day-block">
-            <div className="personnel-schedule-modal-day-block-header">
-              <h3>Day Block</h3>
-              <button
-                type="button"
-                className="secondary-button compact-button"
-                onClick={() => importAssignmentsForDay(dateKey)}
-              >
-                Import Assignments
-              </button>
-            </div>
-            {scheduleRows.map((row) => {
-              const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
-              return (
-                <div key={row.id} className="personnel-schedule-modal-apparatus">
-                  <strong>{row.label}</strong>
-                  <div className="personnel-schedule-modal-slots">
-                    {slots.map((name, slotIdx) => {
-                      const isRequired = slotIdx < row.minimumPersonnel;
-                      const isEmpty = !name.trim();
-                      const isRed = isRequired && isEmpty;
-                      const isInfoRow = row.unitId === "support-info";
-                      return (
-                        <div
-                          key={slotIdx}
-                          className={`personnel-schedule-modal-slot ${isRed ? "personnel-schedule-slot-required-empty" : ""} ${dragOverSlot?.unitId === row.unitId && dragOverSlot?.slotIndex === slotIdx ? "personnel-schedule-slot-drag-over" : ""}`}
-                          onDragOver={
-                            isInfoRow
-                              ? undefined
-                              : (e) => {
-                                  e.preventDefault();
-                                  setDragOverSlot({ unitId: row.unitId, slotIndex: slotIdx });
-                                }
-                          }
-                          onDragLeave={isInfoRow ? undefined : () => setDragOverSlot(null)}
-                          onDrop={isInfoRow ? undefined : () => handleDrop(row.unitId, slotIdx)}
-                          onClick={isInfoRow ? undefined : () => name && handleRemoveFromSlot(row.unitId, slotIdx)}
-                          title={
-                            isInfoRow
-                              ? "Type note (max 25 chars)"
-                              : name
-                                ? `Click to remove ${name}`
-                                : "Drag personnel here"
-                          }
-                        >
-                          {isInfoRow ? (
-                            <input
-                              type="text"
-                              maxLength={25}
-                              value={name}
-                              className="personnel-schedule-info-input"
-                              placeholder="Type info..."
-                              onChange={(event) =>
-                                updateTextSlotValue(dateKey, row.unitId, slotIdx, event.target.value)
-                              }
-                            />
-                          ) : (
-                            name || "—"
-                          )}
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-          <div className="personnel-schedule-modal-personnel">
-            <h3>Personnel ({effectiveShift})</h3>
-            <button
-              type="button"
-              className="neris-link-button"
-              onClick={() => setShowAllPersonnel((previous) => !previous)}
-            >
-              {showAllPersonnel ? "Hide All Personnel" : "Show All Personnel -> RL"}
-            </button>
-            <ul className="personnel-schedule-modal-personnel-list">
-              {visiblePersonnel.map((p) => (
-                <li
-                  key={p.name}
-                  className={`personnel-schedule-modal-personnel-item ${assigned.has(p.name) ? "personnel-schedule-personnel-assigned" : ""}`}
-                  draggable
-                  onDragStart={() => setDraggedPerson(p.name)}
-                  onDragEnd={() => {
-                    setDraggedPerson(null);
-                    setDragOverSlot(null);
-                  }}
-                >
-                  <span>{p.name}</span>
-                  <small className="personnel-schedule-modal-personnel-qualification">
-                    {getHighestQualificationLabel(p, personnelQualificationOrder) || "No qualification"}
-                  </small>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }
 
@@ -11692,6 +11686,17 @@ function NerisReportFormPage({
 
 function DepartmentDetailsPage() {
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
+  const sessionUserName = readSession().username.trim().toLocaleLowerCase();
+  const uiPreferenceUserKey = sessionUserName || USER_UI_PREFERENCES_FALLBACK_KEY;
+  const initialUiPreferencesByUser =
+    initialDepartmentDraft.uiPreferencesByUser &&
+    typeof initialDepartmentDraft.uiPreferencesByUser === "object"
+      ? (initialDepartmentDraft.uiPreferencesByUser as Record<string, Record<string, unknown>>)
+      : {};
+  const initialUserUiPreferences =
+    initialUiPreferencesByUser[uiPreferenceUserKey] ??
+    initialUiPreferencesByUser[USER_UI_PREFERENCES_FALLBACK_KEY] ??
+    {};
   const [departmentName, setDepartmentName] = useState(String(initialDepartmentDraft.departmentName ?? ""));
   const [departmentStreet, setDepartmentStreet] = useState(String(initialDepartmentDraft.departmentStreet ?? ""));
   const [departmentCity, setDepartmentCity] = useState(String(initialDepartmentDraft.departmentCity ?? ""));
@@ -11707,13 +11712,32 @@ function DepartmentDetailsPage() {
     Array.isArray(initialDepartmentDraft.stationRecords) ? (initialDepartmentDraft.stationRecords as DepartmentStationRecord[]) : [],
   );
   const [apparatusRecords, setApparatusRecords] = useState<DepartmentApparatusRecord[]>(
-    Array.isArray(initialDepartmentDraft.apparatusRecords) ? (initialDepartmentDraft.apparatusRecords as DepartmentApparatusRecord[]) : [],
+    Array.isArray(initialDepartmentDraft.masterApparatusRecords)
+      ? (initialDepartmentDraft.masterApparatusRecords as DepartmentApparatusRecord[])
+      : [],
+  );
+  const [schedulerApparatusRecords, setSchedulerApparatusRecords] = useState<SchedulerApparatusRecord[]>(
+    Array.isArray(initialDepartmentDraft.schedulerApparatusRecords)
+      ? (initialDepartmentDraft.schedulerApparatusRecords as SchedulerApparatusRecord[])
+      : [],
   );
   const [shiftInformationEntries, setShiftInformationEntries] = useState<ShiftInformationEntry[]>(
     Array.isArray(initialDepartmentDraft.shiftInformationEntries) ? (initialDepartmentDraft.shiftInformationEntries as ShiftInformationEntry[]) : [],
   );
+  const [userRecords, setUserRecords] = useState<DepartmentUserRecord[]>(() => {
+    const raw = initialDepartmentDraft.userRecords;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((entry: Record<string, unknown>) => ({
+        name: String(entry.name ?? "").trim(),
+        userType: String(entry.userType ?? "").trim(),
+        username: String(entry.username ?? "").trim(),
+        password: String(entry.password ?? ""),
+      }))
+      .filter((entry) => entry.name.length > 0);
+  });
   const [personnelRecords, setPersonnelRecords] = useState<DepartmentPersonnelRecord[]>(() => {
-    const raw = initialDepartmentDraft.personnelRecords;
+    const raw = initialDepartmentDraft.schedulerPersonnelRecords;
     if (!Array.isArray(raw)) return [];
     return raw.map((entry: Record<string, unknown>) => ({
       name: String(entry.name ?? ""),
@@ -11726,6 +11750,15 @@ function DepartmentDetailsPage() {
         : [],
     }));
   });
+  const [schedulerEnabled, setSchedulerEnabled] = useState(
+    Boolean(initialDepartmentDraft.schedulerEnabled ?? false),
+  );
+  const [standardOvertimeSlot, setStandardOvertimeSlot] = useState(
+    Math.max(1, Math.floor(Number(initialDepartmentDraft.standardOvertimeSlot ?? 24) || 24)),
+  );
+  const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
+    normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
+  );
   const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
   );
@@ -11765,8 +11798,16 @@ function DepartmentDetailsPage() {
   });
   const [apparatusDraft, setApparatusDraft] = useState<DepartmentApparatusRecord>({
     unitId: "",
+    commonName: "",
     unitType: "",
+    make: "",
+    model: "",
+    year: "",
+  });
+  const [schedulerApparatusDraft, setSchedulerApparatusDraft] = useState<SchedulerApparatusRecord>({
+    apparatus: "",
     minimumPersonnel: 0,
+    maximumPersonnel: 2,
     personnelRequirements: [],
     station: "",
   });
@@ -11785,6 +11826,12 @@ function DepartmentDetailsPage() {
     userType: "",
     qualifications: [],
   });
+  const [userDraft, setUserDraft] = useState<DepartmentUserRecord>({
+    name: "",
+    userType: "",
+    username: "",
+    password: "",
+  });
   const [personnelBulkDraft, setPersonnelBulkDraft] = useState({
     shift: "",
     apparatusAssignment: "",
@@ -11794,17 +11841,45 @@ function DepartmentDetailsPage() {
   });
   const [userTypeDraft, setUserTypeDraft] = useState("");
   const [qualificationDraft, setQualificationDraft] = useState("");
+  const [additionalFieldDraft, setAdditionalFieldDraft] = useState<AdditionalFieldRecord>({
+    id: "",
+    fieldName: "",
+    numberOfSlots: 1,
+    valueMode: "personnel",
+    personnelOverride: true,
+  });
+  const [editingAdditionalFieldIndex, setEditingAdditionalFieldIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
   const [editingQualificationIndex, setEditingQualificationIndex] = useState<number | null>(null);
   const [dragQualificationIndex, setDragQualificationIndex] = useState<number | null>(null);
   const [dragUserTypeIndex, setDragUserTypeIndex] = useState<number | null>(null);
+  const [dragSchedulerApparatusIndex, setDragSchedulerApparatusIndex] = useState<number | null>(null);
+  const [dragAdditionalFieldIndex, setDragAdditionalFieldIndex] = useState<number | null>(null);
+  const [isImportApparatusModalOpen, setIsImportApparatusModalOpen] = useState(false);
+  const [uiPreferencesByUser, setUiPreferencesByUser] = useState<
+    Record<string, Record<string, unknown>>
+  >(initialUiPreferencesByUser);
   const [autoSaveTick, setAutoSaveTick] = useState(0);
+  const [schedulerApparatusFieldWidths, setSchedulerApparatusFieldWidths] = useState<
+    Record<SchedulerApparatusGridFieldId, number>
+  >(() =>
+    normalizeSchedulerApparatusFieldWidths(
+      initialUserUiPreferences.schedulerApparatusFieldWidths,
+    ),
+  );
+  const [schedulerPersonnelFieldWidths, setSchedulerPersonnelFieldWidths] = useState<
+    Record<SchedulerPersonnelGridFieldId, number>
+  >(() =>
+    normalizeSchedulerPersonnelFieldWidths(
+      initialUserUiPreferences.schedulerPersonnelFieldWidths,
+    ),
+  );
   const [apparatusFieldWidths, setApparatusFieldWidths] = useState<Record<ApparatusGridFieldId, number>>(
-    () => ({ ...DEFAULT_APPARATUS_FIELD_WIDTHS }),
+    () => normalizeApparatusFieldWidths(initialUserUiPreferences.apparatusFieldWidths),
   );
   const [apparatusFieldOrder, setApparatusFieldOrder] = useState<ApparatusGridFieldId[]>(() => [
-    ...APPARATUS_GRID_FIELD_ORDER,
+    ...normalizeApparatusFieldOrder(initialUserUiPreferences.apparatusFieldOrder),
   ]);
   const [isApparatusFieldEditorOpen, setIsApparatusFieldEditorOpen] = useState(false);
   const [dragApparatusFieldId, setDragApparatusFieldId] = useState<ApparatusGridFieldId | null>(null);
@@ -11813,29 +11888,42 @@ function DepartmentDetailsPage() {
     startX: number;
     startWidth: number;
   } | null>(null);
+  const activeSchedulerApparatusResizeField = useRef<{
+    fieldId: SchedulerApparatusGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const activeSchedulerPersonnelResizeField = useRef<{
+    fieldId: SchedulerPersonnelGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
   const apparatusFieldLabelById = useMemo(
     () =>
       ({
+        commonName: "Common Name",
         unitType: "Unit Type",
-        minPersonnel: "Min Personnel",
-        personnelRequirements: "Minimum Requirements",
-        station: "Station",
+        make: "Make",
+        model: "Model",
+        year: "Year",
       }) as Record<ApparatusGridFieldId, string>,
     [],
   );
   const getApparatusFieldValue = useCallback(
     (apparatus: DepartmentApparatusRecord, fieldId: ApparatusGridFieldId): string => {
       switch (fieldId) {
+        case "commonName":
+          return apparatus.commonName || "—";
         case "unitType":
           return (unitTypeOptions.find((o) => o.value === apparatus.unitType)?.label ?? apparatus.unitType) || "—";
-        case "minPersonnel":
-          return String(apparatus.minimumPersonnel);
-        case "personnelRequirements":
-          return apparatus.personnelRequirements.length > 0 ? apparatus.personnelRequirements.join(", ") : "—";
-        case "station":
-          return apparatus.station || "—";
+        case "make":
+          return apparatus.make || "—";
+        case "model":
+          return apparatus.model || "—";
+        case "year":
+          return apparatus.year || "—";
         default:
           return "—";
       }
@@ -11857,6 +11945,42 @@ function DepartmentDetailsPage() {
           .join(" "),
       }) as CSSProperties,
     [apparatusFieldOrder, apparatusFieldWidths],
+  );
+  const schedulerApparatusGridStyle = useMemo(
+    () =>
+      ({
+        "--scheduler-apparatus-grid-columns": SCHEDULER_APPARATUS_GRID_FIELD_ORDER
+          .map((fieldId) => {
+            const width =
+              schedulerApparatusFieldWidths[fieldId] ??
+              DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS[fieldId];
+            const clampedWidth = Math.min(
+              MAX_SCHEDULER_APPARATUS_FIELD_WIDTH,
+              Math.max(MIN_SCHEDULER_APPARATUS_FIELD_WIDTH, width),
+            );
+            return `${clampedWidth}px`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [schedulerApparatusFieldWidths],
+  );
+  const schedulerPersonnelGridStyle = useMemo(
+    () =>
+      ({
+        "--scheduler-personnel-grid-columns": SCHEDULER_PERSONNEL_GRID_FIELD_ORDER
+          .map((fieldId) => {
+            const width =
+              schedulerPersonnelFieldWidths[fieldId] ??
+              DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS[fieldId];
+            const clampedWidth = Math.min(
+              MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
+              Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, width),
+            );
+            return `${clampedWidth}px`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [schedulerPersonnelFieldWidths],
   );
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -11891,6 +12015,72 @@ function DepartmentDetailsPage() {
       document.body.classList.remove("resizing-dispatch-columns");
     };
   }, []);
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeSchedulerApparatusResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_SCHEDULER_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_APPARATUS_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+      setSchedulerApparatusFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeSchedulerApparatusResizeField.current) {
+        return;
+      }
+      activeSchedulerApparatusResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeSchedulerPersonnelResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+      setSchedulerPersonnelFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeSchedulerPersonnelResizeField.current) {
+        return;
+      }
+      activeSchedulerPersonnelResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
   const startApparatusFieldResize = (
     fieldId: ApparatusGridFieldId,
     event: ReactPointerEvent<HTMLSpanElement>,
@@ -11901,6 +12091,36 @@ function DepartmentDetailsPage() {
       fieldId,
       startX: event.clientX,
       startWidth: apparatusFieldWidths[fieldId] ?? DEFAULT_APPARATUS_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+  const startSchedulerApparatusFieldResize = (
+    fieldId: SchedulerApparatusGridFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeSchedulerApparatusResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth:
+        schedulerApparatusFieldWidths[fieldId] ??
+        DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+  const startSchedulerPersonnelFieldResize = (
+    fieldId: SchedulerPersonnelGridFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeSchedulerPersonnelResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth:
+        schedulerPersonnelFieldWidths[fieldId] ??
+        DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS[fieldId],
     };
     document.body.classList.add("resizing-dispatch-columns");
   };
@@ -11936,15 +12156,15 @@ function DepartmentDetailsPage() {
     [stationRecords],
   );
   const sortedApparatusRecords = useMemo(
-    () => [...apparatusRecords].sort((a, b) => (a.unitId || "").localeCompare(b.unitId || "", undefined, { sensitivity: "base" })),
+    () => [...apparatusRecords].sort((a, b) => (a.commonName || "").localeCompare(b.commonName || "", undefined, { sensitivity: "base" })),
     [apparatusRecords],
   );
   const apparatusNames = useMemo(
     () =>
-      apparatusRecords
-        .map((apparatus) => `${apparatus.unitId}${apparatus.unitType ? ` (${apparatus.unitType})` : ""}`)
+      schedulerApparatusRecords
+        .map((apparatus) => apparatus.apparatus)
         .filter((entry) => entry.trim().length > 0),
-    [apparatusRecords],
+    [schedulerApparatusRecords],
   );
   const shiftOptionValues = useMemo(
     () =>
@@ -11962,9 +12182,9 @@ function DepartmentDetailsPage() {
   const sortedPersonnelNames = useMemo(
     () =>
       Array.from(
-        new Set(personnelRecords.map((record) => record.name.trim()).filter((name) => name.length > 0)),
+        new Set(userRecords.map((record) => record.name.trim()).filter((name) => name.length > 0)),
       ).sort((a, b) => a.localeCompare(b)),
-    [personnelRecords],
+    [userRecords],
   );
   const addKellyRotation = () => {
     if (!kellyRotationDraft.personnel.trim() || !kellyRotationDraft.startsOn) {
@@ -11995,11 +12215,15 @@ function DepartmentDetailsPage() {
   const detailCardOrder: DepartmentCollectionKey[] = [
     "stations",
     "apparatus",
-    "shiftInformation",
     "personnel",
   ];
   const schedulerSettingsCardOrder: DepartmentCollectionKey[] = [
+    "shiftInformation",
+    "additionalFields",
+    "overtimeSetup",
     "personnelQualifications",
+    "schedulerApparatus",
+    "schedulerPersonnel",
     "kellyRotation",
   ];
   const detailCards = detailCardOrder
@@ -12025,8 +12249,12 @@ function DepartmentDetailsPage() {
 
   const isStationsEditor = activeCollectionEditor === "stations";
   const isApparatusEditor = activeCollectionEditor === "apparatus";
-  const isPersonnelEditor = activeCollectionEditor === "personnel";
+  const isSchedulerApparatusEditor = activeCollectionEditor === "schedulerApparatus";
+  const isUsersEditor = activeCollectionEditor === "personnel";
+  const isSchedulerPersonnelEditor = activeCollectionEditor === "schedulerPersonnel";
   const isShiftEditor = activeCollectionEditor === "shiftInformation";
+  const isAdditionalFieldsEditor = activeCollectionEditor === "additionalFields";
+  const isOvertimeSetupEditor = activeCollectionEditor === "overtimeSetup";
   const isQualificationsEditor = activeCollectionEditor === "personnelQualifications";
   const isKellyRotationEditor = activeCollectionEditor === "kellyRotation";
   const isUserTypeEditor = activeCollectionEditor === "userType";
@@ -12090,20 +12318,71 @@ function DepartmentDetailsPage() {
         setSecondaryContactName(String(d.secondaryContactName ?? ""));
         setSecondaryContactPhone(String(d.secondaryContactPhone ?? ""));
         setDepartmentLogoFileName(String(d.departmentLogoFileName ?? "No file selected"));
+        const apiUiPreferencesByUser =
+          d.uiPreferencesByUser && typeof d.uiPreferencesByUser === "object"
+            ? (d.uiPreferencesByUser as Record<string, Record<string, unknown>>)
+            : {};
+        setUiPreferencesByUser(apiUiPreferencesByUser);
+        const apiUserUiPreferences =
+          apiUiPreferencesByUser[uiPreferenceUserKey] ??
+          apiUiPreferencesByUser[USER_UI_PREFERENCES_FALLBACK_KEY] ??
+          {};
+        setApparatusFieldWidths(
+          normalizeApparatusFieldWidths(apiUserUiPreferences.apparatusFieldWidths),
+        );
+        setApparatusFieldOrder(
+          normalizeApparatusFieldOrder(apiUserUiPreferences.apparatusFieldOrder),
+        );
+        setSchedulerApparatusFieldWidths(
+          normalizeSchedulerApparatusFieldWidths(
+            apiUserUiPreferences.schedulerApparatusFieldWidths,
+          ),
+        );
+        setSchedulerPersonnelFieldWidths(
+          normalizeSchedulerPersonnelFieldWidths(
+            apiUserUiPreferences.schedulerPersonnelFieldWidths,
+          ),
+        );
         setStationRecords(
           Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [],
         );
         setApparatusRecords(
-          Array.isArray(d.apparatusRecords) ? (d.apparatusRecords as DepartmentApparatusRecord[]) : [],
+          Array.isArray(d.masterApparatusRecords)
+            ? (d.masterApparatusRecords as DepartmentApparatusRecord[])
+            : [],
+        );
+        setSchedulerApparatusRecords(
+          Array.isArray(d.schedulerApparatusRecords)
+            ? (d.schedulerApparatusRecords as SchedulerApparatusRecord[])
+            : [],
         );
         setShiftInformationEntries(
           Array.isArray(d.shiftInformationEntries)
             ? (d.shiftInformationEntries as ShiftInformationEntry[])
             : [],
         );
-        setPersonnelRecords(
-          Array.isArray(d.personnelRecords) ? (d.personnelRecords as DepartmentPersonnelRecord[]) : [],
+        setUserRecords(
+          Array.isArray(d.userRecords)
+            ? (d.userRecords as Record<string, unknown>[])
+                .map((entry) => ({
+                  name: String(entry.name ?? "").trim(),
+                  userType: String(entry.userType ?? "").trim(),
+                  username: String(entry.username ?? "").trim(),
+                  password: String(entry.password ?? ""),
+                }))
+                .filter((entry) => entry.name.length > 0)
+            : [],
         );
+        setPersonnelRecords(
+          Array.isArray(d.schedulerPersonnelRecords)
+            ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
+            : [],
+        );
+        setSchedulerEnabled(Boolean(d.schedulerEnabled ?? false));
+        setStandardOvertimeSlot(
+          Math.max(1, Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24)),
+        );
+        setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
         );
@@ -12126,7 +12405,7 @@ function DepartmentDetailsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [uiPreferenceUserKey]);
 
   const handleLogoSelection = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -12157,6 +12436,14 @@ function DepartmentDetailsPage() {
   const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
     setActiveCollectionEditor(collectionKey);
     resetEditorSelection();
+    if (
+      collectionKey === "apparatus" ||
+      collectionKey === "personnel" ||
+      collectionKey === "schedulerPersonnel" ||
+      collectionKey === "schedulerApparatus"
+    ) {
+      setIsMultiEditMode(false);
+    }
     if (collectionKey === "userType") {
       setUserTypeDraft("");
     }
@@ -12171,6 +12458,16 @@ function DepartmentDetailsPage() {
         repeatsEveryValue: 14,
         repeatsEveryUnit: "Shifts",
         startsOn: "",
+      });
+    }
+    if (collectionKey === "additionalFields") {
+      setEditingAdditionalFieldIndex(null);
+      setAdditionalFieldDraft({
+        id: "",
+        fieldName: "",
+        numberOfSlots: 1,
+        valueMode: "personnel",
+        personnelOverride: true,
       });
     }
   };
@@ -12203,13 +12500,31 @@ function DepartmentDetailsPage() {
     if (isApparatusEditor) {
       setApparatusDraft({
         unitId: "",
+        commonName: "",
         unitType: "",
+        make: "",
+        model: "",
+        year: "",
+      });
+    }
+    if (isSchedulerApparatusEditor) {
+      setSchedulerApparatusDraft({
+        apparatus: "",
         minimumPersonnel: 0,
+        maximumPersonnel: 2,
         personnelRequirements: [],
         station: "",
       });
     }
-    if (isPersonnelEditor) {
+    if (isUsersEditor) {
+      setUserDraft({
+        name: "",
+        userType: "",
+        username: "",
+        password: "",
+      });
+    }
+    if (isSchedulerPersonnelEditor) {
       setPersonnelDraft({
         name: "",
         shift: "",
@@ -12243,7 +12558,13 @@ function DepartmentDetailsPage() {
       if (isApparatusEditor && apparatusRecords[index]) {
         setApparatusDraft(apparatusRecords[index]!);
       }
-      if (isPersonnelEditor && personnelRecords[index]) {
+      if (isSchedulerApparatusEditor && schedulerApparatusRecords[index]) {
+        setSchedulerApparatusDraft(schedulerApparatusRecords[index]!);
+      }
+      if (isUsersEditor && userRecords[index]) {
+        setUserDraft(userRecords[index]!);
+      }
+      if (isSchedulerPersonnelEditor && personnelRecords[index]) {
         setPersonnelDraft(personnelRecords[index]!);
       }
       setIsEntryFormOpen(true);
@@ -12267,13 +12588,23 @@ function DepartmentDetailsPage() {
     if (isApparatusEditor) {
       setApparatusDraft({
         unitId: "",
+        commonName: "",
         unitType: "",
+        make: "",
+        model: "",
+        year: "",
+      });
+    }
+    if (isSchedulerApparatusEditor) {
+      setSchedulerApparatusDraft({
+        apparatus: "",
         minimumPersonnel: 0,
+        maximumPersonnel: 2,
         personnelRequirements: [],
         station: "",
       });
     }
-    if (isPersonnelEditor) {
+    if (isSchedulerPersonnelEditor) {
       setPersonnelBulkDraft({
         shift: "",
         apparatusAssignment: "",
@@ -12319,49 +12650,237 @@ function DepartmentDetailsPage() {
   };
 
   const saveApparatusForm = () => {
-    if (!isMultiEditMode) {
-      if (!apparatusDraft.unitId.trim() || !apparatusDraft.unitType.trim()) {
-        return;
+    if (!apparatusDraft.unitId.trim() || !apparatusDraft.commonName.trim() || !apparatusDraft.unitType.trim()) {
+      return;
+    }
+    const normalized = {
+      ...apparatusDraft,
+      unitId: apparatusDraft.unitId.trim(),
+      commonName: apparatusDraft.commonName.trim(),
+      unitType: apparatusDraft.unitType.trim(),
+      make: apparatusDraft.make.trim(),
+      model: apparatusDraft.model.trim(),
+      year: apparatusDraft.year.trim(),
+    };
+    setApparatusRecords((previous) =>
+      editingIndex === null
+        ? [...previous, normalized]
+        : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+    );
+    setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const normalizeSchedulerStationGrouping = (
+    records: SchedulerApparatusRecord[],
+  ): SchedulerApparatusRecord[] => {
+    const groups = new Map<string, SchedulerApparatusRecord[]>();
+    const stationOrder: string[] = [];
+    records.forEach((entry) => {
+      const key = entry.station.trim().toLocaleLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, []);
+        stationOrder.push(key);
       }
-      const minReq = Number.isFinite(apparatusDraft.minimumPersonnel) ? apparatusDraft.minimumPersonnel : 0;
-      if (apparatusDraft.personnelRequirements.length !== minReq) {
-        setStatusMessage(
-          "Minimum Requirements selection count must match Minimum Personnel.",
-        );
-        return;
-      }
-      const normalized = {
-        ...apparatusDraft,
-        unitId: apparatusDraft.unitId.trim(),
-        minimumPersonnel: Number.isFinite(apparatusDraft.minimumPersonnel)
-          ? apparatusDraft.minimumPersonnel
-          : 0,
-      };
-      setApparatusRecords((previous) =>
+      groups.get(key)!.push(entry);
+    });
+    return stationOrder.flatMap((key) => groups.get(key) ?? []);
+  };
+
+  const saveSchedulerApparatusForm = () => {
+    if (!schedulerApparatusDraft.apparatus.trim()) {
+      return;
+    }
+    const minimumPersonnel = Number.isFinite(schedulerApparatusDraft.minimumPersonnel)
+      ? Math.max(0, Math.floor(schedulerApparatusDraft.minimumPersonnel))
+      : 0;
+    const maximumPersonnel = Number.isFinite(schedulerApparatusDraft.maximumPersonnel)
+      ? Math.max(1, Math.floor(schedulerApparatusDraft.maximumPersonnel))
+      : 1;
+    if (maximumPersonnel < minimumPersonnel) {
+      setStatusMessage("Max Personnel must be greater than or equal to Min Personnel.");
+      return;
+    }
+    if (schedulerApparatusDraft.personnelRequirements.length !== minimumPersonnel) {
+      setStatusMessage("Minimum Requirements selection count must match Minimum Personnel.");
+      return;
+    }
+    const normalized: SchedulerApparatusRecord = {
+      apparatus: schedulerApparatusDraft.apparatus.trim(),
+      minimumPersonnel,
+      maximumPersonnel,
+      personnelRequirements: schedulerApparatusDraft.personnelRequirements.filter(Boolean),
+      station: schedulerApparatusDraft.station.trim(),
+    };
+    setSchedulerApparatusRecords((previous) => {
+      const next =
         editingIndex === null
           ? [...previous, normalized]
-          : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+          : previous.map((entry, index) => (index === editingIndex ? normalized : entry));
+      return normalizeSchedulerStationGrouping(next);
+    });
+    setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const importSchedulerApparatusFromDepartment = () => {
+    setSchedulerApparatusRecords((previous) => {
+      const existing = new Set(
+        previous.map((entry) => entry.apparatus.trim().toLocaleLowerCase()).filter(Boolean),
       );
-    } else {
-      setApparatusRecords((previous) =>
-        previous.map((entry, index) => {
-          if (!selectedMultiIndices.includes(index)) {
-            return entry;
+      const imported = apparatusRecords
+        .map((entry) => entry.commonName.trim())
+        .filter((name) => name.length > 0 && !existing.has(name.toLocaleLowerCase()))
+        .map((name) => ({
+          apparatus: name,
+          minimumPersonnel: 0,
+          maximumPersonnel: 2,
+          personnelRequirements: [] as string[],
+          station: "",
+        }));
+      return normalizeSchedulerStationGrouping([...previous, ...imported]);
+    });
+    setIsImportApparatusModalOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Imported apparatus into Scheduler Settings.");
+  };
+
+  const handleSchedulerApparatusDrop = (targetIndex: number) => {
+    setSchedulerApparatusRecords((previous) => {
+      const fromIndex = dragSchedulerApparatusIndex;
+      if (fromIndex === null || fromIndex < 0 || fromIndex >= previous.length) {
+        return previous;
+      }
+      if (targetIndex < 0 || targetIndex >= previous.length) {
+        return previous;
+      }
+      const fromStation = previous[fromIndex]?.station.trim().toLocaleLowerCase() ?? "";
+      const targetStation = previous[targetIndex]?.station.trim().toLocaleLowerCase() ?? "";
+      const next = [...previous];
+
+      if (fromStation && fromStation === targetStation) {
+        const [moved] = next.splice(fromIndex, 1);
+        next.splice(targetIndex, 0, moved!);
+        return next;
+      }
+
+      const sourceIndexes = next
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry.station.trim().toLocaleLowerCase() === fromStation)
+        .map(({ index }) => index);
+
+      if (sourceIndexes.length === 0) {
+        return previous;
+      }
+
+      const movedGroup = sourceIndexes.map((index) => next[index]!);
+      const remaining = next.filter((_, index) => !sourceIndexes.includes(index));
+      const insertIndex = remaining.findIndex(
+        (entry) => entry.station.trim().toLocaleLowerCase() === targetStation,
+      );
+      const safeInsertIndex = insertIndex < 0 ? remaining.length : insertIndex;
+      remaining.splice(safeInsertIndex, 0, ...movedGroup);
+      return remaining;
+    });
+    setDragSchedulerApparatusIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Scheduler apparatus order updated.");
+  };
+
+  const saveUserForm = () => {
+    const normalizedName = userDraft.name.trim();
+    const normalizedUsername = userDraft.username.trim().toLowerCase();
+    if (!normalizedName) {
+      return;
+    }
+    if (!normalizedUsername || !userDraft.password.trim()) {
+      setStatusMessage("Users require username and password.");
+      return;
+    }
+    const duplicateUsernameIndex = userRecords.findIndex(
+      (entry, index) =>
+        index !== editingIndex &&
+        entry.username.trim().toLowerCase() === normalizedUsername,
+    );
+    if (duplicateUsernameIndex >= 0) {
+      setStatusMessage("Username already exists. Choose a different username.");
+      return;
+    }
+    const previousName = editingIndex !== null ? userRecords[editingIndex]?.name.trim() ?? "" : "";
+    const nextUserRecords =
+      editingIndex === null
+        ? userRecords.some(
+            (entry) => entry.name.trim().localeCompare(normalizedName, undefined, { sensitivity: "base" }) === 0,
+          )
+          ? userRecords
+          : [
+              ...userRecords,
+              {
+                name: normalizedName,
+                userType: userDraft.userType,
+                username: normalizedUsername,
+                password: userDraft.password,
+              },
+            ]
+        : userRecords.map((entry, index) =>
+            index === editingIndex
+              ? {
+                  ...entry,
+                  name: normalizedName,
+                  userType: userDraft.userType,
+                  username: normalizedUsername,
+                  password: userDraft.password || entry.password,
+                }
+              : entry,
+          );
+    setUserRecords(nextUserRecords);
+    setPersonnelRecords((previous) => {
+      const byName = new Map(
+        previous
+          .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+          .filter(([name]) => name.length > 0),
+      );
+      return nextUserRecords
+        .map((user) => {
+          const userName = user.name.trim();
+          const existing = byName.get(userName.toLocaleLowerCase());
+          if (existing) {
+            const matchedUser = nextUserRecords.find(
+              (user) =>
+                user.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+            );
+            return {
+              ...existing,
+              name: userName,
+              userType: matchedUser?.userType ?? existing.userType,
+            };
           }
+          const matchedUser = nextUserRecords.find(
+            (record) =>
+              record.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+          );
           return {
-            ...entry,
-            unitType: apparatusDraft.unitType || entry.unitType,
-            minimumPersonnel:
-              apparatusDraft.minimumPersonnel > 0
-                ? apparatusDraft.minimumPersonnel
-                : entry.minimumPersonnel,
-            personnelRequirements:
-              apparatusDraft.personnelRequirements.length > 0
-                ? apparatusDraft.personnelRequirements
-                : entry.personnelRequirements,
-            station: apparatusDraft.station || entry.station,
-          };
-        }),
+            name: userName,
+            shift: "",
+            apparatusAssignment: "",
+            station: "",
+            userType: matchedUser?.userType ?? "",
+            qualifications: [],
+          } satisfies DepartmentPersonnelRecord;
+        })
+        .filter((entry) => entry.name.length > 0);
+    });
+    if (
+      previousName &&
+      normalizedName &&
+      previousName.localeCompare(normalizedName, undefined, { sensitivity: "base" }) !== 0
+    ) {
+      setKellyRotations((previous) =>
+        previous.map((entry) =>
+          entry.personnel.trim() === previousName ? { ...entry, personnel: normalizedName } : entry,
+        ),
       );
     }
     setIsEntryFormOpen(false);
@@ -12490,10 +13009,120 @@ function DepartmentDetailsPage() {
     setStatusMessage("Auto-saved.");
   };
 
+  const resetAdditionalFieldDraft = useCallback(() => {
+    setAdditionalFieldDraft({
+      id: "",
+      fieldName: "",
+      numberOfSlots: 1,
+      valueMode: "personnel",
+      personnelOverride: true,
+    });
+  }, []);
+
+  const saveAdditionalField = () => {
+    const normalizedName = additionalFieldDraft.fieldName.trim();
+    if (!normalizedName) {
+      return;
+    }
+    const normalizedSlots = Math.max(1, Math.floor(Number(additionalFieldDraft.numberOfSlots) || 1));
+    const normalizedMode: AdditionalFieldValueMode =
+      additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
+    const normalizedOverride =
+      normalizedMode === "personnel" ? Boolean(additionalFieldDraft.personnelOverride) : false;
+
+    setAdditionalFieldRecords((previous) => {
+      const existingRow =
+        editingAdditionalFieldIndex !== null ? previous[editingAdditionalFieldIndex] : undefined;
+      const preserveKellyId = existingRow?.id === "support-kelly-day";
+      const baseId = existingRow?.id ?? toAdditionalFieldId(normalizedName);
+      let nextId = preserveKellyId ? "support-kelly-day" : baseId;
+      const takenIds = new Set(
+        previous
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ index }) => index !== editingAdditionalFieldIndex)
+          .map(({ entry }) => entry.id),
+      );
+      if (takenIds.has(nextId)) {
+        let counter = 2;
+        while (takenIds.has(`${nextId}-${counter}`)) {
+          counter += 1;
+        }
+        nextId = `${nextId}-${counter}`;
+      }
+      const normalizedRow: AdditionalFieldRecord = {
+        id: nextId,
+        fieldName: normalizedName,
+        numberOfSlots: normalizedSlots,
+        valueMode: preserveKellyId ? "personnel" : normalizedMode,
+        personnelOverride: preserveKellyId ? true : normalizedOverride,
+      };
+      return editingAdditionalFieldIndex === null
+        ? [...previous, normalizedRow]
+        : previous.map((entry, index) =>
+            index === editingAdditionalFieldIndex ? normalizedRow : entry,
+          );
+    });
+
+    setEditingAdditionalFieldIndex(null);
+    resetAdditionalFieldDraft();
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const removeAdditionalField = (index: number) => {
+    const record = additionalFieldRecords[index];
+    if (!record) return;
+    if (record.id === "support-kelly-day") {
+      setStatusMessage("Kelly Day is required and cannot be removed.");
+      return;
+    }
+    setAdditionalFieldRecords((previous) =>
+      previous.filter((_, fieldIndex) => fieldIndex !== index),
+    );
+    if (editingAdditionalFieldIndex === index) {
+      setEditingAdditionalFieldIndex(null);
+      resetAdditionalFieldDraft();
+    }
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const handleAdditionalFieldDrop = (targetIndex: number) => {
+    setAdditionalFieldRecords((previous) => {
+      const fromIndex = dragAdditionalFieldIndex;
+      if (fromIndex === null || fromIndex < 0 || fromIndex >= previous.length) {
+        return previous;
+      }
+      if (targetIndex < 0 || targetIndex >= previous.length || targetIndex === fromIndex) {
+        return previous;
+      }
+      const next = [...previous];
+      const [moved] = next.splice(fromIndex, 1);
+      if (!moved) {
+        return previous;
+      }
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+    setDragAdditionalFieldIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Additional field order updated.");
+  };
+
   const persistDepartmentDetails = useCallback(() => {
     if (typeof window === "undefined") {
       return;
     }
+    const nextUiPreferencesByUser = {
+      ...uiPreferencesByUser,
+      [uiPreferenceUserKey]: {
+        ...(uiPreferencesByUser[uiPreferenceUserKey] ?? {}),
+        apparatusFieldWidths,
+        apparatusFieldOrder,
+        schedulerApparatusFieldWidths,
+        schedulerPersonnelFieldWidths,
+      },
+    };
     const payload = {
       departmentName,
       departmentStreet,
@@ -12507,13 +13136,19 @@ function DepartmentDetailsPage() {
       secondaryContactPhone,
       departmentLogoFileName,
       stationRecords,
-      apparatusRecords,
+      masterApparatusRecords: apparatusRecords,
+      schedulerApparatusRecords,
+      additionalFields: additionalFieldRecords,
+      standardOvertimeSlot,
       shiftInformationEntries,
-      personnelRecords,
+      userRecords,
+      schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
       userTypeValues,
       selectedMutualAidIds,
       kellyRotations,
+      schedulerEnabled,
+      uiPreferencesByUser: nextUiPreferencesByUser,
     };
     window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(payload));
     fetch("/api/department-details", {
@@ -12532,6 +13167,8 @@ function DepartmentDetailsPage() {
         setStatusMessage("Saved locally. File save failed—ensure npm run proxy is running.");
       });
   }, [
+    apparatusFieldOrder,
+    apparatusFieldWidths,
     apparatusRecords,
     departmentCity,
     departmentLogoFileName,
@@ -12543,8 +13180,17 @@ function DepartmentDetailsPage() {
     mainContactName,
     mainContactPhone,
     kellyRotations,
+    additionalFieldRecords,
+    standardOvertimeSlot,
     personnelQualifications,
     personnelRecords,
+    schedulerApparatusFieldWidths,
+    schedulerApparatusRecords,
+    schedulerEnabled,
+    schedulerPersonnelFieldWidths,
+    uiPreferenceUserKey,
+    uiPreferencesByUser,
+    userRecords,
     secondaryContactName,
     secondaryContactPhone,
     selectedMutualAidIds,
@@ -12669,7 +13315,7 @@ function DepartmentDetailsPage() {
                       : definition.key === "shiftInformation"
                         ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
                         : definition.key === "personnel"
-                          ? `Total Personnel: ${personnelRecords.length}`
+                          ? `Total Users: ${userRecords.length}`
                         : definition.key === "kellyRotation"
                           ? `Total Kelly Rotations: ${kellyRotations.length}`
                           : `Total Qualifications: ${personnelQualifications.length}`}
@@ -12682,24 +13328,53 @@ function DepartmentDetailsPage() {
         <article className="panel">
           <div className="panel-header">
             <h2>Scheduler Settings</h2>
+            <label className="field-hint" style={{ marginLeft: "auto" }}>
+              <input
+                type="checkbox"
+                checked={schedulerEnabled}
+                onChange={(event) => {
+                  setSchedulerEnabled(event.target.checked);
+                  setAutoSaveTick((previous) => previous + 1);
+                  setStatusMessage("Auto-saved.");
+                }}
+                style={{ marginRight: "0.35rem" }}
+              />
+              Enable Scheduler Settings
+            </label>
           </div>
-          <div className="department-collection-grid">
-            {schedulerSettingsCards.map((definition) => (
-              <div key={definition.key} className="department-collection-card">
-                <div className="department-collection-card-header">
-                  <h3>{definition.label}</h3>
-                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
-                    {definition.editButtonLabel}
-                  </button>
+          {schedulerEnabled ? (
+            <div className="department-collection-grid">
+              {schedulerSettingsCards.map((definition) => (
+                <div key={definition.key} className="department-collection-card">
+                  <div className="department-collection-card-header">
+                    <h3>{definition.label}</h3>
+                    <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                      {definition.editButtonLabel}
+                    </button>
+                  </div>
+                  <p className="field-hint">
+                    {definition.key === "shiftInformation"
+                      ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
+                      : definition.key === "additionalFields"
+                      ? `Total Additional Fields: ${additionalFieldRecords.length}`
+                      : definition.key === "overtimeSetup"
+                      ? `Standard Overtime Slot: ${standardOvertimeSlot} hour(s)`
+                      : definition.key === "schedulerApparatus"
+                      ? `Total Apparatus: ${schedulerApparatusRecords.length}`
+                      : definition.key === "schedulerPersonnel"
+                      ? `Total Personnel: ${personnelRecords.length}`
+                      : definition.key === "kellyRotation"
+                        ? `Total Kelly Rotations: ${kellyRotations.length}`
+                        : `Total Qualifications: ${personnelQualifications.length}`}
+                  </p>
                 </div>
-                <p className="field-hint">
-                  {definition.key === "kellyRotation"
-                    ? `Total Kelly Rotations: ${kellyRotations.length}`
-                    : `Total Qualifications: ${personnelQualifications.length}`}
-                </p>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          ) : (
+            <p className="field-hint">
+              Scheduler settings are hidden until this feature is enabled by a super admin.
+            </p>
+          )}
         </article>
 
         <article className="panel">
@@ -12758,68 +13433,244 @@ function DepartmentDetailsPage() {
               </button>
             </div>
 
-            {(isStationsEditor || isApparatusEditor || isPersonnelEditor) ? (
+            {(isStationsEditor || isApparatusEditor || isUsersEditor || isSchedulerPersonnelEditor || isSchedulerApparatusEditor || isAdditionalFieldsEditor) ? (
               <>
                 <div className="department-editor-toolbar-actions">
-                  <button type="button" className="secondary-button compact-button" onClick={openAddForm}>
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    className={`secondary-button compact-button ${isMultiEditMode ? "department-toggle-active" : ""}`}
-                    onClick={() => {
-                      setIsMultiEditMode((previous) => !previous);
-                      setSelectedSingleIndex(null);
-                      setSelectedMultiIndices([]);
-                    }}
-                  >
-                    Edit Multiple
-                  </button>
-                  <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
-                    Edit
-                  </button>
+                  {!isSchedulerPersonnelEditor && !isSchedulerApparatusEditor && !isAdditionalFieldsEditor ? (
+                    <button type="button" className="secondary-button compact-button" onClick={openAddForm}>
+                      Add
+                    </button>
+                  ) : null}
+                  {isStationsEditor ? (
+                    <button
+                      type="button"
+                      className={`secondary-button compact-button ${isMultiEditMode ? "department-toggle-active" : ""}`}
+                      onClick={() => {
+                        setIsMultiEditMode((previous) => !previous);
+                        setSelectedSingleIndex(null);
+                        setSelectedMultiIndices([]);
+                      }}
+                    >
+                      Edit Multiple
+                    </button>
+                  ) : null}
+                  {!isSchedulerPersonnelEditor && !isSchedulerApparatusEditor && !isAdditionalFieldsEditor ? (
+                    <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
+                      Edit
+                    </button>
+                  ) : null}
                 </div>
 
-                {isPersonnelEditor ? (
+                {isUsersEditor ? (
                   <div className="department-apparatus-list-wrapper">
-                      <div className="table-wrapper">
+                    <div className="table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>User Name</th>
+                            <th>Username</th>
+                            <th>User Type</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {userRecords.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} className="department-apparatus-empty">
+                                No users. Click Add to create one.
+                              </td>
+                            </tr>
+                          ) : (
+                            userRecords.map((user, index) => (
+                              <tr
+                                key={`user-row-${index}-${user.name}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openEditForm(index)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openEditForm(index);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{user.name || "—"}</strong>
+                                </td>
+                                <td>
+                                  <span className="department-apparatus-field">{user.username || "—"}</span>
+                                </td>
+                                <td>
+                                  <span className="department-apparatus-field">{user.userType || "—"}</span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : isSchedulerApparatusEditor ? (
+                  <div className="department-apparatus-list-wrapper">
+                    <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={() => setIsImportApparatusModalOpen(true)}
+                      >
+                        Import Apparatus
+                      </button>
+                    </div>
+                    <div className="table-wrapper scheduler-apparatus-table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style={{ width: "42px" }} aria-label="Drag handle" />
+                            <th>Apparatus</th>
+                            <th>
+                              <div
+                                className="department-scheduler-apparatus-grid-line department-personnel-grid-header"
+                                style={schedulerApparatusGridStyle}
+                              >
+                                {SCHEDULER_APPARATUS_GRID_FIELD_ORDER.map((fieldId, idx) => {
+                                  const label =
+                                    fieldId === "minPersonnel"
+                                      ? "Min Personnel"
+                                      : fieldId === "maxPersonnel"
+                                        ? "Max Personnel"
+                                      : fieldId === "personnelRequirements"
+                                        ? "Minimum Requirements"
+                                        : "Station";
+                                  return (
+                                    <span
+                                      key={`scheduler-apparatus-header-${fieldId}`}
+                                      className="department-apparatus-field department-apparatus-header-field"
+                                    >
+                                      <span className="department-apparatus-header-label">{label}</span>
+                                      {idx < SCHEDULER_APPARATUS_GRID_FIELD_ORDER.length - 1 ? (
+                                        <span
+                                          className="dispatch-column-resizer"
+                                          role="separator"
+                                          aria-label={`Resize ${label} column`}
+                                          aria-orientation="vertical"
+                                          onPointerDown={(event) =>
+                                            startSchedulerApparatusFieldResize(fieldId, event)
+                                          }
+                                          title={`Drag to resize ${label}`}
+                                        >
+                                          |
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {schedulerApparatusRecords.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} className="department-apparatus-empty">
+                                No scheduler apparatus yet. Click Import Apparatus to add rows.
+                              </td>
+                            </tr>
+                          ) : (
+                            schedulerApparatusRecords.map((entry, index) => (
+                              <tr
+                                key={`scheduler-apparatus-${index}-${entry.apparatus}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                draggable
+                                onDragStart={() => setDragSchedulerApparatusIndex(index)}
+                                onDragEnd={() => setDragSchedulerApparatusIndex(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => handleSchedulerApparatusDrop(index)}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openEditForm(index)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openEditForm(index);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <span className="drag-handle" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                  </span>
+                                </td>
+                                <td>
+                                  <strong className="call-number-text">{entry.apparatus || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div
+                                      className="department-scheduler-apparatus-grid-line"
+                                      style={schedulerApparatusGridStyle}
+                                    >
+                                      <span className="department-apparatus-field">{String(entry.minimumPersonnel)}</span>
+                                      <span className="department-apparatus-field">{String(entry.maximumPersonnel)}</span>
+                                      <span className="department-apparatus-field">
+                                        {entry.personnelRequirements.length > 0 ? entry.personnelRequirements.join(", ") : "—"}
+                                      </span>
+                                      <span className="department-apparatus-field">{entry.station || "—"}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : isSchedulerPersonnelEditor ? (
+                  <div className="department-apparatus-list-wrapper">
+                      <div className="table-wrapper scheduler-personnel-table-wrapper">
                         <table>
                           <thead>
                             <tr>
-                              {isMultiEditMode ? (
-                                <th className="department-personnel-checkbox-col">
-                                  <input
-                                    type="checkbox"
-                                    aria-label="Select all personnel"
-                                    checked={
-                                      personnelRecords.length > 0 &&
-                                      selectedMultiIndices.length === personnelRecords.length
-                                    }
-                                    ref={(el) => {
-                                      if (el) {
-                                        el.indeterminate =
-                                          selectedMultiIndices.length > 0 &&
-                                          selectedMultiIndices.length < personnelRecords.length;
-                                      }
-                                    }}
-                                    onChange={() => {
-                                      if (selectedMultiIndices.length === personnelRecords.length) {
-                                        setSelectedMultiIndices([]);
-                                      } else {
-                                        setSelectedMultiIndices(personnelRecords.map((_, i) => i));
-                                      }
-                                    }}
-                                  />
-                                </th>
-                              ) : null}
                               <th>Name</th>
                               <th>
-                                <div className="department-personnel-grid-line department-personnel-grid-header">
-                                  <span>Shift</span>
-                                  <span>Apparatus</span>
-                                  <span>Station</span>
-                                  <span>User Type</span>
-                                  <span>Qualifications</span>
+                                <div
+                                  className="department-personnel-grid-line--four department-personnel-grid-header"
+                                  style={schedulerPersonnelGridStyle}
+                                >
+                                  {SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.map((fieldId, idx) => {
+                                    const label =
+                                      fieldId === "shift"
+                                        ? "Shift"
+                                        : fieldId === "apparatusAssignment"
+                                          ? "Apparatus"
+                                          : fieldId === "station"
+                                            ? "Station"
+                                            : "Qualifications";
+                                    return (
+                                      <span
+                                        key={`scheduler-personnel-header-${fieldId}`}
+                                        className="department-apparatus-field department-apparatus-header-field"
+                                      >
+                                        <span className="department-apparatus-header-label">{label}</span>
+                                        {idx < SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.length - 1 ? (
+                                          <span
+                                            className="dispatch-column-resizer"
+                                            role="separator"
+                                            aria-label={`Resize ${label} column`}
+                                            aria-orientation="vertical"
+                                            onPointerDown={(event) =>
+                                              startSchedulerPersonnelFieldResize(fieldId, event)
+                                            }
+                                            title={`Drag to resize ${label}`}
+                                          >
+                                            |
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </th>
                             </tr>
@@ -12827,65 +13678,37 @@ function DepartmentDetailsPage() {
                           <tbody>
                             {personnelRecords.length === 0 ? (
                               <tr>
-                                <td colSpan={isMultiEditMode ? 3 : 2} className="department-apparatus-empty">
-                                  No personnel. Click Add to create one.
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  No personnel yet. Add users first in Department Details -&gt; Users.
                                 </td>
                               </tr>
                             ) : (
                               personnelRecords.map((personnel, index) => (
                                 <tr
                                   key={`personnel-row-${index}-${personnel.name}`}
-                                  className={`clickable-row ${!isMultiEditMode && selectedSingleIndex === index ? "clickable-row-selected" : ""} ${isMultiEditMode && selectedMultiIndices.includes(index) ? "clickable-row-selected" : ""}`}
-                                  role={isMultiEditMode ? undefined : "button"}
-                                  tabIndex={isMultiEditMode ? undefined : 0}
-                                  onClick={
-                                    isMultiEditMode
-                                      ? undefined
-                                      : () => openEditForm(index)
-                                  }
-                                  onKeyDown={
-                                    isMultiEditMode
-                                      ? undefined
-                                      : (event) => {
-                                          if (event.key === "Enter" || event.key === " ") {
-                                            event.preventDefault();
-                                            openEditForm(index);
-                                          }
-                                        }
-                                  }
+                                  className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openEditForm(index)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      openEditForm(index);
+                                    }
+                                  }}
                                 >
-                                  {isMultiEditMode ? (
-                                    <td className="department-personnel-checkbox-col">
-                                      <input
-                                        type="checkbox"
-                                        aria-label={`Select ${personnel.name || "personnel"}`}
-                                        checked={selectedMultiIndices.includes(index)}
-                                        onChange={(e) => {
-                                          e.stopPropagation();
-                                          if (e.target.checked) {
-                                            setSelectedMultiIndices((prev) =>
-                                              [...prev, index].sort((a, b) => a - b),
-                                            );
-                                          } else {
-                                            setSelectedMultiIndices((prev) =>
-                                              prev.filter((i) => i !== index),
-                                            );
-                                          }
-                                        }}
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                    </td>
-                                  ) : null}
                                   <td>
                                     <strong className="call-number-text">{personnel.name || "—"}</strong>
                                   </td>
                                   <td>
                                     <div className="dispatch-info-cell">
-                                      <div className="department-personnel-grid-line">
+                                      <div
+                                        className="department-personnel-grid-line--four"
+                                        style={schedulerPersonnelGridStyle}
+                                      >
                                         <span className="department-apparatus-field">{personnel.shift || "—"}</span>
                                         <span className="department-apparatus-field">{personnel.apparatusAssignment || "—"}</span>
                                         <span className="department-apparatus-field">{personnel.station || "—"}</span>
-                                        <span className="department-apparatus-field">{personnel.userType || "—"}</span>
                                         <span className="department-apparatus-field">
                                           {personnel.qualifications.length > 0 ? personnel.qualifications.join(", ") : "—"}
                                         </span>
@@ -13255,6 +14078,200 @@ function DepartmentDetailsPage() {
                 <div className="department-editor-toolbar-actions">
                   <button type="button" className="primary-button compact-button" onClick={addShiftInformationEntry}>
                     {editingIndex === null ? "Add Shift Information" : "Save Shift Information"}
+                  </button>
+                </div>
+              </>
+            ) : null}
+
+            {isAdditionalFieldsEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <input
+                    type="text"
+                    value={additionalFieldDraft.fieldName}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => ({
+                        ...previous,
+                        fieldName: event.target.value,
+                      }))
+                    }
+                    placeholder="Field Name"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={additionalFieldDraft.numberOfSlots}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => ({
+                        ...previous,
+                        numberOfSlots: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                      }))
+                    }
+                    placeholder="Number of Slots"
+                  />
+                  <select
+                    value={additionalFieldDraft.valueMode}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => ({
+                        ...previous,
+                        valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
+                        personnelOverride:
+                          event.target.value === "text" ? false : previous.personnelOverride,
+                      }))
+                    }
+                  >
+                    <option value="text">Text</option>
+                    <option value="personnel">Personnel</option>
+                  </select>
+                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        additionalFieldDraft.valueMode === "personnel" &&
+                        additionalFieldDraft.personnelOverride
+                      }
+                      disabled={additionalFieldDraft.valueMode !== "personnel"}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          personnelOverride: event.target.checked,
+                        }))
+                      }
+                    />
+                    Personnel Override
+                  </label>
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={saveAdditionalField}
+                  >
+                    {editingAdditionalFieldIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  `Text` behaves like the Info row. `Personnel` allows slot assignments in Personnel Schedule.
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: "32px" }} aria-label="Drag to reorder" />
+                          <th>Field Name</th>
+                          <th style={{ width: "110px" }}>Slots</th>
+                          <th style={{ width: "120px" }}>Type</th>
+                          <th style={{ width: "160px" }}>Personnel Override</th>
+                          <th style={{ width: "90px" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {additionalFieldRecords.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="department-apparatus-empty">
+                              No additional fields. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          additionalFieldRecords.map((entry, index) => (
+                            <tr
+                              key={`additional-field-${entry.id}-${index}`}
+                              className={`clickable-row ${
+                                editingAdditionalFieldIndex === index ? "clickable-row-selected" : ""
+                              }`}
+                              draggable
+                              onDragStart={() => setDragAdditionalFieldIndex(index)}
+                              onDragEnd={() => setDragAdditionalFieldIndex(null)}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => handleAdditionalFieldDrop(index)}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingAdditionalFieldIndex(index);
+                                setAdditionalFieldDraft(entry);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingAdditionalFieldIndex(index);
+                                  setAdditionalFieldDraft(entry);
+                                }
+                              }}
+                            >
+                              <td
+                                className="department-qualification-drag-cell"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <span className="drag-handle" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </span>
+                              </td>
+                              <td>
+                                <strong className="call-number-text">{entry.fieldName || "—"}</strong>
+                                {entry.id === "support-kelly-day" ? (
+                                  <small className="field-hint" style={{ marginLeft: "0.45rem" }}>
+                                    Required
+                                  </small>
+                                ) : null}
+                              </td>
+                              <td>{entry.numberOfSlots}</td>
+                              <td>{entry.valueMode === "text" ? "Text" : "Personnel"}</td>
+                              <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeAdditionalField(index);
+                                  }}
+                                  disabled={entry.id === "support-kelly-day"}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {isOvertimeSetupEditor ? (
+              <>
+                <div className="department-edit-grid">
+                  <label>
+                    Standard Overtime Slot (hours)
+                    <input
+                      type="number"
+                      min={1}
+                      value={standardOvertimeSlot}
+                      onChange={(event) =>
+                        setStandardOvertimeSlot(
+                          Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem" }}>
+                  Minimum apparatus slots can be overtime-split in day block view. Example: 12 =&gt; 2 personnel in one
+                  slot, 8 =&gt; 3 personnel in one slot.
+                </p>
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={() => {
+                      setAutoSaveTick((previous) => previous + 1);
+                      setStatusMessage("Auto-saved.");
+                    }}
+                  >
+                    Save
                   </button>
                 </div>
               </>
@@ -13630,14 +14647,14 @@ function DepartmentDetailsPage() {
           <article className="panel department-editor-modal">
             <div className="panel-header">
               <h2>
-                {isPersonnelEditor
-                  ? isMultiEditMode
-                    ? "Edit Multiple Personnel"
-                    : "Personnel Entry"
+                {isUsersEditor
+                  ? "User Entry"
+                  : isSchedulerApparatusEditor
+                    ? "Scheduler Apparatus Entry"
+                  : isSchedulerPersonnelEditor
+                    ? "Scheduler Personnel Entry"
                   : isApparatusEditor
-                    ? isMultiEditMode
-                      ? "Edit Multiple Apparatus"
-                      : "Apparatus Entry"
+                    ? "Apparatus Entry"
                     : isMultiEditMode
                       ? "Edit Multiple Stations"
                       : "Station Entry"}
@@ -13680,12 +14697,14 @@ function DepartmentDetailsPage() {
 
             {isApparatusEditor ? (
               <div className="department-edit-grid">
-                {!isMultiEditMode ? (
-                  <label>
-                    Unit ID
-                    <input type="text" value={apparatusDraft.unitId} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, unitId: event.target.value }))} />
-                  </label>
-                ) : null}
+                <label>
+                  Unit ID
+                  <input type="text" value={apparatusDraft.unitId} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, unitId: event.target.value }))} />
+                </label>
+                <label>
+                  Common Name
+                  <input type="text" value={apparatusDraft.commonName} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, commonName: event.target.value }))} />
+                </label>
                 <label>
                   Unit Type
                   <NerisFlatSingleOptionSelect
@@ -13702,13 +14721,34 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
-                  Minimum Personnel
+                  Make
+                  <input type="text" value={apparatusDraft.make} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, make: event.target.value }))} />
+                </label>
+                <label>
+                  Model
+                  <input type="text" value={apparatusDraft.model} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, model: event.target.value }))} />
+                </label>
+                <label>
+                  Year
+                  <input type="text" value={apparatusDraft.year} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, year: event.target.value }))} />
+                </label>
+              </div>
+            ) : null}
+
+            {isSchedulerApparatusEditor ? (
+              <div className="department-edit-grid">
+                <label>
+                  Apparatus
+                  <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                </label>
+                <label>
+                  Min Personnel
                   <input
                     type="number"
                     min={0}
-                    value={apparatusDraft.minimumPersonnel}
+                    value={schedulerApparatusDraft.minimumPersonnel}
                     onChange={(event) =>
-                      setApparatusDraft((previous) => ({
+                      setSchedulerApparatusDraft((previous) => ({
                         ...previous,
                         minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
                       }))
@@ -13716,13 +14756,27 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
+                  Max Personnel
+                  <input
+                    type="number"
+                    min={1}
+                    value={schedulerApparatusDraft.maximumPersonnel}
+                    onChange={(event) =>
+                      setSchedulerApparatusDraft((previous) => ({
+                        ...previous,
+                        maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
                   Minimum Requirements (select all that apply)
                   <NerisFlatMultiOptionSelect
-                    inputId="apparatus-personnel-requirements"
-                    value={apparatusDraft.personnelRequirements.join(",")}
+                    inputId="scheduler-apparatus-personnel-requirements"
+                    value={schedulerApparatusDraft.personnelRequirements.join(",")}
                     options={personnelQualifications.map((q) => ({ value: q, label: q }))}
                     onChange={(nextValue) =>
-                      setApparatusDraft((previous) => ({
+                      setSchedulerApparatusDraft((previous) => ({
                         ...previous,
                         personnelRequirements: nextValue
                           .split(",")
@@ -13730,23 +14784,24 @@ function DepartmentDetailsPage() {
                           .filter(Boolean),
                       }))
                     }
-                    placeholder="Select personnel requirement(s)"
+                    placeholder="Select minimum requirement(s)"
                     searchPlaceholder="Search qualifications..."
-                    maxSelections={apparatusDraft.minimumPersonnel > 0 ? apparatusDraft.minimumPersonnel : undefined}
+                    maxSelections={
+                      schedulerApparatusDraft.minimumPersonnel > 0
+                        ? schedulerApparatusDraft.minimumPersonnel
+                        : undefined
+                    }
                     usePortal
                   />
-                  {personnelQualifications.length === 0 ? (
-                    <small className="field-hint">Add qualifications in Edit Personnel Qualifications first.</small>
-                  ) : null}
                 </label>
                 <label>
                   Station
                   <NerisFlatSingleOptionSelect
-                    inputId="apparatus-station"
-                    value={apparatusDraft.station}
+                    inputId="scheduler-apparatus-station"
+                    value={schedulerApparatusDraft.station}
                     options={stationNames.map((s) => ({ value: s, label: s }))}
                     onChange={(nextValue) =>
-                      setApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                      setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
                     }
                     placeholder="Select station"
                     searchPlaceholder="Search stations..."
@@ -13757,25 +14812,78 @@ function DepartmentDetailsPage() {
               </div>
             ) : null}
 
-            {isPersonnelEditor ? (
+            {isUsersEditor ? (
               <div className="department-edit-grid">
-                {!isMultiEditMode ? (
-                  <label>
-                    Personnel Name
-                    <input type="text" value={personnelDraft.name} onChange={(event) => setPersonnelDraft((previous) => ({ ...previous, name: event.target.value }))} />
-                  </label>
-                ) : null}
+                <label>
+                  User Name
+                  <input
+                    type="text"
+                    value={userDraft.name}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({ ...previous, name: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Username
+                  <input
+                    type="text"
+                    value={userDraft.username}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({
+                        ...previous,
+                        username: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={userDraft.password}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({
+                        ...previous,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  User Type
+                  <select
+                    value={userDraft.userType}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({ ...previous, userType: event.target.value }))
+                    }
+                  >
+                    <option value="">Select user type</option>
+                    {userTypeValues.map((option) => (
+                      <option key={`user-user-type-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            {isSchedulerPersonnelEditor ? (
+              <div className="department-edit-grid">
+                <label>
+                  Personnel Name
+                  <input type="text" value={personnelDraft.name} readOnly />
+                </label>
                 <label>
                   Shift
                   <select
-                    value={!isMultiEditMode ? personnelDraft.shift : personnelBulkDraft.shift}
+                    value={personnelDraft.shift}
                     onChange={(event) =>
-                      !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, shift: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, shift: event.target.value }))
+                      setPersonnelDraft((previous) => ({ ...previous, shift: event.target.value }))
                     }
                   >
-                    <option value="">{isMultiEditMode ? "No change" : "Select shift"}</option>
+                    <option value="">Select shift</option>
                     {shiftOptionValues.map((option) => (
                       <option key={`personnel-shift-${option}`} value={option}>
                         {option}
@@ -13786,30 +14894,21 @@ function DepartmentDetailsPage() {
                 <label>
                   Apparatus Assignment
                   <select
-                    value={!isMultiEditMode ? personnelDraft.apparatusAssignment : personnelBulkDraft.apparatusAssignment}
+                    value={personnelDraft.apparatusAssignment}
                     onChange={(event) => {
                       const nextApparatus = event.target.value;
-                      const matchedApparatus = apparatusRecords.find(
-                        (a) =>
-                          `${a.unitId}${a.unitType ? ` (${a.unitType})` : ""}`.trim() === nextApparatus,
+                      const matchedApparatus = schedulerApparatusRecords.find(
+                        (a) => a.apparatus.trim() === nextApparatus,
                       );
                       const defaultStation = matchedApparatus?.station?.trim() ?? "";
-                      if (!isMultiEditMode) {
-                        setPersonnelDraft((previous) => ({
-                          ...previous,
-                          apparatusAssignment: nextApparatus,
-                          station: defaultStation ? defaultStation : previous.station,
-                        }));
-                      } else {
-                        setPersonnelBulkDraft((previous) => ({
-                          ...previous,
-                          apparatusAssignment: nextApparatus,
-                          station: defaultStation ? defaultStation : previous.station,
-                        }));
-                      }
+                      setPersonnelDraft((previous) => ({
+                        ...previous,
+                        apparatusAssignment: nextApparatus,
+                        station: defaultStation ? defaultStation : previous.station,
+                      }));
                     }}
                   >
-                    <option value="">{isMultiEditMode ? "No change" : "Select apparatus"}</option>
+                    <option value="">Select apparatus</option>
                     {apparatusNames.map((option) => (
                       <option key={`personnel-apparatus-${option}`} value={option}>
                         {option}
@@ -13821,56 +14920,26 @@ function DepartmentDetailsPage() {
                   Station
                   <NerisFlatSingleOptionSelect
                     inputId="personnel-station"
-                    value={!isMultiEditMode ? personnelDraft.station : personnelBulkDraft.station}
+                    value={personnelDraft.station}
                     options={stationNames.map((s) => ({ value: s, label: s }))}
                     onChange={(nextValue) => {
-                      if (!isMultiEditMode) {
-                        setPersonnelDraft((previous) => ({ ...previous, station: nextValue }));
-                      } else {
-                        setPersonnelBulkDraft((previous) => ({ ...previous, station: nextValue }));
-                      }
+                      setPersonnelDraft((previous) => ({ ...previous, station: nextValue }));
                     }}
-                    placeholder={isMultiEditMode ? "No change" : "Select station"}
+                    placeholder="Select station"
                     searchPlaceholder="Search stations..."
                     allowClear
                     usePortal
                   />
                 </label>
-                <label>
-                  User Type
-                  <select
-                    value={!isMultiEditMode ? personnelDraft.userType : personnelBulkDraft.userType}
-                    onChange={(event) =>
-                      !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, userType: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: event.target.value }))
-                    }
-                  >
-                    <option value="">{isMultiEditMode ? "No change" : "Select user type"}</option>
-                    {userTypeValues.map((option) => (
-                      <option key={`personnel-user-type-${option}`} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label className="department-qualifications-field-label">
                   Qualifications (select all that apply)
                   <NerisFlatMultiOptionSelect
                     inputId="personnel-qualifications"
-                    value={
-                      !isMultiEditMode
-                        ? personnelDraft.qualifications.join(",")
-                        : personnelBulkDraft.qualifications.join(",")
-                    }
+                    value={personnelDraft.qualifications.join(",")}
                     options={personnelQualifications.map((q) => ({ value: q, label: q }))}
                     onChange={(nextValue) => {
                       const arr = nextValue.split(",").map((s) => s.trim()).filter(Boolean);
-                      if (!isMultiEditMode) {
-                        setPersonnelDraft((previous) => ({ ...previous, qualifications: arr }));
-                      } else {
-                        setPersonnelBulkDraft((previous) => ({ ...previous, qualifications: arr }));
-                      }
+                      setPersonnelDraft((previous) => ({ ...previous, qualifications: arr }));
                     }}
                     placeholder="Select qualification(s)"
                     searchPlaceholder="Search qualifications..."
@@ -13892,7 +14961,11 @@ function DepartmentDetailsPage() {
                     saveStationForm();
                   } else if (isApparatusEditor) {
                     saveApparatusForm();
-                  } else if (isPersonnelEditor) {
+                  } else if (isSchedulerApparatusEditor) {
+                    saveSchedulerApparatusForm();
+                  } else if (isUsersEditor) {
+                    saveUserForm();
+                  } else if (isSchedulerPersonnelEditor) {
                     savePersonnelForm();
                   }
                 }}
@@ -13903,103 +14976,58 @@ function DepartmentDetailsPage() {
           </article>
         </div>
       ) : null}
-    </section>
-  );
-}
 
-function HydrantsAdminPage() {
-  const [fileName, setFileName] = useState("No file selected");
-  const [statusMessage, setStatusMessage] = useState("");
-
-  const handleUpload = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setStatusMessage("CSV upload staged in prototype mode. Parsing comes next.");
-  };
-
-  return (
-    <section className="page-section">
-      <header className="page-header">
-        <div>
-          <h1>Admin Functions | Hydrants</h1>
-          <p>
-            Mass upload hydrants via CSV and maintain hydrant placement manually on
-            the map.
-          </p>
-        </div>
-      </header>
-
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>CSV Upload</h2>
-          </div>
-          <form className="settings-form" onSubmit={handleUpload}>
-            <label htmlFor="hydrant-upload">Hydrant CSV File</label>
-            <input
-              id="hydrant-upload"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) =>
-                setFileName(event.target.files?.[0]?.name ?? "No file selected")
-              }
-            />
-            <p className="field-hint">Selected file: {fileName}</p>
-            <button type="submit" className="primary-button">
-              Upload CSV
-            </button>
-            {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
-          </form>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Hydrant Map Editing</h2>
-          </div>
-          <div className="dispatch-map-placeholder">
-            <p>
-              Hydrant map editor placeholder. This screen will support manual pin
-              placement and hydrant attribute editing.
+      {isImportApparatusModalOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>Import Apparatus</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setIsImportApparatusModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <p className="field-hint">
+              Continue will import all Apparatus Common Names from Department Details into Scheduler Settings.
             </p>
-            <ul>
-              <li>Drag hydrant markers to adjust map location</li>
-              <li>Update flow rate, status, and service notes</li>
-              <li>Sync map marker overlays for incident response</li>
-            </ul>
-          </div>
-        </article>
-      </section>
-
-      <section className="panel-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Hydrant Records</h2>
-          </div>
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Hydrant ID</th>
-                  <th>Status</th>
-                  <th>Zone</th>
-                  <th>Last Inspection</th>
-                  <th>Flow Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {HYDRANT_ADMIN_TABLE_ROWS.map((row) => (
-                  <tr key={row.hydrantId}>
-                    <td>{row.hydrantId}</td>
-                    <td>{row.status}</td>
-                    <td>{row.zone}</td>
-                    <td>{row.lastInspection}</td>
-                    <td>{row.flowRate}</td>
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Common Name</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </section>
+                </thead>
+                <tbody>
+                  {apparatusRecords.length === 0 ? (
+                    <tr>
+                      <td className="department-apparatus-empty">No apparatus available to import.</td>
+                    </tr>
+                  ) : (
+                    apparatusRecords.map((entry, index) => (
+                      <tr key={`import-apparatus-${index}-${entry.commonName}`}>
+                        <td>{entry.commonName || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="department-editor-toolbar-actions">
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={importSchedulerApparatusFromDepartment}
+                disabled={apparatusRecords.length === 0}
+              >
+                Continue
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -14939,15 +15967,37 @@ function App() {
   const [nerisExportSettings, setNerisExportSettings] =
     useState<NerisExportSettings>(() => readNerisExportSettings());
 
-  const handleLogin = (username: string, unit: string, role: UserRole) => {
-    const nextSession: SessionState = {
-      isAuthenticated: true,
-      username,
-      unit,
-      role,
-    };
-    setSession(nextSession);
-    writeSession(nextSession);
+  const handleLogin = async (
+    department: string,
+    username: string,
+    password: string,
+  ): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ department, username, password }),
+      });
+      const json = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        user?: { name?: string; userType?: string };
+      };
+      if (!response.ok || !json?.ok || !json.user) {
+        return json?.message ?? "Login failed.";
+      }
+      const nextSession: SessionState = {
+        isAuthenticated: true,
+        username: String(json.user.name ?? username),
+        unit: department || "",
+        role: mapUserTypeToRole(String(json.user.userType ?? "")),
+      };
+      setSession(nextSession);
+      writeSession(nextSession);
+      return null;
+    } catch {
+      return "Unable to reach login service.";
+    }
   };
 
   const handleLogout = () => {

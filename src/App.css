@@ -1374,6 +1374,50 @@ tbody tr:last-of-type td {
   align-items: center;
 }
 
+.department-personnel-grid-line--four {
+  display: grid;
+  grid-template-columns: var(
+    --scheduler-personnel-grid-columns,
+    minmax(80px, 0.9fr) minmax(90px, 1fr) minmax(80px, 0.9fr) minmax(140px, 1.4fr)
+  );
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.department-scheduler-apparatus-grid-line {
+  display: grid;
+  grid-template-columns: var(
+    --scheduler-apparatus-grid-columns,
+    minmax(70px, 0.7fr) minmax(160px, 1.6fr) minmax(110px, 1fr)
+  );
+  gap: 0.46rem;
+  align-items: center;
+}
+
+.scheduler-apparatus-table-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.scheduler-apparatus-table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #f8fafc;
+}
+
+.scheduler-personnel-table-wrapper {
+  max-height: 280px;
+  overflow-y: auto;
+}
+
+.scheduler-personnel-table-wrapper thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background-color: #f8fafc;
+}
+
 .department-personnel-grid-header {
   color: #64748b;
   font-size: 0.73rem;
@@ -3647,6 +3691,14 @@ body.resource-personnel-modal-open {
   flex-wrap: wrap;
 }
 
+.personnel-schedule-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
 .personnel-schedule-controls {
   display: flex;
   align-items: center;
@@ -3864,6 +3916,12 @@ body.resource-personnel-modal-open {
   margin: 0;
 }
 
+.personnel-schedule-modal-day-block-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
 .personnel-schedule-modal-day-block h3,
 .personnel-schedule-modal-personnel h3 {
   margin: 0 0 0.75rem;
@@ -3884,6 +3942,25 @@ body.resource-personnel-modal-open {
   display: flex;
   flex-direction: column;
   gap: 0.2rem;
+}
+
+.personnel-schedule-modal-slot-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.personnel-schedule-modal-ot-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+  white-space: nowrap;
+  margin: 0;
+}
+
+.personnel-schedule-modal-ot-spacer {
+  width: 2rem;
 }
 
 .personnel-schedule-modal-slot {
