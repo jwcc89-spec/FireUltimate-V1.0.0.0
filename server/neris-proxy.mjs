@@ -1,7 +1,5 @@
 import bcrypt from "bcryptjs";
 import express from "express";
-import fs from "fs";
-import path from "path";
 
 import { PrismaClient } from "@prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
@@ -1390,6 +1388,130 @@ app.get("/api/neris/health", (request, response) => {
   });
 });
 
+const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
+const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
+
+function requirePlatformAdmin(request, response, next) {
+  if (!request.path.startsWith("/api/admin")) {
+    return next();
+  }
+  const key = trimValue(request.headers["x-platform-admin-key"] ?? request.headers["authorization"]?.replace(/^Bearer\s+/i, ""));
+  if (!PLATFORM_ADMIN_KEY || key !== PLATFORM_ADMIN_KEY) {
+    response.status(403).json({ ok: false, message: "Platform admin key required." });
+    return;
+  }
+  next();
+}
+
+app.use(requirePlatformAdmin);
+
+app.post("/api/admin/tenants", async (request, response) => {
+  try {
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const slug = trimValue(body.slug).toLowerCase();
+    const name = trimValue(body.name);
+    const hostname = trimValue(body.hostname).toLowerCase();
+    const status = trimValue(body.status).toLowerCase() || "trial";
+    const adminUsername = trimValue(body.adminUsername).toLowerCase();
+    const adminPassword = String(body.adminPassword ?? "").trim();
+
+    if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
+      response.status(400).json({ ok: false, message: "slug required; lowercase letters, numbers, hyphens only." });
+      return;
+    }
+    if (!name) {
+      response.status(400).json({ ok: false, message: "name required." });
+      return;
+    }
+    if (!hostname) {
+      response.status(400).json({ ok: false, message: "hostname required." });
+      return;
+    }
+    if (!ADMIN_STATUSES.has(status)) {
+      response.status(400).json({ ok: false, message: `status must be one of: ${[...ADMIN_STATUSES].join(", ")}` });
+      return;
+    }
+    if (!adminUsername) {
+      response.status(400).json({ ok: false, message: "adminUsername required." });
+      return;
+    }
+    if (!adminPassword) {
+      response.status(400).json({ ok: false, message: "adminPassword required." });
+      return;
+    }
+
+    const existing = await prisma.tenant.findUnique({ where: { slug } });
+    if (existing) {
+      response.status(409).json({ ok: false, message: `Tenant slug "${slug}" already exists.` });
+      return;
+    }
+    const existingDomain = await prisma.tenantDomain.findUnique({ where: { hostname } });
+    if (existingDomain) {
+      response.status(409).json({ ok: false, message: `Hostname "${hostname}" already assigned.` });
+      return;
+    }
+
+    const passwordHash = await hashPassword(adminPassword);
+    const tenant = await prisma.tenant.create({ data: { slug, name, status } });
+    await prisma.tenantDomain.create({ data: { tenantId: tenant.id, hostname, isPrimary: true } });
+    await prisma.departmentDetails.create({
+      data: { tenantId: tenant.id, departmentName: name, payloadJson: {} },
+    });
+    await prisma.user.create({
+      data: { tenantId: tenant.id, username: adminUsername, passwordHash, role: "admin" },
+    });
+
+    response.status(201).json({
+      ok: true,
+      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, status: tenant.status, hostname },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected error creating tenant.",
+    });
+  }
+});
+
+app.post("/api/admin/tenants/:tenantId/domains", async (request, response) => {
+  try {
+    const tenantId = trimValue(request.params.tenantId);
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const hostname = trimValue(body.hostname).toLowerCase();
+    const isPrimary = Boolean(body.isPrimary);
+
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "tenantId required." });
+      return;
+    }
+    if (!hostname) {
+      response.status(400).json({ ok: false, message: "hostname required." });
+      return;
+    }
+
+    const tenant = await prisma.tenant.findUnique({ where: { id: tenantId } });
+    if (!tenant) {
+      response.status(404).json({ ok: false, message: "Tenant not found." });
+      return;
+    }
+    const existingDomain = await prisma.tenantDomain.findUnique({ where: { hostname } });
+    if (existingDomain) {
+      response.status(409).json({ ok: false, message: `Hostname "${hostname}" already assigned.` });
+      return;
+    }
+
+    const domain = await prisma.tenantDomain.create({
+      data: { tenantId, hostname, isPrimary },
+    });
+    response.status(201).json({ ok: true, domain: { id: domain.id, hostname, isPrimary } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected error adding domain.",
+    });
+  }
+});
+
 app.use(async (request, response, next) => {
   try {
     const host =
@@ -1450,38 +1572,6 @@ app.get("/api/tenant/context", (request, response) => {
     tenant: request.tenant ?? null,
   });
 });
-
-const DEPARTMENT_DETAILS_FILE = path.resolve(
-  process.cwd(),
-  "data",
-  "department-details.json",
-);
-
-function readDepartmentDetailsFromFile() {
-  try {
-    if (fs.existsSync(DEPARTMENT_DETAILS_FILE)) {
-      const raw = fs.readFileSync(DEPARTMENT_DETAILS_FILE, "utf8");
-      const parsed = JSON.parse(raw);
-      return parsed && typeof parsed === "object" ? parsed : {};
-    }
-  } catch {
-    // Ignore read errors; return empty.
-  }
-  return {};
-}
-
-function writeDepartmentDetailsToFile(data) {
-  const dir = path.dirname(DEPARTMENT_DETAILS_FILE);
-  try {
-    if (!fs.existsSync(dir)) {
-      fs.mkdirSync(dir, { recursive: true });
-    }
-    fs.writeFileSync(DEPARTMENT_DETAILS_FILE, JSON.stringify(data, null, 2), "utf8");
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 app.get("/api/department-details", async (request, response) => {
   try {

@@ -4,38 +4,28 @@
 - `submenu/departmentdetails-ui`
 
 ## Current focus
-- Crash-hardening refactor to reduce `src/App.tsx` size and Cursor instability while preserving existing Department Details and Scheduler behavior.
+- Task 2 multi-tenant: Wave 1 and Wave 2 complete. Next: Wave 3 (auth model cleanup — `/api/users`, stop storing auth in DepartmentDetails.payloadJson, migrate Department Access UI).
 
 ## Latest known status
-- Latest commit: `bda3f6f` - Updated UI for Scheduler, Split Department Details Modules, Reduced App.tsx size.
-- Working tree status: clean (`git status --short` returned no changes).
-- Major extraction pass completed and validated:
-  - `src/NerisFlatSelects.tsx` (flat select components)
-  - `src/NerisGroupedOptionSelect.tsx` (grouped NERIS select)
-  - `src/PersonnelSchedulePage.tsx` (schedule page)
-  - `src/pages/NerisReportFormPage.tsx` (large NERIS report form page)
-- `src/App.tsx` reduced to `8044` lines / `298075` bytes.
-- Build/lint status at session end: passing (`npm run build`, `npm run lint`).
+- Latest commit (before this session end): `6c454e7` — Implement Task 2 auth hardening, tenant docs, and agent execution contract.
+- This session: Wave 1 (tenant strategy, Operator Runbook, remove file helpers, DEMO = persistent sandbox); Wave 2 (tenant:create script, admin API); docs (admin-api-beginner-guide, execution contract, “Agent used” in each response).
+- Working tree: has uncommitted changes (session note, ACTIVE_CONTEXT, conversation summary, and any Wave 1/2/docs files not yet committed). Commit + push at session end.
+- Build/lint: passing (`npm run lint` run during session).
 
 ## Current blocker / status
-- No functional blocker currently reported.
-- User completed push flow after resolving HTTPS credential/PAT issue.
+- No functional blocker. User ending session; handoff in progress.
 
 ## External dependency status
-- No new package/runtime dependencies added.
-- Existing non-fatal warnings remain:
-  - npm warning about unknown env config `devdir`
-  - Vite chunk size warning on production build
+- No new package dependencies this session. `PLATFORM_ADMIN_KEY` is optional in `.env.server` for admin API.
 
 ## Recent key commits (latest first)
-- `bda3f6f` Updated UI for Scheduler, Split Department Details Modules, Reduced App.tsx size
-- `caa43ee` UI updates to Scheduler-Department Details Seperated
-- `f787756` Changes to Scheduler, UI updates
-- `113dd16` Update ACTIVE_CONTEXT
-- `bb8f57b` Fix Lint/Build Issues with PR
+- `6c454e7` Implement Task 2 auth hardening, tenant docs, and agent execution contract
+- (Earlier: bda3f6f, caa43ee, etc.)
 
 ## Next agent should do this first
 1. Read `cursoragent-context.md`.
 2. Read this file.
-3. Read latest note in `agent-handoffs/branches/submenu--departmentdetails-ui/sessions/`.
-4. Ask user for first validation result from tomorrow's testing pass (especially Schedule month/day block interactions, OT/undo behavior, and NERIS report page flows).
+3. Read `docs/agent-execution-contract.md` and `docs/task-2-multitenant-domain-plan.md`.
+4. Read latest session note: `agent-handoffs/branches/submenu--departmentdetails-ui/sessions/2026-03-06-session-end-handoff.md`.
+5. At end of each response, state **Agent used for this response:** (per execution contract).
+6. When user is ready, continue with **Wave 3** (dedicated `/api/users` endpoints, migrate Department Access UI off payload auth).

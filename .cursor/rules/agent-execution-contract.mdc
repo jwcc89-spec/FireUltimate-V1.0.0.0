@@ -27,3 +27,4 @@ alwaysApply: true
 - Update `docs/task-2-multitenant-domain-plan.md` when decisions change.
 - Call out any deferred work under "Now vs Later".
 - Explicitly list blockers/assumptions instead of guessing.
+- At the end of every response, state: **Agent used for this response:** followed by the Cursor agent/model if known (e.g. Auto, Codex 5.3). If you do not have access to the user's selection, say so and suggest they check Cursor's UI for this chat; if they tell you which agent they used, you may add it to session notes.

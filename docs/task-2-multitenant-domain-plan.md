@@ -177,8 +177,110 @@ Tenant subdomains(planned):
     cifpdil (Crescent-Iroquois Fire Protection District - IL)
     demo (Demo Account for all)
 DEMO policy:
-    reset nightly    
+    persistent sandbox (no automatic reset).
 
+---
+
+## Tenant Strategy and Status (Standard)
+
+- **demo:** shared sandbox; persistent; no auto-reset.
+- **Trial tenants:** per-agency (e.g. `kankdemo`, `watsekademo`); persistent; no auto-reset unless manually archived.
+- **Production tenants:** canonical agency slugs (e.g. `cifpdil`, `watsekafd`).
+
+**Tenant.status** (allowed values; stored in DB):
+
+- `sandbox` — shared demo sandbox
+- `trial` — dedicated trial for a prospect
+- `active` — live production tenant
+- `suspended` — temporarily disabled
+- `archived` — no longer active, data retained
+
+**Decision:** No automatic reset of the demo tenant; demo is a persistent sandbox.
+
+---
+
+## Operator Runbook (Tenant Lifecycle)
+
+Use these steps when creating or managing tenants. Prefer the `tenant:create` script or the admin API when available.
+
+### Create tenant (CLI script)
+Run: `npm run tenant:create -- --slug <slug> --name "<Name>" --hostname <host>.<env>.fireultimate.app --status trial --adminUsername admin --adminPassword <temp>`  
+Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcrypt). Status may be: `sandbox`, `trial`, `active`, `suspended`, `archived`.
+
+### Create tenant (Admin API)
+
+**What the Admin API is:** HTTP endpoints that only work when you send a secret key. They let you create tenants and add domains over the network (e.g. from another machine or a future UI) instead of running the CLI script on the server.
+
+**Beginner guide:** If you are new to coding, use **docs/admin-api-beginner-guide.md**. It explains from scratch: what `.env.server` is, what a "header" is, what "restart the proxy" means, and exactly where to type each command and what you’ll see.
+
+**Step-by-step: How to use the Admin API**
+
+1. **Open your server environment file**  
+   In the project root, open `.env.server` in your editor. (If it doesn’t exist, copy `.env.server.example` to `.env.server` first.)
+
+2. **Add or set the platform admin key**  
+   Add a single line (or change the existing one) to set a secret of your choice, for example:
+   ```bash
+   PLATFORM_ADMIN_KEY=your-secret-key-here-make-it-long-and-random
+   ```
+   Replace `your-secret-key-here-make-it-long-and-random` with a long, random string only you (and your team) know. This is like a password for the admin API. Example: `PLATFORM_ADMIN_KEY=abc123def456-secure-key-xyz`.
+
+3. **Save the file**  
+   Save `.env.server` and close it.
+
+4. **Restart the proxy server**  
+   The server reads `.env.server` only when it starts. So:
+   - In the terminal where `npm run proxy` is running, press `Ctrl+C` to stop it.
+   - Run `npm run proxy` again.
+   After this, the server will use the new `PLATFORM_ADMIN_KEY` value.
+
+5. **Call the admin endpoints with the key in the request**  
+   Every request to `/api/admin/*` must include that secret so the server knows you’re allowed to use the admin API. You can send it in either of these ways:
+   - **Header (recommended):** `X-Platform-Admin-Key: your-secret-key-here-make-it-long-and-random`
+   - **Authorization header:** `Authorization: Bearer your-secret-key-here-make-it-long-and-random`
+
+   **Example: create a tenant with curl**  
+   In a new terminal (with the proxy already running), run (replace the key and body with your values):
+   ```bash
+   curl -X POST http://localhost:8787/api/admin/tenants \
+     -H "Content-Type: application/json" \
+     -H "X-Platform-Admin-Key: your-secret-key-here-make-it-long-and-random" \
+     -d '{"slug":"kankdemo","name":"Kankakee Trial","hostname":"kankdemo.staging.fireultimate.app","status":"trial","adminUsername":"admin","adminPassword":"tempPassword123"}'
+   ```
+   If the key matches `PLATFORM_ADMIN_KEY` in `.env.server`, you get a 201 response and the tenant is created. If the key is wrong or missing, you get 403 and nothing is created.
+
+   **Example: add a domain to an existing tenant**  
+   Replace `TENANT_ID` with the tenant’s id (from the create response or database):
+   ```bash
+   curl -X POST http://localhost:8787/api/admin/tenants/TENANT_ID/domains \
+     -H "Content-Type: application/json" \
+     -H "X-Platform-Admin-Key: your-secret-key-here-make-it-long-and-random" \
+     -d '{"hostname":"kankdemo.fireultimate.app","isPrimary":false}'
+   ```
+
+**Summary:** Put the secret in `.env.server` as `PLATFORM_ADMIN_KEY`, restart the proxy, then send that same value on every admin request in the `X-Platform-Admin-Key` (or `Authorization: Bearer`) header.
+
+- **POST /api/admin/tenants** — body: `{ slug, name, hostname, status?, adminUsername, adminPassword }`. Creates tenant, primary domain, DepartmentDetails, admin user.
+- **POST /api/admin/tenants/:tenantId/domains** — body: `{ hostname, isPrimary? }`. Adds a domain to an existing tenant.
+
+### Create tenant (manual)
+- Insert row in `Tenant` (slug, name, status).
+- Use slug format: production = agency slug (`cifpdil`); trial = agency + `demo` (`kankdemo`); sandbox = `demo`.
+
+### Assign domain (manual)
+- Insert row in `TenantDomain` (tenantId, hostname, isPrimary).
+- Hostname pattern: `<tenant>.<env>.fireultimate.app` (e.g. `kankdemo.staging.fireultimate.app`).
+- Add DNS record so hostname resolves to app host.
+
+### Seed admin user
+- Insert row in `User` (tenantId, username, passwordHash via bcrypt, role `admin`).
+- Ensure no auth secrets are stored in `DepartmentDetails.payloadJson`.
+
+### Suspend tenant
+- Set `Tenant.status` to `suspended`. App should deny or limit access for that tenant.
+
+### Archive tenant
+- Set `Tenant.status` to `archived`. Optionally retain data; do not delete tenant row if referential integrity or audit trail is needed.
 
 ---
 
@@ -299,10 +401,8 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 
 ## Phase 7 — DEMO Safety Controls
 
-27. Choose DEMO behavior:
-    - read-only, or
-    - editable with nightly reset
-28. Add demo reset script (if editable).
+27. DEMO behavior (decided): **persistent sandbox** — editable, no automatic reset.
+28. No demo reset script required.
 29. Optionally hide sensitive/admin actions for DEMO users.
 
 **Exit criteria:**
@@ -351,5 +451,5 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 - [ ] Chosen domain name
 - [ ] Chosen host stack (Render/Neon/etc.)
 - [ ] Confirmed tenant subdomain naming
-- [ ] Confirmed DEMO behavior (read-only vs reset)
+- [x] Confirmed DEMO behavior: persistent sandbox (no auto-reset)
 
