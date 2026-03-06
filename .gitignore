@@ -31,3 +31,5 @@ dist-ssr
 # Local department details data (API stores here)
 data/*
 !data/department-details.json
+
+/src/generated/prisma

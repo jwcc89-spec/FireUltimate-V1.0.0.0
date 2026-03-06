@@ -1,6 +1,26 @@
+import bcrypt from "bcryptjs";
 import express from "express";
 import fs from "fs";
 import path from "path";
+
+import { PrismaClient } from "@prisma/client";
+import { PrismaPg } from "@prisma/adapter-pg";
+import { Pool } from "pg";
+
+const databaseUrl = trimValue(process.env.DATABASE_URL);
+
+if (!databaseUrl) {
+  throw new Error("Missing DATABASE_URL in .env.server");
+}
+
+const prismaAdapter = new PrismaPg(
+  new Pool({
+    connectionString: databaseUrl,
+  }),
+);
+
+const prisma = new PrismaClient({ adapter: prismaAdapter });
+
 
 const app = express();
 app.use(express.json({ limit: "4mb" }));
@@ -143,6 +163,123 @@ let cachedAccessTokenExpiresAt = 0;
 
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+const BCRYPT_SALT_ROUNDS = 12;
+function isBcryptHash(value) {
+  return typeof value === "string" && value.length > 0 && value.startsWith("$2");
+}
+async function verifyPassword(plain, stored) {
+  if (!stored || typeof stored !== "string") return false;
+  if (isBcryptHash(stored)) return bcrypt.compare(plain, stored);
+  return plain === stored;
+}
+async function hashPassword(plain) {
+  return bcrypt.hash(plain, BCRYPT_SALT_ROUNDS);
+}
+
+function mapUserTypeToRole(userType) {
+  const normalized = trimValue(userType).toLowerCase();
+  return normalized === "admin" ? "admin" : "user";
+}
+
+async function hashAndSyncTenantUsers(tenantId, payload) {
+  if (!payload || typeof payload !== "object" || !Array.isArray(payload.userRecords)) {
+    return payload;
+  }
+
+  const incomingUserRecords = payload.userRecords;
+  const existingUsers = await prisma.user.findMany({
+    where: { tenantId },
+  });
+  const existingUsersByUsername = new Map(
+    existingUsers.map((user) => [user.username.trim().toLowerCase(), user]),
+  );
+
+  const seenUsernames = new Set();
+  const nextUserRecords = [];
+
+  for (const candidate of incomingUserRecords) {
+    if (!candidate || typeof candidate !== "object") {
+      continue;
+    }
+
+    const normalizedName = trimValue(candidate.name);
+    const normalizedUsername = trimValue(candidate.username).toLowerCase();
+    const userType = trimValue(candidate.userType) || "User";
+    if (!normalizedUsername) {
+      continue;
+    }
+
+    const existingUser = existingUsersByUsername.get(normalizedUsername);
+    const incomingPassword = String(candidate.password ?? "").trim();
+    let passwordHash = "";
+
+    if (incomingPassword) {
+      passwordHash = isBcryptHash(incomingPassword)
+        ? incomingPassword
+        : await hashPassword(incomingPassword);
+    } else if (existingUser?.passwordHash) {
+      // Preserve existing hash when editing non-password user fields.
+      passwordHash = String(existingUser.passwordHash);
+    } else {
+      // Skip users that have no password and no existing hash.
+      continue;
+    }
+
+    await prisma.user.upsert({
+      where: {
+        tenantId_username: {
+          tenantId,
+          username: normalizedUsername,
+        },
+      },
+      update: {
+        role: mapUserTypeToRole(userType),
+        passwordHash,
+      },
+      create: {
+        tenantId,
+        username: normalizedUsername,
+        role: mapUserTypeToRole(userType),
+        passwordHash,
+      },
+    });
+
+    seenUsernames.add(normalizedUsername);
+    nextUserRecords.push({
+      ...candidate,
+      name: normalizedName,
+      username: normalizedUsername,
+      userType,
+      // Store hashed passwords in DepartmentDetails payload.
+      password: passwordHash,
+    });
+  }
+
+  // Keep auth table aligned with Department Access user list.
+  await prisma.user.deleteMany({
+    where: {
+      tenantId,
+      username: {
+        notIn: Array.from(seenUsernames),
+      },
+    },
+  });
+
+  return {
+    ...payload,
+    userRecords: nextUserRecords,
+  };
+}
+
+function normalizeHostname(hostname) {
+  const value = trimValue(hostname).toLowerCase();
+  if (!value) {
+    return "";
+  }
+  const first = value.split(",")[0]?.trim() || "";
+  return first.split(":")[0] || "";
 }
 
 function normalizeEnumValue(rawValue) {
@@ -1253,6 +1390,67 @@ app.get("/api/neris/health", (request, response) => {
   });
 });
 
+app.use(async (request, response, next) => {
+  try {
+    const host =
+      normalizeHostname(request.headers["x-forwarded-host"]) ||
+      normalizeHostname(request.headers.host) ||
+      normalizeHostname(request.hostname);
+
+    const localHosts = new Set(["localhost", "127.0.0.1"]);
+    if (localHosts.has(host)) {
+      const demoTenant = await prisma.tenant.findUnique({
+        where: { slug: "demo" },
+      });
+      if (!demoTenant) {
+        response.status(500).json({ ok: false, message: "Demo tenant not found." });
+        return;
+      }
+      request.tenant = {
+        id: demoTenant.id,
+        slug: demoTenant.slug,
+        name: demoTenant.name,
+        host,
+      };
+      next();
+      return;
+    }
+
+    const domain = await prisma.tenantDomain.findUnique({
+      where: { hostname: host },
+      include: { tenant: true },
+    });
+
+    if (!domain || !domain.tenant) {
+      response.status(404).json({
+        ok: false,
+        message: `Unknown tenant domain: ${host || "(empty host)"}`,
+      });
+      return;
+    }
+
+    request.tenant = {
+      id: domain.tenant.id,
+      slug: domain.tenant.slug,
+      name: domain.tenant.name,
+      host,
+    };
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Tenant resolution failed.",
+    });
+  }
+});
+
+app.get("/api/tenant/context", (request, response) => {
+  response.json({
+    ok: true,
+    tenant: request.tenant ?? null,
+  });
+});
+
 const DEPARTMENT_DETAILS_FILE = path.resolve(
   process.cwd(),
   "data",
@@ -1285,15 +1483,40 @@ function writeDepartmentDetailsToFile(data) {
   }
 }
 
-app.get("/api/department-details", (request, response) => {
-  const data = readDepartmentDetailsFromFile();
-  response.json({ ok: true, data });
+app.get("/api/department-details", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({
+        ok: false,
+        message: "Missing tenant context.",
+      });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+    });
+    const data =
+      details?.payloadJson && typeof details.payloadJson === "object"
+        ? details.payloadJson
+        : {};
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unexpected department details read error.",
+    });
+  }
 });
 
 app.post("/api/auth/login", (request, response) => {
   const body = request.body && typeof request.body === "object" ? request.body : {};
   const submittedUsername = String(body.username ?? "").trim().toLowerCase();
   const submittedPassword = String(body.password ?? "");
+  const tenantId = request.tenant?.id;
   if (!submittedUsername || !submittedPassword) {
     response.status(400).json({
       ok: false,
@@ -1301,51 +1524,142 @@ app.post("/api/auth/login", (request, response) => {
     });
     return;
   }
+  if (!tenantId) {
+    response.status(400).json({
+      ok: false,
+      message: "Missing tenant context.",
+    });
+    return;
+  }
 
-  const details = readDepartmentDetailsFromFile();
-  const userRecords = Array.isArray(details.userRecords) ? details.userRecords : [];
-  const matchedUser = userRecords.find((candidate) => {
-    if (!candidate || typeof candidate !== "object") {
-      return false;
+  (async () => {
+    // Preferred path: tenant-scoped users table.
+    const dbUser = await prisma.user.findUnique({
+      where: {
+        tenantId_username: {
+          tenantId,
+          username: submittedUsername,
+        },
+      },
+    });
+
+    if (dbUser) {
+      const storedHash = String(dbUser.passwordHash ?? "");
+      const valid = await verifyPassword(submittedPassword, storedHash);
+      if (!valid) {
+        response.status(401).json({
+          ok: false,
+          message: "Invalid username or password.",
+        });
+        return;
+      }
+      // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
+      if (!isBcryptHash(storedHash)) {
+        hashPassword(submittedPassword).then((hash) => {
+          prisma.user.update({
+            where: { id: dbUser.id },
+            data: { passwordHash: hash },
+          }).catch(() => {});
+        });
+      }
+      response.status(200).json({
+        ok: true,
+        user: {
+          name: dbUser.username,
+          userType: dbUser.role.toLowerCase() === "admin" ? "Admin" : "User",
+          username: dbUser.username,
+        },
+      });
+      return;
     }
-    const candidateUsername = String(candidate.username ?? "").trim().toLowerCase();
-    return candidateUsername === submittedUsername;
-  });
 
-  if (!matchedUser) {
-    response.status(401).json({
-      ok: false,
-      message: "Invalid username or password.",
+    // Temporary fallback path: legacy userRecords stored in tenant DepartmentDetails payload.
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
     });
-    return;
-  }
-
-  const storedPassword = String(matchedUser.password ?? "");
-  if (!storedPassword || storedPassword !== submittedPassword) {
-    response.status(401).json({
-      ok: false,
-      message: "Invalid username or password.",
+    const payload =
+      details?.payloadJson && typeof details.payloadJson === "object"
+        ? details.payloadJson
+        : {};
+    const userRecords = Array.isArray(payload.userRecords) ? payload.userRecords : [];
+    const matchedUser = userRecords.find((candidate) => {
+      if (!candidate || typeof candidate !== "object") {
+        return false;
+      }
+      const candidateUsername = String(candidate.username ?? "")
+        .trim()
+        .toLowerCase();
+      return candidateUsername === submittedUsername;
     });
-    return;
-  }
 
-  response.status(200).json({
-    ok: true,
-    user: {
-      name: String(matchedUser.name ?? submittedUsername),
-      userType: String(matchedUser.userType ?? "User"),
-      username: String(matchedUser.username ?? submittedUsername),
-    },
+    if (!matchedUser) {
+      response.status(401).json({
+        ok: false,
+        message: "Invalid username or password.",
+      });
+      return;
+    }
+
+    const storedPassword = String(matchedUser.password ?? "");
+    const validLegacy = await verifyPassword(submittedPassword, storedPassword);
+    if (!validLegacy) {
+      response.status(401).json({
+        ok: false,
+        message: "Invalid username or password.",
+      });
+      return;
+    }
+
+    response.status(200).json({
+      ok: true,
+      user: {
+        name: String(matchedUser.name ?? submittedUsername),
+        userType: String(matchedUser.userType ?? "User"),
+        username: String(matchedUser.username ?? submittedUsername),
+      },
+    });
+  })().catch((error) => {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected login service error.",
+    });
   });
 });
 
-app.post("/api/department-details", (request, response) => {
-  const body = request.body && typeof request.body === "object" ? request.body : {};
-  const success = writeDepartmentDetailsToFile(body);
-  if (success) {
+app.post("/api/department-details", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({
+        ok: false,
+        message: "Missing tenant context.",
+      });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const payloadWithSyncedUsers = await hashAndSyncTenantUsers(tenantId, body);
+    await prisma.departmentDetails.upsert({
+      where: { tenantId },
+      update: {
+        payloadJson: payloadWithSyncedUsers,
+        departmentName: trimValue(body.departmentName) || undefined,
+      },
+      create: {
+        tenantId,
+        departmentName: trimValue(body.departmentName) || request.tenant?.name || "Unknown",
+        payloadJson: payloadWithSyncedUsers,
+      },
+    });
     response.status(200).json({ ok: true });
-  } else {
-    response.status(500).json({ ok: false, message: "Failed to write department details." });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unexpected department details write error.",
+    });
   }
 });
 
