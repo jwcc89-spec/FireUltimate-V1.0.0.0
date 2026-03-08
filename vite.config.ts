@@ -8,7 +8,9 @@ export default defineConfig({
     proxy: {
       '/api': {
         target: 'http://localhost:8787',
-        changeOrigin: true,
+        // Preserve original host (e.g. localhost vs local2.localhost) so
+        // backend tenant resolution by hostname works in local dev.
+        changeOrigin: false,
       },
     },
   },

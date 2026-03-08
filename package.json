@@ -9,11 +9,11 @@
   },
   "scripts": {
     "dev": "vite",
-    "proxy": "node --env-file=.env.server server/neris-proxy.mjs",
+    "proxy": "bash -lc 'if [ -f .env.server ]; then node --env-file=.env.server server/neris-proxy.mjs; else node server/neris-proxy.mjs; fi'",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
-    "db:seed": "tsx prisma/seed.ts",
+    "db:seed": "node --env-file=.env.server --import tsx prisma/seed.ts",
     "tenant:create": "tsx scripts/tenant-create.ts"
   },
   "dependencies": {

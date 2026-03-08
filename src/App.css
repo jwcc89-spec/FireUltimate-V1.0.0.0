@@ -1768,12 +1768,19 @@ tbody tr:last-of-type td {
 .neris-incident-type-item-checkbox {
   display: inline-flex;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .neris-incident-type-item-checkbox input {
   margin: 0;
-  width: 14px;
-  height: 14px;
+  width: 16px;
+  height: 16px;
+  accent-color: #0f766e;
+  cursor: default;
+}
+
+.neris-incident-type-item.selected .neris-incident-type-item-checkbox input {
+  accent-color: #0f766e;
 }
 
 .neris-incident-type-empty {

@@ -64,9 +64,9 @@ export function NerisFlatMultiOptionSelect({
     typeof maxSelections === "number" &&
     maxSelections > 0 &&
     selectedValueSet.size >= maxSelections;
-  const selectedOptions = selectedValues
-    .map((selectedValue) => options.find((option) => option.value === selectedValue))
-    .filter((option): option is NerisValueOption => Boolean(option));
+  const selectedOptions = options.filter((option) =>
+    selectedValueSet.has(normalizeNerisEnumValue(option.value)),
+  );
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const filteredOptions = normalizedSearch
     ? options.filter(
@@ -206,7 +206,8 @@ export function NerisFlatMultiOptionSelect({
                 {filteredOptions.length ? (
                   <div className="neris-incident-type-item-list">
                     {filteredOptions.map((option) => {
-                      const isSelected = selectedValueSet.has(option.value);
+                      const optionNormalized = normalizeNerisEnumValue(option.value);
+                      const isSelected = selectedValueSet.has(optionNormalized);
                       const optionDisabled = Boolean(isOptionDisabled?.(option.value));
                       const isDisabled = (selectionLimitReached && !isSelected) || optionDisabled;
                       return (
@@ -221,14 +222,16 @@ export function NerisFlatMultiOptionSelect({
                           onClick={() => {
                             if (isDisabled) return;
                             const nextSelected = new Set(selectedValueSet);
-                            if (nextSelected.has(option.value)) {
-                              nextSelected.delete(option.value);
+                            if (nextSelected.has(optionNormalized)) {
+                              nextSelected.delete(optionNormalized);
                             } else {
-                              nextSelected.add(option.value);
+                              nextSelected.add(optionNormalized);
                             }
                             const nextOrderedValues = options
                               .map((entry) => entry.value)
-                              .filter((entryValue) => nextSelected.has(entryValue));
+                              .filter((entryValue) =>
+                                nextSelected.has(normalizeNerisEnumValue(entryValue)),
+                              );
                             onChange(nextOrderedValues.join(","));
                           }}
                         >
@@ -285,7 +288,8 @@ export function NerisFlatMultiOptionSelect({
               {filteredOptions.length ? (
                 <div className="neris-incident-type-item-list">
                   {filteredOptions.map((option) => {
-                    const isSelected = selectedValueSet.has(option.value);
+                    const optionNormalized = normalizeNerisEnumValue(option.value);
+                    const isSelected = selectedValueSet.has(optionNormalized);
                     const optionDisabled = Boolean(isOptionDisabled?.(option.value));
                     const isDisabled = (selectionLimitReached && !isSelected) || optionDisabled;
                     return (
@@ -300,14 +304,16 @@ export function NerisFlatMultiOptionSelect({
                         onClick={() => {
                           if (isDisabled) return;
                           const nextSelected = new Set(selectedValueSet);
-                          if (nextSelected.has(option.value)) {
-                            nextSelected.delete(option.value);
+                          if (nextSelected.has(optionNormalized)) {
+                            nextSelected.delete(optionNormalized);
                           } else {
-                            nextSelected.add(option.value);
+                            nextSelected.add(optionNormalized);
                           }
                           const nextOrderedValues = options
                             .map((entry) => entry.value)
-                            .filter((entryValue) => nextSelected.has(entryValue));
+                            .filter((entryValue) =>
+                              nextSelected.has(normalizeNerisEnumValue(entryValue)),
+                            );
                           onChange(nextOrderedValues.join(","));
                         }}
                       >
@@ -364,7 +370,9 @@ export function NerisFlatSingleOptionSelect({
   const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
 
   const normalizedValue = normalizeNerisEnumValue(value);
-  const selectedOption = options.find((option) => option.value === normalizedValue);
+  const selectedOption =
+    options.find((option) => option.value === value) ??
+    options.find((option) => option.value === normalizedValue);
   const normalizedSearch = searchTerm.trim().toLowerCase();
   const filteredOptions = normalizedSearch
     ? options.filter(

@@ -22,6 +22,7 @@ Before doing any feature work, understand the Branch Rules:
    - current blocker/status
    - exact next implementation step
    - summarize what changed and what is still pending
+   - include explicit **Now vs Later** callouts (what is in scope now vs deferred follow-up)
 5) Follow beginner-friendly communication and explain commands clearly.
 6) After meaningful changes:
    - update session note
@@ -42,4 +43,5 @@ After acknowledging the rules above:
    - create a copy of entire conversation in agent-handoffs/branches/submenu--departmentdetails-ui/conversations
    - commit + push on submenu/departmentdetails-ui
    - report branch, commit hash, changed files, and next-step checklist
+   - include **Now vs Later** callouts in the final report and handoff note
 ```

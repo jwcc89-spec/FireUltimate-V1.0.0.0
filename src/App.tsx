@@ -256,10 +256,17 @@ interface DepartmentPersonnelRecord {
 }
 
 interface DepartmentUserRecord {
+  id?: string;
   name: string;
   userType: string;
   username: string;
   password: string;
+}
+
+interface MultiAddUserDraft {
+  firstName: string;
+  lastName: string;
+  userType: string;
 }
 
 interface DepartmentStationRecord {
@@ -666,7 +673,7 @@ const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
   "Every 3 days",
   "Custom",
 ];
-const DEFAULT_USER_TYPE_VALUES = ["Admin", "Sub Admin", "Secretary", "User"];
+const DEFAULT_USER_TYPE_VALUES = ["Super Admin", "Admin", "Sub Admin", "Secretary", "User"];
 const GMT_TIMEZONE_OPTIONS = [
   "GMT-05:00 Eastern",
   "GMT-06:00 Central",
@@ -824,7 +831,18 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
       .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
       .filter(([name]) => name.length > 0),
   );
-  const schedulerPersonnelRecords = userRecords
+  const schedulerSeedUsers =
+    userRecords.length > 0
+      ? userRecords
+      : schedulerPersonnelSeed
+          .map((entry) => ({
+            name: String(entry.name ?? "").trim(),
+            userType: String(entry.userType ?? "").trim(),
+            username: "",
+            password: "",
+          }))
+          .filter((entry) => entry.name.length > 0);
+  const schedulerPersonnelRecords = schedulerSeedUsers
     .map((user) => {
       const normalizedName = user.name.trim();
       const match = schedulerByName.get(normalizedName.toLocaleLowerCase());
@@ -1980,6 +1998,69 @@ function mapUserTypeToRole(userType: string): UserRole {
   return userType.trim().toLowerCase().includes("admin") ? "admin" : "user";
 }
 
+function validatePasswordPolicyClient(password: string): string | null {
+  const value = password.trim();
+  if (value.length < 8) {
+    return "Password must be at least 8 characters.";
+  }
+  if (!/[a-z]/.test(value)) {
+    return "Password must include at least one lowercase letter.";
+  }
+  if (!/[A-Z]/.test(value)) {
+    return "Password must include at least one uppercase letter.";
+  }
+  if (!/[0-9]/.test(value)) {
+    return "Password must include at least one number.";
+  }
+  if (!/[^A-Za-z0-9]/.test(value)) {
+    return "Password must include at least one special character.";
+  }
+  return null;
+}
+
+function normalizeTokenNamePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9]/g, "");
+}
+
+function toTitleCase(value: string): string {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function applyNameTemplate(template: string, firstName: string, lastName: string): string {
+  const first = normalizeTokenNamePart(firstName.trim());
+  const last = normalizeTokenNamePart(lastName.trim());
+  if (!template.trim()) return "";
+
+  const shorthand = template.toLowerCase().replace(/\s+/g, "");
+  let normalizedTemplate = template;
+  if (shorthand === "lllf") {
+    normalizedTemplate = "${last:3}${first:1}";
+  } else if (shorthand === "f(lastname)" || shorthand === "flastname") {
+    normalizedTemplate = "${first:1}${last}";
+  }
+  normalizedTemplate = normalizedTemplate
+    .replace(/\(lastname\)/gi, "${Last}")
+    .replace(/\(firstname\)/gi, "${First}");
+
+  const tokenValues: Record<string, string> = {
+    first,
+    last,
+    First: toTitleCase(first),
+    Last: toTitleCase(last),
+    FIRST: first.toUpperCase(),
+    LAST: last.toUpperCase(),
+  };
+  return normalizedTemplate.replace(/\$\{([A-Za-z]+)(?::(\d+))?\}/g, (_match, token, countRaw) => {
+    const base = tokenValues[token] ?? "";
+    const count = Number.parseInt(countRaw ?? "", 10);
+    if (Number.isFinite(count) && count > 0) {
+      return base.slice(0, count);
+    }
+    return base;
+  });
+}
+
 function AuthPage({ onLogin }: AuthPageProps) {
   const [department, setDepartment] = useState("");
   const [username, setUsername] = useState("");
@@ -2153,7 +2234,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     setSettingsOpen(false);
   };
 
-  const expandedMenuForRender = activeMenu?.id ?? expandedMenuId;
+  const expandedMenuForRender = expandedMenuId ?? activeMenu?.id;
 
   const handleLogout = () => {
     onLogout();
@@ -3741,6 +3822,22 @@ function DepartmentDetailsPage() {
   const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
   const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [isMultiAddOpen, setIsMultiAddOpen] = useState(false);
+  const [multiAddUsernameTemplate, setMultiAddUsernameTemplate] = useState("${last:3}${first:1}");
+  const [multiAddPasswordTemplate, setMultiAddPasswordTemplate] = useState("${Last}12345!");
+  const [multiAddDefaultUserType, setMultiAddDefaultUserType] = useState("User");
+  const [multiAddRows, setMultiAddRows] = useState<MultiAddUserDraft[]>([
+    { firstName: "", lastName: "", userType: "" },
+  ]);
+  const [multiAddError, setMultiAddError] = useState("");
+  const [multiAddSuccess, setMultiAddSuccess] = useState("");
+  const [isMultiAddingUsers, setIsMultiAddingUsers] = useState(false);
+  const [resetPasswordTargetIndex, setResetPasswordTargetIndex] = useState<number | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetPasswordConfirmValue, setResetPasswordConfirmValue] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState("");
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState("");
   const [stationDraft, setStationDraft] = useState<DepartmentStationRecord>({
     name: "",
     address: "",
@@ -4214,6 +4311,73 @@ function DepartmentDetailsPage() {
   const isMutualAidEditor = activeCollectionEditor === "mutualAidDepartments";
 
   useEffect(() => {
+    if (multiAddDefaultUserType.trim()) {
+      return;
+    }
+    const fallback = userTypeValues.find((value) => value.trim().length > 0) ?? "User";
+    setMultiAddDefaultUserType(fallback);
+  }, [multiAddDefaultUserType, userTypeValues]);
+
+  const multiAddPreview = useMemo(() => {
+    const existingUsernames = new Set(
+      userRecords.map((record) => record.username.trim().toLowerCase()).filter(Boolean),
+    );
+    const generatedCounts = new Map<string, number>();
+
+    const generated = multiAddRows.map((row, index) => {
+      const first = row.firstName.trim();
+      const last = row.lastName.trim();
+      const fullName = [first, last].filter(Boolean).join(" ").trim();
+      const generatedUsername = applyNameTemplate(multiAddUsernameTemplate, first, last)
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const generatedPassword = applyNameTemplate(multiAddPasswordTemplate, first, last).trim();
+      const userType = row.userType.trim() || multiAddDefaultUserType.trim() || "User";
+      if (generatedUsername) {
+        generatedCounts.set(generatedUsername, (generatedCounts.get(generatedUsername) ?? 0) + 1);
+      }
+      return {
+        index,
+        first,
+        last,
+        fullName,
+        username: generatedUsername,
+        password: generatedPassword,
+        userType,
+      };
+    });
+
+    return generated.map((entry) => {
+      const issues: string[] = [];
+      if (!entry.first || !entry.last) {
+        issues.push("First and Last Name are required.");
+      }
+      if (!entry.username) {
+        issues.push("Generated username is empty.");
+      }
+      if (!entry.password) {
+        issues.push("Generated password is empty.");
+      }
+      if (entry.username && existingUsernames.has(entry.username)) {
+        issues.push("Username already exists.");
+      }
+      if ((generatedCounts.get(entry.username) ?? 0) > 1) {
+        issues.push("Username collides with another row in this batch.");
+      }
+      return {
+        ...entry,
+        error: issues.join(" "),
+      };
+    });
+  }, [
+    multiAddRows,
+    multiAddUsernameTemplate,
+    multiAddPasswordTemplate,
+    multiAddDefaultUserType,
+    userRecords,
+  ]);
+
+  useEffect(() => {
     let isMounted = true;
     const fetchEntityOptions = async () => {
       try {
@@ -4314,18 +4478,50 @@ function DepartmentDetailsPage() {
             ? (d.shiftInformationEntries as ShiftInformationEntry[])
             : [],
         );
-        setUserRecords(
-          Array.isArray(d.userRecords)
-            ? (d.userRecords as Record<string, unknown>[])
-                .map((entry) => ({
-                  name: String(entry.name ?? "").trim(),
-                  userType: String(entry.userType ?? "").trim(),
-                  username: String(entry.username ?? "").trim(),
-                  password: String(entry.password ?? ""),
-                }))
-                .filter((entry) => entry.name.length > 0)
-            : [],
-        );
+        // Prefer /api/users for Department Access (Wave 3); fallback to payload userRecords for older data.
+        const usersRes = await fetch("/api/users");
+        if (usersRes.ok && isMounted) {
+          const usersJson = (await usersRes.json()) as { ok?: boolean; users?: { id: string; username: string; userType: string; name?: string }[] };
+          if (usersJson?.ok && Array.isArray(usersJson.users)) {
+            setUserRecords(
+              usersJson.users.map((u) => ({
+                id: u.id,
+                name: String(u.name ?? u.username ?? "").trim(),
+                userType: String(u.userType ?? "User").trim(),
+                username: String(u.username ?? "").trim(),
+                password: "",
+              })),
+            );
+          } else {
+            setUserRecords(
+              Array.isArray(d.userRecords)
+                ? (d.userRecords as Record<string, unknown>[])
+                    .map((entry) => ({
+                      id: typeof entry.id === "string" ? entry.id : undefined,
+                      name: String(entry.name ?? "").trim(),
+                      userType: String(entry.userType ?? "").trim(),
+                      username: String(entry.username ?? "").trim(),
+                      password: String(entry.password ?? ""),
+                    }))
+                    .filter((entry) => entry.name.length > 0)
+                : [],
+            );
+          }
+        } else if (isMounted) {
+          setUserRecords(
+            Array.isArray(d.userRecords)
+              ? (d.userRecords as Record<string, unknown>[])
+                  .map((entry) => ({
+                    id: typeof entry.id === "string" ? entry.id : undefined,
+                    name: String(entry.name ?? "").trim(),
+                    userType: String(entry.userType ?? "").trim(),
+                    username: String(entry.username ?? "").trim(),
+                    password: String(entry.password ?? ""),
+                  }))
+                  .filter((entry) => entry.name.length > 0)
+              : [],
+          );
+        }
         setPersonnelRecords(
           Array.isArray(d.schedulerPersonnelRecords)
             ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
@@ -4389,6 +4585,9 @@ function DepartmentDetailsPage() {
   const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
     setActiveCollectionEditor(collectionKey);
     resetEditorSelection();
+    setIsMultiAddOpen(false);
+    setMultiAddError("");
+    setMultiAddSuccess("");
     if (
       collectionKey === "apparatus" ||
       collectionKey === "personnel" ||
@@ -4428,6 +4627,13 @@ function DepartmentDetailsPage() {
   const closeCollectionEditor = () => {
     setActiveCollectionEditor(null);
     resetEditorSelection();
+    setIsMultiAddOpen(false);
+    setResetPasswordTargetIndex(null);
+    setResetPasswordValue("");
+    setResetPasswordConfirmValue("");
+    setIsResettingPassword(false);
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
   };
 
   const setSelectionFromMultiSelect = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -4742,15 +4948,29 @@ function DepartmentDetailsPage() {
     setStatusMessage("Scheduler apparatus order updated.");
   };
 
-  const saveUserForm = () => {
+  const saveUserForm = async () => {
     const normalizedName = userDraft.name.trim();
     const normalizedUsername = userDraft.username.trim().toLowerCase();
     if (!normalizedName) {
       return;
     }
-    if (!normalizedUsername || !userDraft.password.trim()) {
+    const isNewUser = editingIndex === null;
+    if (!normalizedUsername || (isNewUser && !userDraft.password.trim())) {
       setStatusMessage("Users require username and password.");
       return;
+    }
+    if (isNewUser) {
+      const passwordError = validatePasswordPolicyClient(userDraft.password);
+      if (passwordError) {
+        setStatusMessage(passwordError);
+        return;
+      }
+    } else if (userDraft.password.trim()) {
+      const passwordError = validatePasswordPolicyClient(userDraft.password);
+      if (passwordError) {
+        setStatusMessage(passwordError);
+        return;
+      }
     }
     const duplicateUsernameIndex = userRecords.findIndex(
       (entry, index) =>
@@ -4762,83 +4982,408 @@ function DepartmentDetailsPage() {
       return;
     }
     const previousName = editingIndex !== null ? userRecords[editingIndex]?.name.trim() ?? "" : "";
-    const nextUserRecords =
-      editingIndex === null
-        ? userRecords.some(
-            (entry) => entry.name.trim().localeCompare(normalizedName, undefined, { sensitivity: "base" }) === 0,
-          )
-          ? userRecords
-          : [
-              ...userRecords,
-              {
-                name: normalizedName,
-                userType: userDraft.userType,
-                username: normalizedUsername,
-                password: userDraft.password,
-              },
-            ]
-        : userRecords.map((entry, index) =>
-            index === editingIndex
-              ? {
-                  ...entry,
-                  name: normalizedName,
-                  userType: userDraft.userType,
-                  username: normalizedUsername,
-                  password: userDraft.password || entry.password,
-                }
-              : entry,
+    const userId = editingIndex !== null ? userRecords[editingIndex]?.id : undefined;
+    try {
+      if (isNewUser) {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: normalizedName,
+            username: normalizedUsername,
+            password: userDraft.password.trim(),
+            userType: userDraft.userType || "User",
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          user?: { id: string; username: string; userType: string; name?: string };
+          message?: string;
+        };
+        if (!res.ok) {
+          setStatusMessage(json?.message ?? "Failed to create user.");
+          return;
+        }
+        const created = json.user!;
+        const nextUserRecords = [
+          ...userRecords,
+          {
+            id: created.id,
+            name: String(created.name ?? normalizedName),
+            userType: created.userType,
+            username: created.username,
+            password: "",
+          },
+        ];
+        setUserRecords(nextUserRecords);
+        setPersonnelRecords((prev) => {
+          const byName = new Map(
+            prev
+              .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+              .filter(([name]) => name.length > 0),
           );
-    setUserRecords(nextUserRecords);
-    setPersonnelRecords((previous) => {
-      const byName = new Map(
-        previous
-          .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
-          .filter(([name]) => name.length > 0),
+          return nextUserRecords
+            .map((user) => {
+              const userName = user.name.trim();
+              const existing = byName.get(userName.toLocaleLowerCase());
+              if (existing) {
+                const matched = nextUserRecords.find(
+                  (u) => u.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+                );
+                return { ...existing, name: userName, userType: matched?.userType ?? existing.userType };
+              }
+              const matched = nextUserRecords.find(
+                (r) => r.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+              );
+              return {
+                name: userName,
+                shift: "",
+                apparatusAssignment: "",
+                station: "",
+                userType: matched?.userType ?? "",
+                qualifications: [],
+              } satisfies DepartmentPersonnelRecord;
+            })
+            .filter((entry) => entry.name.length > 0);
+        });
+      } else {
+        let targetId = userId;
+        if (!targetId) {
+          const listRes = await fetch("/api/users");
+          const listJson = (await listRes.json()) as { ok?: boolean; users?: { id: string; username: string }[] };
+          if (listJson?.ok && Array.isArray(listJson.users)) {
+            const found = listJson.users.find(
+              (u) => u.username.toLowerCase() === userRecords[editingIndex!]?.username?.toLowerCase(),
+            );
+            targetId = found?.id;
+          }
+        }
+        if (!targetId) {
+          setStatusMessage("Could not find user to update. Refresh the page and try again.");
+          return;
+        }
+        const res = await fetch(`/api/users/${targetId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: normalizedName,
+            username: normalizedUsername,
+            ...(userDraft.password.trim() ? { password: userDraft.password.trim() } : {}),
+            userType: userDraft.userType || "User",
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          user?: { id: string; username: string; userType: string; name?: string };
+          message?: string;
+        };
+        if (!res.ok) {
+          setStatusMessage(json?.message ?? "Failed to update user.");
+          return;
+        }
+        const updated = json.user!;
+        const nextUserRecords = userRecords.map((entry, index) =>
+          index === editingIndex
+            ? {
+                id: updated.id,
+                name: String(updated.name ?? normalizedName),
+                userType: updated.userType,
+                username: updated.username,
+                password: "",
+              }
+            : entry,
+        );
+        setUserRecords(nextUserRecords);
+        setPersonnelRecords((prev) => {
+          const byName = new Map(
+            prev
+              .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+              .filter(([name]) => name.length > 0),
+          );
+          return nextUserRecords
+            .map((user) => {
+              const userName = user.name.trim();
+              const existing = byName.get(userName.toLocaleLowerCase());
+              if (existing) {
+                const matched = nextUserRecords.find(
+                  (u) => u.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+                );
+                return { ...existing, name: userName, userType: matched?.userType ?? existing.userType };
+              }
+              const matched = nextUserRecords.find(
+                (r) => r.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+              );
+              return {
+                name: userName,
+                shift: "",
+                apparatusAssignment: "",
+                station: "",
+                userType: matched?.userType ?? "",
+                qualifications: [],
+              } satisfies DepartmentPersonnelRecord;
+            })
+            .filter((entry) => entry.name.length > 0);
+        });
+        if (
+          previousName &&
+          normalizedName &&
+          previousName.localeCompare(normalizedName, undefined, { sensitivity: "base" }) !== 0
+        ) {
+          setKellyRotations((previous) =>
+            previous.map((entry) =>
+              entry.personnel.trim() === previousName ? { ...entry, personnel: normalizedName } : entry,
+            ),
+          );
+        }
+      }
+      setIsEntryFormOpen(false);
+      setStatusMessage("User saved.");
+    } catch {
+      setStatusMessage("Network error saving user.");
+    }
+  };
+
+  const updateMultiAddRow = (
+    index: number,
+    key: keyof MultiAddUserDraft,
+    value: string,
+  ) => {
+    setMultiAddRows((previous) =>
+      previous.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, [key]: value } : row,
+      ),
+    );
+  };
+
+  const addMultiAddRow = () => {
+    setMultiAddRows((previous) => [
+      ...previous,
+      { firstName: "", lastName: "", userType: "" },
+    ]);
+  };
+
+  const removeMultiAddRow = (index: number) => {
+    setMultiAddRows((previous) => {
+      const next = previous.filter((_row, rowIndex) => rowIndex !== index);
+      return next.length > 0 ? next : [{ firstName: "", lastName: "", userType: "" }];
+    });
+  };
+
+  const submitMultiAddUsers = async () => {
+    setMultiAddError("");
+    setMultiAddSuccess("");
+    const invalid = multiAddPreview.filter((row) => row.error.length > 0);
+    if (invalid.length > 0) {
+      setMultiAddError("Fix preview errors before creating users.");
+      return;
+    }
+    if (multiAddPreview.length === 0) {
+      setMultiAddError("Add at least one user row.");
+      return;
+    }
+
+    setIsMultiAddingUsers(true);
+    const createdRows: DepartmentUserRecord[] = [];
+    const failedRows: Array<{ index: number; message: string }> = [];
+
+    for (const row of multiAddPreview) {
+      try {
+        const response = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: row.fullName,
+            username: row.username,
+            password: row.password,
+            userType: row.userType,
+          }),
+        });
+        const json = (await response.json()) as {
+          ok?: boolean;
+          user?: { id: string; username: string; userType: string; name?: string };
+          message?: string;
+        };
+        if (!response.ok || !json?.ok || !json.user) {
+          failedRows.push({
+            index: row.index,
+            message: json?.message ?? "Create user failed.",
+          });
+          continue;
+        }
+        createdRows.push({
+          id: json.user.id,
+          name: String(json.user.name ?? row.fullName),
+          userType: String(json.user.userType ?? row.userType),
+          username: String(json.user.username ?? row.username),
+          password: "",
+        });
+      } catch {
+        failedRows.push({
+          index: row.index,
+          message: "Network error.",
+        });
+      }
+    }
+
+    if (createdRows.length > 0) {
+      const nextUserRecords = [...userRecords];
+      const existingUsernames = new Set(
+        nextUserRecords.map((record) => record.username.trim().toLowerCase()),
       );
-      return nextUserRecords
-        .map((user) => {
-          const userName = user.name.trim();
-          const existing = byName.get(userName.toLocaleLowerCase());
-          if (existing) {
-            const matchedUser = nextUserRecords.find(
-              (user) =>
-                user.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+      createdRows.forEach((created) => {
+        const normalizedUsername = created.username.trim().toLowerCase();
+        if (!existingUsernames.has(normalizedUsername)) {
+          nextUserRecords.push(created);
+          existingUsernames.add(normalizedUsername);
+        }
+      });
+      setUserRecords(nextUserRecords);
+      setPersonnelRecords((prev) => {
+        const byName = new Map(
+          prev
+            .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+            .filter(([name]) => name.length > 0),
+        );
+        return nextUserRecords
+          .map((user) => {
+            const userName = user.name.trim();
+            const existing = byName.get(userName.toLocaleLowerCase());
+            if (existing) {
+              const matched = nextUserRecords.find(
+                (u) =>
+                  u.name
+                    .trim()
+                    .localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+              );
+              return {
+                ...existing,
+                name: userName,
+                userType: matched?.userType ?? existing.userType,
+              };
+            }
+            const matched = nextUserRecords.find(
+              (r) =>
+                r.name
+                  .trim()
+                  .localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
             );
             return {
-              ...existing,
               name: userName,
-              userType: matchedUser?.userType ?? existing.userType,
-            };
-          }
-          const matchedUser = nextUserRecords.find(
-            (record) =>
-              record.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
-          );
-          return {
-            name: userName,
-            shift: "",
-            apparatusAssignment: "",
-            station: "",
-            userType: matchedUser?.userType ?? "",
-            qualifications: [],
-          } satisfies DepartmentPersonnelRecord;
-        })
-        .filter((entry) => entry.name.length > 0);
-    });
-    if (
-      previousName &&
-      normalizedName &&
-      previousName.localeCompare(normalizedName, undefined, { sensitivity: "base" }) !== 0
-    ) {
-      setKellyRotations((previous) =>
-        previous.map((entry) =>
-          entry.personnel.trim() === previousName ? { ...entry, personnel: normalizedName } : entry,
-        ),
-      );
+              shift: "",
+              apparatusAssignment: "",
+              station: "",
+              userType: matched?.userType ?? "",
+              qualifications: [],
+            } satisfies DepartmentPersonnelRecord;
+          })
+          .filter((entry) => entry.name.length > 0);
+      });
     }
-    setIsEntryFormOpen(false);
-    setAutoSaveTick((previous) => previous + 1);
-    setStatusMessage("Auto-saved.");
+
+    if (failedRows.length > 0) {
+      setMultiAddError(
+        failedRows
+          .map((failure) => `Row ${failure.index + 1}: ${failure.message}`)
+          .join(" "),
+      );
+      setMultiAddRows(
+        failedRows.map((failure) => multiAddRows[failure.index]!).filter(Boolean),
+      );
+    } else {
+      setMultiAddRows([{ firstName: "", lastName: "", userType: "" }]);
+      setMultiAddSuccess(`${createdRows.length} user(s) created.`);
+      setStatusMessage(`${createdRows.length} user(s) created.`);
+      setIsMultiAddOpen(false);
+    }
+    setIsMultiAddingUsers(false);
+  };
+
+  const openResetPasswordForm = (index: number) => {
+    setResetPasswordTargetIndex(index);
+    setResetPasswordValue("");
+    setResetPasswordConfirmValue("");
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
+  };
+
+  const submitResetUserPassword = async () => {
+    if (resetPasswordTargetIndex === null) {
+      return;
+    }
+    const target = userRecords[resetPasswordTargetIndex];
+    if (!target) {
+      setResetPasswordError("Could not find selected user.");
+      return;
+    }
+    const trimmed = resetPasswordValue.trim();
+    const trimmedConfirm = resetPasswordConfirmValue.trim();
+    if (!trimmed || !trimmedConfirm) {
+      setResetPasswordError("Please enter and confirm the new password.");
+      return;
+    }
+    if (trimmed !== trimmedConfirm) {
+      setResetPasswordError("New password and confirm password must match.");
+      return;
+    }
+    const policyError = validatePasswordPolicyClient(trimmed);
+    if (policyError) {
+      setResetPasswordError(policyError);
+      return;
+    }
+    setIsResettingPassword(true);
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
+    try {
+      let targetId = target.id?.trim();
+      if (!targetId && target.username.trim()) {
+        const listRes = await fetch("/api/users");
+        const listJson = (await listRes.json()) as {
+          ok?: boolean;
+          users?: { id: string; username: string }[];
+        };
+        if (listJson?.ok && Array.isArray(listJson.users)) {
+          const matched = listJson.users.find(
+            (user) =>
+              user.username.trim().toLowerCase() === target.username.trim().toLowerCase(),
+          );
+          targetId = matched?.id?.trim() ?? "";
+        }
+      }
+      if (!targetId) {
+        setResetPasswordError("Unable to find this user for password reset. Refresh and try again.");
+        return;
+      }
+      const res = await fetch(`/api/users/${targetId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: trimmed }),
+      });
+      const json = (await res.json()) as { ok?: boolean; message?: string };
+      if (!res.ok || !json?.ok) {
+        setResetPasswordError(json?.message ?? "Unable to reset password.");
+        return;
+      }
+      setResetPasswordSuccess("Password reset.");
+      setStatusMessage("Password reset.");
+      setResetPasswordValue("");
+      setResetPasswordConfirmValue("");
+    } catch {
+      setResetPasswordError("Unable to reach reset-password service.");
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const resetUserPassword = async (index: number) => {
+    openResetPasswordForm(index);
+  };
+
+  const closeResetPasswordForm = () => {
+    setResetPasswordTargetIndex(null);
+    setResetPasswordValue("");
+    setResetPasswordConfirmValue("");
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
   };
 
   const savePersonnelForm = () => {
@@ -5076,6 +5621,7 @@ function DepartmentDetailsPage() {
         schedulerPersonnelFieldWidths,
       },
     };
+    // Omit userRecords from payload: auth lives in User table only (Wave 3), not in DepartmentDetails.payloadJson.
     const payload = {
       departmentName,
       departmentStreet,
@@ -5094,7 +5640,6 @@ function DepartmentDetailsPage() {
       additionalFields: additionalFieldRecords,
       standardOvertimeSlot,
       shiftInformationEntries,
-      userRecords,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
       userTypeValues,
@@ -5111,7 +5656,7 @@ function DepartmentDetailsPage() {
     })
       .then((res) => {
         if (res.ok) {
-          setStatusMessage("Department details saved to file (data/department-details.json).");
+          setStatusMessage("Department details saved.");
         } else {
           setStatusMessage("Saved locally. File save failed—ensure npm run proxy is running.");
         }
@@ -5143,7 +5688,6 @@ function DepartmentDetailsPage() {
     schedulerPersonnelFieldWidths,
     uiPreferenceUserKey,
     uiPreferencesByUser,
-    userRecords,
     secondaryContactName,
     secondaryContactPhone,
     selectedMutualAidIds,
@@ -5394,6 +5938,19 @@ function DepartmentDetailsPage() {
                       Add
                     </button>
                   ) : null}
+                  {isUsersEditor ? (
+                    <button
+                      type="button"
+                      className={`secondary-button compact-button ${isMultiAddOpen ? "department-toggle-active" : ""}`}
+                      onClick={() => {
+                        setIsMultiAddOpen((previous) => !previous);
+                        setMultiAddError("");
+                        setMultiAddSuccess("");
+                      }}
+                    >
+                      Multi-Add
+                    </button>
+                  ) : null}
                   {isStationsEditor ? (
                     <button
                       type="button"
@@ -5407,7 +5964,10 @@ function DepartmentDetailsPage() {
                       Edit Multiple
                     </button>
                   ) : null}
-                  {!isSchedulerPersonnelEditor && !isSchedulerApparatusEditor && !isAdditionalFieldsEditor ? (
+                  {!isSchedulerPersonnelEditor &&
+                  !isSchedulerApparatusEditor &&
+                  !isAdditionalFieldsEditor &&
+                  !isUsersEditor ? (
                     <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
                       Edit
                     </button>
@@ -5416,19 +5976,226 @@ function DepartmentDetailsPage() {
 
                 {isUsersEditor ? (
                   <div className="department-apparatus-list-wrapper">
+                    {isMultiAddOpen ? (
+                      <div className="panel" style={{ marginBottom: "0.75rem" }}>
+                        <div className="panel-header">
+                          <h3>Multi-Add Users</h3>
+                        </div>
+                        <div className="settings-form">
+                          <label>
+                            Username Template
+                            <input
+                              type="text"
+                              value={multiAddUsernameTemplate}
+                              onChange={(event) => setMultiAddUsernameTemplate(event.target.value)}
+                              placeholder="${last:3}${first:1}"
+                            />
+                          </label>
+                          <label>
+                            Password Template
+                            <input
+                              type="text"
+                              value={multiAddPasswordTemplate}
+                              onChange={(event) => setMultiAddPasswordTemplate(event.target.value)}
+                              placeholder="${Last}12345!"
+                            />
+                          </label>
+                          <label>
+                            Default User Type
+                            <select
+                              value={multiAddDefaultUserType}
+                              onChange={(event) => setMultiAddDefaultUserType(event.target.value)}
+                            >
+                              {userTypeValues.map((option) => (
+                                <option key={`multi-add-type-${option}`} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <p className="field-hint">
+                            Tokens: {"${first}"}, {"${last}"}, {"${first:1}"}, {"${last:3}"},{" "}
+                            {"${First}"}, {"${Last}"}. Quick shortcuts: <code>LLLF</code> and{" "}
+                            <code>f(last name)</code>.
+                          </p>
+                          <div className="table-wrapper">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>First Name</th>
+                                  <th>Last Name</th>
+                                  <th>User Type</th>
+                                  <th>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {multiAddRows.map((row, rowIndex) => (
+                                  <tr key={`multi-add-row-${rowIndex}`}>
+                                    <td>
+                                      <input
+                                        type="text"
+                                        value={row.firstName}
+                                        onChange={(event) =>
+                                          updateMultiAddRow(rowIndex, "firstName", event.target.value)
+                                        }
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        type="text"
+                                        value={row.lastName}
+                                        onChange={(event) =>
+                                          updateMultiAddRow(rowIndex, "lastName", event.target.value)
+                                        }
+                                      />
+                                    </td>
+                                    <td>
+                                      <select
+                                        value={row.userType}
+                                        onChange={(event) =>
+                                          updateMultiAddRow(rowIndex, "userType", event.target.value)
+                                        }
+                                      >
+                                        <option value="">Use default</option>
+                                        {userTypeValues.map((option) => (
+                                          <option key={`multi-add-row-type-${rowIndex}-${option}`} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td>
+                                      <button
+                                        type="button"
+                                        className="secondary-button compact-button"
+                                        onClick={() => removeMultiAddRow(rowIndex)}
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="department-editor-toolbar-actions">
+                            <button type="button" className="secondary-button compact-button" onClick={addMultiAddRow}>
+                              Add Row
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void submitMultiAddUsers()}
+                              disabled={isMultiAddingUsers}
+                            >
+                              {isMultiAddingUsers ? "Creating..." : "Create Users"}
+                            </button>
+                          </div>
+
+                          <div className="table-wrapper" style={{ marginTop: "0.5rem" }}>
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Full Name</th>
+                                  <th>Generated Username</th>
+                                  <th>Generated Password</th>
+                                  <th>User Type</th>
+                                  <th>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {multiAddPreview.map((row) => (
+                                  <tr key={`multi-add-preview-${row.index}`}>
+                                    <td>{row.fullName || "—"}</td>
+                                    <td>{row.username || "—"}</td>
+                                    <td>{row.password || "—"}</td>
+                                    <td>{row.userType || "—"}</td>
+                                    <td>{row.error || "Ready"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {multiAddError ? <p className="auth-error">{multiAddError}</p> : null}
+                          {multiAddSuccess ? <p className="save-message">{multiAddSuccess}</p> : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {resetPasswordTargetIndex !== null && userRecords[resetPasswordTargetIndex] ? (
+                      <div className="panel" style={{ marginBottom: "0.75rem" }}>
+                        <div className="panel-header">
+                          <h3>Reset Password</h3>
+                        </div>
+                        <div className="settings-form">
+                          <p className="field-hint">
+                            Reset password for{" "}
+                            <strong>
+                              {userRecords[resetPasswordTargetIndex]?.username ||
+                                userRecords[resetPasswordTargetIndex]?.name ||
+                                "selected user"}
+                            </strong>
+                            .
+                          </p>
+                          <label>
+                            New Password
+                            <input
+                              type="password"
+                              value={resetPasswordValue}
+                              onChange={(event) => setResetPasswordValue(event.target.value)}
+                              autoComplete="new-password"
+                            />
+                          </label>
+                          <label>
+                            Confirm New Password
+                            <input
+                              type="password"
+                              value={resetPasswordConfirmValue}
+                              onChange={(event) => setResetPasswordConfirmValue(event.target.value)}
+                              autoComplete="new-password"
+                            />
+                          </label>
+                          <p className="field-hint">
+                            Password policy: 8+ chars, uppercase, lowercase, number, and special
+                            character.
+                          </p>
+                          <div className="department-editor-toolbar-actions">
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void submitResetUserPassword()}
+                              disabled={isResettingPassword}
+                            >
+                              {isResettingPassword ? "Resetting..." : "Save Reset Password"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={closeResetPasswordForm}
+                              disabled={isResettingPassword}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {resetPasswordError ? <p className="auth-error">{resetPasswordError}</p> : null}
+                          {resetPasswordSuccess ? <p className="save-message">{resetPasswordSuccess}</p> : null}
+                        </div>
+                      </div>
+                    ) : null}
                     <div className="table-wrapper">
                       <table>
                         <thead>
                           <tr>
-                            <th>User Name</th>
+                            <th>User Full Name</th>
                             <th>Username</th>
                             <th>User Type</th>
+                            <th>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
                           {userRecords.length === 0 ? (
                             <tr>
-                              <td colSpan={3} className="department-apparatus-empty">
+                              <td colSpan={4} className="department-apparatus-empty">
                                 No users. Click Add to create one.
                               </td>
                             </tr>
@@ -5455,6 +6222,19 @@ function DepartmentDetailsPage() {
                                 </td>
                                 <td>
                                   <span className="department-apparatus-field">{user.userType || "—"}</span>
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="secondary-button compact-button"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      void resetUserPassword(index);
+                                    }}
+                                  >
+                                    Reset Password
+                                  </button>
                                 </td>
                               </tr>
                             ))
@@ -6768,7 +7548,7 @@ function DepartmentDetailsPage() {
             {isUsersEditor ? (
               <div className="department-edit-grid">
                 <label>
-                  User Name
+                  User Full Name
                   <input
                     type="text"
                     value={userDraft.name}
@@ -6802,6 +7582,9 @@ function DepartmentDetailsPage() {
                       }))
                     }
                   />
+                  <small className="field-hint">
+                    Password policy: 8+ chars, uppercase, lowercase, number, and special character.
+                  </small>
                 </label>
                 <label>
                   User Type
@@ -7602,15 +8385,151 @@ function CustomizationPage({
   );
 }
 
-function ProfileManagementPage() {
+function ProfileManagementPage({ username }: { username: string }) {
+  const [accountUserId, setAccountUserId] = useState("");
+  const [accountUsername, setAccountUsername] = useState(username);
   const [fullName, setFullName] = useState("Command User");
   const [email, setEmail] = useState("command@example.org");
   const [phone, setPhone] = useState("(555) 555-0191");
   const [message, setMessage] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-  const handleSave = (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    let isMounted = true;
+    const loadProfile = async () => {
+      try {
+        const response = await fetch("/api/users");
+        if (!response.ok || !isMounted) {
+          return;
+        }
+        const json = (await response.json()) as {
+          ok?: boolean;
+          users?: { id: string; username: string; name?: string }[];
+        };
+        if (!json?.ok || !Array.isArray(json.users) || !isMounted) {
+          return;
+        }
+        const normalizedSessionUsername = username.trim().toLowerCase();
+        const matched = json.users.find(
+          (user) => user.username.trim().toLowerCase() === normalizedSessionUsername,
+        );
+        if (!matched) {
+          return;
+        }
+        setAccountUserId(matched.id);
+        setAccountUsername(matched.username);
+        setFullName(String(matched.name ?? matched.username));
+      } catch {
+        // Keep defaults if profile lookup fails.
+      }
+    };
+    void loadProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, [username]);
+
+  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setMessage("Profile updates saved in this prototype.");
+    setProfileError("");
+    setMessage("");
+    const trimmedName = fullName.trim();
+    if (!accountUserId) {
+      setProfileError("Could not find the signed-in account. Log out and sign in again.");
+      return;
+    }
+    if (!trimmedName) {
+      setProfileError("Full Name is required.");
+      return;
+    }
+    setIsSavingProfile(true);
+    try {
+      const response = await fetch(`/api/users/${accountUserId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName }),
+      });
+      const json = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !json?.ok) {
+        setProfileError(json?.message ?? "Unable to save profile.");
+        return;
+      }
+      setMessage("Profile saved.");
+    } catch {
+      setProfileError("Unable to reach profile service.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handlePasswordSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError("");
+    setPasswordMessage("");
+    const trimmedCurrent = currentPassword.trim();
+    const trimmedNew = newPassword.trim();
+    const trimmedConfirm = confirmNewPassword.trim();
+    if (!trimmedCurrent || !trimmedNew || !trimmedConfirm) {
+      setPasswordError("Please complete all password fields.");
+      return;
+    }
+    if (trimmedNew !== trimmedConfirm) {
+      setPasswordError("New password and confirm password must match.");
+      return;
+    }
+    if (trimmedNew.length < 8) {
+      setPasswordError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!/[a-z]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one lowercase letter.");
+      return;
+    }
+    if (!/[A-Z]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one uppercase letter.");
+      return;
+    }
+    if (!/[0-9]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one number.");
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one special character.");
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: accountUsername || username,
+          currentPassword: trimmedCurrent,
+          newPassword: trimmedNew,
+        }),
+      });
+      const json = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !json?.ok) {
+        setPasswordError(json?.message ?? "Unable to update password.");
+        return;
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordMessage("Password updated.");
+    } catch {
+      setPasswordError("Unable to reach password service.");
+    } finally {
+      setIsSavingPassword(false);
+    }
   };
 
   return (
@@ -7649,10 +8568,56 @@ function ProfileManagementPage() {
               onChange={(event) => setPhone(event.target.value)}
             />
 
-            <button type="submit" className="primary-button">
-              Save Profile
+            <button type="submit" className="primary-button" disabled={isSavingProfile}>
+              {isSavingProfile ? "Saving..." : "Save Profile"}
             </button>
+            {profileError ? <p className="auth-error">{profileError}</p> : null}
             {message ? <p className="save-message">{message}</p> : null}
+          </form>
+        </article>
+        <article className="panel">
+          <form className="settings-form" onSubmit={handlePasswordSave}>
+            <h2>Change Password</h2>
+            <p className="field-hint">
+              Account username: <strong>{accountUsername || username || "(unknown)"}</strong>
+            </p>
+
+            <label htmlFor="current-password">Current Password</label>
+            <input
+              id="current-password"
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+
+            <label htmlFor="new-password">New Password</label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+
+            <label htmlFor="confirm-new-password">Confirm New Password</label>
+            <input
+              id="confirm-new-password"
+              type="password"
+              value={confirmNewPassword}
+              onChange={(event) => setConfirmNewPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+
+            <p className="field-hint">
+              Password policy: 8+ chars, uppercase, lowercase, number, and special character.
+            </p>
+
+            <button type="submit" className="primary-button" disabled={isSavingPassword}>
+              {isSavingPassword ? "Updating..." : "Update Password"}
+            </button>
+            {passwordError ? <p className="auth-error">{passwordError}</p> : null}
+            {passwordMessage ? <p className="save-message">{passwordMessage}</p> : null}
           </form>
         </article>
       </section>
@@ -7778,7 +8743,7 @@ function RouteResolver({
   }
 
   if (path === "/settings/profile") {
-    return <ProfileManagementPage />;
+    return <ProfileManagementPage username={username} />;
   }
 
   if (path === "/settings/display") {
@@ -7934,14 +8899,14 @@ function App() {
       const json = (await response.json()) as {
         ok?: boolean;
         message?: string;
-        user?: { name?: string; userType?: string };
+        user?: { name?: string; userType?: string; username?: string };
       };
       if (!response.ok || !json?.ok || !json.user) {
         return json?.message ?? "Login failed.";
       }
       const nextSession: SessionState = {
         isAuthenticated: true,
-        username: String(json.user.name ?? username),
+        username: String(json.user.username ?? username).trim(),
         unit: department || "",
         role: mapUserTypeToRole(String(json.user.userType ?? "")),
       };

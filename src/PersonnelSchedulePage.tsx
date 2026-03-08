@@ -64,6 +64,7 @@ export function PersonnelSchedulePage({
   const [scheduleOvertimeSplit, setScheduleOvertimeSplit] = useState<ScheduleOvertimeSplit>(() =>
     loadScheduleOvertimeSplit(),
   );
+  const [hasLoadedRemoteSchedule, setHasLoadedRemoteSchedule] = useState(false);
   const [scheduleUndoStack, setScheduleUndoStack] = useState<
     Array<{
       assignments: ScheduleAssignments;
@@ -160,10 +161,36 @@ export function PersonnelSchedulePage({
             });
           }
         }
+        const scheduleRes = await fetch("/api/schedule-assignments");
+        if (scheduleRes.ok && isMounted) {
+          const scheduleJson = (await scheduleRes.json()) as {
+            ok?: boolean;
+            assignments?: ScheduleAssignments;
+            overtimeSplit?: ScheduleOvertimeSplit;
+          };
+          if (scheduleJson?.ok) {
+            const nextAssignments =
+              scheduleJson.assignments && typeof scheduleJson.assignments === "object"
+                ? scheduleJson.assignments
+                : {};
+            const nextOvertimeSplit =
+              scheduleJson.overtimeSplit && typeof scheduleJson.overtimeSplit === "object"
+                ? scheduleJson.overtimeSplit
+                : {};
+            setScheduleAssignments(nextAssignments);
+            setScheduleOvertimeSplit(nextOvertimeSplit);
+            // Keep local cache in sync for fast reload fallback.
+            saveScheduleAssignments(nextAssignments);
+            saveScheduleOvertimeSplit(nextOvertimeSplit);
+          }
+        }
       } catch {
         // Keep localStorage data
       } finally {
-        if (isMounted) setIsLoading(false);
+        if (isMounted) {
+          setHasLoadedRemoteSchedule(true);
+          setIsLoading(false);
+        }
       }
     };
     void load();
@@ -171,6 +198,25 @@ export function PersonnelSchedulePage({
       isMounted = false;
     };
   }, [normalizeAdditionalFields, normalizeDepartmentDraft]);
+
+  useEffect(() => {
+    if (!hasLoadedRemoteSchedule) {
+      return;
+    }
+    const timeout = window.setTimeout(() => {
+      fetch("/api/schedule-assignments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          assignments: scheduleAssignments,
+          overtimeSplit: scheduleOvertimeSplit,
+        }),
+      }).catch(() => {
+        // Keep local fallback persistence if network sync fails.
+      });
+    }, 250);
+    return () => window.clearTimeout(timeout);
+  }, [scheduleAssignments, scheduleOvertimeSplit, hasLoadedRemoteSchedule]);
 
   const shiftOptions = useMemo(() => {
     const ordered = [...departmentData.shiftEntries].sort((a, b) => {

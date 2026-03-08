@@ -338,9 +338,26 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 19. Store `tenant_id` in session/JWT.
 20. Verify session tenant matches request tenant on protected routes.
 21. **Password hashing (done):** User passwords are stored and verified with bcrypt (`bcryptjs`). Seed script stores hashed passwords for `admin`/`demo`. Login accepts both bcrypt hashes and legacy plaintext; on successful plaintext login the stored value is auto-upgraded to a bcrypt hash.
+22. **Wave 3 (done):** Dedicated `/api/users` (GET list, POST create, PATCH update, DELETE). Login uses `User` table only (no payload fallback). Department Access UI loads/saves via `/api/users`. Auth is no longer stored in or read from `DepartmentDetails.payloadJson`; GET/POST department-details strip `userRecords` from response/store.
+23. **Wave 4 (done):** Change-password UX in Settings > Profile Management with client+server validation. Added `POST /api/auth/change-password` (current password required) and password policy enforcement (8+ chars, uppercase, lowercase, number, special). Added admin reset-password route `POST /api/users/:id/reset-password` and Department Access reset action. Password policy is enforced on user create/update and self-service change-password.
 
 **Exit criteria:**
 - Cross-tenant login/session leakage is blocked.
+
+---
+
+## Now vs Later (Task 2 Reminder)
+
+### Now (completed)
+- Wave 3 + Wave 4 core auth/account scope is complete (tenant-scoped users, login hardening, password change/reset, password policy enforcement).
+
+### Later (deferred hardening backlog)
+- Replace prompt-based admin reset-password UX with an in-app modal/dialog flow.
+- Add auth rate-limiting and/or temporary lockout on repeated failed login attempts.
+- Add password-change/reset audit logging (who/when/target user) for security traceability.
+- Deploy frontend staging on Render (keep local frontend for now while backend/domain setup is completed).
+
+Use this section as the running backlog for deferred security/quality follow-ups so future agents can continue without rediscovery.
 
 ---
 
@@ -349,6 +366,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 21. Update all API read/write queries to include `tenant_id`.
 22. Ensure writes stamp current `tenant_id`.
 23. Remove shared/global tenant data reads where inappropriate.
+24. **Phase 5 status (done):** Added tenant-scoped Schedule Assignments API (`GET/POST /api/schedule-assignments`) backed by `ScheduleAssignments` table. Scheduler now syncs assignments + overtime split through tenant-scoped API (with local cache fallback), replacing local-only persistence as the source of truth.
 
 Primary routes to scope first:
 
@@ -393,9 +411,12 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 26. Verify:
     - `crescent.<domain>` resolves and loads
     - `demo.<domain>` resolves and loads
+27. Use runbook: `docs/wave-6-domain-routing-runbook.md` for exact DNS/SSL/verification steps.
 
 **Exit criteria:**
 - Tenant URLs work via domain-based routing.
+
+**Phase 6 status:** In progress (app/runtime tenant resolution is implemented; external DNS + SSL configuration remains environment work).
 
 ---
 

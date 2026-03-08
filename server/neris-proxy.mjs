@@ -1,15 +1,22 @@
 import bcrypt from "bcryptjs";
 import express from "express";
 
-import { PrismaClient } from "@prisma/client";
+import pkg from "@prisma/client";
+const { PrismaClient } = pkg;
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
-const databaseUrl = trimValue(process.env.DATABASE_URL);
+let databaseUrl = trimValue(process.env.DATABASE_URL);
 
 if (!databaseUrl) {
   throw new Error("Missing DATABASE_URL in .env.server");
 }
+
+// Use explicit sslmode=verify-full to satisfy pg’s future SSL semantics and silence the security warning.
+databaseUrl = databaseUrl
+  .replace(/\bsslmode=prefer\b/, "sslmode=verify-full")
+  .replace(/\bsslmode=require\b/, "sslmode=verify-full")
+  .replace(/\bsslmode=verify-ca\b/, "sslmode=verify-full");
 
 const prismaAdapter = new PrismaPg(
   new Pool({
@@ -176,9 +183,29 @@ async function hashPassword(plain) {
   return bcrypt.hash(plain, BCRYPT_SALT_ROUNDS);
 }
 
+function validatePasswordPolicy(password) {
+  const value = String(password ?? "");
+  if (value.length < 8) {
+    return "Password must be at least 8 characters.";
+  }
+  if (!/[a-z]/.test(value)) {
+    return "Password must include at least one lowercase letter.";
+  }
+  if (!/[A-Z]/.test(value)) {
+    return "Password must include at least one uppercase letter.";
+  }
+  if (!/[0-9]/.test(value)) {
+    return "Password must include at least one number.";
+  }
+  if (!/[^A-Za-z0-9]/.test(value)) {
+    return "Password must include at least one special character.";
+  }
+  return null;
+}
+
 function mapUserTypeToRole(userType) {
   const normalized = trimValue(userType).toLowerCase();
-  return normalized === "admin" ? "admin" : "user";
+  return normalized.includes("admin") ? "admin" : "user";
 }
 
 async function hashAndSyncTenantUsers(tenantId, payload) {
@@ -743,7 +770,11 @@ function getProxyConfig() {
   const baseUrl = trimValue(process.env.NERIS_BASE_URL) || DEFAULT_NERIS_BASE_URL;
   const grantType = trimValue(process.env.NERIS_GRANT_TYPE) || "client_credentials";
   return {
-    proxyPort: Number.parseInt(process.env.NERIS_PROXY_PORT || "", 10) || DEFAULT_PROXY_PORT,
+    // Render-style platforms provide PORT; keep NERIS_PROXY_PORT as local override.
+    proxyPort:
+      Number.parseInt(process.env.PORT || "", 10) ||
+      Number.parseInt(process.env.NERIS_PROXY_PORT || "", 10) ||
+      DEFAULT_PROXY_PORT,
     baseUrl,
     tokenUrl: `${baseUrl}/token`,
     createIncidentUrlPrefix: `${baseUrl}/incident`,
@@ -1586,10 +1617,11 @@ app.get("/api/department-details", async (request, response) => {
     const details = await prisma.departmentDetails.findUnique({
       where: { tenantId },
     });
-    const data =
+    const raw =
       details?.payloadJson && typeof details.payloadJson === "object"
         ? details.payloadJson
         : {};
+    const { userRecords: _auth, ...data } = raw;
     response.json({ ok: true, data });
   } catch (error) {
     response.status(500).json({
@@ -1663,50 +1695,9 @@ app.post("/api/auth/login", (request, response) => {
       return;
     }
 
-    // Temporary fallback path: legacy userRecords stored in tenant DepartmentDetails payload.
-    const details = await prisma.departmentDetails.findUnique({
-      where: { tenantId },
-    });
-    const payload =
-      details?.payloadJson && typeof details.payloadJson === "object"
-        ? details.payloadJson
-        : {};
-    const userRecords = Array.isArray(payload.userRecords) ? payload.userRecords : [];
-    const matchedUser = userRecords.find((candidate) => {
-      if (!candidate || typeof candidate !== "object") {
-        return false;
-      }
-      const candidateUsername = String(candidate.username ?? "")
-        .trim()
-        .toLowerCase();
-      return candidateUsername === submittedUsername;
-    });
-
-    if (!matchedUser) {
-      response.status(401).json({
-        ok: false,
-        message: "Invalid username or password.",
-      });
-      return;
-    }
-
-    const storedPassword = String(matchedUser.password ?? "");
-    const validLegacy = await verifyPassword(submittedPassword, storedPassword);
-    if (!validLegacy) {
-      response.status(401).json({
-        ok: false,
-        message: "Invalid username or password.",
-      });
-      return;
-    }
-
-    response.status(200).json({
-      ok: true,
-      user: {
-        name: String(matchedUser.name ?? submittedUsername),
-        userType: String(matchedUser.userType ?? "User"),
-        username: String(matchedUser.username ?? submittedUsername),
-      },
+    response.status(401).json({
+      ok: false,
+      message: "Invalid username or password.",
     });
   })().catch((error) => {
     response.status(500).json({
@@ -1715,6 +1706,64 @@ app.post("/api/auth/login", (request, response) => {
         error instanceof Error ? error.message : "Unexpected login service error.",
     });
   });
+});
+
+app.post("/api/auth/change-password", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const username = trimValue(String(body.username ?? "")).toLowerCase();
+    const currentPassword = String(body.currentPassword ?? "");
+    const newPassword = String(body.newPassword ?? "");
+    if (!username || !currentPassword || !newPassword) {
+      response.status(400).json({
+        ok: false,
+        message: "Username, current password, and new password are required.",
+      });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { tenantId_username: { tenantId, username } },
+    });
+    if (!user) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    const currentOk = await verifyPassword(currentPassword, String(user.passwordHash ?? ""));
+    if (!currentOk) {
+      response.status(401).json({ ok: false, message: "Current password is incorrect." });
+      return;
+    }
+    if (currentPassword === newPassword) {
+      response.status(400).json({
+        ok: false,
+        message: "New password must be different from current password.",
+      });
+      return;
+    }
+    const policyError = validatePasswordPolicy(newPassword);
+    if (policyError) {
+      response.status(400).json({ ok: false, message: policyError });
+      return;
+    }
+    const nextHash = await hashPassword(newPassword);
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { passwordHash: nextHash },
+    });
+    response.status(200).json({ ok: true, message: "Password updated." });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected change-password error.",
+    });
+  }
 });
 
 app.post("/api/department-details", async (request, response) => {
@@ -1729,16 +1778,43 @@ app.post("/api/department-details", async (request, response) => {
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const payloadWithSyncedUsers = await hashAndSyncTenantUsers(tenantId, body);
+    const { userRecords: _dropped, ...payloadWithoutAuth } = payloadWithSyncedUsers;
+    const existingDetails = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const existingPayload =
+      existingDetails?.payloadJson && typeof existingDetails.payloadJson === "object"
+        ? existingDetails.payloadJson
+        : {};
+    const payloadToStore = _dropped !== undefined ? payloadWithoutAuth : payloadWithSyncedUsers;
+    // Keep non-auth user profile metadata when saving department details.
+    if (
+      existingPayload.userFullNames &&
+      payloadToStore.userFullNames === undefined &&
+      typeof existingPayload.userFullNames === "object" &&
+      !Array.isArray(existingPayload.userFullNames)
+    ) {
+      payloadToStore.userFullNames = existingPayload.userFullNames;
+    }
+    if (
+      existingPayload.userTypeLabels &&
+      payloadToStore.userTypeLabels === undefined &&
+      typeof existingPayload.userTypeLabels === "object" &&
+      !Array.isArray(existingPayload.userTypeLabels)
+    ) {
+      payloadToStore.userTypeLabels = existingPayload.userTypeLabels;
+    }
     await prisma.departmentDetails.upsert({
       where: { tenantId },
       update: {
-        payloadJson: payloadWithSyncedUsers,
+        payloadJson: payloadToStore,
         departmentName: trimValue(body.departmentName) || undefined,
       },
       create: {
         tenantId,
         departmentName: trimValue(body.departmentName) || request.tenant?.name || "Unknown",
-        payloadJson: payloadWithSyncedUsers,
+        payloadJson: payloadToStore,
       },
     });
     response.status(200).json({ ok: true });
@@ -1749,6 +1825,616 @@ app.post("/api/department-details", async (request, response) => {
         error instanceof Error
           ? error.message
           : "Unexpected department details write error.",
+    });
+  }
+});
+
+app.get("/api/schedule-assignments", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+
+    const rows = await prisma.scheduleAssignments.findMany({
+      where: { tenantId },
+      select: { shiftType: true, dateKey: true, assignmentsJson: true },
+    });
+
+    const assignments = {};
+    const overtimeSplit = {};
+
+    for (const row of rows) {
+      const storageKey = `${row.shiftType}::${row.dateKey}`;
+      const payload =
+        row.assignmentsJson && typeof row.assignmentsJson === "object"
+          ? row.assignmentsJson
+          : {};
+
+      // Backward compatible read: legacy rows may store assignments map directly.
+      const rowAssignments =
+        payload.assignments && typeof payload.assignments === "object"
+          ? payload.assignments
+          : payload;
+      const rowOvertime =
+        payload.overtimeSplit && typeof payload.overtimeSplit === "object"
+          ? payload.overtimeSplit
+          : {};
+
+      assignments[storageKey] = rowAssignments;
+      overtimeSplit[storageKey] = rowOvertime;
+    }
+
+    response.json({
+      ok: true,
+      assignments,
+      overtimeSplit,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unexpected schedule assignments read error.",
+    });
+  }
+});
+
+app.post("/api/schedule-assignments", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const assignmentsInput =
+      body.assignments && typeof body.assignments === "object" ? body.assignments : {};
+    const overtimeInput =
+      body.overtimeSplit && typeof body.overtimeSplit === "object" ? body.overtimeSplit : {};
+
+    const parsedRows = [];
+    for (const [storageKey, assignmentValue] of Object.entries(assignmentsInput)) {
+      const key = trimValue(storageKey);
+      if (!key.includes("::")) {
+        continue;
+      }
+      const [shiftTypeRaw, dateKeyRaw] = key.split("::");
+      const shiftType = trimValue(shiftTypeRaw);
+      const dateKey = trimValue(dateKeyRaw);
+      if (!shiftType || !dateKey) {
+        continue;
+      }
+      const overtimeValue =
+        overtimeInput && typeof overtimeInput === "object" ? overtimeInput[key] : {};
+
+      parsedRows.push({
+        shiftType,
+        dateKey,
+        assignmentsJson: {
+          assignments:
+            assignmentValue && typeof assignmentValue === "object" ? assignmentValue : {},
+          overtimeSplit:
+            overtimeValue && typeof overtimeValue === "object" ? overtimeValue : {},
+        },
+      });
+    }
+
+    const validCompositeKeys = new Set(
+      parsedRows.map((row) => `${row.shiftType}::${row.dateKey}`),
+    );
+    const existingRows = await prisma.scheduleAssignments.findMany({
+      where: { tenantId },
+      select: { id: true, shiftType: true, dateKey: true },
+    });
+
+    const deletions = existingRows
+      .filter((row) => !validCompositeKeys.has(`${row.shiftType}::${row.dateKey}`))
+      .map((row) => row.id);
+
+    await prisma.$transaction([
+      ...deletions.map((id) =>
+        prisma.scheduleAssignments.delete({
+          where: { id },
+        }),
+      ),
+      ...parsedRows.map((row) =>
+        prisma.scheduleAssignments.upsert({
+          where: {
+            tenantId_shiftType_dateKey: {
+              tenantId,
+              shiftType: row.shiftType,
+              dateKey: row.dateKey,
+            },
+          },
+          update: { assignmentsJson: row.assignmentsJson },
+          create: {
+            tenantId,
+            shiftType: row.shiftType,
+            dateKey: row.dateKey,
+            assignmentsJson: row.assignmentsJson,
+          },
+        }),
+      ),
+    ]);
+
+    response.json({ ok: true });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error
+          ? error.message
+          : "Unexpected schedule assignments write error.",
+    });
+  }
+});
+
+// ----- /api/users (tenant-scoped; auth in User table only, not in payloadJson) -----
+// Non-auth user profile metadata (e.g. full name) is stored separately in DepartmentDetails payload.
+
+async function getTenantUserFullNameMap(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object"
+      ? details.payloadJson
+      : {};
+  const candidateMap = payload.userFullNames;
+  if (!candidateMap || typeof candidateMap !== "object" || Array.isArray(candidateMap)) {
+    return {};
+  }
+  const nextMap = {};
+  for (const [rawUsername, rawName] of Object.entries(candidateMap)) {
+    const username = trimValue(rawUsername).toLowerCase();
+    const fullName = trimValue(String(rawName ?? ""));
+    if (username && fullName) {
+      nextMap[username] = fullName;
+    }
+  }
+  return nextMap;
+}
+
+async function getTenantUserTypeLabelMap(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object"
+      ? details.payloadJson
+      : {};
+  const candidateMap = payload.userTypeLabels;
+  if (!candidateMap || typeof candidateMap !== "object" || Array.isArray(candidateMap)) {
+    return {};
+  }
+  const nextMap = {};
+  for (const [rawUsername, rawUserType] of Object.entries(candidateMap)) {
+    const username = trimValue(rawUsername).toLowerCase();
+    const userType = trimValue(String(rawUserType ?? ""));
+    if (username && userType) {
+      nextMap[username] = userType;
+    }
+  }
+  return nextMap;
+}
+
+async function setTenantUserFullName(tenantId, username, fullName, previousUsername) {
+  const normalizedUsername = trimValue(username).toLowerCase();
+  if (!normalizedUsername) {
+    return;
+  }
+  const normalizedPreviousUsername = trimValue(previousUsername).toLowerCase();
+  const normalizedFullName = trimValue(fullName);
+
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object"
+      ? details.payloadJson
+      : {};
+  const currentMap =
+    payload.userFullNames && typeof payload.userFullNames === "object" && !Array.isArray(payload.userFullNames)
+      ? payload.userFullNames
+      : {};
+  const nextMap = { ...currentMap };
+  if (normalizedPreviousUsername && normalizedPreviousUsername !== normalizedUsername) {
+    delete nextMap[normalizedPreviousUsername];
+  }
+  if (normalizedFullName) {
+    nextMap[normalizedUsername] = normalizedFullName;
+  } else {
+    delete nextMap[normalizedUsername];
+  }
+  const nextPayload = { ...payload };
+  if (Object.keys(nextMap).length > 0) {
+    nextPayload.userFullNames = nextMap;
+  } else {
+    delete nextPayload.userFullNames;
+  }
+
+  await prisma.departmentDetails.upsert({
+    where: { tenantId },
+    update: { payloadJson: nextPayload },
+    create: { tenantId, payloadJson: nextPayload },
+  });
+}
+
+async function setTenantUserTypeLabel(tenantId, username, userTypeLabel, previousUsername) {
+  const normalizedUsername = trimValue(username).toLowerCase();
+  if (!normalizedUsername) {
+    return;
+  }
+  const normalizedPreviousUsername = trimValue(previousUsername).toLowerCase();
+  const normalizedUserTypeLabel = trimValue(userTypeLabel);
+
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object"
+      ? details.payloadJson
+      : {};
+  const currentMap =
+    payload.userTypeLabels &&
+    typeof payload.userTypeLabels === "object" &&
+    !Array.isArray(payload.userTypeLabels)
+      ? payload.userTypeLabels
+      : {};
+  const nextMap = { ...currentMap };
+  if (normalizedPreviousUsername && normalizedPreviousUsername !== normalizedUsername) {
+    delete nextMap[normalizedPreviousUsername];
+  }
+  if (normalizedUserTypeLabel) {
+    nextMap[normalizedUsername] = normalizedUserTypeLabel;
+  } else {
+    delete nextMap[normalizedUsername];
+  }
+  const nextPayload = { ...payload };
+  if (Object.keys(nextMap).length > 0) {
+    nextPayload.userTypeLabels = nextMap;
+  } else {
+    delete nextPayload.userTypeLabels;
+  }
+
+  await prisma.departmentDetails.upsert({
+    where: { tenantId },
+    update: { payloadJson: nextPayload },
+    create: { tenantId, payloadJson: nextPayload },
+  });
+}
+
+async function removeTenantUserFullName(tenantId, username) {
+  const normalizedUsername = trimValue(username).toLowerCase();
+  if (!normalizedUsername) {
+    return;
+  }
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+  });
+  if (!details || !details.payloadJson || typeof details.payloadJson !== "object") {
+    return;
+  }
+  const payload = details.payloadJson;
+  const currentMap =
+    payload.userFullNames && typeof payload.userFullNames === "object" && !Array.isArray(payload.userFullNames)
+      ? payload.userFullNames
+      : {};
+  if (!currentMap[normalizedUsername]) {
+    return;
+  }
+  const nextMap = { ...currentMap };
+  delete nextMap[normalizedUsername];
+  const nextPayload = { ...payload };
+  if (Object.keys(nextMap).length > 0) {
+    nextPayload.userFullNames = nextMap;
+  } else {
+    delete nextPayload.userFullNames;
+  }
+  await prisma.departmentDetails.update({
+    where: { tenantId },
+    data: { payloadJson: nextPayload },
+  });
+}
+
+async function removeTenantUserTypeLabel(tenantId, username) {
+  const normalizedUsername = trimValue(username).toLowerCase();
+  if (!normalizedUsername) {
+    return;
+  }
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+  });
+  if (!details || !details.payloadJson || typeof details.payloadJson !== "object") {
+    return;
+  }
+  const payload = details.payloadJson;
+  const currentMap =
+    payload.userTypeLabels &&
+    typeof payload.userTypeLabels === "object" &&
+    !Array.isArray(payload.userTypeLabels)
+      ? payload.userTypeLabels
+      : {};
+  if (!currentMap[normalizedUsername]) {
+    return;
+  }
+  const nextMap = { ...currentMap };
+  delete nextMap[normalizedUsername];
+  const nextPayload = { ...payload };
+  if (Object.keys(nextMap).length > 0) {
+    nextPayload.userTypeLabels = nextMap;
+  } else {
+    delete nextPayload.userTypeLabels;
+  }
+  await prisma.departmentDetails.update({
+    where: { tenantId },
+    data: { payloadJson: nextPayload },
+  });
+}
+
+function toUserResponse(user, fullNameMap = {}, userTypeLabelMap = {}) {
+  const normalizedUsername = trimValue(user.username).toLowerCase();
+  return {
+    id: user.id,
+    username: user.username,
+    userType:
+      userTypeLabelMap[normalizedUsername] ||
+      (user.role?.toLowerCase() === "admin" ? "Admin" : "User"),
+    name: fullNameMap[normalizedUsername] || user.username,
+  };
+}
+
+app.get("/api/users", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const users = await prisma.user.findMany({
+      where: { tenantId },
+      select: { id: true, username: true, role: true },
+      orderBy: { username: "asc" },
+    });
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
+    response.json({
+      ok: true,
+      users: users.map((user) => toUserResponse(user, fullNameMap, userTypeLabelMap)),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected users list error.",
+    });
+  }
+});
+
+app.post("/api/users", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const username = trimValue(String(body.username ?? "")).toLowerCase();
+    const password = String(body.password ?? "").trim();
+    const userType = trimValue(body.userType) || "User";
+    const fullName = trimValue(String(body.name ?? "")) || username;
+    if (!username) {
+      response.status(400).json({ ok: false, message: "Username is required." });
+      return;
+    }
+    if (!password) {
+      response.status(400).json({ ok: false, message: "Password is required for new users." });
+      return;
+    }
+    const passwordPolicyError = validatePasswordPolicy(password);
+    if (passwordPolicyError) {
+      response.status(400).json({ ok: false, message: passwordPolicyError });
+      return;
+    }
+    const passwordHash = await hashPassword(password);
+    const user = await prisma.user.create({
+      data: {
+        tenantId,
+        username,
+        passwordHash,
+        role: mapUserTypeToRole(userType),
+      },
+    });
+    await setTenantUserFullName(tenantId, username, fullName);
+    await setTenantUserTypeLabel(tenantId, username, userType);
+    response.status(201).json({
+      ok: true,
+      user: toUserResponse(user, { [username]: fullName }, { [username]: userType }),
+    });
+  } catch (error) {
+    if (error?.code === "P2002") {
+      response.status(409).json({ ok: false, message: "A user with that username already exists." });
+      return;
+    }
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected user create error.",
+    });
+  }
+});
+
+app.patch("/api/users/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const id = trimValue(request.params.id);
+    if (!id) {
+      response.status(400).json({ ok: false, message: "User id is required." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const existing = await prisma.user.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
+    const existingFullName =
+      trimValue(fullNameMap[trimValue(existing.username).toLowerCase()]) || existing.username;
+    const nextFullName =
+      body.name !== undefined ? trimValue(String(body.name ?? "")) : existingFullName;
+    const existingUserTypeLabel =
+      trimValue(userTypeLabelMap[trimValue(existing.username).toLowerCase()]) ||
+      (existing.role?.toLowerCase() === "admin" ? "Admin" : "User");
+    const nextUserTypeLabel =
+      body.userType !== undefined ? trimValue(String(body.userType ?? "")) : existingUserTypeLabel;
+    const updates = {};
+    if (body.username !== undefined) {
+      updates.username = trimValue(String(body.username)).toLowerCase();
+      if (!updates.username) {
+        response.status(400).json({ ok: false, message: "Username cannot be empty." });
+        return;
+      }
+    }
+    if (body.userType !== undefined) {
+      updates.role = mapUserTypeToRole(trimValue(body.userType) || "User");
+    }
+    if (body.password !== undefined && String(body.password).trim()) {
+      const nextPassword = String(body.password).trim();
+      const passwordPolicyError = validatePasswordPolicy(nextPassword);
+      if (passwordPolicyError) {
+        response.status(400).json({ ok: false, message: passwordPolicyError });
+        return;
+      }
+      updates.passwordHash = await hashPassword(nextPassword);
+    }
+    const user = await prisma.user.update({
+      where: { id },
+      data: updates,
+    });
+    const nextUsername = trimValue(user.username).toLowerCase();
+    await setTenantUserFullName(
+      tenantId,
+      nextUsername,
+      nextFullName || nextUsername,
+      trimValue(existing.username).toLowerCase(),
+    );
+    await setTenantUserTypeLabel(
+      tenantId,
+      nextUsername,
+      nextUserTypeLabel || (user.role?.toLowerCase() === "admin" ? "Admin" : "User"),
+      trimValue(existing.username).toLowerCase(),
+    );
+    response.json({
+      ok: true,
+      user: toUserResponse(
+        user,
+        { [nextUsername]: nextFullName || nextUsername },
+        {
+          [nextUsername]:
+            nextUserTypeLabel || (user.role?.toLowerCase() === "admin" ? "Admin" : "User"),
+        },
+      ),
+    });
+  } catch (error) {
+    if (error?.code === "P2002") {
+      response.status(409).json({ ok: false, message: "A user with that username already exists." });
+      return;
+    }
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected user update error.",
+    });
+  }
+});
+
+app.post("/api/users/:id/reset-password", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const id = trimValue(request.params.id);
+    if (!id) {
+      response.status(400).json({ ok: false, message: "User id is required." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const newPassword = String(body.newPassword ?? "").trim();
+    if (!newPassword) {
+      response.status(400).json({ ok: false, message: "New password is required." });
+      return;
+    }
+    const passwordPolicyError = validatePasswordPolicy(newPassword);
+    if (passwordPolicyError) {
+      response.status(400).json({ ok: false, message: passwordPolicyError });
+      return;
+    }
+    const existing = await prisma.user.findFirst({
+      where: { id, tenantId },
+      select: { id: true },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    await prisma.user.update({
+      where: { id: existing.id },
+      data: { passwordHash: await hashPassword(newPassword) },
+    });
+    response.status(200).json({ ok: true, message: "Password reset." });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected reset-password error.",
+    });
+  }
+});
+
+app.delete("/api/users/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const id = trimValue(request.params.id);
+    if (!id) {
+      response.status(400).json({ ok: false, message: "User id is required." });
+      return;
+    }
+    const existing = await prisma.user.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    await prisma.user.delete({ where: { id } });
+    await removeTenantUserFullName(tenantId, existing.username);
+    await removeTenantUserTypeLabel(tenantId, existing.username);
+    response.status(204).send();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected user delete error.",
     });
   }
 });
