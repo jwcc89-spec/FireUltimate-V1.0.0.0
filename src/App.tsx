@@ -6,12 +6,10 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { createPortal } from "react-dom";
 import {
   Bell,
   ChevronDown,
@@ -19,14 +17,11 @@ import {
   LogOut,
   Menu,
   Palette,
-  Pencil,
   Search,
   Settings,
   Shield,
   ShieldCheck,
-  Trash2,
   UserRound,
-  Users,
 } from "lucide-react";
 import {
   BrowserRouter,
@@ -47,12 +42,10 @@ import {
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
   DISPATCH_PARSING_PREVIEW,
-  HYDRANT_ADMIN_TABLE_ROWS,
   INCIDENT_CALLS,
   INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
-  SUBMENU_PLACEHOLDER_NOTES,
   getDefaultPathForRole,
   getDisplayCardOptions,
   getIncidentCallDetail,
@@ -68,23 +61,23 @@ import {
   type IncidentStatId,
   type MainMenu,
   type MainMenuId,
-  type NavSubmenu,
   type Tone,
   type UserRole,
 } from "./appData";
+import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
+import { HydrantsAdminPage } from "./HydrantsAdminPage";
 import {
-  NERIS_REQUIRED_FIELD_MATRIX,
-  NERIS_FORM_SECTIONS,
-  createDefaultNerisFormValues,
-  getNerisFieldsForSection,
   getNerisValueOptions,
-  isNerisFieldRequired,
-  validateNerisSection,
-  type NerisFieldMetadata,
   type NerisFormValues,
-  type NerisSectionId,
   type NerisValueOption,
 } from "./nerisMetadata";
+import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
+import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
+import {
+  NerisFlatMultiOptionSelect,
+  NerisFlatSingleOptionSelect,
+} from "./NerisFlatSelects";
+import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -94,7 +87,7 @@ interface SessionState {
 }
 
 interface AuthPageProps {
-  onLogin: (username: string, unit: string, role: UserRole) => void;
+  onLogin: (department: string, username: string, password: string) => Promise<string | null>;
 }
 
 interface ShellLayoutProps {
@@ -126,33 +119,13 @@ interface MainMenuLandingPageProps {
   submenuVisibility: SubmenuVisibilityMap;
 }
 
-interface SubmenuPlaceholderPageProps {
-  submenu: NavSubmenu;
-}
-
 interface IncidentsListPageProps {
   incidentDisplaySettings: IncidentDisplaySettings;
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
 }
 
-interface NerisReportFormPageProps {
-  callNumber: string;
-  role: UserRole;
-  username: string;
-  nerisExportSettings: NerisExportSettings;
-}
-
 interface IncidentCallDetailPageProps {
   callNumber: string;
-}
-
-interface IncidentCompareRow {
-  id: string;
-  label: string;
-  submittedValue: string;
-  retrievedValue: string;
-  status: "match" | "different";
-  helpText?: string;
 }
 
 interface MenuDisplayCardsProps {
@@ -237,9 +210,14 @@ interface NerisExportRecord {
 type DepartmentCollectionKey =
   | "stations"
   | "apparatus"
+  | "schedulerApparatus"
   | "shiftInformation"
+  | "additionalFields"
+  | "overtimeSetup"
   | "personnel"
+  | "schedulerPersonnel"
   | "personnelQualifications"
+  | "kellyRotation"
   | "mutualAidDepartments"
   | "userType";
 
@@ -258,6 +236,15 @@ interface ShiftInformationEntry {
   location: string;
 }
 
+type KellyRotationUnit = "Days" | "Shifts";
+
+interface KellyRotationEntry {
+  personnel: string;
+  repeatsEveryValue: number;
+  repeatsEveryUnit: KellyRotationUnit;
+  startsOn: string;
+}
+
 interface DepartmentPersonnelRecord {
   name: string;
   shift: string;
@@ -266,6 +253,20 @@ interface DepartmentPersonnelRecord {
   userType: string;
   /** DD-M: credentials/qualifications from personnelQualifications list */
   qualifications: string[];
+}
+
+interface DepartmentUserRecord {
+  id?: string;
+  name: string;
+  userType: string;
+  username: string;
+  password: string;
+}
+
+interface MultiAddUserDraft {
+  firstName: string;
+  lastName: string;
+  userType: string;
 }
 
 interface DepartmentStationRecord {
@@ -279,10 +280,29 @@ interface DepartmentStationRecord {
 
 interface DepartmentApparatusRecord {
   unitId: string;
+  commonName: string;
   unitType: string;
+  make: string;
+  model: string;
+  year: string;
+}
+
+interface SchedulerApparatusRecord {
+  apparatus: string;
   minimumPersonnel: number;
+  maximumPersonnel: number;
   personnelRequirements: string[];
   station: string;
+}
+
+type AdditionalFieldValueMode = "text" | "personnel";
+
+interface AdditionalFieldRecord {
+  id: string;
+  fieldName: string;
+  numberOfSlots: number;
+  valueMode: AdditionalFieldValueMode;
+  personnelOverride: boolean;
 }
 
 interface DepartmentNerisEntityOption {
@@ -411,21 +431,167 @@ const DEFAULT_CALL_FIELD_WIDTHS: Record<IncidentCallFieldId, number> = {
   lastUpdated: 140,
 };
 const NERIS_QUEUE_FIELD_ORDER: IncidentCallFieldId[] = [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
-type ApparatusGridFieldId = "unitType" | "minPersonnel" | "personnelRequirements" | "station";
+type ApparatusGridFieldId = "commonName" | "unitType" | "make" | "model" | "year";
 const APPARATUS_GRID_FIELD_ORDER: ApparatusGridFieldId[] = [
+  "commonName",
   "unitType",
-  "minPersonnel",
-  "personnelRequirements",
-  "station",
+  "make",
+  "model",
+  "year",
 ];
 const MIN_APPARATUS_FIELD_WIDTH = 70;
 const MAX_APPARATUS_FIELD_WIDTH = 320;
 const DEFAULT_APPARATUS_FIELD_WIDTHS: Record<ApparatusGridFieldId, number> = {
+  commonName: 150,
   unitType: 120,
-  minPersonnel: 90,
-  personnelRequirements: 160,
-  station: 110,
+  make: 130,
+  model: 130,
+  year: 90,
 };
+type SchedulerApparatusGridFieldId =
+  | "minPersonnel"
+  | "maxPersonnel"
+  | "personnelRequirements"
+  | "station";
+const SCHEDULER_APPARATUS_GRID_FIELD_ORDER: SchedulerApparatusGridFieldId[] = [
+  "minPersonnel",
+  "maxPersonnel",
+  "personnelRequirements",
+  "station",
+];
+const MIN_SCHEDULER_APPARATUS_FIELD_WIDTH = 70;
+const MAX_SCHEDULER_APPARATUS_FIELD_WIDTH = 360;
+const DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS: Record<SchedulerApparatusGridFieldId, number> = {
+  minPersonnel: 110,
+  maxPersonnel: 110,
+  personnelRequirements: 210,
+  station: 120,
+};
+type SchedulerPersonnelGridFieldId = "shift" | "apparatusAssignment" | "station" | "qualifications";
+const SCHEDULER_PERSONNEL_GRID_FIELD_ORDER: SchedulerPersonnelGridFieldId[] = [
+  "shift",
+  "apparatusAssignment",
+  "station",
+  "qualifications",
+];
+const MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH = 80;
+const MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH = 360;
+const DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS: Record<SchedulerPersonnelGridFieldId, number> = {
+  shift: 120,
+  apparatusAssignment: 160,
+  station: 120,
+  qualifications: 210,
+};
+const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
+  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
+  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true },
+];
+
+function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
+  if (!Array.isArray(raw)) {
+    return [...DEFAULT_ADDITIONAL_FIELDS];
+  }
+  const parsed = raw
+    .map((entry, index): AdditionalFieldRecord | null => {
+      if (!entry || typeof entry !== "object") return null;
+      const id = String((entry as { id?: unknown }).id ?? `support-custom-${index + 1}`).trim();
+      const fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
+      const valueModeRaw = String((entry as { valueMode?: unknown }).valueMode ?? "personnel").trim().toLowerCase();
+      const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
+      const numberOfSlots = Math.max(1, Math.floor(Number((entry as { numberOfSlots?: unknown }).numberOfSlots ?? 1) || 1));
+      const personnelOverride = Boolean((entry as { personnelOverride?: unknown }).personnelOverride);
+      if (!fieldName) return null;
+      return { id, fieldName, numberOfSlots, valueMode, personnelOverride };
+    })
+    .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
+
+  const hasKelly = parsed.some((entry) => entry.id === "support-kelly-day");
+  if (!hasKelly) {
+    parsed.push(DEFAULT_ADDITIONAL_FIELDS.find((entry) => entry.id === "support-kelly-day")!);
+  }
+  return parsed.length > 0 ? parsed : [...DEFAULT_ADDITIONAL_FIELDS];
+}
+
+function toAdditionalFieldId(fieldName: string): string {
+  const normalized = fieldName
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+  return normalized ? `support-${normalized}` : "support-custom";
+}
+const USER_UI_PREFERENCES_FALLBACK_KEY = "__default__";
+
+function normalizeApparatusFieldWidths(
+  raw: unknown,
+): Record<ApparatusGridFieldId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_APPARATUS_FIELD_WIDTHS };
+  APPARATUS_GRID_FIELD_ORDER.forEach((fieldId) => {
+    const candidate = Number(source[fieldId]);
+    if (Number.isFinite(candidate)) {
+      next[fieldId] = Math.min(
+        MAX_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_APPARATUS_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeSchedulerApparatusFieldWidths(
+  raw: unknown,
+): Record<SchedulerApparatusGridFieldId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS };
+  SCHEDULER_APPARATUS_GRID_FIELD_ORDER.forEach((fieldId) => {
+    const candidate = Number(source[fieldId]);
+    if (Number.isFinite(candidate)) {
+      next[fieldId] = Math.min(
+        MAX_SCHEDULER_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_APPARATUS_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeSchedulerPersonnelFieldWidths(
+  raw: unknown,
+): Record<SchedulerPersonnelGridFieldId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS };
+  SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.forEach((fieldId) => {
+    const candidate = Number(source[fieldId]);
+    if (Number.isFinite(candidate)) {
+      next[fieldId] = Math.min(
+        MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeApparatusFieldOrder(raw: unknown): ApparatusGridFieldId[] {
+  if (!Array.isArray(raw)) {
+    return [...APPARATUS_GRID_FIELD_ORDER];
+  }
+  const parsed = raw.filter((value): value is ApparatusGridFieldId =>
+    APPARATUS_GRID_FIELD_ORDER.includes(value as ApparatusGridFieldId),
+  );
+  const unique = Array.from(new Set(parsed));
+  if (unique.length !== APPARATUS_GRID_FIELD_ORDER.length) {
+    return [...APPARATUS_GRID_FIELD_ORDER];
+  }
+  return unique;
+}
 const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   {
     key: "stations",
@@ -435,8 +601,8 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   },
   {
     key: "apparatus",
-    label: "Apparatus",
-    editButtonLabel: "Edit Apparatus",
+    label: "Department Apparatus",
+    editButtonLabel: "Edit Department Apparatus",
     helperText: "",
   },
   {
@@ -447,14 +613,44 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   },
   {
     key: "personnel",
+    label: "Users",
+    editButtonLabel: "Edit Users",
+    helperText: "",
+  },
+  {
+    key: "schedulerPersonnel",
     label: "Personnel",
     editButtonLabel: "Edit Personnel",
+    helperText: "",
+  },
+  {
+    key: "schedulerApparatus",
+    label: "Scheduler Apparatus",
+    editButtonLabel: "Edit Scheduler Apparatus",
+    helperText: "",
+  },
+  {
+    key: "additionalFields",
+    label: "Additional Fields",
+    editButtonLabel: "Edit Additional Fields",
+    helperText: "",
+  },
+  {
+    key: "overtimeSetup",
+    label: "Overtime Setup",
+    editButtonLabel: "Edit Overtime Setup",
     helperText: "",
   },
   {
     key: "personnelQualifications",
     label: "Personnel Qualifications",
     editButtonLabel: "Edit Personnel Qualifications",
+    helperText: "",
+  },
+  {
+    key: "kellyRotation",
+    label: "Kelly Rotation",
+    editButtonLabel: "Edit Kelly Rotation",
     helperText: "",
   },
   {
@@ -477,7 +673,7 @@ const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
   "Every 3 days",
   "Custom",
 ];
-const DEFAULT_USER_TYPE_VALUES = ["Admin", "Sub Admin", "Secretary", "User"];
+const DEFAULT_USER_TYPE_VALUES = ["Super Admin", "Admin", "Sub Admin", "Secretary", "User"];
 const GMT_TIMEZONE_OPTIONS = [
   "GMT-05:00 Eastern",
   "GMT-06:00 Central",
@@ -507,8 +703,87 @@ function readDepartmentDetailsDraft(): Record<string, unknown> {
 
 function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
   const d = raw && typeof raw === "object" ? raw : {};
+  const legacyApparatusRaw = d.apparatusRecords;
+  const legacyMaxByUnitType = (unitTypeRaw: unknown): number => {
+    const t = String(unitTypeRaw ?? "").toUpperCase();
+    if (t.includes("AMB")) return 3;
+    if (t.includes("ENGINE")) return 4;
+    if (t.includes("LADDER") || t.includes("TOWER")) return 2;
+    if (t.includes("CHIEF") || t.includes("COMMAND") || t.includes("CAR")) return 1;
+    return 2;
+  };
+  const legacyApparatusRecords = Array.isArray(legacyApparatusRaw)
+    ? legacyApparatusRaw
+        .map((entry: Record<string, unknown>) => ({
+          unitId: String(entry?.unitId ?? "").trim(),
+          commonName: String(entry?.commonName ?? entry?.unitId ?? "").trim(),
+          unitType: String(entry?.unitType ?? "").trim(),
+          make: String(entry?.make ?? "").trim(),
+          model: String(entry?.model ?? "").trim(),
+          year: String(entry?.year ?? "").trim(),
+          minimumPersonnel: Number(entry?.minimumPersonnel ?? 0) || 0,
+          personnelRequirements: Array.isArray(entry?.personnelRequirements)
+            ? (entry.personnelRequirements as string[]).filter((q): q is string => typeof q === "string")
+            : [],
+          station: String(entry?.station ?? "").trim(),
+        }))
+        .filter((entry) => entry.unitId.length > 0 || entry.commonName.length > 0)
+    : [];
+  const masterApparatusRaw = d.masterApparatusRecords;
+  const masterApparatusRecords = Array.isArray(masterApparatusRaw)
+    ? masterApparatusRaw
+        .map((entry: Record<string, unknown>) => ({
+          unitId: String(entry?.unitId ?? "").trim(),
+          commonName: String(entry?.commonName ?? "").trim(),
+          unitType: String(entry?.unitType ?? "").trim(),
+          make: String(entry?.make ?? "").trim(),
+          model: String(entry?.model ?? "").trim(),
+          year: String(entry?.year ?? "").trim(),
+        }))
+        .filter((entry) => entry.unitId.length > 0 || entry.commonName.length > 0)
+    : legacyApparatusRecords.map((entry) => ({
+        unitId: entry.unitId,
+        commonName: entry.commonName,
+        unitType: entry.unitType,
+        make: entry.make,
+        model: entry.model,
+        year: entry.year,
+      }));
+  const schedulerApparatusRaw = d.schedulerApparatusRecords;
+  const schedulerApparatusRecords = Array.isArray(schedulerApparatusRaw)
+    ? schedulerApparatusRaw
+        .map((entry: Record<string, unknown>) => {
+          const minimumPersonnel = Number(entry?.minimumPersonnel ?? 0) || 0;
+          const maximumCandidate =
+            Number(entry?.maximumPersonnel ?? entry?.maxPersonnel ?? minimumPersonnel) || 0;
+          return {
+            apparatus: String(entry?.apparatus ?? "").trim(),
+            minimumPersonnel,
+            maximumPersonnel: Math.max(minimumPersonnel, maximumCandidate || 2),
+            personnelRequirements: Array.isArray(entry?.personnelRequirements)
+              ? (entry.personnelRequirements as string[]).filter((q): q is string => typeof q === "string")
+              : [],
+            station: String(entry?.station ?? "").trim(),
+          };
+        })
+        .filter((entry) => entry.apparatus.length > 0)
+    : legacyApparatusRecords.map((entry) => {
+        const minimumPersonnel = entry.minimumPersonnel;
+        const maximumPersonnel = Math.max(
+          minimumPersonnel,
+          legacyMaxByUnitType(entry.unitType),
+        );
+        return {
+          apparatus: entry.commonName || entry.unitId,
+          minimumPersonnel,
+          maximumPersonnel,
+          personnelRequirements: entry.personnelRequirements,
+          station: entry.station,
+        };
+      });
+  const additionalFields = normalizeAdditionalFields(d.additionalFields);
   const personnelRaw = d.personnelRecords;
-  const personnelRecords = Array.isArray(personnelRaw)
+  const legacySchedulerRecords = Array.isArray(personnelRaw)
     ? personnelRaw.map((entry: Record<string, unknown>) => ({
         name: String(entry?.name ?? ""),
         shift: String(entry?.shift ?? ""),
@@ -520,8 +795,109 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
           : [],
       }))
     : [];
-  return { ...d, personnelRecords };
+  const userRecordsRaw = d.userRecords;
+  const userRecords = Array.isArray(userRecordsRaw)
+    ? userRecordsRaw
+        .map((entry: Record<string, unknown>) => ({
+          name: String(entry?.name ?? "").trim(),
+          userType: String(entry?.userType ?? "").trim(),
+          username: String(entry?.username ?? "").trim(),
+          password: String(entry?.password ?? ""),
+        }))
+        .filter((entry) => entry.name.length > 0)
+    : legacySchedulerRecords
+        .map((entry) => ({
+          name: String(entry.name ?? "").trim(),
+          userType: String(entry.userType ?? "").trim(),
+          username: "",
+          password: "",
+        }))
+        .filter((entry) => entry.name.length > 0);
+  const schedulerRaw = d.schedulerPersonnelRecords;
+  const schedulerPersonnelSeed = Array.isArray(schedulerRaw)
+    ? schedulerRaw.map((entry: Record<string, unknown>) => ({
+        name: String(entry?.name ?? ""),
+        shift: String(entry?.shift ?? ""),
+        apparatusAssignment: String(entry?.apparatusAssignment ?? ""),
+        station: String(entry?.station ?? ""),
+        userType: String(entry?.userType ?? ""),
+        qualifications: Array.isArray(entry?.qualifications)
+          ? (entry.qualifications as string[]).filter((q): q is string => typeof q === "string")
+          : [],
+      }))
+    : legacySchedulerRecords;
+  const schedulerByName = new Map(
+    schedulerPersonnelSeed
+      .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+      .filter(([name]) => name.length > 0),
+  );
+  const schedulerSeedUsers =
+    userRecords.length > 0
+      ? userRecords
+      : schedulerPersonnelSeed
+          .map((entry) => ({
+            name: String(entry.name ?? "").trim(),
+            userType: String(entry.userType ?? "").trim(),
+            username: "",
+            password: "",
+          }))
+          .filter((entry) => entry.name.length > 0);
+  const schedulerPersonnelRecords = schedulerSeedUsers
+    .map((user) => {
+      const normalizedName = user.name.trim();
+      const match = schedulerByName.get(normalizedName.toLocaleLowerCase());
+      if (match) {
+        return { ...match, name: normalizedName, userType: user.userType };
+      }
+      return {
+        name: normalizedName,
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: user.userType,
+        qualifications: [],
+      } satisfies DepartmentPersonnelRecord;
+    })
+    .filter((entry) => entry.name.length > 0);
+  const kellyRaw = d.kellyRotations;
+  const kellyRotations = Array.isArray(kellyRaw)
+    ? kellyRaw
+        .map((entry) => {
+          if (!entry || typeof entry !== "object") return null;
+          const repeatsEveryValue = Number((entry as { repeatsEveryValue?: unknown }).repeatsEveryValue);
+          const repeatsEveryUnitRaw = String((entry as { repeatsEveryUnit?: unknown }).repeatsEveryUnit ?? "Shifts");
+          const repeatsEveryUnit: KellyRotationUnit =
+            repeatsEveryUnitRaw === "Days" ? "Days" : "Shifts";
+          return {
+            personnel: String((entry as { personnel?: unknown }).personnel ?? ""),
+            repeatsEveryValue: Number.isFinite(repeatsEveryValue) && repeatsEveryValue > 0 ? repeatsEveryValue : 1,
+            repeatsEveryUnit,
+            startsOn: String((entry as { startsOn?: unknown }).startsOn ?? ""),
+          } satisfies KellyRotationEntry;
+        })
+        .filter((entry): entry is KellyRotationEntry => Boolean(entry))
+    : [];
+  const schedulerEnabled =
+    typeof d.schedulerEnabled === "boolean"
+      ? d.schedulerEnabled
+      : schedulerPersonnelRecords.length > 0 || kellyRotations.length > 0;
+  const standardOvertimeSlot = Math.max(
+    1,
+    Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
+  );
+  return {
+    ...d,
+    masterApparatusRecords,
+    schedulerApparatusRecords,
+    userRecords,
+    schedulerPersonnelRecords,
+    additionalFields,
+    standardOvertimeSlot,
+    schedulerEnabled,
+    kellyRotations,
+  };
 }
+
 const NERIS_REPORT_STATUS_BY_CALL: Record<string, string> = {
   "D-260218-101": "In Review",
   "D-260218-099": "Draft",
@@ -710,60 +1086,11 @@ function normalizeNerisEnumValue(raw: string): string {
     .join("||");
 }
 
-function formatNerisEnumSegment(value: string): string {
-  return value
-    .toLowerCase()
-    .replace(/_/g, " ")
-    .replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
 interface ParsedImportedLocationValues {
   locationState: string;
   locationCountry: string;
   locationPostalCode: string;
   locationCounty: string;
-}
-
-interface ResourceUnitEntry {
-  id: string;
-  unitId: string;
-  unitType: string;
-  staffing: string;
-  responseMode: string;
-  transportMode: string;
-  dispatchTime: string;
-  enrouteTime: string;
-  stagedTime: string;
-  onSceneTime: string;
-  canceledTime: string;
-  clearTime: string;
-  isCanceledEnroute: boolean;
-  isComplete: boolean;
-  isExpanded: boolean;
-  showTimesEditor: boolean;
-  personnel: string;
-  showPersonnelSelector: boolean;
-  reportWriter: string;
-  unitNarrative: string;
-}
-
-interface EmergingElectrocutionItem {
-  id: string;
-  electricalHazardType: string;
-  suppressionMethods: string;
-}
-
-interface EmergingPowerGenerationItem {
-  id: string;
-  photovoltaicHazardType: string;
-  pvSourceTarget: string;
-  suppressionMethods: string;
-}
-
-interface FireSuppressionSystemEntry {
-  id: string;
-  suppressionType: string;
-  suppressionCoverage: string;
 }
 
 function parseImportedLocationValues(
@@ -1667,23 +1994,95 @@ function getNerisQueueFieldValue(
   return getCallFieldValue(call, fieldId);
 }
 
-function AuthPage({ onLogin }: AuthPageProps) {
-  const [username, setUsername] = useState("");
-  const [unit, setUnit] = useState("");
-  const [securePin, setSecurePin] = useState("");
-  const [role, setRole] = useState<UserRole>("user");
-  const [errorMessage, setErrorMessage] = useState("");
+function mapUserTypeToRole(userType: string): UserRole {
+  return userType.trim().toLowerCase().includes("admin") ? "admin" : "user";
+}
 
-  const handleSubmit = (event: FormEvent<HTMLFormElement>) => {
+function validatePasswordPolicyClient(password: string): string | null {
+  const value = password.trim();
+  if (value.length < 8) {
+    return "Password must be at least 8 characters.";
+  }
+  if (!/[a-z]/.test(value)) {
+    return "Password must include at least one lowercase letter.";
+  }
+  if (!/[A-Z]/.test(value)) {
+    return "Password must include at least one uppercase letter.";
+  }
+  if (!/[0-9]/.test(value)) {
+    return "Password must include at least one number.";
+  }
+  if (!/[^A-Za-z0-9]/.test(value)) {
+    return "Password must include at least one special character.";
+  }
+  return null;
+}
+
+function normalizeTokenNamePart(value: string): string {
+  return value.replace(/[^A-Za-z0-9]/g, "");
+}
+
+function toTitleCase(value: string): string {
+  if (!value) return "";
+  return value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+}
+
+function applyNameTemplate(template: string, firstName: string, lastName: string): string {
+  const first = normalizeTokenNamePart(firstName.trim());
+  const last = normalizeTokenNamePart(lastName.trim());
+  if (!template.trim()) return "";
+
+  const shorthand = template.toLowerCase().replace(/\s+/g, "");
+  let normalizedTemplate = template;
+  if (shorthand === "lllf") {
+    normalizedTemplate = "${last:3}${first:1}";
+  } else if (shorthand === "f(lastname)" || shorthand === "flastname") {
+    normalizedTemplate = "${first:1}${last}";
+  }
+  normalizedTemplate = normalizedTemplate
+    .replace(/\(lastname\)/gi, "${Last}")
+    .replace(/\(firstname\)/gi, "${First}");
+
+  const tokenValues: Record<string, string> = {
+    first,
+    last,
+    First: toTitleCase(first),
+    Last: toTitleCase(last),
+    FIRST: first.toUpperCase(),
+    LAST: last.toUpperCase(),
+  };
+  return normalizedTemplate.replace(/\$\{([A-Za-z]+)(?::(\d+))?\}/g, (_match, token, countRaw) => {
+    const base = tokenValues[token] ?? "";
+    const count = Number.parseInt(countRaw ?? "", 10);
+    if (Number.isFinite(count) && count > 0) {
+      return base.slice(0, count);
+    }
+    return base;
+  });
+}
+
+function AuthPage({ onLogin }: AuthPageProps) {
+  const [department, setDepartment] = useState("");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    if (!username.trim() || !unit.trim() || !securePin.trim()) {
-      setErrorMessage("Please provide fire department, username, and password.");
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage("Please provide username and password.");
       return;
     }
 
     setErrorMessage("");
-    onLogin(username.trim().toUpperCase(), unit.trim(), role);
+    setIsSubmitting(true);
+    const loginError = await onLogin(department.trim(), username.trim(), password);
+    if (loginError) {
+      setErrorMessage(loginError);
+    }
+    setIsSubmitting(false);
   };
 
   return (
@@ -1695,12 +2094,12 @@ function AuthPage({ onLogin }: AuthPageProps) {
         </div>
         <h1>Incident-focused workspace with mapping and admin controls</h1>
         <p>
-          This phase adds deeper incident customization, parsing setup previews,
-          and an updated incident detail page layout.
+          Sign in with credentials configured in Admin Functions -&gt; Department
+          Details -&gt; Users.
         </p>
         <ul className="brand-feature-list">
-          <li>Simple login with Admin and User roles</li>
-          <li>User role restricted only from Admin Functions</li>
+          <li>Only saved users can sign in</li>
+          <li>Access level is assigned from each user type</li>
           <li>Settings menu includes profile, display, and logout actions</li>
         </ul>
       </section>
@@ -1711,70 +2110,47 @@ function AuthPage({ onLogin }: AuthPageProps) {
             <ShieldCheck size={24} />
             <div>
               <h2>Sign in to Fire Ultimate</h2>
-              <p>Simple login mode remains active for this prototype.</p>
+              <p>Credentials are validated against saved Users.</p>
             </div>
           </div>
 
-          <label htmlFor="username">Fire Department</label>
+          <label htmlFor="department">Fire Department (optional)</label>
+          <input
+            id="department"
+            name="department"
+            type="text"
+            autoComplete="organization"
+            placeholder="CIFPD"
+            value={department}
+            onChange={(event) => setDepartment(event.target.value)}
+          />
+
+          <label htmlFor="username">Username</label>
           <input
             id="username"
             name="username"
             type="text"
-            autoComplete="organization"
-            placeholder="CIFPD"
+            autoComplete="username"
+            placeholder="chief.jones"
             value={username}
             onChange={(event) => setUsername(event.target.value)}
           />
 
-          <label htmlFor="unit">Username</label>
+          <label htmlFor="password">Password</label>
           <input
-            id="unit"
-            name="unit"
-            type="text"
-            autoComplete="username"
-            placeholder="chief.jones"
-            value={unit}
-            onChange={(event) => setUnit(event.target.value)}
-          />
-
-          <label htmlFor="pin">Password</label>
-          <input
-            id="pin"
-            name="pin"
+            id="password"
+            name="password"
             type="password"
             autoComplete="current-password"
             placeholder="••••••••"
-            value={securePin}
-            onChange={(event) => setSecurePin(event.target.value)}
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
           />
-
-          <label>Login Type</label>
-          <div className="role-selector" role="radiogroup" aria-label="Login role">
-            <button
-              type="button"
-              className={`role-choice ${role === "user" ? "active" : ""}`}
-              onClick={() => setRole("user")}
-              aria-pressed={role === "user"}
-            >
-              User
-            </button>
-            <button
-              type="button"
-              className={`role-choice ${role === "admin" ? "active" : ""}`}
-              onClick={() => setRole("admin")}
-              aria-pressed={role === "admin"}
-            >
-              Admin
-            </button>
-          </div>
-          <p className="role-hint">
-            Users can access all modules except Admin Functions.
-          </p>
 
           {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
 
-          <button type="submit" className="primary-button">
-            Login
+          <button type="submit" className="primary-button" disabled={isSubmitting}>
+            {isSubmitting ? "Signing In..." : "Login"}
           </button>
         </form>
       </section>
@@ -1858,7 +2234,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     setSettingsOpen(false);
   };
 
-  const expandedMenuForRender = activeMenu?.id ?? expandedMenuId;
+  const expandedMenuForRender = expandedMenuId ?? activeMenu?.id;
 
   const handleLogout = () => {
     onLogout();
@@ -1885,7 +2261,6 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
       window.removeEventListener("department-logo-updated", handleDepartmentLogoUpdate);
     };
   }, []);
-
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const activeResize = activeSidebarResize.current;
@@ -2897,40 +3272,13 @@ function MainMenuLandingPage({
   );
 }
 
-function SubmenuPlaceholderPage({ submenu }: SubmenuPlaceholderPageProps) {
+function PersonnelSchedulePage() {
   return (
-    <section className="page-section">
-      <header className="page-header">
-        <div>
-          <h1>{submenu.label}</h1>
-          <p>{submenu.summary}</p>
-        </div>
-      </header>
-
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Module Status</h2>
-          </div>
-          <p className="panel-description">
-            {submenu.isBuilt
-              ? "This submenu includes an initial UI implementation."
-              : "This submenu route is connected with a scaffold placeholder and is ready for detailed build-out."}
-          </p>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Next Build Steps</h2>
-          </div>
-          <ul className="activity-list">
-            {SUBMENU_PLACEHOLDER_NOTES.map((note) => (
-              <li key={note}>{note}</li>
-            ))}
-          </ul>
-        </article>
-      </section>
-    </section>
+    <PersonnelSchedulePageView
+      readDepartmentDetailsDraft={readDepartmentDetailsDraft}
+      normalizeDepartmentDraft={normalizeDepartmentDraft}
+      normalizeAdditionalFields={normalizeAdditionalFields}
+    />
   );
 }
 
@@ -3322,7073 +3670,76 @@ function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
   );
 }
 
-type NerisGroupedOptionVariant = "incidentType" | "actionTactic" | "entityByState";
-
-const INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES: Record<string, string> = {
-  HAZSIT: "HazMat",
-  NOEMERG: "No Emergency",
-  LAWENFORCE: "Law Enforcement",
-  PUBSERV: "Public Service",
-};
-
-const CORE_SECTION_FIELD_HEADERS: Record<string, string> = {
-  incident_neris_id: "INCIDENT",
-  fd_neris_id: "DISPATCH",
-  incident_people_present: "PEOPLE / DISPLACEMENT",
-  incident_has_aid: "AID GIVEN / RECEIVED",
-};
-
-const US_STATE_CODE_TO_NAME: Record<string, string> = {
-  AL: "Alabama", AK: "Alaska", AZ: "Arizona", AR: "Arkansas", CA: "California", CO: "Colorado",
-  CT: "Connecticut", DE: "Delaware", DC: "District of Columbia", FL: "Florida", GA: "Georgia",
-  HI: "Hawaii", ID: "Idaho", IL: "Illinois", IN: "Indiana", IA: "Iowa", KS: "Kansas", KY: "Kentucky",
-  LA: "Louisiana", ME: "Maine", MD: "Maryland", MA: "Massachusetts", MI: "Michigan", MN: "Minnesota",
-  MS: "Mississippi", MO: "Missouri", MT: "Montana", NE: "Nebraska", NV: "Nevada", NH: "New Hampshire",
-  NJ: "New Jersey", NM: "New Mexico", NY: "New York", NC: "North Carolina", ND: "North Dakota",
-  OH: "Ohio", OK: "Oklahoma", OR: "Oregon", PA: "Pennsylvania", RI: "Rhode Island", SC: "South Carolina",
-  SD: "South Dakota", TN: "Tennessee", TX: "Texas", UT: "Utah", VT: "Vermont", VA: "Virginia",
-  WA: "Washington", WV: "West Virginia", WI: "Wisconsin", WY: "Wyoming",
-};
-
-function getNerisGroupedCategoryLabel(
-  categoryKey: string,
-  variant: NerisGroupedOptionVariant,
-): string {
-  if (variant === "entityByState") {
-    return US_STATE_CODE_TO_NAME[categoryKey] ?? categoryKey;
-  }
-  if (variant === "incidentType" && INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey]) {
-    return INCIDENT_TYPE_CATEGORY_LABEL_OVERRIDES[categoryKey];
-  }
-  return formatNerisEnumSegment(categoryKey);
+interface NerisReportFormRouteProps {
+  callNumber: string;
+  role: UserRole;
+  username: string;
+  nerisExportSettings: NerisExportSettings;
 }
 
-function getNerisGroupedSubgroupKey(
-  categoryKey: string,
-  rawSubgroupKey: string | undefined,
-  variant: NerisGroupedOptionVariant,
-): string {
-  if (variant === "entityByState") {
-    return rawSubgroupKey ?? "OTHER";
-  }
-  if (rawSubgroupKey) {
-    return rawSubgroupKey;
-  }
-  if (variant === "incidentType" && categoryKey === "LAWENFORCE") {
-    return "LAW_ENFORCEMENT_SUPPORT";
-  }
-  return "OTHER";
-}
-
-function getNerisGroupedSubgroupLabel(
-  categoryKey: string,
-  subgroupKey: string,
-  variant: NerisGroupedOptionVariant,
-): string {
-  if (
-    variant === "incidentType" &&
-    categoryKey === "LAWENFORCE" &&
-    subgroupKey === "LAW_ENFORCEMENT_SUPPORT"
-  ) {
-    return "Law Enforcement Support";
-  }
-  return formatNerisEnumSegment(subgroupKey);
-}
-
-function getNerisGroupedLeafLabel(
-  segments: string[],
-  option: NerisValueOption,
-  variant: NerisGroupedOptionVariant,
-): string {
-  if (variant === "entityByState") {
-    return option.label;
-  }
-  if (segments.length > 2) {
-    return segments.slice(2).map(formatNerisEnumSegment).join(" / ");
-  }
-  if (segments.length === 2) {
-    return formatNerisEnumSegment(segments[1]);
-  }
-  if (variant === "incidentType" && segments[0] === "LAWENFORCE") {
-    return "Law Enforcement Support";
-  }
-  return option.label;
-}
-
-function getNerisGroupedSelectedLabel(
-  option: NerisValueOption,
-  variant: NerisGroupedOptionVariant,
-): string {
-  if (variant === "entityByState") {
-    return option.label;
-  }
-  const segments = option.value
-    .split("||")
-    .map((segment) => segment.trim())
-    .filter((segment) => segment.length > 0);
-  if (segments.length === 0) {
-    return option.label;
-  }
-
-  const categoryKey = segments[0] ?? "";
-  const categoryLabel = getNerisGroupedCategoryLabel(categoryKey, variant);
-  if (segments.length === 1) {
-    if (variant === "incidentType" && categoryKey === "LAWENFORCE") {
-      return "Law Enforcement Support";
-    }
-    return categoryLabel;
-  }
-
-  const subgroupKey = getNerisGroupedSubgroupKey(categoryKey, segments[1], variant);
-  const subgroupLabel = getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant);
-  if (segments.length === 2) {
-    return `${categoryLabel} / ${subgroupLabel}`;
-  }
-
-  const leafLabel = segments.slice(2).map(formatNerisEnumSegment).join(" / ");
-  return `${categoryLabel} / ${subgroupLabel} / ${leafLabel}`;
-}
-
-interface NerisGroupedOptionSelectProps {
-  inputId: string;
-  value: string;
-  options: NerisValueOption[];
-  onChange: (nextValue: string) => void;
-  mode: "single" | "multi";
-  variant: NerisGroupedOptionVariant;
-  placeholder?: string;
-  searchPlaceholder?: string;
-  maxSelections?: number;
-  showCheckboxes?: boolean;
-  disabled?: boolean;
-  usePortal?: boolean;
-}
-
-function NerisGroupedOptionSelect({
-  inputId,
-  value,
-  options,
-  onChange,
-  mode,
-  variant,
-  placeholder,
-  searchPlaceholder,
-  maxSelections,
-  showCheckboxes = false,
-  disabled = false,
-  usePortal = false,
-}: NerisGroupedOptionSelectProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [collapsedCategories, setCollapsedCategories] = useState<Record<string, boolean>>({});
-  const [collapsedSubgroups, setCollapsedSubgroups] = useState<Record<string, boolean>>({});
-
-  const normalizedSelectedValues = Array.from(
-    new Set(
-      value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-        .map((entry) => normalizeNerisEnumValue(entry)),
-    ),
-  );
-  const normalizedSelectedValue = normalizedSelectedValues[0] ?? "";
-  const selectedValueSet = new Set<string>(normalizedSelectedValues);
-  const selectedOptions = normalizedSelectedValues
-    .map((selectedValue) => options.find((option) => option.value === selectedValue))
-    .filter((option): option is NerisValueOption => Boolean(option));
-  const selectedOption = selectedOptions[0];
-  const selectedOptionLabel = selectedOption
-    ? getNerisGroupedSelectedLabel(selectedOption, variant)
-    : "";
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const selectionLimitReached =
-    mode === "multi" &&
-    typeof maxSelections === "number" &&
-    selectedValueSet.size >= maxSelections;
-
-  interface GroupedLeafOption {
-    option: NerisValueOption;
-    leafLabel: string;
-  }
-
-  interface GroupedOptionCategory {
-    categoryKey: string;
-    categoryLabel: string;
-    optionCount: number;
-    directOptions: GroupedLeafOption[];
-    subgroups: Array<{
-      subgroupKey: string;
-      subgroupLabel: string;
-      options: GroupedLeafOption[];
-    }>;
-  }
-
-  const groupedOptions: GroupedOptionCategory[] = useMemo(() => {
-    const filteredOptions = options.filter((option) => {
-      if (!normalizedSearch) {
-        return true;
-      }
-      return (
-        option.label.toLowerCase().includes(normalizedSearch) ||
-        option.value.toLowerCase().includes(normalizedSearch)
-      );
-    });
-    const categoryMap = new Map<
-      string,
-      Map<string, Array<{ option: NerisValueOption; leafLabel: string }>>
-    >();
-
-    for (const option of filteredOptions) {
-      const segments = option.value
-        .split("||")
-        .map((segment) => segment.trim())
-        .filter((segment) => segment.length > 0);
-      const categoryKey = segments[0] ?? "UNCLASSIFIED";
-      const subgroupKey = getNerisGroupedSubgroupKey(categoryKey, segments[1], variant);
-      const leafLabel = getNerisGroupedLeafLabel(segments, option, variant);
-      if (!categoryMap.has(categoryKey)) {
-        categoryMap.set(categoryKey, new Map());
-      }
-      const subgroupMap = categoryMap.get(categoryKey);
-      if (!subgroupMap) {
-        continue;
-      }
-      if (!subgroupMap.has(subgroupKey)) {
-        subgroupMap.set(subgroupKey, []);
-      }
-      const subgroupOptions = subgroupMap.get(subgroupKey);
-      if (!subgroupOptions) {
-        continue;
-      }
-      subgroupOptions.push({
-        option,
-        leafLabel,
-      });
-    }
-
-    return Array.from(categoryMap.entries()).map(([categoryKey, subgroupMap]) => {
-      const directOptions: GroupedLeafOption[] = [];
-      const subgroups = Array.from(subgroupMap.entries()).reduce<
-        Array<{
-          subgroupKey: string;
-          subgroupLabel: string;
-          options: GroupedLeafOption[];
-        }>
-      >((groupAccumulator, [subgroupKey, subgroupOptions]) => {
-        if (variant === "entityByState") {
-          subgroupOptions.forEach((item) => directOptions.push(item));
-          return groupAccumulator;
-        }
-        if (variant === "actionTactic" && subgroupOptions.length === 1) {
-          const onlyOption = subgroupOptions[0];
-          if (onlyOption) {
-            directOptions.push({
-              option: onlyOption.option,
-              leafLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
-            });
-          }
-          return groupAccumulator;
-        }
-        groupAccumulator.push({
-          subgroupKey,
-          subgroupLabel: getNerisGroupedSubgroupLabel(categoryKey, subgroupKey, variant),
-          options: subgroupOptions,
-        });
-        return groupAccumulator;
-      }, []);
-
-      return {
-        categoryKey,
-        categoryLabel: getNerisGroupedCategoryLabel(categoryKey, variant),
-        optionCount: Array.from(subgroupMap.values()).reduce(
-          (count, subgroupOptions) => count + subgroupOptions.length,
-          0,
-        ),
-        directOptions,
-        subgroups,
-      };
-    });
-  }, [options, normalizedSearch, variant]);
-
-  useLayoutEffect(() => {
-    if (!isOpen || !usePortal || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const maxPanelHeight = Math.min(480, Math.max(320, spaceBelow));
-    setPanelStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: Math.max(rect.width, 280),
-      minHeight: "280px",
-      maxHeight: `${maxPanelHeight}px`,
-      display: "flex",
-      flexDirection: "column",
-      zIndex: 100000,
-    });
-  }, [isOpen, usePortal]);
-
-  useEffect(() => {
-    if (!isOpen || disabled) {
-      return;
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      const inContainer = containerRef.current?.contains(target);
-      const inPanel = panelRef.current?.contains(target);
-      if (!inContainer && !inPanel) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen, disabled]);
-
-  useEffect(() => {
-    if (!isOpen || disabled) {
-      return;
-    }
-    searchInputRef.current?.focus();
-  }, [isOpen, disabled]);
-
-  const handleToggleCategory = (categoryKey: string) => {
-    const currentlyCollapsed = collapsedCategories[categoryKey] !== false;
-    const nextCollapsed = !currentlyCollapsed;
-    setCollapsedCategories((previous) => ({
-      ...previous,
-      [categoryKey]: nextCollapsed,
-    }));
-    if (!nextCollapsed) {
-      setCollapsedSubgroups((previous) =>
-        Object.fromEntries(
-          Object.entries(previous).filter(([collapseKey]) => !collapseKey.startsWith(`${categoryKey}::`)),
-        ),
-      );
-    }
-  };
-
-  const handleToggleSubgroup = (categoryKey: string, subgroupKey: string) => {
-    const collapseKey = `${categoryKey}::${subgroupKey}`;
-    setCollapsedSubgroups((previous) => ({
-      ...previous,
-      [collapseKey]: !previous[collapseKey],
-    }));
-  };
-
+function NerisReportFormPage(props: NerisReportFormRouteProps) {
   return (
-    <div className="neris-incident-type-select" ref={containerRef}>
-      <button
-        ref={triggerRef}
-        id={inputId}
-        type="button"
-        className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        disabled={disabled}
-        onClick={() => {
-          if (disabled) {
-            return;
-          }
-          setIsOpen((previous) => !previous);
-          if (isOpen) {
-            setSearchTerm("");
-          }
-        }}
-      >
-        {mode === "single" ? (
-          <div className="neris-selected-pill-row">
-            {selectedOption ? (
-              <span className="neris-selected-pill">{selectedOptionLabel}</span>
-            ) : (
-              <span
-                className={
-                  selectedOptions.length === 0 && placeholder && placeholder.length > 0
-                    ? "neris-incident-type-placeholder"
-                    : undefined
-                }
-              >
-                {placeholder && placeholder.length > 0 ? placeholder : "\u00A0"}
-              </span>
-            )}
-          </div>
-        ) : (
-          <div className="neris-selected-pill-row">
-            {selectedOptions.length ? (
-              selectedOptions.map((selected) => (
-                <span key={`${inputId}-${selected.value}`} className="neris-selected-pill">
-                  {getNerisGroupedSelectedLabel(selected, variant)}
-                </span>
-              ))
-            ) : (
-              <span
-                className={
-                  placeholder && placeholder.length > 0 ? "neris-incident-type-placeholder" : undefined
-                }
-              >
-                {placeholder ?? "Select one or more options"}
-              </span>
-            )}
-          </div>
-        )}
-        <ChevronDown
-          size={15}
-          className={`neris-incident-type-trigger-icon${isOpen ? " open" : ""}`}
-        />
-      </button>
-
-      {isOpen && !disabled ? (
-        usePortal ? (
-          createPortal(
-            <div
-              ref={panelRef}
-              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
-              style={panelStyle}
-              onWheel={(e) => e.stopPropagation()}
-            >
-              <div className="neris-incident-type-search-row">
-                <Search size={14} />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchTerm}
-                  placeholder={searchPlaceholder ?? "Search options..."}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                />
-                {searchTerm ? (
-                  <button
-                    type="button"
-                    className="neris-incident-type-search-clear"
-                    onClick={() => setSearchTerm("")}
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-
-              {mode === "multi" && typeof maxSelections === "number" ? (
-            <p
-              className={`neris-incident-type-selection-limit${
-                selectionLimitReached ? " reached" : ""
-              }`}
-            >
-              Selected {selectedValueSet.size} of {maxSelections} allowed.
-            </p>
-          ) : null}
-
-          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
-            {groupedOptions.length ? (
-              groupedOptions.map((category) => {
-                const categoryCollapsed =
-                  normalizedSearch.length === 0 && collapsedCategories[category.categoryKey] !== false;
-                return (
-                  <section key={category.categoryKey} className="neris-incident-type-group">
-                    <button
-                      type="button"
-                      className="neris-incident-type-group-button"
-                      onClick={() => handleToggleCategory(category.categoryKey)}
-                    >
-                      {categoryCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                      <span>{category.categoryLabel}</span>
-                      <strong>{category.optionCount}</strong>
-                    </button>
-
-                    {!categoryCollapsed ? (
-                      <>
-                        {category.directOptions.length ? (
-                          <div className="neris-incident-type-item-list">
-                            {category.directOptions.map(({ option, leafLabel }) => {
-                              const isSelected =
-                                mode === "single"
-                                  ? option.value === normalizedSelectedValue
-                                  : selectedValueSet.has(option.value);
-                              const isDisabled =
-                                mode === "multi" &&
-                                typeof maxSelections === "number" &&
-                                selectedValueSet.size >= maxSelections &&
-                                !isSelected;
-                              return (
-                                <button
-                                  key={option.value}
-                                  type="button"
-                                  className={`neris-incident-type-item neris-incident-type-item-main${
-                                    isSelected ? " selected" : ""
-                                  }${isDisabled ? " disabled" : ""}`}
-                                  aria-selected={isSelected}
-                                  aria-disabled={isDisabled}
-                                  onClick={() => {
-                                    if (isDisabled) {
-                                      return;
-                                    }
-                                    if (mode === "single") {
-                                      onChange(option.value);
-                                      setIsOpen(false);
-                                      setSearchTerm("");
-                                      return;
-                                    }
-                                    const nextSelected = new Set(selectedValueSet);
-                                    if (nextSelected.has(option.value)) {
-                                      nextSelected.delete(option.value);
-                                    } else {
-                                      nextSelected.add(option.value);
-                                    }
-                                    const nextOrderedValues = options
-                                      .map((entry) => entry.value)
-                                      .filter((entryValue) => nextSelected.has(entryValue));
-                                    onChange(nextOrderedValues.join(","));
-                                  }}
-                                >
-                                  {showCheckboxes ? (
-                                    <span className="neris-incident-type-item-checkbox">
-                                      <input
-                                        type="checkbox"
-                                        tabIndex={-1}
-                                        readOnly
-                                        checked={isSelected}
-                                      />
-                                    </span>
-                                  ) : null}
-                                  <span>{leafLabel}</span>
-                                </button>
-                              );
-                            })}
-                          </div>
-                        ) : null}
-                        {category.subgroups.map((subgroup) => {
-                          const subgroupCollapseKey = `${category.categoryKey}::${subgroup.subgroupKey}`;
-                          const subgroupCollapsed =
-                            normalizedSearch.length === 0 &&
-                            Boolean(collapsedSubgroups[subgroupCollapseKey]);
-                          return (
-                            <div
-                              key={subgroupCollapseKey}
-                              className="neris-incident-type-subgroup-container"
-                            >
-                              <button
-                                type="button"
-                                className="neris-incident-type-subgroup-button"
-                                onClick={() =>
-                                  handleToggleSubgroup(category.categoryKey, subgroup.subgroupKey)
-                                }
-                              >
-                                {subgroupCollapsed ? (
-                                  <ChevronRight size={13} />
-                                ) : (
-                                  <ChevronDown size={13} />
-                                )}
-                                <span>{subgroup.subgroupLabel}</span>
-                              </button>
-                              {!subgroupCollapsed ? (
-                                <div className="neris-incident-type-item-list">
-                                  {subgroup.options.map(({ option, leafLabel }) => {
-                                    const isSelected =
-                                      mode === "single"
-                                        ? option.value === normalizedSelectedValue
-                                        : selectedValueSet.has(option.value);
-                                    const isDisabled =
-                                      mode === "multi" &&
-                                      typeof maxSelections === "number" &&
-                                      selectedValueSet.size >= maxSelections &&
-                                      !isSelected;
-                                    return (
-                                      <button
-                                        key={option.value}
-                                        type="button"
-                                        className={`neris-incident-type-item${
-                                          isSelected ? " selected" : ""
-                                        }${isDisabled ? " disabled" : ""}`}
-                                        aria-selected={isSelected}
-                                        aria-disabled={isDisabled}
-                                        onClick={() => {
-                                          if (isDisabled) {
-                                            return;
-                                          }
-                                          if (mode === "single") {
-                                            onChange(option.value);
-                                            setIsOpen(false);
-                                            setSearchTerm("");
-                                            return;
-                                          }
-                                          const nextSelected = new Set(selectedValueSet);
-                                          if (nextSelected.has(option.value)) {
-                                            nextSelected.delete(option.value);
-                                          } else {
-                                            nextSelected.add(option.value);
-                                          }
-                                          const nextOrderedValues = options
-                                            .map((entry) => entry.value)
-                                            .filter((entryValue) => nextSelected.has(entryValue));
-                                          onChange(nextOrderedValues.join(","));
-                                        }}
-                                      >
-                                        {showCheckboxes ? (
-                                          <span className="neris-incident-type-item-checkbox">
-                                            <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
-                                          </span>
-                                        ) : null}
-                                        <span>{leafLabel}</span>
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              ) : null}
-                            </div>
-                          );
-                        })}
-                      </>
-                    ) : null}
-                  </section>
-                );
-              })
-            ) : (
-              <p className="neris-incident-type-empty">No options match your search.</p>
-            )}
-          </div>
-            </div>,
-            document.body,
-          )
-        ) : (
-          <div className="neris-incident-type-select-panel">
-            <div className="neris-incident-type-search-row">
-              <Search size={14} />
-              <input
-                ref={searchInputRef}
-                type="text"
-                value={searchTerm}
-                placeholder={searchPlaceholder ?? "Search options..."}
-                onChange={(event) => setSearchTerm(event.target.value)}
-              />
-              {searchTerm ? (
-                <button
-                  type="button"
-                  className="neris-incident-type-search-clear"
-                  onClick={() => setSearchTerm("")}
-                >
-                  Clear
-                </button>
-              ) : null}
-            </div>
-            {mode === "multi" && typeof maxSelections === "number" ? (
-              <p
-                className={`neris-incident-type-selection-limit${
-                  selectionLimitReached ? " reached" : ""
-                }`}
-              >
-                Selected {selectedValueSet.size} of {maxSelections} allowed.
-              </p>
-            ) : null}
-            <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
-              {groupedOptions.length ? (
-                groupedOptions.map((category) => {
-                  const categoryCollapsed =
-                    normalizedSearch.length === 0 && collapsedCategories[category.categoryKey] !== false;
-                  return (
-                    <section key={category.categoryKey} className="neris-incident-type-group">
-                      <button
-                        type="button"
-                        className="neris-incident-type-group-button"
-                        onClick={() => handleToggleCategory(category.categoryKey)}
-                      >
-                        {categoryCollapsed ? <ChevronRight size={14} /> : <ChevronDown size={14} />}
-                        <span>{category.categoryLabel}</span>
-                        <strong>{category.optionCount}</strong>
-                      </button>
-                      {!categoryCollapsed ? (
-                        <>
-                          {category.directOptions.length ? (
-                            <div className="neris-incident-type-item-list">
-                              {category.directOptions.map(({ option, leafLabel }) => {
-                                const isSelected =
-                                  mode === "single"
-                                    ? option.value === normalizedSelectedValue
-                                    : selectedValueSet.has(option.value);
-                                const isDisabled =
-                                  mode === "multi" &&
-                                  typeof maxSelections === "number" &&
-                                  selectedValueSet.size >= maxSelections &&
-                                  !isSelected;
-                                return (
-                                  <button
-                                    key={option.value}
-                                    type="button"
-                                    className={`neris-incident-type-item neris-incident-type-item-main${
-                                      isSelected ? " selected" : ""
-                                    }${isDisabled ? " disabled" : ""}`}
-                                    aria-selected={isSelected}
-                                    aria-disabled={isDisabled}
-                                    onClick={() => {
-                                      if (isDisabled) return;
-                                      if (mode === "single") {
-                                        onChange(option.value);
-                                        setIsOpen(false);
-                                        setSearchTerm("");
-                                        return;
-                                      }
-                                      const nextSelected = new Set(selectedValueSet);
-                                      if (nextSelected.has(option.value)) {
-                                        nextSelected.delete(option.value);
-                                      } else {
-                                        nextSelected.add(option.value);
-                                      }
-                                      const nextOrderedValues = options
-                                        .map((entry) => entry.value)
-                                        .filter((entryValue) => nextSelected.has(entryValue));
-                                      onChange(nextOrderedValues.join(","));
-                                    }}
-                                  >
-                                    {showCheckboxes ? (
-                                      <span className="neris-incident-type-item-checkbox">
-                                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
-                                      </span>
-                                    ) : null}
-                                    <span>{leafLabel}</span>
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          ) : null}
-                          {category.subgroups.map((subgroup) => {
-                            const subgroupCollapseKey = `${category.categoryKey}::${subgroup.subgroupKey}`;
-                            const subgroupCollapsed =
-                              normalizedSearch.length === 0 &&
-                              Boolean(collapsedSubgroups[subgroupCollapseKey]);
-                            return (
-                              <div key={subgroupCollapseKey} className="neris-incident-type-subgroup-container">
-                                <button
-                                  type="button"
-                                  className="neris-incident-type-subgroup-button"
-                                  onClick={() =>
-                                    handleToggleSubgroup(category.categoryKey, subgroup.subgroupKey)
-                                  }
-                                >
-                                  {subgroupCollapsed ? (
-                                    <ChevronRight size={13} />
-                                  ) : (
-                                    <ChevronDown size={13} />
-                                  )}
-                                  <span>{subgroup.subgroupLabel}</span>
-                                </button>
-                                {!subgroupCollapsed ? (
-                                  <div className="neris-incident-type-item-list">
-                                    {subgroup.options.map(({ option, leafLabel }) => {
-                                      const isSelected =
-                                        mode === "single"
-                                          ? option.value === normalizedSelectedValue
-                                          : selectedValueSet.has(option.value);
-                                      const isDisabled =
-                                        mode === "multi" &&
-                                        typeof maxSelections === "number" &&
-                                        selectedValueSet.size >= maxSelections &&
-                                        !isSelected;
-                                      return (
-                                        <button
-                                          key={option.value}
-                                          type="button"
-                                          className={`neris-incident-type-item${
-                                            isSelected ? " selected" : ""
-                                          }${isDisabled ? " disabled" : ""}`}
-                                          aria-selected={isSelected}
-                                          aria-disabled={isDisabled}
-                                          onClick={() => {
-                                            if (isDisabled) return;
-                                            if (mode === "single") {
-                                              onChange(option.value);
-                                              setIsOpen(false);
-                                              setSearchTerm("");
-                                              return;
-                                            }
-                                            const nextSelected = new Set(selectedValueSet);
-                                            if (nextSelected.has(option.value)) {
-                                              nextSelected.delete(option.value);
-                                            } else {
-                                              nextSelected.add(option.value);
-                                            }
-                                            const nextOrderedValues = options
-                                              .map((entry) => entry.value)
-                                              .filter((entryValue) => nextSelected.has(entryValue));
-                                            onChange(nextOrderedValues.join(","));
-                                          }}
-                                        >
-                                          {showCheckboxes ? (
-                                            <span className="neris-incident-type-item-checkbox">
-                                              <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
-                                            </span>
-                                          ) : null}
-                                          <span>{leafLabel}</span>
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </>
-                      ) : null}
-                    </section>
-                  );
-                })
-              ) : (
-                <p className="neris-incident-type-empty">No options match your search.</p>
-              )}
-            </div>
-          </div>
-        )
-      ) : null}
-    </div>
+    <NerisReportFormPageView
+      {...props}
+      readNerisDraft={readNerisDraft}
+      writeNerisDraft={writeNerisDraft}
+      appendNerisExportRecord={appendNerisExportRecord}
+      parseAssignedUnits={parseAssignedUnits}
+      inferResourceUnitTypeValue={inferResourceUnitTypeValue}
+      getStaffingValueForUnit={getStaffingValueForUnit}
+      nextEmergingHazardItemId={nextEmergingHazardItemId}
+      nextRiskReductionSuppressionId={nextRiskReductionSuppressionId}
+      dedupeAndCleanStrings={dedupeAndCleanStrings}
+      normalizeNerisEnumValue={normalizeNerisEnumValue}
+      parseImportedLocationValues={parseImportedLocationValues}
+      toResourceSummaryTime={toResourceSummaryTime}
+      toResourceDateTimeInputValue={toResourceDateTimeInputValue}
+      toResourceDateTimeTimestamp={toResourceDateTimeTimestamp}
+      addMinutesToResourceDateTime={addMinutesToResourceDateTime}
+      resourceUnitValidationErrorKey={resourceUnitValidationErrorKey}
+      countSelectedPersonnel={countSelectedPersonnel}
+      readNerisExportHistory={readNerisExportHistory}
+      toToneClass={toToneClass}
+      toneFromNerisStatus={toneFromNerisStatus}
+      togglePillValue={togglePillValue}
+      resourcePersonnelOptions={RESOURCE_PERSONNEL_OPTIONS}
+      riskReductionYesNoUnknownOptions={RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS}
+      riskReductionYesNoOptions={RISK_REDUCTION_YES_NO_OPTIONS}
+      riskReductionSmokeAlarmTypeOptions={RISK_REDUCTION_SMOKE_ALARM_TYPE_OPTIONS}
+      riskReductionFireAlarmTypeOptions={RISK_REDUCTION_FIRE_ALARM_TYPE_OPTIONS}
+      riskReductionOtherAlarmTypeOptions={RISK_REDUCTION_OTHER_ALARM_TYPE_OPTIONS}
+      riskReductionCookingSuppressionTypeOptions={RISK_REDUCTION_COOKING_SUPPRESSION_TYPE_OPTIONS}
+      riskReductionSuppressionCoverageOptions={RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS}
+      nerisIncidentIdPattern={NERIS_INCIDENT_ID_PATTERN}
+      nerisAidDepartmentIdPattern={NERIS_AID_DEPARTMENT_ID_PATTERN}
+      nerisProxyMappedFormFieldIds={NERIS_PROXY_MAPPED_FORM_FIELD_IDS}
+      getDefaultNerisExportSettings={getDefaultNerisExportSettings}
+    />
   );
 }
 
-interface NerisFlatMultiOptionSelectProps {
-  inputId: string;
-  value: string;
-  options: NerisValueOption[];
-  onChange: (nextValue: string) => void;
-  placeholder?: string;
-  searchPlaceholder?: string;
-  maxSelections?: number;
-  usePortal?: boolean;
-  disabled?: boolean;
-  isOptionDisabled?: (optionValue: string) => boolean;
+type DepartmentDetailsPageMode =
+  | "departmentDetails"
+  | "schedulerSettings"
+  | "personnelManagement";
+
+interface DepartmentDetailsPageProps {
+  mode?: DepartmentDetailsPageMode;
 }
 
-function NerisFlatMultiOptionSelect({
-  inputId,
-  value,
-  options,
-  onChange,
-  placeholder,
-  searchPlaceholder,
-  maxSelections,
-  usePortal = false,
-  disabled = false,
-  isOptionDisabled,
-}: NerisFlatMultiOptionSelectProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
-
-  const selectedValues = Array.from(
-    new Set(
-      value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-        .map((entry) => normalizeNerisEnumValue(entry)),
-    ),
-  );
-  const selectedValueSet = new Set<string>(selectedValues);
-  const selectionLimitReached =
-    typeof maxSelections === "number" && maxSelections > 0 && selectedValueSet.size >= maxSelections;
-  const selectedOptions = selectedValues
-    .map((selectedValue) => options.find((option) => option.value === selectedValue))
-    .filter((option): option is NerisValueOption => Boolean(option));
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredOptions = normalizedSearch
-    ? options.filter(
-        (option) =>
-          option.label.toLowerCase().includes(normalizedSearch) ||
-          option.value.toLowerCase().includes(normalizedSearch),
-      )
-    : options;
-
-  useLayoutEffect(() => {
-    if (!isOpen || !usePortal || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const maxPanelHeight = Math.min(480, Math.max(320, spaceBelow));
-    const minPanelHeight = 280;
-    setPanelStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: Math.max(rect.width, 280),
-      minHeight: `${Math.min(minPanelHeight, maxPanelHeight)}px`,
-      maxHeight: `${maxPanelHeight}px`,
-      display: "flex",
-      flexDirection: "column",
-      zIndex: 100000,
-    });
-  }, [isOpen, usePortal]);
-
-  useEffect(() => {
-    if (!isOpen || disabled) {
-      return;
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      const inContainer = containerRef.current?.contains(target);
-      const inPanel = panelRef.current?.contains(target);
-      if (!inContainer && !inPanel) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen, disabled]);
-
-  useEffect(() => {
-    if (!isOpen || disabled) {
-      return;
-    }
-    searchInputRef.current?.focus();
-  }, [isOpen, disabled]);
-
-  return (
-    <div className="neris-incident-type-select" ref={containerRef}>
-      <button
-        ref={triggerRef}
-        id={inputId}
-        type="button"
-        className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        disabled={disabled}
-        onClick={() => {
-          if (disabled) {
-            return;
-          }
-          setIsOpen((previous) => !previous);
-          if (isOpen) {
-            setSearchTerm("");
-          }
-        }}
-      >
-        <div className="neris-selected-pill-row">
-          {selectedOptions.length ? (
-            selectedOptions.map((selected) => (
-              <span key={`${inputId}-${selected.value}`} className="neris-selected-pill">
-                {selected.label}
-              </span>
-            ))
-          ) : (
-            <span
-              className={
-                placeholder && placeholder.length > 0 ? "neris-incident-type-placeholder" : undefined
-              }
-            >
-              {placeholder ?? "Select one or more options"}
-            </span>
-          )}
-        </div>
-        <ChevronDown
-          size={15}
-          className={`neris-incident-type-trigger-icon${isOpen ? " open" : ""}`}
-        />
-      </button>
-
-      {isOpen && !disabled ? (
-        usePortal ? (
-          createPortal(
-            <div
-              ref={panelRef}
-              className="neris-incident-type-select-panel neris-incident-type-select-panel-portal"
-              style={panelStyle}
-              onWheel={(e) => e.stopPropagation()}
-            >
-              <div className="neris-incident-type-search-row">
-                <Search size={14} />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchTerm}
-                  placeholder={searchPlaceholder ?? "Search options..."}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                />
-                {searchTerm ? (
-                  <button
-                    type="button"
-                    className="neris-incident-type-search-clear"
-                    onClick={() => setSearchTerm("")}
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-              {typeof maxSelections === "number" ? (
-                <p
-                  className={`neris-incident-type-selection-limit${
-                    selectionLimitReached ? " reached" : ""
-                  }`}
-                >
-                  Selected {selectedValueSet.size} of {maxSelections} allowed.
-                </p>
-              ) : null}
-              <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
-            {filteredOptions.length ? (
-              <div className="neris-incident-type-item-list">
-                {filteredOptions.map((option) => {
-                  const isSelected = selectedValueSet.has(option.value);
-                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
-                  const isDisabled =
-                    (selectionLimitReached && !isSelected) || optionDisabled;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
-                      aria-selected={isSelected}
-                      disabled={isDisabled}
-                      onClick={() => {
-                        if (isDisabled) return;
-                        const nextSelected = new Set(selectedValueSet);
-                        if (nextSelected.has(option.value)) {
-                          nextSelected.delete(option.value);
-                        } else {
-                          nextSelected.add(option.value);
-                        }
-                        const nextOrderedValues = options
-                          .map((entry) => entry.value)
-                          .filter((entryValue) => nextSelected.has(entryValue));
-                        onChange(nextOrderedValues.join(","));
-                      }}
-                    >
-                      <span className="neris-incident-type-item-checkbox">
-                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
-                      </span>
-                      <span>{option.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="neris-incident-type-empty">No options match your search.</p>
-            )}
-          </div>
-            </div>,
-            document.body,
-          )
-        ) : (
-        <div className="neris-incident-type-select-panel">
-          <div className="neris-incident-type-search-row">
-            <Search size={14} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchTerm}
-              placeholder={searchPlaceholder ?? "Search options..."}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-            {searchTerm ? (
-              <button
-                type="button"
-                className="neris-incident-type-search-clear"
-                onClick={() => setSearchTerm("")}
-              >
-                Clear
-              </button>
-            ) : null}
-          </div>
-          {typeof maxSelections === "number" ? (
-            <p
-              className={`neris-incident-type-selection-limit${
-                selectionLimitReached ? " reached" : ""
-              }`}
-            >
-              Selected {selectedValueSet.size} of {maxSelections} allowed.
-            </p>
-          ) : null}
-          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
-            {filteredOptions.length ? (
-              <div className="neris-incident-type-item-list">
-                {filteredOptions.map((option) => {
-                  const isSelected = selectedValueSet.has(option.value);
-                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
-                  const isDisabled =
-                    (selectionLimitReached && !isSelected) || optionDisabled;
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${isDisabled ? " disabled" : ""}`}
-                      aria-selected={isSelected}
-                      disabled={isDisabled}
-                      onClick={() => {
-                        if (isDisabled) return;
-                        const nextSelected = new Set(selectedValueSet);
-                        if (nextSelected.has(option.value)) {
-                          nextSelected.delete(option.value);
-                        } else {
-                          nextSelected.add(option.value);
-                        }
-                        const nextOrderedValues = options
-                          .map((entry) => entry.value)
-                          .filter((entryValue) => nextSelected.has(entryValue));
-                        onChange(nextOrderedValues.join(","));
-                      }}
-                    >
-                      <span className="neris-incident-type-item-checkbox">
-                        <input type="checkbox" tabIndex={-1} readOnly checked={isSelected} />
-                      </span>
-                      <span>{option.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="neris-incident-type-empty">No options match your search.</p>
-            )}
-          </div>
-        </div>
-        )
-      ) : null}
-    </div>
-  );
-}
-
-interface NerisFlatSingleOptionSelectProps {
-  inputId: string;
-  value: string;
-  options: NerisValueOption[];
-  onChange: (nextValue: string) => void;
-  placeholder?: string;
-  searchPlaceholder?: string;
-  usePortal?: boolean;
-  disabled?: boolean;
-  isOptionDisabled?: (optionValue: string) => boolean;
-  allowClear?: boolean;
-}
-
-function NerisFlatSingleOptionSelect({
-  inputId,
-  value,
-  options,
-  onChange,
-  placeholder,
-  searchPlaceholder,
-  usePortal = false,
-  disabled = false,
-  isOptionDisabled,
-  allowClear = false,
-}: NerisFlatSingleOptionSelectProps) {
-  const containerRef = useRef<HTMLDivElement | null>(null);
-  const triggerRef = useRef<HTMLButtonElement | null>(null);
-  const panelRef = useRef<HTMLDivElement | null>(null);
-  const searchInputRef = useRef<HTMLInputElement | null>(null);
-  const [isOpen, setIsOpen] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
-  const [panelStyle, setPanelStyle] = useState<CSSProperties>({});
-
-  const normalizedValue = normalizeNerisEnumValue(value);
-  const selectedOption = options.find((option) => option.value === normalizedValue);
-  const normalizedSearch = searchTerm.trim().toLowerCase();
-  const filteredOptions = normalizedSearch
-    ? options.filter(
-        (option) =>
-          option.label.toLowerCase().includes(normalizedSearch) ||
-          option.value.toLowerCase().includes(normalizedSearch),
-      )
-    : options;
-
-  useLayoutEffect(() => {
-    if (!isOpen || !usePortal || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const maxPanelHeight = Math.min(480, Math.max(280, spaceBelow));
-    setPanelStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-      maxHeight: `${maxPanelHeight}px`,
-      zIndex: 100000,
-    });
-  }, [isOpen, usePortal]);
-
-  useEffect(() => {
-    if (!isOpen || disabled) {
-      return;
-    }
-    const handlePointerDown = (event: PointerEvent) => {
-      const target = event.target as Node;
-      const inContainer = containerRef.current?.contains(target);
-      const inPanel = panelRef.current?.contains(target);
-      if (!inContainer && !inPanel) {
-        setIsOpen(false);
-      }
-    };
-    document.addEventListener("pointerdown", handlePointerDown);
-    return () => document.removeEventListener("pointerdown", handlePointerDown);
-  }, [isOpen, disabled]);
-
-  useEffect(() => {
-    if (!isOpen || disabled) {
-      return;
-    }
-    searchInputRef.current?.focus();
-  }, [isOpen, disabled]);
-
-  return (
-    <div className="neris-incident-type-select" ref={containerRef}>
-      <button
-        ref={triggerRef}
-        id={inputId}
-        type="button"
-        className={`neris-incident-type-select-trigger${disabled ? " disabled" : ""}`}
-        aria-haspopup="listbox"
-        aria-expanded={isOpen}
-        disabled={disabled}
-        onClick={() => {
-          if (disabled) {
-            return;
-          }
-          setIsOpen((previous) => !previous);
-          if (isOpen) {
-            setSearchTerm("");
-          }
-        }}
-      >
-        <div className="neris-selected-pill-row">
-          {selectedOption ? (
-            <span className="neris-selected-pill">{selectedOption.label}</span>
-          ) : (
-            <span
-              className={
-                placeholder && placeholder.length > 0 ? "neris-incident-type-placeholder" : undefined
-              }
-            >
-              {placeholder ?? "Select an option"}
-            </span>
-          )}
-        </div>
-        <ChevronDown
-          size={15}
-          className={`neris-incident-type-trigger-icon${isOpen ? " open" : ""}`}
-        />
-      </button>
-
-      {isOpen && !disabled ? (
-        usePortal ? (
-          createPortal(
-            <div
-              ref={panelRef}
-              className="neris-incident-type-select-panel"
-              style={panelStyle}
-              onWheel={(e) => e.stopPropagation()}
-            >
-              <div className="neris-incident-type-search-row">
-                <Search size={14} />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  value={searchTerm}
-                  placeholder={searchPlaceholder ?? "Search options..."}
-                  onChange={(event) => setSearchTerm(event.target.value)}
-                />
-                {searchTerm ? (
-                  <button
-                    type="button"
-                    className="neris-incident-type-search-clear"
-                    onClick={() => setSearchTerm("")}
-                  >
-                    Clear
-                  </button>
-                ) : null}
-              </div>
-              {allowClear && normalizedValue ? (
-                <div className="neris-single-select-clear-row">
-                  <button
-                    type="button"
-                    className="neris-incident-type-search-clear"
-                    onClick={() => {
-                      onChange("");
-                      setIsOpen(false);
-                      setSearchTerm("");
-                    }}
-                  >
-                    Clear selection
-                  </button>
-                </div>
-              ) : null}
-              <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
-                {filteredOptions.length ? (
-                  <div className="neris-incident-type-item-list">
-                    {filteredOptions.map((option) => {
-                      const isSelected = option.value === normalizedValue;
-                      const optionDisabled = Boolean(isOptionDisabled?.(option.value));
-                      return (
-                        <button
-                          key={option.value}
-                          type="button"
-                          className={`neris-incident-type-item${isSelected ? " selected" : ""}${
-                            optionDisabled ? " disabled" : ""
-                          }`}
-                          aria-selected={isSelected}
-                          aria-disabled={optionDisabled}
-                          onClick={() => {
-                            if (optionDisabled) return;
-                            onChange(option.value);
-                            setIsOpen(false);
-                            setSearchTerm("");
-                          }}
-                        >
-                          <span>{option.label}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <p className="neris-incident-type-empty">No options match your search.</p>
-                )}
-              </div>
-            </div>,
-            document.body,
-          )
-        ) : (
-        <div className="neris-incident-type-select-panel">
-          <div className="neris-incident-type-search-row">
-            <Search size={14} />
-            <input
-              ref={searchInputRef}
-              type="text"
-              value={searchTerm}
-              placeholder={searchPlaceholder ?? "Search options..."}
-              onChange={(event) => setSearchTerm(event.target.value)}
-            />
-            {searchTerm ? (
-              <button
-                type="button"
-                className="neris-incident-type-search-clear"
-                onClick={() => setSearchTerm("")}
-              >
-                Clear
-              </button>
-            ) : null}
-          </div>
-          {allowClear && normalizedValue ? (
-            <div className="neris-single-select-clear-row">
-              <button
-                type="button"
-                className="neris-incident-type-search-clear"
-                onClick={() => {
-                  onChange("");
-                  setIsOpen(false);
-                  setSearchTerm("");
-                }}
-              >
-                Clear selection
-              </button>
-            </div>
-          ) : null}
-          <div className="neris-incident-type-options-scroll" role="listbox" onWheel={(e) => e.stopPropagation()}>
-            {filteredOptions.length ? (
-              <div className="neris-incident-type-item-list">
-                {filteredOptions.map((option) => {
-                  const isSelected = option.value === normalizedValue;
-                  const optionDisabled = Boolean(isOptionDisabled?.(option.value));
-                  return (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`neris-incident-type-item${isSelected ? " selected" : ""}${
-                        optionDisabled ? " disabled" : ""
-                      }`}
-                      aria-selected={isSelected}
-                      aria-disabled={optionDisabled}
-                      onClick={() => {
-                        if (optionDisabled) {
-                          return;
-                        }
-                        onChange(option.value);
-                        setIsOpen(false);
-                        setSearchTerm("");
-                      }}
-                    >
-                      <span>{option.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            ) : (
-              <p className="neris-incident-type-empty">No options match your search.</p>
-            )}
-          </div>
-        </div>
-        )
-      ) : null}
-    </div>
-  );
-}
-
-interface AidEntry {
-  aidDirection: string;
-  aidType: string;
-  aidDepartment: string;
-}
-
-interface NonFdAidEntry {
-  aidType: string;
-}
-
-interface ValidationModalState {
-  mode: "issues" | "checkSuccess" | "adminConfirm" | "adminSuccess";
-  issues: string[];
-}
-
-const EMPTY_AID_ENTRY: AidEntry = {
-  aidDirection: "",
-  aidType: "",
-  aidDepartment: "",
-};
-
-const EMPTY_NONFD_AID_ENTRY: NonFdAidEntry = {
-  aidType: "",
-};
-
-function NerisReportFormPage({
-  callNumber,
-  role,
-  username,
-  nerisExportSettings,
-}: NerisReportFormPageProps) {
-  const navigate = useNavigate();
-  const detail = getIncidentCallDetail(callNumber);
-  const detailForSideEffects = detail ?? {
-    callNumber,
-    incidentType: "",
-    address: "",
-    receivedAt: "",
-    assignedUnits: "",
-  };
-  const persistedDraft = useMemo(() => readNerisDraft(callNumber), [callNumber]);
-  const defaultFormValues = useMemo(
-    () =>
-      createDefaultNerisFormValues({
-        callNumber,
-        incidentType: detail?.incidentType,
-        receivedAt: detail?.receivedAt,
-        address: detail?.address,
-      }),
-    [callNumber, detail?.incidentType, detail?.receivedAt, detail?.address],
-  );
-  const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
-  const [reportStatus, setReportStatus] = useState<string>(() =>
-    persistedDraft?.reportStatus ?? "Draft",
-  );
-  const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
-    ...defaultFormValues,
-    ...(persistedDraft?.formValues ?? {}),
-  }));
-  const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
-  const [validationIssues, setValidationIssues] = useState<string[]>([]);
-  const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
-    null,
-  );
-  const [validatorName, setValidatorName] = useState<string>(() => username.trim());
-  const [saveMessage, setSaveMessage] = useState("");
-  const [errorMessage, setErrorMessage] = useState("");
-  const [isExporting, setIsExporting] = useState(false);
-  const [isFetchingIncidentTest, setIsFetchingIncidentTest] = useState(false);
-  const [incidentTestResponseDetail, setIncidentTestResponseDetail] = useState("");
-  const [incidentCompareRows, setIncidentCompareRows] = useState<IncidentCompareRow[]>([]);
-  const [unmappedFilledFieldLabels, setUnmappedFilledFieldLabels] = useState<string[]>([]);
-  const [lastSavedAt, setLastSavedAt] = useState<string>(
-    () => persistedDraft?.lastSavedAt ?? "Not saved",
-  );
-  const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
-    (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
-      aidDirection: entry.aidDirection,
-      aidType: entry.aidType,
-      aidDepartment: entry.aidDepartment,
-    })),
-  );
-  const [additionalNonFdAidEntries, setAdditionalNonFdAidEntries] = useState<NonFdAidEntry[]>(() =>
-    (persistedDraft?.additionalNonFdAidEntries ?? []).map((entry) => ({
-      aidType: entry.aidType,
-    })),
-  );
-  const [aidDepartmentOptions, setAidDepartmentOptions] = useState<NerisValueOption[]>(() =>
-    getNerisValueOptions("aid_department"),
-  );
-  const [showDirectionOfTravelField, setShowDirectionOfTravelField] = useState<boolean>(
-    () =>
-      (persistedDraft?.formValues.location_direction_of_travel ?? "").trim().length >
-      0,
-  );
-  const [showCrossStreetTypeField, setShowCrossStreetTypeField] = useState<boolean>(
-    () =>
-      (persistedDraft?.formValues.location_cross_street_type ?? "").trim().length > 0 ||
-      (persistedDraft?.formValues.location_cross_street_name ?? "").trim().length > 0,
-  );
-  const locationStateOptionValues = useMemo(
-    () => new Set(getNerisValueOptions("state").map((option) => option.value)),
-    [],
-  );
-  const locationCountryOptionValues = useMemo(
-    () => new Set(getNerisValueOptions("country").map((option) => option.value)),
-    [],
-  );
-  const responseModeOptions = useMemo(() => getNerisValueOptions("response_mode"), []);
-  const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
-  const resourceFallbackDate = (formValues.incident_onset_date ?? "").trim() || "2026-02-18";
-  const availableResourceUnitOptions = useMemo(() => {
-    if (!detail) {
-      return [] as NerisValueOption[];
-    }
-
-    const units = dedupeAndCleanStrings([
-      ...detail.apparatus.map((apparatus) => apparatus.unit),
-      ...parseAssignedUnits(detail.assignedUnits),
-    ]);
-    return units.map((unitId) => ({
-      value: unitId,
-      label: unitId,
-    }));
-  }, [detail]);
-  const apparatusByResourceUnitId = useMemo(() => {
-    const map = new Map<string, { unitType: string }>();
-    if (!detail) {
-      return map;
-    }
-    for (const apparatus of detail.apparatus) {
-      map.set(apparatus.unit, {
-        unitType: apparatus.unitType,
-      });
-    }
-    return map;
-  }, [detail]);
-  const defaultResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
-    if (!availableResourceUnitOptions.length) {
-      return [];
-    }
-
-    return availableResourceUnitOptions.map((option, index) => {
-      const source = apparatusByResourceUnitId.get(option.value);
-      return {
-        id: `resource-${index}-${option.value.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
-        unitId: option.value,
-        unitType: inferResourceUnitTypeValue(option.value, source?.unitType, unitTypeOptions),
-        staffing: getStaffingValueForUnit(option.value, ""),
-        responseMode: "",
-        transportMode: "",
-        dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
-        enrouteTime: "",
-        stagedTime: "",
-        onSceneTime: "",
-        canceledTime: "",
-        clearTime: "",
-        isCanceledEnroute: false,
-        isComplete: false,
-        isExpanded: index === 0,
-        showTimesEditor: false,
-        personnel: "",
-        showPersonnelSelector: false,
-        reportWriter: "",
-        unitNarrative: "",
-      };
-    });
-  }, [
-    availableResourceUnitOptions,
-    apparatusByResourceUnitId,
-    unitTypeOptions,
-    detail?.receivedAt,
-    resourceFallbackDate,
-  ]);
-  const persistedResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
-    const rawValue = persistedDraft?.formValues.resource_units_json;
-    if (!rawValue) {
-      return [];
-    }
-
-    try {
-      const parsed = JSON.parse(rawValue) as Array<Partial<ResourceUnitEntry>>;
-      if (!Array.isArray(parsed)) {
-        return [];
-      }
-
-      return parsed.map((item, index) => {
-        const unitId = item.unitId?.trim() ?? "";
-        const personnel = item.personnel?.trim() ?? "";
-        const normalizedUnitType =
-          item.unitType?.trim() ??
-          inferResourceUnitTypeValue(unitId, undefined, unitTypeOptions);
-        return {
-          id:
-            item.id?.trim() ||
-            `resource-persisted-${index}-${unitId.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
-          unitId,
-          unitType: normalizedUnitType,
-          staffing: getStaffingValueForUnit(unitId, personnel),
-          responseMode: item.responseMode?.trim() ?? "",
-          transportMode: item.transportMode?.trim() ?? "",
-          dispatchTime: toResourceDateTimeInputValue(
-            item.dispatchTime?.trim() ?? detail?.receivedAt ?? "",
-            resourceFallbackDate,
-          ),
-          enrouteTime: toResourceDateTimeInputValue(
-            item.enrouteTime?.trim() ?? "",
-            resourceFallbackDate,
-          ),
-          stagedTime: toResourceDateTimeInputValue(
-            item.stagedTime?.trim() ?? "",
-            resourceFallbackDate,
-          ),
-          onSceneTime: toResourceDateTimeInputValue(
-            item.onSceneTime?.trim() ?? "",
-            resourceFallbackDate,
-          ),
-          canceledTime: toResourceDateTimeInputValue(
-            item.canceledTime?.trim() ?? "",
-            resourceFallbackDate,
-          ),
-          clearTime: toResourceDateTimeInputValue(item.clearTime?.trim() ?? "", resourceFallbackDate),
-          isCanceledEnroute: Boolean(item.isCanceledEnroute),
-          isComplete: Boolean(item.isComplete),
-          isExpanded: Boolean(item.isExpanded),
-          showTimesEditor: Boolean(item.showTimesEditor),
-          personnel,
-          showPersonnelSelector: Boolean(item.showPersonnelSelector),
-          reportWriter: item.reportWriter?.trim() ?? "",
-          unitNarrative: item.unitNarrative ?? "",
-        };
-      });
-    } catch {
-      return [];
-    }
-  }, [
-    persistedDraft?.formValues.resource_units_json,
-    detail?.receivedAt,
-    unitTypeOptions,
-    resourceFallbackDate,
-  ]);
-  const [resourceUnits, setResourceUnits] = useState<ResourceUnitEntry[]>(
-    () => (persistedResourceUnits.length ? persistedResourceUnits : defaultResourceUnits),
-  );
-  const [emergingElectrocutionItems, setEmergingElectrocutionItems] = useState<
-    EmergingElectrocutionItem[]
-  >(() => {
-    const stored = persistedDraft?.formValues.emerging_haz_electrocution_items_json;
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Array<{
-          electricalHazardType?: string;
-          suppressionMethods?: string;
-        }>;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((item) => ({
-            id: nextEmergingHazardItemId("electrocution"),
-            electricalHazardType: item.electricalHazardType?.trim() ?? "",
-            suppressionMethods: item.suppressionMethods?.trim() ?? "",
-          }));
-        }
-      } catch {
-        // Ignore malformed persisted values and fall back to legacy fields.
-      }
-    }
-
-    const legacyElectricalHazardType =
-      persistedDraft?.formValues.emerg_haz_electric_type?.trim() ?? "";
-    const legacySuppressionMethods =
-      persistedDraft?.formValues.emerg_haz_suppression_methods?.trim() ?? "";
-    if (legacyElectricalHazardType || legacySuppressionMethods) {
-      return [
-        {
-          id: nextEmergingHazardItemId("electrocution"),
-          electricalHazardType: legacyElectricalHazardType,
-          suppressionMethods: legacySuppressionMethods,
-        },
-      ];
-    }
-
-    return [];
-  });
-  const [emergingPowerGenerationItems, setEmergingPowerGenerationItems] = useState<
-    EmergingPowerGenerationItem[]
-  >(() => {
-    const stored = persistedDraft?.formValues.emerging_haz_power_generation_items_json;
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Array<{
-          photovoltaicHazardType?: string;
-          pvSourceTarget?: string;
-          suppressionMethods?: string;
-        }>;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((item) => ({
-            id: nextEmergingHazardItemId("power-generation"),
-            photovoltaicHazardType: item.photovoltaicHazardType?.trim() ?? "",
-            pvSourceTarget: item.pvSourceTarget?.trim() ?? "",
-            suppressionMethods: item.suppressionMethods?.trim() ?? "",
-          }));
-        }
-      } catch {
-        // Ignore malformed persisted values and fall back to legacy fields.
-      }
-    }
-
-    const legacyPvHazardType = persistedDraft?.formValues.emerg_haz_pv_type?.trim() ?? "";
-    const legacyPvSourceTarget =
-      persistedDraft?.formValues.emerg_haz_pv_source_target?.trim() ?? "";
-    const legacySuppressionMethods =
-      persistedDraft?.formValues.emerg_haz_suppression_methods?.trim() ?? "";
-    if (legacyPvHazardType || legacyPvSourceTarget || legacySuppressionMethods) {
-      return [
-        {
-          id: nextEmergingHazardItemId("power-generation"),
-          photovoltaicHazardType: legacyPvHazardType,
-          pvSourceTarget: legacyPvSourceTarget,
-          suppressionMethods: legacySuppressionMethods,
-        },
-      ];
-    }
-
-    return [];
-  });
-  const pvSourceTargetOptions = useMemo(
-    () =>
-      getNerisValueOptions("source_target").filter((option) =>
-        ["SOURCE", "TARGET", "UNKNOWN"].includes(option.value),
-      ),
-    [],
-  );
-  const [riskReductionSuppressionSystems, setRiskReductionSuppressionSystems] = useState<
-    FireSuppressionSystemEntry[]
-  >(() => {
-    const stored = persistedDraft?.formValues.risk_reduction_fire_suppression_systems_json;
-    if (stored) {
-      try {
-        const parsed = JSON.parse(stored) as Array<{
-          suppressionType?: string;
-          suppressionCoverage?: string;
-        }>;
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed.map((item) => ({
-            id: nextRiskReductionSuppressionId(),
-            suppressionType: item.suppressionType?.trim() ?? "",
-            suppressionCoverage: item.suppressionCoverage?.trim() ?? "",
-          }));
-        }
-      } catch {
-        // Ignore malformed persisted values and fall back to legacy fields.
-      }
-    }
-
-    const legacySuppressionType = persistedDraft?.formValues.fire_suppression_types?.trim() ?? "";
-    const legacySuppressionCoverage =
-      persistedDraft?.formValues.fire_suppression_operation?.trim() ?? "";
-    if (legacySuppressionType || legacySuppressionCoverage) {
-      return [
-        {
-          id: nextRiskReductionSuppressionId(),
-          suppressionType: legacySuppressionType,
-          suppressionCoverage: legacySuppressionCoverage,
-        },
-      ];
-    }
-
-    return [];
-  });
-  const riskReductionCompletedValue = (formValues.risk_reduction_completed ?? "").trim();
-  const riskReductionFollowUpValue = (formValues.risk_reduction_follow_up_required ?? "").trim();
-  const riskReductionContactMadeValue = (formValues.risk_reduction_contacts_made ?? "").trim();
-  const riskReductionSmokeAlarmPresentValue = (
-    formValues.risk_reduction_smoke_alarm_present ?? ""
-  ).trim();
-  const riskReductionSmokeAlarmWorkingValue = (
-    formValues.risk_reduction_smoke_alarm_working ?? ""
-  ).trim();
-  const riskReductionFireAlarmPresentValue = (
-    formValues.risk_reduction_fire_alarm_present ?? ""
-  ).trim();
-  const riskReductionOtherAlarmPresentValue = (
-    formValues.risk_reduction_other_alarm_present ?? ""
-  ).trim();
-  const riskReductionFireSuppressionPresentValue = (
-    formValues.risk_reduction_fire_suppression_present ?? ""
-  ).trim();
-  const riskReductionCookingSuppressionPresentValue = (
-    formValues.risk_reduction_cooking_suppression_present ?? ""
-  ).trim();
-  const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
-    null,
-  );
-  const activeResourcePersonnelUnit = useMemo(
-    () =>
-      activeResourcePersonnelUnitId
-        ? resourceUnits.find((unit) => unit.id === activeResourcePersonnelUnitId) ?? null
-        : null,
-    [activeResourcePersonnelUnitId, resourceUnits],
-  );
-  const personnelAssignedToOtherUnits = useMemo(() => {
-    if (!activeResourcePersonnelUnitId) {
-      return new Set<string>();
-    }
-    const assigned = new Set<string>();
-    resourceUnits.forEach((unit) => {
-      if (unit.id === activeResourcePersonnelUnitId) {
-        return;
-      }
-      unit.personnel
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter((entry) => entry.length > 0)
-        .forEach((entry) => assigned.add(entry));
-    });
-    return assigned;
-  }, [activeResourcePersonnelUnitId, resourceUnits]);
-
-  useEffect(() => {
-    if (persistedResourceUnits.length) {
-      return;
-    }
-    setResourceUnits(defaultResourceUnits);
-  }, [defaultResourceUnits, persistedResourceUnits.length]);
-
-  useEffect(() => {
-    if (activeResourcePersonnelUnitId && !activeResourcePersonnelUnit) {
-      setActiveResourcePersonnelUnitId(null);
-    }
-  }, [activeResourcePersonnelUnitId, activeResourcePersonnelUnit]);
-
-  useEffect(() => {
-    const className = "resource-personnel-modal-open";
-    if (activeResourcePersonnelUnitId) {
-      document.body.classList.add(className);
-    } else {
-      document.body.classList.remove(className);
-    }
-    return () => {
-      document.body.classList.remove(className);
-    };
-  }, [activeResourcePersonnelUnitId]);
-
-  useEffect(() => {
-    const serializedElectrocutionItems = JSON.stringify(
-      emergingElectrocutionItems.map((item) => ({
-        electricalHazardType: item.electricalHazardType,
-        suppressionMethods: item.suppressionMethods,
-      })),
-    );
-    const serializedPowerGenerationItems = JSON.stringify(
-      emergingPowerGenerationItems.map((item) => ({
-        photovoltaicHazardType: item.photovoltaicHazardType,
-        pvSourceTarget: item.pvSourceTarget,
-        suppressionMethods: item.suppressionMethods,
-      })),
-    );
-    const primaryElectrocutionItem = emergingElectrocutionItems[0];
-    const primaryPowerGenerationItem = emergingPowerGenerationItems[0];
-    const defaultSuppressionMethods =
-      primaryElectrocutionItem?.suppressionMethods ||
-      primaryPowerGenerationItem?.suppressionMethods ||
-      "";
-
-    setFormValues((previous) => {
-      if (
-        (previous.emerging_haz_electrocution_items_json ?? "") ===
-          serializedElectrocutionItems &&
-        (previous.emerging_haz_power_generation_items_json ?? "") ===
-          serializedPowerGenerationItems &&
-        (previous.emerg_haz_electric_type ?? "") ===
-          (primaryElectrocutionItem?.electricalHazardType ?? "") &&
-        (previous.emerg_haz_pv_type ?? "") ===
-          (primaryPowerGenerationItem?.photovoltaicHazardType ?? "") &&
-        (previous.emerg_haz_pv_source_target ?? "") ===
-          (primaryPowerGenerationItem?.pvSourceTarget ?? "") &&
-        (previous.emerg_haz_suppression_methods ?? "") === defaultSuppressionMethods
-      ) {
-        return previous;
-      }
-
-      return {
-        ...previous,
-        emerging_haz_electrocution_items_json: serializedElectrocutionItems,
-        emerging_haz_power_generation_items_json: serializedPowerGenerationItems,
-        emerg_haz_electric_type: primaryElectrocutionItem?.electricalHazardType ?? "",
-        emerg_haz_pv_type: primaryPowerGenerationItem?.photovoltaicHazardType ?? "",
-        emerg_haz_pv_source_target: primaryPowerGenerationItem?.pvSourceTarget ?? "",
-        emerg_haz_suppression_methods: defaultSuppressionMethods,
-      };
-    });
-  }, [emergingElectrocutionItems, emergingPowerGenerationItems]);
-
-  useEffect(() => {
-    const serializedSuppressionSystems = JSON.stringify(
-      riskReductionSuppressionSystems.map((system) => ({
-        suppressionType: system.suppressionType,
-        suppressionCoverage: system.suppressionCoverage,
-      })),
-    );
-    const primarySuppressionSystem = riskReductionSuppressionSystems[0];
-
-    setFormValues((previous) => {
-      if (
-        (previous.risk_reduction_fire_suppression_systems_json ?? "") ===
-          serializedSuppressionSystems &&
-        (previous.fire_suppression_types ?? "") ===
-          (primarySuppressionSystem?.suppressionType ?? "") &&
-        (previous.fire_suppression_operation ?? "") ===
-          (primarySuppressionSystem?.suppressionCoverage ?? "")
-      ) {
-        return previous;
-      }
-
-      return {
-        ...previous,
-        risk_reduction_fire_suppression_systems_json: serializedSuppressionSystems,
-        fire_suppression_types: primarySuppressionSystem?.suppressionType ?? "",
-        fire_suppression_operation: primarySuppressionSystem?.suppressionCoverage ?? "",
-      };
-    });
-  }, [riskReductionSuppressionSystems]);
-
-  const primaryIncidentCategory = useMemo(() => {
-    const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
-      formValues.primary_incident_type ?? "",
-    );
-    return (
-      normalizedPrimaryIncidentType
-        .split("||")
-        .map((segment) => segment.trim())
-        .filter((segment) => segment.length > 0)[0] ?? ""
-    );
-  }, [formValues.primary_incident_type]);
-  const visibleNerisSections = useMemo(
-    () =>
-      NERIS_FORM_SECTIONS.filter((section) => {
-        if (section.id === "fire") {
-          return primaryIncidentCategory === "FIRE";
-        }
-        if (section.id === "medical") {
-          return primaryIncidentCategory === "MEDICAL";
-        }
-        if (section.id === "hazards") {
-          return (
-            primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
-          );
-        }
-        return true;
-      }),
-    [primaryIncidentCategory],
-  );
-  const activeVisibleSectionId =
-    visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
-    visibleNerisSections[0]?.id ??
-    "core";
-  const currentSection =
-    visibleNerisSections.find((section) => section.id === activeVisibleSectionId) ??
-    visibleNerisSections[0] ??
-    NERIS_FORM_SECTIONS[0]!;
-  const sectionFields = useMemo(
-    () => getNerisFieldsForSection(currentSection.id),
-    [currentSection.id],
-  );
-  const displayedSectionFields = useMemo(() => {
-    if (currentSection.id !== "location") {
-      return sectionFields;
-    }
-
-    const locationFieldOrder = new Map<string, number>([
-      ["location_state", 1],
-      ["location_country", 2],
-      ["location_postal_code", 3],
-      ["location_county", 4],
-      ["location_place_type", 5],
-      ["location_use_primary", 6],
-      ["location_use_secondary", 7],
-      ["location_in_use", 8],
-      ["location_used_as_intended", 9],
-      ["location_vacancy_cause", 10],
-      ["location_direction_of_travel", 11],
-      ["location_cross_street_type", 12],
-      ["location_cross_street_name", 13],
-      ["location_notes", 14],
-    ]);
-
-    return [...sectionFields].sort((left, right) => {
-      const leftOrder = locationFieldOrder.get(left.id) ?? Number.MAX_SAFE_INTEGER;
-      const rightOrder = locationFieldOrder.get(right.id) ?? Number.MAX_SAFE_INTEGER;
-      return leftOrder - rightOrder;
-    });
-  }, [currentSection.id, sectionFields]);
-  const allNerisFields = useMemo(
-    () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
-    [],
-  );
-  const nerisFieldLabelById = useMemo(
-    () =>
-      Object.fromEntries(allNerisFields.map((field) => [field.id, field.label])) as Record<
-        string,
-        string
-      >,
-    [allNerisFields],
-  );
-  const nerisFieldSectionById = useMemo(
-    () =>
-      Object.fromEntries(
-        allNerisFields.map((field) => [field.id, field.sectionId]),
-      ) as Record<string, NerisSectionId>,
-    [allNerisFields],
-  );
-  const nerisSectionLabelById = useMemo(
-    () =>
-      Object.fromEntries(
-        NERIS_FORM_SECTIONS.map((section) => [section.id, section.label.toUpperCase()]),
-      ) as Record<NerisSectionId, string>,
-    [],
-  );
-  const requiredMatrixRows = useMemo(() => {
-    const coreRows = NERIS_REQUIRED_FIELD_MATRIX.coreMinimum.map((fieldId) => ({
-      fieldId,
-      label: nerisFieldLabelById[fieldId] ?? fieldId,
-    }));
-    const familyRows =
-      primaryIncidentCategory in NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily
-        ? NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily[
-            primaryIncidentCategory as keyof typeof NERIS_REQUIRED_FIELD_MATRIX.byIncidentFamily
-          ].map((fieldId) => ({
-            fieldId,
-            label: nerisFieldLabelById[fieldId] ?? fieldId,
-          }))
-        : [];
-    return {
-      coreRows,
-      familyRows,
-    };
-  }, [nerisFieldLabelById, primaryIncidentCategory]);
-  const sectionIndex = visibleNerisSections.findIndex(
-    (section) => section.id === currentSection.id,
-  );
-  const hasNextSection =
-    sectionIndex >= 0 && sectionIndex < visibleNerisSections.length - 1;
-  const importedLocationAddress =
-    (formValues.incident_location_address ?? "").trim() ||
-    (formValues.dispatch_location_address ?? "").trim() ||
-    detail?.address ||
-    "No imported address available.";
-  const parsedImportedLocation = useMemo(
-    () =>
-      parseImportedLocationValues(
-        importedLocationAddress,
-        locationStateOptionValues,
-        locationCountryOptionValues,
-      ),
-    [
-      importedLocationAddress,
-      locationStateOptionValues,
-      locationCountryOptionValues,
-    ],
-  );
-
-  useEffect(() => {
-    let isCancelled = false;
-    const fallbackOptions = getNerisValueOptions("aid_department");
-    const exportUrl = (nerisExportSettings.exportUrl ?? "").trim();
-    if (!exportUrl.startsWith("/api/neris/")) {
-      setAidDepartmentOptions(fallbackOptions);
-      return () => {
-        isCancelled = true;
-      };
-    }
-
-    const loadAidDepartmentOptions = async () => {
-      try {
-        const response = await fetch("/api/neris/debug/entities");
-        const responseText = await response.text();
-        if (!response.ok) {
-          if (!isCancelled) {
-            setAidDepartmentOptions(fallbackOptions);
-          }
-          return;
-        }
-
-        const parsed = (() => {
-          if (!responseText) {
-            return null;
-          }
-          try {
-            return JSON.parse(responseText) as Record<string, unknown>;
-          } catch {
-            return null;
-          }
-        })();
-        const neris =
-          parsed?.neris && typeof parsed.neris === "object"
-            ? (parsed.neris as Record<string, unknown>)
-            : null;
-        const entities = Array.isArray(neris?.entities) ? (neris?.entities as unknown[]) : [];
-        const apiOptions = entities
-          .map((entry) => {
-            if (!entry || typeof entry !== "object") {
-              return null;
-            }
-            const candidate = entry as Record<string, unknown>;
-            const departmentId =
-              typeof candidate.neris_id === "string" ? candidate.neris_id.trim() : "";
-            if (!NERIS_AID_DEPARTMENT_ID_PATTERN.test(departmentId)) {
-              return null;
-            }
-            const departmentName =
-              typeof candidate.name === "string" && candidate.name.trim().length > 0
-                ? candidate.name.trim()
-                : departmentId;
-            return {
-              value: departmentId,
-              label: `${departmentId} - ${departmentName}`,
-            } as NerisValueOption;
-          })
-          .filter((option): option is NerisValueOption => Boolean(option));
-
-        const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
-        if (
-          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
-          !apiOptions.some((option) => option.value === requestedEntityId)
-        ) {
-          apiOptions.unshift({
-            value: requestedEntityId,
-            label: `${requestedEntityId} - Current export department`,
-          });
-        }
-
-        const dedupedOptions = Array.from(
-          new Map(
-            [...apiOptions, ...fallbackOptions].map((option) => [option.value, option]),
-          ).values(),
-        );
-        if (!isCancelled) {
-          setAidDepartmentOptions(dedupedOptions);
-        }
-      } catch {
-        if (!isCancelled) {
-          setAidDepartmentOptions(fallbackOptions);
-        }
-      }
-    };
-
-    void loadAidDepartmentOptions();
-
-    return () => {
-      isCancelled = true;
-    };
-  }, [nerisExportSettings.exportUrl, nerisExportSettings.vendorCode]);
-
-  useEffect(() => {
-    const vendorDepartmentCode = (nerisExportSettings.vendorCode ?? "").trim();
-    if (!vendorDepartmentCode) {
-      return;
-    }
-    if ((formValues.fd_neris_id ?? "").trim() === vendorDepartmentCode) {
-      return;
-    }
-    setFormValues((previous) => {
-      if ((previous.fd_neris_id ?? "").trim() === vendorDepartmentCode) {
-        return previous;
-      }
-      return {
-        ...previous,
-        fd_neris_id: vendorDepartmentCode,
-      };
-    });
-  }, [nerisExportSettings.vendorCode, formValues.fd_neris_id]);
-
-  const updateFieldValue = (fieldId: string, value: string) => {
-    const sanitizedValue =
-      fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
-    const shouldClearNoAction =
-      fieldId === "incident_actions_taken" && sanitizedValue.trim().length > 0;
-    const shouldClearActions =
-      fieldId === "incident_noaction" && sanitizedValue.trim().length > 0;
-    const shouldClearDisplacementCause =
-      (fieldId === "incident_displaced_number" &&
-        (sanitizedValue.trim().length === 0 ||
-          Number.parseInt(sanitizedValue, 10) <= 0)) ||
-      (fieldId === "incident_people_present" && sanitizedValue === "NO");
-    const shouldClearLocationUsedAsIntended =
-      fieldId === "location_in_use" && sanitizedValue !== "YES";
-    const shouldClearAidFields =
-      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT");
-    setFormValues((previous) => {
-      const nextValues: NerisFormValues = {
-        ...previous,
-        [fieldId]: sanitizedValue,
-      };
-      if (shouldClearNoAction) {
-        nextValues.incident_noaction = "";
-      }
-      if (shouldClearActions) {
-        nextValues.incident_actions_taken = "";
-      }
-      if (shouldClearDisplacementCause) {
-        nextValues.incident_displaced_cause = "";
-      }
-      if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
-        nextValues.incident_displaced_number = "";
-      }
-      if (shouldClearLocationUsedAsIntended) {
-        nextValues.location_used_as_intended = "";
-      }
-      if (fieldId === "incident_has_aid" && sanitizedValue === "NO") {
-        nextValues.incident_aid_agency_type = "";
-        nextValues.incident_aid_direction = "";
-        nextValues.incident_aid_type = "";
-        nextValues.incident_aid_department_name = "";
-        nextValues.incident_aid_nonfd = "";
-      }
-      if (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID") {
-        nextValues.incident_aid_direction = "";
-        nextValues.incident_aid_type = "";
-        nextValues.incident_aid_department_name = "";
-      }
-      if (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT") {
-        nextValues.incident_aid_nonfd = "";
-      }
-      return nextValues;
-    });
-
-    if (
-      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID")
-    ) {
-      setAdditionalAidEntries([]);
-    }
-    if (
-      (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
-      (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT")
-    ) {
-      setAdditionalNonFdAidEntries([]);
-    }
-
-    setSectionErrors((previous) => {
-      const hasPrimaryError = Boolean(previous[fieldId]);
-      const hasNoActionError = shouldClearNoAction && Boolean(previous.incident_noaction);
-      const hasActionsError = shouldClearActions && Boolean(previous.incident_actions_taken);
-      const hasDisplacementCauseError =
-        shouldClearDisplacementCause && Boolean(previous.incident_displaced_cause);
-      const hasDisplacementNumberError =
-        fieldId === "incident_people_present" &&
-        sanitizedValue === "NO" &&
-        Boolean(previous.incident_displaced_number);
-      const hasLocationUsedAsIntendedError =
-        shouldClearLocationUsedAsIntended && Boolean(previous.location_used_as_intended);
-      const hasAidErrors =
-        shouldClearAidFields &&
-        (Boolean(previous.incident_aid_agency_type) ||
-          Boolean(previous.incident_aid_direction) ||
-          Boolean(previous.incident_aid_type) ||
-          Boolean(previous.incident_aid_department_name) ||
-          Boolean(previous.incident_aid_nonfd));
-      if (
-        !hasPrimaryError &&
-        !hasNoActionError &&
-        !hasActionsError &&
-        !hasDisplacementCauseError &&
-        !hasDisplacementNumberError &&
-        !hasLocationUsedAsIntendedError &&
-        !hasAidErrors
-      ) {
-        return previous;
-      }
-      const next = { ...previous };
-      delete next[fieldId];
-      if (shouldClearNoAction) {
-        delete next.incident_noaction;
-      }
-      if (shouldClearActions) {
-        delete next.incident_actions_taken;
-      }
-      if (shouldClearDisplacementCause) {
-        delete next.incident_displaced_cause;
-      }
-      if (fieldId === "incident_people_present" && sanitizedValue === "NO") {
-        delete next.incident_displaced_number;
-      }
-      if (shouldClearLocationUsedAsIntended) {
-        delete next.location_used_as_intended;
-      }
-      if (shouldClearAidFields) {
-        delete next.incident_aid_agency_type;
-        delete next.incident_aid_direction;
-        delete next.incident_aid_type;
-        delete next.incident_aid_department_name;
-        delete next.incident_aid_nonfd;
-      }
-      return next;
-    });
-    setSaveMessage("");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
-  useEffect(() => {
-    const locationUpdates: Record<string, string> = {};
-    if (
-      (formValues.location_state ?? "").trim().length === 0 &&
-      parsedImportedLocation.locationState
-    ) {
-      locationUpdates.location_state = parsedImportedLocation.locationState;
-    }
-    if (
-      (formValues.location_country ?? "").trim().length === 0 &&
-      parsedImportedLocation.locationCountry
-    ) {
-      locationUpdates.location_country = parsedImportedLocation.locationCountry;
-    }
-    if (
-      (formValues.location_postal_code ?? "").trim().length === 0 &&
-      parsedImportedLocation.locationPostalCode
-    ) {
-      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
-    }
-    if (
-      (formValues.location_county ?? "").trim().length === 0 &&
-      parsedImportedLocation.locationCounty
-    ) {
-      locationUpdates.location_county = parsedImportedLocation.locationCounty;
-    }
-
-    if (Object.keys(locationUpdates).length === 0) {
-      return;
-    }
-
-    setFormValues((previous) => ({
-      ...previous,
-      ...locationUpdates,
-    }));
-  }, [
-    formValues.location_state,
-    formValues.location_country,
-    formValues.location_postal_code,
-    formValues.location_county,
-    parsedImportedLocation.locationState,
-    parsedImportedLocation.locationCountry,
-    parsedImportedLocation.locationPostalCode,
-    parsedImportedLocation.locationCounty,
-  ]);
-
-  const handlePullLocationFromImportedAddress = () => {
-    const locationUpdates: Record<string, string> = {};
-    if (
-      parsedImportedLocation.locationState &&
-      parsedImportedLocation.locationState !== (formValues.location_state ?? "")
-    ) {
-      locationUpdates.location_state = parsedImportedLocation.locationState;
-    }
-    if (
-      parsedImportedLocation.locationCountry &&
-      parsedImportedLocation.locationCountry !== (formValues.location_country ?? "")
-    ) {
-      locationUpdates.location_country = parsedImportedLocation.locationCountry;
-    }
-    if (
-      parsedImportedLocation.locationPostalCode &&
-      parsedImportedLocation.locationPostalCode !== (formValues.location_postal_code ?? "")
-    ) {
-      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
-    }
-    if (
-      parsedImportedLocation.locationCounty &&
-      parsedImportedLocation.locationCounty !== (formValues.location_county ?? "")
-    ) {
-      locationUpdates.location_county = parsedImportedLocation.locationCounty;
-    }
-
-    if (Object.keys(locationUpdates).length === 0) {
-      setSaveMessage(
-        "No additional state, country, postal code, or county details were found to apply.",
-      );
-      setErrorMessage("");
-      return;
-    }
-
-    setFormValues((previous) => ({
-      ...previous,
-      ...locationUpdates,
-    }));
-    setSectionErrors((previous) => {
-      const next = { ...previous };
-      delete next.location_state;
-      delete next.location_country;
-      delete next.location_postal_code;
-      delete next.location_county;
-      return next;
-    });
-    setSaveMessage("Location details pulled from imported address.");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
-  const markNerisFormDirty = () => {
-    setSaveMessage("");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
-  const clearResourceUnitValidationErrors = (unitEntryId: string) => {
-    const keyPrefix = `resource_unit_validation_${unitEntryId}_`;
-    setSectionErrors((previous) => {
-      let hasMatch = false;
-      const next: Record<string, string> = {};
-      Object.entries(previous).forEach(([key, value]) => {
-        if (key.startsWith(keyPrefix)) {
-          hasMatch = true;
-          return;
-        }
-        next[key] = value;
-      });
-      return hasMatch ? next : previous;
-    });
-  };
-
-  const toValidationIssueLabel = (
-    fieldId: string,
-    customIssueLabelsByFieldId: Record<string, string>,
-  ): string => {
-    const customLabel = customIssueLabelsByFieldId[fieldId];
-    if (customLabel) {
-      return customLabel;
-    }
-    const sectionId = nerisFieldSectionById[fieldId];
-    const sectionLabel = sectionId ? nerisSectionLabelById[sectionId] : "UNKNOWN";
-    return `${sectionLabel} - ${nerisFieldLabelById[fieldId] ?? fieldId}`;
-  };
-
-  const validateResourceUnit = (unitEntry: ResourceUnitEntry, unitIndex: number) => {
-    const unitLabel = unitEntry.unitId.trim() || `Unit ${unitIndex + 1}`;
-    const errors: Record<string, string> = {};
-    const customIssueLabelsByFieldId: Record<string, string> = {};
-    const addResourceError = (
-      field:
-        | "personnel"
-        | "dispatchTime"
-        | "enrouteTime"
-        | "stagedTime"
-        | "onSceneTime"
-        | "canceledTime"
-        | "clearTime",
-      fieldLabel: string,
-      message: string,
-    ) => {
-      const errorKey = resourceUnitValidationErrorKey(unitEntry.id, field);
-      errors[errorKey] = message;
-      customIssueLabelsByFieldId[errorKey] = `Resources - ${unitLabel}: ${fieldLabel}`;
-    };
-    const addTimelineError = (
-      entry: {
-        key: string;
-        label: string;
-        customIssueLabel?: string;
-      },
-      message: string,
-    ) => {
-      errors[entry.key] = message;
-      if (entry.customIssueLabel) {
-        customIssueLabelsByFieldId[entry.key] = entry.customIssueLabel;
-      }
-    };
-
-    if (countSelectedPersonnel(unitEntry.personnel) < 1) {
-      addResourceError(
-        "personnel",
-        "Personnel",
-        "At least one personnel member is required for each unit.",
-      );
-    }
-    if (!unitEntry.dispatchTime.trim()) {
-      addResourceError("dispatchTime", "Dispatch time", "Dispatch time is required.");
-    }
-    if (!unitEntry.clearTime.trim()) {
-      addResourceError("clearTime", "Clear time", "Clear time is required.");
-    }
-    if (!unitEntry.isCanceledEnroute) {
-      if (!unitEntry.enrouteTime.trim()) {
-        addResourceError(
-          "enrouteTime",
-          "Enroute time",
-          "Enroute time is required unless dispatched and canceled en route.",
-        );
-      }
-      if (!unitEntry.onSceneTime.trim()) {
-        addResourceError(
-          "onSceneTime",
-          "On Scene time",
-          "On Scene time is required unless dispatched and canceled en route.",
-        );
-      }
-    }
-
-    const timelineEntries = [
-      {
-        key: "incident_time_call_create",
-        label: "Call created time",
-        value: formValues.incident_time_call_create ?? "",
-      },
-      {
-        key: "incident_time_call_answered",
-        label: "Call answered time",
-        value: formValues.incident_time_call_answered ?? "",
-      },
-      {
-        key: "incident_time_call_arrival",
-        label: "Call arrival time",
-        value: formValues.incident_time_call_arrival ?? "",
-      },
-      {
-        key: resourceUnitValidationErrorKey(unitEntry.id, "dispatchTime"),
-        label: "Unit dispatched time",
-        customIssueLabel: `Resources - ${unitLabel}: Dispatch time`,
-        value: unitEntry.dispatchTime,
-      },
-      {
-        key: resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime"),
-        label: "Unit enroute time",
-        customIssueLabel: `Resources - ${unitLabel}: Enroute time`,
-        value: unitEntry.enrouteTime,
-      },
-      {
-        key: resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime"),
-        label: "Unit on scene time",
-        customIssueLabel: `Resources - ${unitLabel}: On Scene time`,
-        value: unitEntry.onSceneTime,
-      },
-      {
-        key: resourceUnitValidationErrorKey(unitEntry.id, "stagedTime"),
-        label: "Unit staged time",
-        customIssueLabel: `Resources - ${unitLabel}: Staged time`,
-        value: unitEntry.stagedTime,
-      },
-      {
-        key: resourceUnitValidationErrorKey(unitEntry.id, "canceledTime"),
-        label: "Unit canceled time",
-        customIssueLabel: `Resources - ${unitLabel}: Canceled time`,
-        value: unitEntry.canceledTime,
-      },
-      {
-        key: resourceUnitValidationErrorKey(unitEntry.id, "clearTime"),
-        label: "Unit clear time",
-        customIssueLabel: `Resources - ${unitLabel}: Clear time`,
-        value: unitEntry.clearTime,
-      },
-      {
-        key: "incident_time_clear",
-        label: "Incident clear time",
-        value: formValues.incident_time_clear ?? formValues.time_incident_clear ?? "",
-      },
-    ];
-
-    let previousTimelineEntry: { label: string; timestamp: number } | null = null;
-    timelineEntries.forEach((entry) => {
-      const trimmedValue = entry.value.trim();
-      if (!trimmedValue) {
-        return;
-      }
-      const timestamp = toResourceDateTimeTimestamp(trimmedValue, resourceFallbackDate);
-      if (timestamp === null) {
-        addTimelineError(entry, `${entry.label} has an invalid date/time value.`);
-        return;
-      }
-      if (previousTimelineEntry && timestamp < previousTimelineEntry.timestamp) {
-        addTimelineError(
-          entry,
-          `${entry.label} cannot be earlier than ${previousTimelineEntry.label}.`,
-        );
-      }
-      previousTimelineEntry = {
-        label: entry.label,
-        timestamp,
-      };
-    });
-
-    return {
-      errors,
-      customIssueLabelsByFieldId,
-    };
-  };
-
-  useEffect(() => {
-    const primaryUnit = resourceUnits[0];
-    const primaryUnitId = primaryUnit?.unitId ?? "";
-    const primaryUnitType = primaryUnit?.unitType ?? "";
-    const primaryUnitStaffing = primaryUnit
-      ? getStaffingValueForUnit(primaryUnit.unitId, primaryUnit.personnel)
-      : "";
-    const primaryUnitResponseMode = primaryUnit?.responseMode ?? "";
-    const additionalUnits = resourceUnits
-      .slice(1)
-      .map((unit) => unit.unitId.trim())
-      .filter((unitId) => unitId.length > 0)
-      .join(", ");
-    const serializedResourceUnits = JSON.stringify(
-      resourceUnits.map((unit) => ({
-        id: unit.id,
-        unitId: unit.unitId,
-        unitType: unit.unitType,
-        staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
-        responseMode: unit.responseMode,
-        transportMode: unit.transportMode,
-        dispatchTime: unit.dispatchTime,
-        enrouteTime: unit.enrouteTime,
-        stagedTime: unit.stagedTime,
-        onSceneTime: unit.onSceneTime,
-        canceledTime: unit.canceledTime,
-        clearTime: unit.clearTime,
-        isCanceledEnroute: unit.isCanceledEnroute,
-        isComplete: unit.isComplete,
-        isExpanded: unit.isExpanded,
-        showTimesEditor: unit.showTimesEditor,
-        personnel: unit.personnel,
-        showPersonnelSelector: unit.showPersonnelSelector,
-        reportWriter: unit.reportWriter,
-        unitNarrative: unit.unitNarrative,
-      })),
-    );
-
-    setFormValues((previous) => {
-      if (
-        (previous.resource_primary_unit_id ?? "") === primaryUnitId &&
-        (previous.resource_primary_unit_type ?? "") === primaryUnitType &&
-        (previous.resource_primary_unit_staffing ?? "") === primaryUnitStaffing &&
-        (previous.resource_primary_unit_response_mode ?? "") === primaryUnitResponseMode &&
-        (previous.resource_additional_units ?? "") === additionalUnits &&
-        (previous.resource_units_json ?? "") === serializedResourceUnits
-      ) {
-        return previous;
-      }
-
-      return {
-        ...previous,
-        resource_primary_unit_id: primaryUnitId,
-        resource_primary_unit_type: primaryUnitType,
-        resource_primary_unit_staffing: primaryUnitStaffing,
-        resource_primary_unit_response_mode: primaryUnitResponseMode,
-        resource_additional_units: additionalUnits,
-        resource_units_json: serializedResourceUnits,
-      };
-    });
-  }, [resourceUnits]);
-
-  const toggleResourceUnitExpanded = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              isExpanded: !entry.isExpanded,
-            }
-          : entry,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const toggleResourceUnitComplete = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              isComplete: !entry.isComplete,
-            }
-          : entry,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const deleteResourceUnit = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.filter((entry) => entry.id !== unitEntryId),
-    );
-    clearResourceUnitValidationErrors(unitEntryId);
-    if (activeResourcePersonnelUnitId === unitEntryId) {
-      setActiveResourcePersonnelUnitId(null);
-    }
-    markNerisFormDirty();
-  };
-
-  const updateResourceUnitField = (
-    unitEntryId: string,
-    field:
-      | "unitId"
-      | "unitType"
-      | "staffing"
-      | "responseMode"
-      | "transportMode"
-      | "dispatchTime"
-      | "enrouteTime"
-      | "stagedTime"
-      | "onSceneTime"
-      | "canceledTime"
-      | "clearTime"
-      | "personnel"
-      | "reportWriter"
-      | "unitNarrative",
-    value: string,
-  ) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? (() => {
-              if (field === "personnel") {
-                const nextStaffing = getStaffingValueForUnit(entry.unitId, value);
-                return {
-                  ...entry,
-                  personnel: value,
-                  staffing: nextStaffing,
-                };
-              }
-              if (field === "dispatchTime") {
-                const normalizedDispatch = toResourceDateTimeInputValue(value, resourceFallbackDate);
-                const normalizedClear = toResourceDateTimeInputValue(
-                  entry.clearTime,
-                  resourceFallbackDate,
-                );
-                const normalizedCanceled = toResourceDateTimeInputValue(
-                  entry.canceledTime,
-                  resourceFallbackDate,
-                );
-                return {
-                  ...entry,
-                  dispatchTime: normalizedDispatch,
-                  canceledTime:
-                    entry.isCanceledEnroute && !normalizedCanceled && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 1)
-                      : normalizedCanceled,
-                  clearTime:
-                    entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 2)
-                      : normalizedClear,
-                };
-              }
-              if (
-                field === "enrouteTime" ||
-                field === "stagedTime" ||
-                field === "onSceneTime" ||
-                field === "canceledTime" ||
-                field === "clearTime"
-              ) {
-                return {
-                  ...entry,
-                  [field]: toResourceDateTimeInputValue(value, resourceFallbackDate),
-                };
-              }
-              return {
-                ...entry,
-                [field]: value,
-              };
-            })()
-          : entry,
-      ),
-    );
-    clearResourceUnitValidationErrors(unitEntryId);
-    markNerisFormDirty();
-  };
-
-  const handleResourceUnitIdChange = (unitEntryId: string, nextUnitId: string) => {
-    const source = apparatusByResourceUnitId.get(nextUnitId);
-    const inferredUnitType = inferResourceUnitTypeValue(
-      nextUnitId,
-      source?.unitType,
-      unitTypeOptions,
-    );
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              unitId: nextUnitId,
-              unitType: inferredUnitType || entry.unitType,
-              staffing: getStaffingValueForUnit(nextUnitId, entry.personnel),
-            }
-          : entry,
-      ),
-    );
-    clearResourceUnitValidationErrors(unitEntryId);
-    markNerisFormDirty();
-  };
-
-  const openResourcePersonnelModal = (unitEntryId: string) => {
-    setActiveResourcePersonnelUnitId(unitEntryId);
-  };
-
-  const closeResourcePersonnelModal = () => {
-    setActiveResourcePersonnelUnitId(null);
-  };
-
-  const removeResourcePersonnel = (unitEntryId: string, personnelValue: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) => {
-        if (entry.id !== unitEntryId) {
-          return entry;
-        }
-
-        const nextPersonnelValues = entry.personnel
-          .split(",")
-          .map((value) => value.trim())
-          .filter((value) => value.length > 0 && value !== personnelValue);
-        const nextPersonnelCsv = nextPersonnelValues.join(",");
-        const nextStaffing = getStaffingValueForUnit(entry.unitId, nextPersonnelCsv);
-        const nextReportWriter =
-          entry.reportWriter === personnelValue ? "" : entry.reportWriter;
-
-        return {
-          ...entry,
-          personnel: nextPersonnelCsv,
-          staffing: nextStaffing,
-          reportWriter: nextReportWriter,
-        };
-      }),
-    );
-    clearResourceUnitValidationErrors(unitEntryId);
-    markNerisFormDirty();
-  };
-
-  const toggleResourceTimesEditor = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              showTimesEditor: !entry.showTimesEditor,
-            }
-          : entry,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const toggleResourceCanceledEnroute = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? (() => {
-              const nextCanceledEnroute = !entry.isCanceledEnroute;
-              if (!nextCanceledEnroute) {
-                return {
-                  ...entry,
-                  isCanceledEnroute: false,
-                  canceledTime: "",
-                };
-              }
-
-              const normalizedDispatch = toResourceDateTimeInputValue(
-                entry.dispatchTime,
-                resourceFallbackDate,
-              );
-              const normalizedClear = toResourceDateTimeInputValue(
-                entry.clearTime,
-                resourceFallbackDate,
-              );
-              const normalizedCanceled = toResourceDateTimeInputValue(
-                entry.canceledTime,
-                resourceFallbackDate,
-              );
-              return {
-                ...entry,
-                isCanceledEnroute: true,
-                dispatchTime: normalizedDispatch,
-                canceledTime:
-                  normalizedCanceled || normalizedDispatch
-                    ? normalizedCanceled || addMinutesToResourceDateTime(normalizedDispatch, 1)
-                    : "",
-                clearTime:
-                  normalizedClear || normalizedDispatch
-                    ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
-                    : "",
-              };
-            })()
-          : entry,
-      ),
-    );
-    clearResourceUnitValidationErrors(unitEntryId);
-    markNerisFormDirty();
-  };
-
-  const populateResourceTimesFromDispatch = (unitEntryId: string) => {
-    const fallbackDispatch =
-      toResourceDateTimeInputValue(
-        formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
-        resourceFallbackDate,
-      ) || "";
-    setResourceUnits((previous) =>
-      previous.map((entry) => {
-        if (entry.id !== unitEntryId) {
-          return entry;
-        }
-        const dispatchSeed =
-          toResourceDateTimeInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
-        if (!dispatchSeed) {
-          return entry;
-        }
-        return {
-          ...entry,
-          dispatchTime: dispatchSeed,
-          enrouteTime: dispatchSeed,
-          stagedTime: dispatchSeed,
-          onSceneTime: dispatchSeed,
-          canceledTime: dispatchSeed,
-          clearTime: dispatchSeed,
-        };
-      }),
-    );
-    clearResourceUnitValidationErrors(unitEntryId);
-    markNerisFormDirty();
-  };
-
-  const completeAndCollapseResourceUnit = (unitEntryId: string) => {
-    const unitIndex = resourceUnits.findIndex((entry) => entry.id === unitEntryId);
-    if (unitIndex < 0) {
-      return;
-    }
-    const unitEntry = resourceUnits[unitIndex]!;
-    const { errors, customIssueLabelsByFieldId } = validateResourceUnit(unitEntry, unitIndex);
-    const hasErrors = Object.keys(errors).length > 0;
-    if (hasErrors) {
-      const unitErrorKeyPrefix = `resource_unit_validation_${unitEntryId}_`;
-      setSectionErrors((previous) => {
-        const next: Record<string, string> = {};
-        Object.entries(previous).forEach(([key, value]) => {
-          if (key.startsWith(unitErrorKeyPrefix)) {
-            return;
-          }
-          next[key] = value;
-        });
-        return {
-          ...next,
-          ...errors,
-        };
-      });
-      setValidationIssues(
-        Array.from(
-          new Set(
-            Object.keys(errors).map((fieldId) =>
-              toValidationIssueLabel(fieldId, customIssueLabelsByFieldId),
-            ),
-          ),
-        ),
-      );
-      setValidationModal(null);
-      setSaveMessage("");
-      setErrorMessage(
-        "Unit requirements are incomplete or out of sequence. Fix highlighted fields before completing.",
-      );
-      setResourceUnits((previous) =>
-        previous.map((entry) =>
-          entry.id === unitEntryId
-            ? {
-                ...entry,
-                isExpanded: true,
-                showTimesEditor: true,
-                isComplete: false,
-              }
-            : entry,
-        ),
-      );
-      return;
-    }
-
-    clearResourceUnitValidationErrors(unitEntryId);
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              isComplete: true,
-              isExpanded: false,
-              showTimesEditor: false,
-            }
-          : entry,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const collapseResourceUnit = (unitEntryId: string) => {
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              isExpanded: false,
-              showTimesEditor: false,
-            }
-          : entry,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const addEmergingElectrocutionItem = () => {
-    setEmergingElectrocutionItems((previous) => [
-      ...previous,
-      {
-        id: nextEmergingHazardItemId("electrocution"),
-        electricalHazardType: "",
-        suppressionMethods: "",
-      },
-    ]);
-    markNerisFormDirty();
-  };
-
-  const updateEmergingElectrocutionItem = (
-    itemId: string,
-    field: "electricalHazardType" | "suppressionMethods",
-    value: string,
-  ) => {
-    setEmergingElectrocutionItems((previous) =>
-      previous.map((item) =>
-        item.id === itemId
-          ? {
-              ...item,
-              [field]: value,
-            }
-          : item,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const deleteEmergingElectrocutionItem = (itemId: string) => {
-    setEmergingElectrocutionItems((previous) =>
-      previous.filter((item) => item.id !== itemId),
-    );
-    markNerisFormDirty();
-  };
-
-  const addEmergingPowerGenerationItem = () => {
-    setEmergingPowerGenerationItems((previous) => [
-      ...previous,
-      {
-        id: nextEmergingHazardItemId("power-generation"),
-        photovoltaicHazardType: "",
-        pvSourceTarget: "",
-        suppressionMethods: "",
-      },
-    ]);
-    markNerisFormDirty();
-  };
-
-  const updateEmergingPowerGenerationItem = (
-    itemId: string,
-    field: "photovoltaicHazardType" | "pvSourceTarget" | "suppressionMethods",
-    value: string,
-  ) => {
-    setEmergingPowerGenerationItems((previous) =>
-      previous.map((item) =>
-        item.id === itemId
-          ? {
-              ...item,
-              [field]: value,
-            }
-          : item,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const deleteEmergingPowerGenerationItem = (itemId: string) => {
-    setEmergingPowerGenerationItems((previous) =>
-      previous.filter((item) => item.id !== itemId),
-    );
-    markNerisFormDirty();
-  };
-
-  const addRiskReductionSuppressionSystem = () => {
-    setRiskReductionSuppressionSystems((previous) => [
-      ...previous,
-      {
-        id: nextRiskReductionSuppressionId(),
-        suppressionType: "",
-        suppressionCoverage: "",
-      },
-    ]);
-    markNerisFormDirty();
-  };
-
-  const updateRiskReductionSuppressionSystem = (
-    systemId: string,
-    field: "suppressionType" | "suppressionCoverage",
-    value: string,
-  ) => {
-    setRiskReductionSuppressionSystems((previous) =>
-      previous.map((system) =>
-        system.id === systemId
-          ? {
-              ...system,
-              [field]: value,
-            }
-          : system,
-      ),
-    );
-    markNerisFormDirty();
-  };
-
-  const deleteRiskReductionSuppressionSystem = (systemId: string) => {
-    setRiskReductionSuppressionSystems((previous) =>
-      previous.filter((system) => system.id !== systemId),
-    );
-    markNerisFormDirty();
-  };
-
-  const stampSavedAt = (
-    mode: "manual" | "auto",
-    nextStatus: string = reportStatus,
-    messageOverride?: string,
-  ) => {
-    const savedAt = new Date().toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    });
-    writeNerisDraft(callNumber, {
-      formValues,
-      reportStatus: nextStatus,
-      lastSavedAt: savedAt,
-      additionalAidEntries: additionalAidEntries.map((entry) => ({
-        aidDirection: entry.aidDirection,
-        aidType: entry.aidType,
-        aidDepartment: entry.aidDepartment,
-      })),
-      additionalNonFdAidEntries: additionalNonFdAidEntries.map((entry) => ({
-        aidType: entry.aidType,
-      })),
-    });
-    setReportStatus(nextStatus);
-    setLastSavedAt(savedAt);
-    setSaveMessage(
-      messageOverride ??
-        (mode === "auto"
-          ? `Draft auto-saved for ${detailForSideEffects.callNumber} at ${savedAt}.`
-          : `Draft saved for ${detailForSideEffects.callNumber} at ${savedAt}.`),
-    );
-  };
-
-  const buildValidationSnapshot = () => {
-    const mergedErrors: Record<string, string> = {};
-    const customIssueLabelsByFieldId: Record<string, string> = {};
-    for (const section of NERIS_FORM_SECTIONS) {
-      const validation = validateNerisSection(section.id, formValues);
-      Object.assign(mergedErrors, validation.errors);
-    }
-
-    resourceUnits.forEach((unitEntry, unitIndex) => {
-      const unitValidation = validateResourceUnit(unitEntry, unitIndex);
-      Object.assign(mergedErrors, unitValidation.errors);
-      Object.assign(customIssueLabelsByFieldId, unitValidation.customIssueLabelsByFieldId);
-    });
-
-    setSectionErrors(mergedErrors);
-    const issueLabels = Array.from(
-      new Set(
-        Object.keys(mergedErrors).map((fieldId) =>
-          toValidationIssueLabel(fieldId, customIssueLabelsByFieldId),
-        ),
-      ),
-    );
-    return {
-      mergedErrors,
-      issueLabels,
-    };
-  };
-
-  const buildStoredAdditionalAidEntries = () =>
-    additionalAidEntries.map((entry) => ({
-      aidDirection: entry.aidDirection,
-      aidType: entry.aidType,
-      aidDepartment: entry.aidDepartment,
-    }));
-
-  const buildStoredAdditionalNonFdAidEntries = () =>
-    additionalNonFdAidEntries.map((entry) => ({
-      aidType: entry.aidType,
-    }));
-
-  const buildReportWriterName = () => {
-    const rawReportWriter =
-      resourceUnits
-        .map((unit) => unit.reportWriter.trim())
-        .find((candidate) => candidate.length > 0) ?? username.trim();
-    if (!rawReportWriter) {
-      return "";
-    }
-    if (!rawReportWriter.includes("_")) {
-      return rawReportWriter;
-    }
-    return rawReportWriter
-      .toLowerCase()
-      .split("_")
-      .map((segment) => segment.charAt(0).toUpperCase() + segment.slice(1))
-      .join(" ");
-  };
-
-  const applyValidationFailure = (issueLabels: string[]) => {
-    if (issueLabels.length === 0) {
-      return;
-    }
-    const serializedAidEntries = buildStoredAdditionalAidEntries();
-    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
-    writeNerisDraft(callNumber, {
-      formValues,
-      reportStatus: "Draft",
-      lastSavedAt,
-      additionalAidEntries: serializedAidEntries,
-      additionalNonFdAidEntries: serializedNonFdAidEntries,
-    });
-    setReportStatus("Draft");
-    setSaveMessage("");
-    setErrorMessage(
-      "Validation incomplete. Complete the required fields listed below.",
-    );
-    setValidationModal({
-      mode: "issues",
-      issues: issueLabels,
-    });
-  };
-
-  const handleCheckForErrors = () => {
-    const { mergedErrors, issueLabels } = buildValidationSnapshot();
-    setSectionErrors(mergedErrors);
-    setValidationIssues(issueLabels);
-
-    if (issueLabels.length > 0) {
-      applyValidationFailure(issueLabels);
-      return;
-    }
-
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal({
-      mode: "checkSuccess",
-      issues: [],
-    });
-    stampSavedAt(
-      "manual",
-      "In Review",
-      "Check for Errors passed. Status updated to In Review.",
-    );
-  };
-
-  type ExportRequestConfig = {
-    exportUrl: string;
-    isProxyRequest: boolean;
-    headers: Record<string, string>;
-    payload: Record<string, unknown>;
-  };
-
-  type ExportExecutionResult = {
-    exportedAtIso: string;
-    exportedAtLabel: string;
-    attemptStatus: "success" | "failed";
-    httpStatus: number;
-    httpStatusText: string;
-    nerisId: string;
-    submittedEntityId: string;
-    submittedDepartmentNerisId: string;
-    statusLabel: string;
-    responseSummary: string;
-    responseDetail: string;
-    submittedPayloadPreview: string;
-  };
-
-  type ExportRequestError = Error & {
-    httpStatus?: number;
-    httpStatusText?: string;
-    submittedEntityId?: string;
-    submittedDepartmentNerisId?: string;
-    responseSummary?: string;
-    responseDetail?: string;
-    submittedPayloadPreview?: string;
-  };
-
-  const toPrettyJson = (value: unknown): string => {
-    try {
-      return JSON.stringify(value, null, 2);
-    } catch {
-      return "";
-    }
-  };
-
-  const extractSubmittedDepartmentFromResponse = (
-    responseJson: Record<string, unknown> | null,
-  ): string => {
-    if (
-      responseJson?.submittedPayload &&
-      typeof responseJson.submittedPayload === "object" &&
-      (responseJson.submittedPayload as Record<string, unknown>).base &&
-      typeof (responseJson.submittedPayload as Record<string, unknown>).base === "object" &&
-      typeof (
-        (responseJson.submittedPayload as Record<string, unknown>).base as Record<string, unknown>
-      ).department_neris_id === "string"
-    ) {
-      return ((responseJson.submittedPayload as Record<string, unknown>).base as Record<
-        string,
-        unknown
-      >).department_neris_id as string;
-    }
-    return (formValues.fd_neris_id ?? "").trim();
-  };
-
-  const extractExportResponseSummary = (
-    response: Response,
-    responseJson: Record<string, unknown> | null,
-    responseText: string,
-  ): string => {
-    if (typeof responseJson?.message === "string" && responseJson.message.trim().length > 0) {
-      return responseJson.message.trim();
-    }
-    const fallback =
-      responseJson?.fallback && typeof responseJson.fallback === "object"
-        ? (responseJson.fallback as Record<string, unknown>)
-        : null;
-    if (typeof fallback?.reason === "string" && fallback.reason.trim().length > 0) {
-      const updateStatus =
-        typeof fallback.updateStatus === "number" ? fallback.updateStatus : null;
-      const updateStatusText =
-        typeof fallback.updateStatusText === "string" ? fallback.updateStatusText : "";
-      if (updateStatus !== null) {
-        return `Fallback ${fallback.succeeded ? "succeeded" : "failed"} (${updateStatus} ${updateStatusText}). ${fallback.reason}`.trim();
-      }
-      return fallback.reason;
-    }
-    const detailFromNeris =
-      responseJson?.neris && typeof responseJson.neris === "object"
-        ? (responseJson.neris as Record<string, unknown>).detail
-        : null;
-    if (typeof detailFromNeris === "string" && detailFromNeris.trim().length > 0) {
-      return detailFromNeris.trim();
-    }
-    if (Array.isArray(detailFromNeris) && detailFromNeris.length > 0) {
-      return toPrettyJson(detailFromNeris);
-    }
-    if (responseText.trim().length > 0) {
-      return responseText.slice(0, 280);
-    }
-    return `${response.status} ${response.statusText}`;
-  };
-
-  const createExportRequestError = (
-    message: string,
-    metadata: Omit<ExportExecutionResult, "exportedAtIso" | "exportedAtLabel" | "attemptStatus" | "nerisId" | "statusLabel"> & {
-      httpStatus: number;
-      httpStatusText: string;
-    },
-  ): ExportRequestError => {
-    const error = new Error(message) as ExportRequestError;
-    error.httpStatus = metadata.httpStatus;
-    error.httpStatusText = metadata.httpStatusText;
-    error.submittedEntityId = metadata.submittedEntityId;
-    error.submittedDepartmentNerisId = metadata.submittedDepartmentNerisId;
-    error.responseSummary = metadata.responseSummary;
-    error.responseDetail = metadata.responseDetail;
-    error.submittedPayloadPreview = metadata.submittedPayloadPreview;
-    return error;
-  };
-
-  const getExistingIncidentNerisIdHint = () => {
-    const fromForm = (formValues.incident_neris_id ?? "").trim();
-    if (NERIS_INCIDENT_ID_PATTERN.test(fromForm)) {
-      return fromForm;
-    }
-    const fromHistory = readNerisExportHistory().find(
-      (entry) =>
-        entry.callNumber === callNumber &&
-        entry.attemptStatus === "success" &&
-        NERIS_INCIDENT_ID_PATTERN.test(entry.nerisId),
-    );
-    return fromHistory?.nerisId ?? "";
-  };
-
-  const buildExportRequestConfig = (): ExportRequestConfig => {
-    const defaultExportSettings = getDefaultNerisExportSettings();
-    const exportUrl =
-      nerisExportSettings.exportUrl.trim() ||
-      String(import.meta.env.VITE_NERIS_EXPORT_URL ?? "").trim() ||
-      defaultExportSettings.exportUrl;
-    const vendorCode =
-      nerisExportSettings.vendorCode.trim() ||
-      String(import.meta.env.VITE_NERIS_VENDOR_CODE ?? "").trim();
-    const secretKey =
-      nerisExportSettings.secretKey.trim() ||
-      String(import.meta.env.VITE_NERIS_SECRET_KEY ?? "").trim();
-    const vendorHeaderName =
-      nerisExportSettings.vendorHeaderName.trim() ||
-      String(import.meta.env.VITE_NERIS_VENDOR_HEADER_NAME ?? "").trim() ||
-      defaultExportSettings.vendorHeaderName;
-    const authHeaderName =
-      nerisExportSettings.authHeaderName.trim() ||
-      String(import.meta.env.VITE_NERIS_AUTH_HEADER_NAME ?? "").trim() ||
-      defaultExportSettings.authHeaderName;
-    const authScheme =
-      nerisExportSettings.authScheme.trim() ||
-      String(import.meta.env.VITE_NERIS_AUTH_SCHEME ?? "").trim() ||
-      defaultExportSettings.authScheme;
-    const contentType =
-      nerisExportSettings.contentType.trim() ||
-      String(import.meta.env.VITE_NERIS_CONTENT_TYPE ?? "").trim() ||
-      defaultExportSettings.contentType;
-    const apiVersionHeaderName = nerisExportSettings.apiVersionHeaderName.trim();
-    const apiVersionHeaderValue = nerisExportSettings.apiVersionHeaderValue.trim();
-    const isProxyRequest = exportUrl.startsWith("/api/neris/");
-    const existingIncidentNerisId = getExistingIncidentNerisIdHint();
-    if (!exportUrl) {
-      throw new Error(
-        "Export is not configured. Add Export URL in Admin Functions > Customization > NERIS Export Configuration.",
-      );
-    }
-
-    const timezoneSourceDate = (() => {
-      const dispatchTime = (formValues.incident_time_call_create ?? "").trim();
-      if (!dispatchTime) {
-        return new Date();
-      }
-      const parsed = new Date(dispatchTime);
-      if (Number.isNaN(parsed.getTime())) {
-        return new Date();
-      }
-      return parsed;
-    })();
-    const clientUtcOffsetMinutes = timezoneSourceDate.getTimezoneOffset();
-
-    const payload = {
-      callNumber: detailForSideEffects.callNumber,
-      reportStatus,
-      exportedAt: new Date().toISOString(),
-      source: "Fire Ultimate Prototype",
-      formValues,
-      incidentSnapshot: {
-        incidentType: detailForSideEffects.incidentType,
-        address: detailForSideEffects.address,
-        receivedAt: detailForSideEffects.receivedAt,
-        assignedUnits: detailForSideEffects.assignedUnits,
-      },
-      integration: {
-        entityId: vendorCode,
-        contentType,
-        apiVersionHeaderName,
-        apiVersionHeaderValue,
-        existingIncidentNerisId,
-        allowUpdateFallback: true,
-        clientUtcOffsetMinutes,
-      },
-      additionalAidEntries: buildStoredAdditionalAidEntries(),
-      additionalNonFdAidEntries: buildStoredAdditionalNonFdAidEntries(),
-    };
-    const headers: Record<string, string> = {
-      "Content-Type": contentType,
-    };
-    if (vendorCode && vendorHeaderName) {
-      headers[vendorHeaderName] = vendorCode;
-    }
-    if (!isProxyRequest && secretKey) {
-      headers[authHeaderName] = authScheme
-        ? `${authScheme} ${secretKey}`
-        : secretKey;
-    }
-    if (apiVersionHeaderName && apiVersionHeaderValue) {
-      headers[apiVersionHeaderName] = apiVersionHeaderValue;
-    }
-    return {
-      exportUrl,
-      isProxyRequest,
-      headers,
-      payload,
-    };
-  };
-
-  const parseJsonResponseText = (responseText: string): Record<string, unknown> | null => {
-    if (!responseText) {
-      return null;
-    }
-    try {
-      return JSON.parse(responseText) as Record<string, unknown>;
-    } catch {
-      return null;
-    }
-  };
-
-  const extractProxyApiIssues = (responseJson: Record<string, unknown> | null): string[] => {
-    if (!responseJson || typeof responseJson !== "object") {
-      return [];
-    }
-    const neris = responseJson.neris;
-    if (!neris || typeof neris !== "object") {
-      return [];
-    }
-    const detail = (neris as Record<string, unknown>).detail;
-    if (!Array.isArray(detail)) {
-      return [];
-    }
-    return detail
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return "";
-        }
-        const candidate = entry as Record<string, unknown>;
-        const loc = Array.isArray(candidate.loc)
-          ? candidate.loc
-              .filter((segment): segment is string => typeof segment === "string")
-              .join(" > ")
-          : "";
-        const message = typeof candidate.msg === "string" ? candidate.msg : "Validation issue";
-        return loc ? `API - ${loc}: ${message}` : `API - ${message}`;
-      })
-      .filter((issue) => issue.length > 0);
-  };
-
-  const readPathValue = (source: unknown, path: Array<string | number>): unknown => {
-    let current: unknown = source;
-    for (const segment of path) {
-      if (typeof segment === "number") {
-        if (!Array.isArray(current) || segment < 0 || segment >= current.length) {
-          return undefined;
-        }
-        current = current[segment];
-        continue;
-      }
-      if (!current || typeof current !== "object") {
-        return undefined;
-      }
-      current = (current as Record<string, unknown>)[segment];
-    }
-    return current;
-  };
-
-  const toComparableText = (value: unknown): string => {
-    if (value === null || value === undefined) {
-      return "";
-    }
-    if (typeof value === "boolean") {
-      return value ? "YES" : "NO";
-    }
-    if (typeof value === "number") {
-      return String(value);
-    }
-    if (typeof value === "string") {
-      const trimmed = value.trim();
-      if (/^\d{4}-\d{2}-\d{2}T/.test(trimmed)) {
-        const parsedTimestamp = Date.parse(trimmed);
-        if (!Number.isNaN(parsedTimestamp)) {
-          return `DT:${parsedTimestamp}`;
-        }
-      }
-      return trimmed.toUpperCase();
-    }
-    if (Array.isArray(value)) {
-      return value
-        .map((entry) => toComparableText(entry))
-        .filter((entry) => entry.length > 0)
-        .sort()
-        .join("|");
-    }
-    return "";
-  };
-
-  const toFriendlyValue = (value: unknown): string => {
-    if (value === null || value === undefined) {
-      return "Not provided";
-    }
-    if (typeof value === "boolean") {
-      return value ? "Yes" : "No";
-    }
-    if (typeof value === "number") {
-      return String(value);
-    }
-    if (typeof value === "string") {
-      return value.trim() || "Not provided";
-    }
-    if (Array.isArray(value)) {
-      const flattened = value
-        .map((entry) => {
-          if (typeof entry === "string") {
-            return entry.trim();
-          }
-          if (typeof entry === "number") {
-            return String(entry);
-          }
-          return "";
-        })
-        .filter((entry) => entry.length > 0);
-      return flattened.length > 0 ? flattened.join(", ") : "Not provided";
-    }
-    return "Not provided";
-  };
-
-  const isCompareMatch = (submittedValue: unknown, retrievedValue: unknown): boolean =>
-    toComparableText(submittedValue) === toComparableText(retrievedValue);
-
-  const extractPrimaryIncidentType = (value: unknown): string => {
-    if (!Array.isArray(value)) {
-      return "";
-    }
-    const primaryEntry = value.find(
-      (entry) =>
-        entry &&
-        typeof entry === "object" &&
-        (entry as Record<string, unknown>).primary === true &&
-        typeof (entry as Record<string, unknown>).type === "string",
-    ) as Record<string, unknown> | undefined;
-    if (!primaryEntry) {
-      return "";
-    }
-    return String(primaryEntry.type).replaceAll("||", " > ").trim();
-  };
-
-  const extractAdditionalIncidentTypes = (value: unknown): string[] => {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-    return value
-      .filter(
-        (entry) =>
-          entry &&
-          typeof entry === "object" &&
-          (entry as Record<string, unknown>).primary !== true &&
-          typeof (entry as Record<string, unknown>).type === "string",
-      )
-      .map((entry) => String((entry as Record<string, unknown>).type).replaceAll("||", " > ").trim())
-      .filter((entry) => entry.length > 0)
-      .sort((left, right) => left.localeCompare(right));
-  };
-
-  const extractUnitSummaries = (
-    value: unknown,
-  ): {
-    units: string[];
-    staffing: string[];
-  } => {
-    if (!Array.isArray(value)) {
-      return { units: [], staffing: [] };
-    }
-    const units: string[] = [];
-    const staffing: string[] = [];
-    value.forEach((entry) => {
-      if (!entry || typeof entry !== "object") {
-        return;
-      }
-      const candidate = entry as Record<string, unknown>;
-      const reportedUnitId =
-        typeof candidate.reported_unit_id === "string" ? candidate.reported_unit_id.trim() : "";
-      const unitNerisId =
-        typeof candidate.unit_neris_id === "string" ? candidate.unit_neris_id.trim() : "";
-      const unitLabel = reportedUnitId || unitNerisId;
-      if (!unitLabel) {
-        return;
-      }
-      units.push(unitLabel);
-      const staffingValue =
-        typeof candidate.staffing === "number"
-          ? String(candidate.staffing)
-          : typeof candidate.staffing === "string"
-            ? candidate.staffing.trim()
-            : "";
-      staffing.push(staffingValue ? `${unitLabel} (${staffingValue})` : `${unitLabel} (Not provided)`);
-    });
-    return {
-      units: dedupeAndCleanStrings(units).sort((left, right) => left.localeCompare(right)),
-      staffing: dedupeAndCleanStrings(staffing).sort((left, right) => left.localeCompare(right)),
-    };
-  };
-
-  const extractAidSummaries = (value: unknown): string[] => {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-    const summaries = value
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return "";
-        }
-        const candidate = entry as Record<string, unknown>;
-        const department =
-          typeof candidate.department_neris_id === "string"
-            ? candidate.department_neris_id.trim()
-            : "";
-        const aidType = typeof candidate.aid_type === "string" ? candidate.aid_type.trim() : "";
-        const direction =
-          typeof candidate.aid_direction === "string" ? candidate.aid_direction.trim() : "";
-        const parts = [direction, aidType, department].filter((part) => part.length > 0);
-        return parts.join(" | ");
-      })
-      .filter((entry) => entry.length > 0);
-    return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
-  };
-
-  const extractUnitFieldSummaries = (
-    value: unknown,
-    field: "response_mode" | "transport_mode" | "dispatch" | "enroute_to_scene" | "staging" | "on_scene" | "canceled_enroute" | "unit_clear",
-  ): string[] => {
-    if (!Array.isArray(value)) {
-      return [];
-    }
-    const summaries = value
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return "";
-        }
-        const candidate = entry as Record<string, unknown>;
-        const reportedUnitId =
-          typeof candidate.reported_unit_id === "string" ? candidate.reported_unit_id.trim() : "";
-        const unitNerisId =
-          typeof candidate.unit_neris_id === "string" ? candidate.unit_neris_id.trim() : "";
-        const unitLabel = reportedUnitId || unitNerisId || "Unknown unit";
-        const rawFieldValue = candidate[field];
-        if (typeof rawFieldValue !== "string" || rawFieldValue.trim().length === 0) {
-          return "";
-        }
-        return `${unitLabel}: ${rawFieldValue.trim()}`;
-      })
-      .filter((entry) => entry.length > 0);
-    return dedupeAndCleanStrings(summaries).sort((left, right) => left.localeCompare(right));
-  };
-
-  const extractActionNoActionSummary = (value: unknown): string => {
-    if (!value || typeof value !== "object") {
-      return "";
-    }
-    const actionNoAction =
-      (value as Record<string, unknown>).action_noaction &&
-      typeof (value as Record<string, unknown>).action_noaction === "object"
-        ? ((value as Record<string, unknown>).action_noaction as Record<string, unknown>)
-        : null;
-    if (!actionNoAction) {
-      return "";
-    }
-    const type = typeof actionNoAction.type === "string" ? actionNoAction.type.trim() : "";
-    if (type === "ACTION") {
-      const actions = Array.isArray(actionNoAction.actions)
-        ? (actionNoAction.actions as unknown[])
-            .filter((entry): entry is string => typeof entry === "string" && entry.trim().length > 0)
-            .map((entry) => entry.trim())
-        : [];
-      return actions.length > 0 ? actions.join(", ") : "Action selected";
-    }
-    if (type === "NOACTION") {
-      const noActionType =
-        typeof actionNoAction.noaction_type === "string"
-          ? actionNoAction.noaction_type.trim()
-          : "";
-      return noActionType ? `No Action: ${noActionType}` : "No Action selected";
-    }
-    return "";
-  };
-
-  const extractLocationUseSummary = (value: unknown): string[] => {
-    if (!value || typeof value !== "object") {
-      return [];
-    }
-    const candidate = value as Record<string, unknown>;
-    const summary: string[] = [];
-    const useType = typeof candidate.use_type === "string" ? candidate.use_type.trim() : "";
-    const secondaryUse =
-      typeof candidate.secondary_use === "string" ? candidate.secondary_use.trim() : "";
-    const vacancyCause =
-      typeof candidate.vacancy_cause === "string" ? candidate.vacancy_cause.trim() : "";
-    if (useType) {
-      summary.push(`Primary: ${useType}`);
-    }
-    if (secondaryUse) {
-      summary.push(`Secondary: ${secondaryUse}`);
-    }
-    if (vacancyCause) {
-      summary.push(`Vacancy: ${vacancyCause}`);
-    }
-    const inUse =
-      candidate.in_use && typeof candidate.in_use === "object"
-        ? (candidate.in_use as Record<string, unknown>)
-        : null;
-    if (inUse && typeof inUse.in_use === "boolean") {
-      summary.push(`In Use: ${inUse.in_use ? "Yes" : "No"}`);
-    }
-    if (inUse && typeof inUse.intended === "boolean") {
-      summary.push(`As Intended: ${inUse.intended ? "Yes" : "No"}`);
-    }
-    return summary;
-  };
-
-  const buildCompareRow = (
-    id: string,
-    label: string,
-    submittedValue: unknown,
-    retrievedValue: unknown,
-    helpText?: string,
-  ): IncidentCompareRow => ({
-    id,
-    label,
-    submittedValue: toFriendlyValue(submittedValue),
-    retrievedValue: toFriendlyValue(retrievedValue),
-    status: isCompareMatch(submittedValue, retrievedValue) ? "match" : "different",
-    helpText,
-  });
-
-  const readLatestSubmittedPayloadForCompare = (): Record<string, unknown> | null => {
-    const latestSuccessfulEntry = readNerisExportHistory().find(
-      (entry) =>
-        entry.callNumber === callNumber &&
-        entry.attemptStatus === "success" &&
-        entry.submittedPayloadPreview.trim().length > 0,
-    );
-    if (!latestSuccessfulEntry) {
-      return null;
-    }
-    const parsed = parseJsonResponseText(latestSuccessfulEntry.submittedPayloadPreview);
-    if (!parsed || typeof parsed !== "object") {
-      return null;
-    }
-    const hasNerisPayloadShape =
-      parsed.base &&
-      typeof parsed.base === "object" &&
-      parsed.dispatch &&
-      typeof parsed.dispatch === "object";
-    return hasNerisPayloadShape ? parsed : null;
-  };
-
-  const collectUnmappedFilledFieldLabels = (): string[] => {
-    const labels = Object.entries(formValues)
-      .filter(([fieldId, fieldValue]) => {
-        if (NERIS_PROXY_MAPPED_FORM_FIELD_IDS.has(fieldId)) {
-          return false;
-        }
-        return typeof fieldValue === "string" && fieldValue.trim().length > 0;
-      })
-      .map(([fieldId]) => nerisFieldLabelById[fieldId] ?? fieldId);
-    return dedupeAndCleanStrings(labels).sort((left, right) => left.localeCompare(right));
-  };
-
-  const buildIncidentCompareRows = (
-    submittedPayload: Record<string, unknown>,
-    retrievedIncident: Record<string, unknown>,
-  ): IncidentCompareRow[] => {
-    const submittedIncidentTypes = readPathValue(submittedPayload, ["incident_types"]);
-    const retrievedIncidentTypes = readPathValue(retrievedIncident, ["incident_types"]);
-    const submittedPrimaryType = extractPrimaryIncidentType(submittedIncidentTypes);
-    const retrievedPrimaryType = extractPrimaryIncidentType(retrievedIncidentTypes);
-    const submittedAdditionalTypes = extractAdditionalIncidentTypes(submittedIncidentTypes);
-    const retrievedAdditionalTypes = extractAdditionalIncidentTypes(retrievedIncidentTypes);
-    const submittedDispatchUnits = extractUnitSummaries(
-      readPathValue(submittedPayload, ["dispatch", "unit_responses"]),
-    );
-    const retrievedDispatchUnits = extractUnitSummaries(
-      readPathValue(retrievedIncident, ["dispatch", "unit_responses"]),
-    );
-    const submittedDispatchUnitResponses = readPathValue(submittedPayload, ["dispatch", "unit_responses"]);
-    const retrievedDispatchUnitResponses = readPathValue(retrievedIncident, ["dispatch", "unit_responses"]);
-    const submittedResponseModes = extractUnitFieldSummaries(
-      submittedDispatchUnitResponses,
-      "response_mode",
-    );
-    const retrievedResponseModes = extractUnitFieldSummaries(
-      retrievedDispatchUnitResponses,
-      "response_mode",
-    );
-    const submittedTransportModes = extractUnitFieldSummaries(
-      submittedDispatchUnitResponses,
-      "transport_mode",
-    );
-    const retrievedTransportModes = extractUnitFieldSummaries(
-      retrievedDispatchUnitResponses,
-      "transport_mode",
-    );
-    const submittedStagedTimes = extractUnitFieldSummaries(
-      submittedDispatchUnitResponses,
-      "staging",
-    );
-    const retrievedStagedTimes = extractUnitFieldSummaries(
-      retrievedDispatchUnitResponses,
-      "staging",
-    );
-    const submittedCanceledTimes = extractUnitFieldSummaries(
-      submittedDispatchUnitResponses,
-      "canceled_enroute",
-    );
-    const retrievedCanceledTimes = extractUnitFieldSummaries(
-      retrievedDispatchUnitResponses,
-      "canceled_enroute",
-    );
-    const submittedActionSummary = extractActionNoActionSummary(
-      readPathValue(submittedPayload, ["actions_tactics"]),
-    );
-    const retrievedActionSummary = extractActionNoActionSummary(
-      readPathValue(retrievedIncident, ["actions_tactics"]),
-    );
-    const submittedAidSummary = extractAidSummaries(readPathValue(submittedPayload, ["aids"]));
-    const retrievedAidSummary = extractAidSummaries(readPathValue(retrievedIncident, ["aids"]));
-    const submittedLocationUseSummary = extractLocationUseSummary(
-      readPathValue(submittedPayload, ["base", "location_use"]),
-    );
-    const retrievedLocationUseSummary = extractLocationUseSummary(
-      readPathValue(retrievedIncident, ["base", "location_use"]),
-    );
-
-    return [
-      buildCompareRow(
-        "department-id",
-        "Department NERIS ID",
-        readPathValue(submittedPayload, ["base", "department_neris_id"]),
-        readPathValue(retrievedIncident, ["base", "department_neris_id"]),
-      ),
-      buildCompareRow(
-        "incident-number",
-        "Incident Number",
-        readPathValue(submittedPayload, ["base", "incident_number"]),
-        readPathValue(retrievedIncident, ["base", "incident_number"]),
-      ),
-      buildCompareRow("primary-incident-type", "Primary Incident Type", submittedPrimaryType, retrievedPrimaryType),
-      buildCompareRow(
-        "additional-incident-types",
-        "Additional Incident Type(s)",
-        submittedAdditionalTypes,
-        retrievedAdditionalTypes,
-      ),
-      buildCompareRow(
-        "special-modifiers",
-        "Special Incident Modifier(s)",
-        readPathValue(submittedPayload, ["special_modifiers"]),
-        readPathValue(retrievedIncident, ["special_modifiers"]),
-        "Some special modifiers are incident-type dependent and may be ignored by NERIS.",
-      ),
-      buildCompareRow("actions-or-no-action", "Actions / No Action", submittedActionSummary, retrievedActionSummary),
-      buildCompareRow(
-        "people-present",
-        "Were people present?",
-        readPathValue(submittedPayload, ["base", "people_present"]),
-        readPathValue(retrievedIncident, ["base", "people_present"]),
-      ),
-      buildCompareRow(
-        "displaced-count",
-        "Number of People Displaced",
-        readPathValue(submittedPayload, ["base", "displacement_count"]),
-        readPathValue(retrievedIncident, ["base", "displacement_count"]),
-      ),
-      buildCompareRow(
-        "displacement-causes",
-        "Displacement Cause(s)",
-        readPathValue(submittedPayload, ["base", "displacement_causes"]),
-        readPathValue(retrievedIncident, ["base", "displacement_causes"]),
-      ),
-      buildCompareRow(
-        "narrative-outcome",
-        "Narrative - Outcome",
-        readPathValue(submittedPayload, ["base", "outcome_narrative"]),
-        readPathValue(retrievedIncident, ["base", "outcome_narrative"]),
-      ),
-      buildCompareRow(
-        "narrative-obstacles",
-        "Narrative - Obstacles",
-        readPathValue(submittedPayload, ["base", "impediment_narrative"]),
-        readPathValue(retrievedIncident, ["base", "impediment_narrative"]),
-      ),
-      buildCompareRow(
-        "incident-address-street",
-        "Incident Address - Street",
-        readPathValue(submittedPayload, ["base", "location", "street"]),
-        readPathValue(retrievedIncident, ["base", "location", "street"]),
-      ),
-      buildCompareRow(
-        "incident-address-city",
-        "Incident Address - City",
-        readPathValue(submittedPayload, ["base", "location", "incorporated_municipality"]),
-        readPathValue(retrievedIncident, ["base", "location", "incorporated_municipality"]),
-      ),
-      buildCompareRow(
-        "incident-address-state",
-        "Incident Address - State",
-        readPathValue(submittedPayload, ["base", "location", "state"]),
-        readPathValue(retrievedIncident, ["base", "location", "state"]),
-      ),
-      buildCompareRow(
-        "incident-address-postal",
-        "Incident Address - Postal Code",
-        readPathValue(submittedPayload, ["base", "location", "postal_code"]),
-        readPathValue(retrievedIncident, ["base", "location", "postal_code"]),
-      ),
-      buildCompareRow(
-        "incident-address-county",
-        "Incident Address - County",
-        readPathValue(submittedPayload, ["base", "location", "county"]),
-        readPathValue(retrievedIncident, ["base", "location", "county"]),
-      ),
-      buildCompareRow(
-        "incident-place-type",
-        "Incident Place Type",
-        readPathValue(submittedPayload, ["base", "location", "place_type"]),
-        readPathValue(retrievedIncident, ["base", "location", "place_type"]),
-      ),
-      buildCompareRow(
-        "incident-location-use",
-        "Incident Location Use",
-        submittedLocationUseSummary,
-        retrievedLocationUseSummary,
-      ),
-      buildCompareRow(
-        "dispatch-incident-number",
-        "Dispatch Incident Number",
-        readPathValue(submittedPayload, ["dispatch", "incident_number"]),
-        readPathValue(retrievedIncident, ["dispatch", "incident_number"]),
-      ),
-      buildCompareRow(
-        "dispatch-code",
-        "Dispatch Code",
-        readPathValue(submittedPayload, ["dispatch", "incident_code"]),
-        readPathValue(retrievedIncident, ["dispatch", "incident_code"]),
-      ),
-      buildCompareRow(
-        "dispatch-center-id",
-        "Dispatch Center ID",
-        readPathValue(submittedPayload, ["dispatch", "center_id"]),
-        readPathValue(retrievedIncident, ["dispatch", "center_id"]),
-      ),
-      buildCompareRow(
-        "dispatch-clear-time",
-        "Incident Clear Time",
-        readPathValue(submittedPayload, ["dispatch", "incident_clear"]),
-        readPathValue(retrievedIncident, ["dispatch", "incident_clear"]),
-      ),
-      buildCompareRow(
-        "dispatch-auto-alarm",
-        "Automatic Alarm",
-        readPathValue(submittedPayload, ["dispatch", "automatic_alarm"]),
-        readPathValue(retrievedIncident, ["dispatch", "automatic_alarm"]),
-      ),
-      buildCompareRow(
-        "dispatch-units",
-        "Dispatch Units",
-        submittedDispatchUnits.units,
-        retrievedDispatchUnits.units,
-      ),
-      buildCompareRow(
-        "dispatch-unit-staffing",
-        "Dispatch Unit Staffing",
-        submittedDispatchUnits.staffing,
-        retrievedDispatchUnits.staffing,
-      ),
-      buildCompareRow(
-        "dispatch-unit-response-mode",
-        "Dispatch Unit Response Mode",
-        submittedResponseModes,
-        retrievedResponseModes,
-      ),
-      buildCompareRow(
-        "dispatch-unit-transport-mode",
-        "Dispatch Unit Transport Mode",
-        submittedTransportModes,
-        retrievedTransportModes,
-      ),
-      buildCompareRow(
-        "dispatch-unit-staged-time",
-        "Dispatch Unit Staged Time",
-        submittedStagedTimes,
-        retrievedStagedTimes,
-      ),
-      buildCompareRow(
-        "dispatch-unit-canceled-time",
-        "Dispatch Unit Canceled Time",
-        submittedCanceledTimes,
-        retrievedCanceledTimes,
-      ),
-      buildCompareRow(
-        "dispatch-location-street",
-        "Dispatch Location - Street",
-        readPathValue(submittedPayload, ["dispatch", "location", "street"]),
-        readPathValue(retrievedIncident, ["dispatch", "location", "street"]),
-      ),
-      buildCompareRow(
-        "dispatch-location-city",
-        "Dispatch Location - City",
-        readPathValue(submittedPayload, ["dispatch", "location", "incorporated_municipality"]),
-        readPathValue(retrievedIncident, ["dispatch", "location", "incorporated_municipality"]),
-      ),
-      buildCompareRow(
-        "dispatch-location-state",
-        "Dispatch Location - State",
-        readPathValue(submittedPayload, ["dispatch", "location", "state"]),
-        readPathValue(retrievedIncident, ["dispatch", "location", "state"]),
-      ),
-      buildCompareRow(
-        "dispatch-location-postal",
-        "Dispatch Location - Postal Code",
-        readPathValue(submittedPayload, ["dispatch", "location", "postal_code"]),
-        readPathValue(retrievedIncident, ["dispatch", "location", "postal_code"]),
-      ),
-      buildCompareRow(
-        "dispatch-location-county",
-        "Dispatch Location - County",
-        readPathValue(submittedPayload, ["dispatch", "location", "county"]),
-        readPathValue(retrievedIncident, ["dispatch", "location", "county"]),
-      ),
-      buildCompareRow("aid-fire-department", "Aid (Fire Department)", submittedAidSummary, retrievedAidSummary),
-      buildCompareRow(
-        "aid-non-fd",
-        "Aid (Non FD)",
-        readPathValue(submittedPayload, ["nonfd_aids"]),
-        readPathValue(retrievedIncident, ["nonfd_aids"]),
-      ),
-    ];
-  };
-
-  const runPreExportValidation = async (requestConfig: ExportRequestConfig): Promise<string[]> => {
-    if (!requestConfig.isProxyRequest) {
-      return [];
-    }
-    if (!requestConfig.exportUrl.includes("/api/neris/export")) {
-      return [];
-    }
-
-    const validateUrl = requestConfig.exportUrl.replace(
-      "/api/neris/export",
-      "/api/neris/validate",
-    );
-
-    try {
-      const response = await fetch(validateUrl, {
-        method: "POST",
-        headers: requestConfig.headers,
-        body: JSON.stringify(requestConfig.payload),
-      });
-      const responseText = await response.text();
-      const responseJson = parseJsonResponseText(responseText);
-      const apiIssues = extractProxyApiIssues(responseJson);
-      if (apiIssues.length > 0) {
-        return apiIssues;
-      }
-      if (response.ok) {
-        return [];
-      }
-      if (response.status === 404 || response.status === 405) {
-        // If proxy validate isn't available yet, continue with export path.
-        return [];
-      }
-      if (response.status === 422) {
-        return [
-          `API - Validation failed (${response.status}). Review field values and required formats before export.`,
-        ];
-      }
-
-      const statusText = response.statusText.trim()
-        ? response.statusText
-        : response.status === 500
-          ? "Internal Server Error"
-          : "Request Failed";
-      const proxyMessage =
-        typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
-          ? responseJson.message.trim()
-          : "";
-      const troubleshootingMessage =
-        responseJson?.troubleshooting &&
-        typeof responseJson.troubleshooting === "object" &&
-        typeof (responseJson.troubleshooting as Record<string, unknown>).message === "string"
-          ? (((responseJson.troubleshooting as Record<string, unknown>).message as string).trim())
-          : "";
-      const responseSummary =
-        proxyMessage || troubleshootingMessage || responseText.slice(0, 240);
-
-      if (response.status === 500 && !responseSummary) {
-        throw new Error(
-          "Pre-export validation failed (500 Internal Server Error). No response details were returned. If using local proxy, confirm `npm run proxy` is running and check the proxy terminal logs.",
-        );
-      }
-
-      throw new Error(
-        `Pre-export validation failed (${response.status} ${statusText}). ${
-          responseSummary || "No response details."
-        }`,
-      );
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.startsWith("Pre-export validation failed") ||
-          error.message.startsWith("Pre-export validation request failed"))
-      ) {
-        throw error;
-      }
-      const reason =
-        error instanceof Error ? error.message : "Unknown validation request error.";
-      throw new Error(`Pre-export validation request failed. ${reason}`);
-    }
-  };
-
-  const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
-    const integration =
-      requestConfig.payload.integration && typeof requestConfig.payload.integration === "object"
-        ? (requestConfig.payload.integration as Record<string, unknown>)
-        : null;
-    return integration && typeof integration.entityId === "string" ? integration.entityId : "";
-  };
-
-  const executeExport = async (
-    requestConfig: ExportRequestConfig,
-  ): Promise<ExportExecutionResult> => {
-    const isProxyRequest = requestConfig.isProxyRequest;
-    const serializedAidEntries = buildStoredAdditionalAidEntries();
-    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
-    writeNerisDraft(callNumber, {
-      formValues,
-      reportStatus,
-      lastSavedAt,
-      additionalAidEntries: serializedAidEntries,
-      additionalNonFdAidEntries: serializedNonFdAidEntries,
-    });
-
-    const requestController = new AbortController();
-    const timeoutId = window.setTimeout(() => requestController.abort(), 20_000);
-
-    try {
-      const response = await fetch(requestConfig.exportUrl, {
-        method: "POST",
-        headers: requestConfig.headers,
-        body: JSON.stringify(requestConfig.payload),
-        signal: requestController.signal,
-      });
-      const responseText = await response.text();
-      const responseJson = parseJsonResponseText(responseText);
-      const submittedEntityId =
-        typeof responseJson?.submittedEntityId === "string"
-          ? responseJson.submittedEntityId
-          : getRequestedEntityId(requestConfig);
-      const submittedDepartmentNerisId = extractSubmittedDepartmentFromResponse(responseJson);
-      const submittedPayloadPreview =
-        toPrettyJson(responseJson?.submittedPayload ?? requestConfig.payload) ||
-        toPrettyJson(requestConfig.payload);
-      const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
-      const responseSummary = extractExportResponseSummary(response, responseJson, responseText);
-      if (!response.ok) {
-        if (response.status === 403) {
-          const troubleshooting =
-            responseJson?.troubleshooting &&
-            typeof responseJson.troubleshooting === "object"
-              ? (responseJson.troubleshooting as Record<string, unknown>)
-              : null;
-          const accessibleEntityIds = Array.isArray(troubleshooting?.accessibleEntityIds)
-            ? (troubleshooting?.accessibleEntityIds as unknown[])
-                .filter((value): value is string => typeof value === "string")
-                .slice(0, 8)
-            : [];
-          const submittedDepartmentFromTroubleshooting =
-            typeof troubleshooting?.submittedDepartmentNerisId === "string"
-              ? troubleshooting.submittedDepartmentNerisId
-              : submittedDepartmentNerisId;
-          const troubleshootingMessage =
-            typeof troubleshooting?.message === "string" ? troubleshooting.message : "";
-          const detailedMessage =
-            accessibleEntityIds.length
-              ? `Export denied (403). ${
-                  troubleshootingMessage ||
-                  `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
-                } Submitted entity ID: ${submittedEntityId}. ${
-                  submittedDepartmentFromTroubleshooting
-                    ? `Submitted Department NERIS ID: ${submittedDepartmentFromTroubleshooting}. `
-                    : ""
-                }Accessible entity IDs: ${accessibleEntityIds.join(", ")}`
-              : `Export denied (403). ${
-                  troubleshootingMessage ||
-                  `Submitted entity ID ${submittedEntityId} is not authorized for this token.`
-                } Submitted entity ID: ${submittedEntityId}. ${
-                  submittedDepartmentFromTroubleshooting
-                    ? `Submitted Department NERIS ID: ${submittedDepartmentFromTroubleshooting}.`
-                    : ""
-                }`;
-          throw createExportRequestError(detailedMessage, {
-            httpStatus: response.status,
-            httpStatusText: response.statusText,
-            submittedEntityId,
-            submittedDepartmentNerisId: submittedDepartmentFromTroubleshooting,
-            responseSummary:
-              troubleshootingMessage ||
-              responseSummary ||
-              "Export denied by NERIS authorization checks.",
-            responseDetail,
-            submittedPayloadPreview,
-          });
-        }
-        throw createExportRequestError(
-          `Export failed (${response.status} ${response.statusText}). ${
-            responseSummary || "No response details."
-          }`,
-          {
-            httpStatus: response.status,
-            httpStatusText: response.statusText,
-            submittedEntityId,
-            submittedDepartmentNerisId,
-            responseSummary: responseSummary || `${response.status} ${response.statusText}`,
-            responseDetail,
-            submittedPayloadPreview,
-          },
-        );
-      }
-
-      const exportedAtDate = new Date();
-      const exportedAtIso = exportedAtDate.toISOString();
-      const exportedAtLabel = new Intl.DateTimeFormat("en-US", {
-        year: "numeric",
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-        hour12: false,
-      }).format(exportedAtDate);
-      const nerisId =
-        typeof responseJson?.neris === "object" &&
-        responseJson.neris &&
-        typeof (responseJson.neris as Record<string, unknown>).neris_id === "string"
-          ? ((responseJson.neris as Record<string, unknown>).neris_id as string)
-          : "";
-
-      return {
-        exportedAtIso,
-        exportedAtLabel,
-        attemptStatus: "success",
-        httpStatus: response.status,
-        httpStatusText: response.statusText,
-        nerisId,
-        submittedEntityId,
-        submittedDepartmentNerisId,
-        statusLabel: `${response.status} ${response.statusText}`.trim(),
-        responseSummary: responseSummary || "Export submitted successfully.",
-        responseDetail,
-        submittedPayloadPreview,
-      };
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw createExportRequestError(
-          "Export timed out after 20 seconds. If using local proxy, confirm `npm run proxy` is running, then retry.",
-          {
-            httpStatus: 0,
-            httpStatusText: "Timeout",
-            submittedEntityId: getRequestedEntityId(requestConfig),
-            submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
-            responseSummary: "Request timed out before receiving response from export endpoint.",
-            responseDetail: "",
-            submittedPayloadPreview: toPrettyJson(requestConfig.payload),
-          },
-        );
-      }
-      const reason = error instanceof Error ? error.message : "Unknown export error.";
-      if (reason.includes("Failed to fetch")) {
-        throw createExportRequestError(
-          isProxyRequest
-            ? "Export request could not reach local proxy. Start it with `npm run proxy`, then retry."
-            : "Export request could not reach the endpoint (network/CORS/proxy issue). Check endpoint URL and server logs.",
-          {
-            httpStatus: 0,
-            httpStatusText: "Network Error",
-            submittedEntityId: getRequestedEntityId(requestConfig),
-            submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
-            responseSummary: "Network failure (no response body).",
-            responseDetail: "",
-            submittedPayloadPreview: toPrettyJson(requestConfig.payload),
-          },
-        );
-      }
-      if (
-        error &&
-        typeof error === "object" &&
-        "httpStatus" in error
-      ) {
-        throw error as ExportRequestError;
-      }
-      throw createExportRequestError(reason, {
-        httpStatus: 0,
-        httpStatusText: "Unexpected Error",
-        submittedEntityId: getRequestedEntityId(requestConfig),
-        submittedDepartmentNerisId: (formValues.fd_neris_id ?? "").trim(),
-        responseSummary: reason,
-        responseDetail: "",
-        submittedPayloadPreview: toPrettyJson(requestConfig.payload),
-      });
-    } finally {
-      window.clearTimeout(timeoutId);
-    }
-  };
-
-  const appendExportHistoryRecord = (
-    exportResult: ExportExecutionResult,
-    validatorNameOverride: string,
-    statusAtExport: string,
-  ) => {
-    appendNerisExportRecord({
-      id: `${detailForSideEffects.callNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      callNumber: detailForSideEffects.callNumber,
-      incidentType: detailForSideEffects.incidentType,
-      address: detailForSideEffects.address,
-      exportedAtIso: exportResult.exportedAtIso,
-      exportedAtLabel: exportResult.exportedAtLabel,
-      attemptStatus: exportResult.attemptStatus,
-      httpStatus: exportResult.httpStatus,
-      httpStatusText: exportResult.httpStatusText,
-      statusLabel: exportResult.statusLabel || "Submitted",
-      reportStatusAtExport: statusAtExport,
-      validatorName: validatorNameOverride.trim(),
-      reportWriterName: buildReportWriterName(),
-      submittedEntityId: exportResult.submittedEntityId,
-      submittedDepartmentNerisId: exportResult.submittedDepartmentNerisId,
-      nerisId: exportResult.nerisId,
-      responseSummary: exportResult.responseSummary,
-      responseDetail: exportResult.responseDetail,
-      submittedPayloadPreview: exportResult.submittedPayloadPreview,
-    });
-  };
-
-  const appendFailedExportHistoryRecord = (
-    error: unknown,
-    validatorNameOverride: string,
-    statusAtExport: string,
-  ) => {
-    const metadata =
-      error && typeof error === "object" ? (error as ExportRequestError) : null;
-    const exportedAtDate = new Date();
-    const exportedAtIso = exportedAtDate.toISOString();
-    const exportedAtLabel = new Intl.DateTimeFormat("en-US", {
-      year: "numeric",
-      month: "2-digit",
-      day: "2-digit",
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit",
-      hour12: false,
-    }).format(exportedAtDate);
-    const errorMessage =
-      error instanceof Error ? error.message : "Unknown export error.";
-    const httpStatus = typeof metadata?.httpStatus === "number" ? metadata.httpStatus : 0;
-    const httpStatusText =
-      typeof metadata?.httpStatusText === "string" ? metadata.httpStatusText : "Error";
-    appendNerisExportRecord({
-      id: `${detailForSideEffects.callNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      callNumber: detailForSideEffects.callNumber,
-      incidentType: detailForSideEffects.incidentType,
-      address: detailForSideEffects.address,
-      exportedAtIso,
-      exportedAtLabel,
-      attemptStatus: "failed",
-      httpStatus,
-      httpStatusText,
-      statusLabel: `${httpStatus || "Error"} ${httpStatusText}`.trim(),
-      reportStatusAtExport: statusAtExport,
-      validatorName: validatorNameOverride.trim(),
-      reportWriterName: buildReportWriterName(),
-      submittedEntityId:
-        typeof metadata?.submittedEntityId === "string" ? metadata.submittedEntityId : "",
-      submittedDepartmentNerisId:
-        typeof metadata?.submittedDepartmentNerisId === "string"
-          ? metadata.submittedDepartmentNerisId
-          : (formValues.fd_neris_id ?? "").trim(),
-      nerisId: "",
-      responseSummary:
-        typeof metadata?.responseSummary === "string" && metadata.responseSummary.trim().length > 0
-          ? metadata.responseSummary
-          : errorMessage,
-      responseDetail:
-        typeof metadata?.responseDetail === "string" ? metadata.responseDetail : "",
-      submittedPayloadPreview:
-        typeof metadata?.submittedPayloadPreview === "string"
-          ? metadata.submittedPayloadPreview
-          : "",
-    });
-  };
-
-  const handleOpenAdminValidateModal = () => {
-    if (role !== "admin") {
-      return;
-    }
-    const { mergedErrors, issueLabels } = buildValidationSnapshot();
-    setSectionErrors(mergedErrors);
-    setValidationIssues(issueLabels);
-    if (issueLabels.length > 0) {
-      applyValidationFailure(issueLabels);
-      return;
-    }
-    setErrorMessage("");
-    setSaveMessage("");
-    setValidationModal({
-      mode: "adminConfirm",
-      issues: [],
-    });
-    if (!validatorName.trim()) {
-      setValidatorName(username.trim());
-    }
-  };
-
-  const handleAdminValidateAndExport = async () => {
-    if (role !== "admin") {
-      return;
-    }
-    const normalizedValidatorName = validatorName.trim();
-    if (!normalizedValidatorName) {
-      setErrorMessage("Validator username is required before validating/exporting.");
-      return;
-    }
-
-    const localValidation = buildValidationSnapshot();
-    setSectionErrors(localValidation.mergedErrors);
-    setValidationIssues(localValidation.issueLabels);
-    if (localValidation.issueLabels.length > 0) {
-      applyValidationFailure(localValidation.issueLabels);
-      return;
-    }
-
-    setErrorMessage("");
-    setSaveMessage("Validate + export in progress...");
-    setValidationModal(null);
-    setIsExporting(true);
-    try {
-      const requestConfig = buildExportRequestConfig();
-      const preExportIssues = await runPreExportValidation(requestConfig);
-      if (preExportIssues.length > 0) {
-        setValidationIssues(preExportIssues);
-        setSectionErrors({});
-        setSaveMessage("");
-        setErrorMessage(
-          "Pre-export validation found issues that are likely to return API 422 errors.",
-        );
-        setValidationModal({
-          mode: "issues",
-          issues: preExportIssues,
-        });
-        return;
-      }
-
-      const exportResult = await executeExport(requestConfig);
-      appendExportHistoryRecord(exportResult, normalizedValidatorName, "Validated");
-      setValidationIssues([]);
-      setSectionErrors({});
-      stampSavedAt(
-        "manual",
-        "Validated",
-        exportResult.nerisId
-          ? `Validated + exported at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
-          : `Validated + exported at ${exportResult.exportedAtLabel}.`,
-      );
-      setValidationModal({
-        mode: "adminSuccess",
-        issues: [],
-      });
-    } catch (error) {
-      appendFailedExportHistoryRecord(error, normalizedValidatorName, reportStatus);
-      setSaveMessage("");
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unexpected validate/export error.",
-      );
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleExportReport = async () => {
-    setValidationModal(null);
-    setErrorMessage("");
-    setSaveMessage("Export in progress...");
-    setIsExporting(true);
-    try {
-      const requestConfig = buildExportRequestConfig();
-      const exportResult = await executeExport(requestConfig);
-      appendExportHistoryRecord(exportResult, "", reportStatus);
-      setSaveMessage(
-        exportResult.nerisId
-          ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
-          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`,
-      );
-    } catch (error) {
-      appendFailedExportHistoryRecord(error, "", reportStatus);
-      setSaveMessage("");
-      setErrorMessage(error instanceof Error ? error.message : "Unknown export error.");
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
-  const handleGetIncidentTest = async () => {
-    setValidationModal(null);
-    setErrorMessage("");
-    setSaveMessage("Get Incident test in progress...");
-    setIncidentTestResponseDetail("");
-    setIncidentCompareRows([]);
-    setUnmappedFilledFieldLabels([]);
-    setIsFetchingIncidentTest(true);
-    try {
-      const requestConfig = buildExportRequestConfig();
-      if (!requestConfig.isProxyRequest || !requestConfig.exportUrl.includes("/api/neris/export")) {
-        throw new Error(
-          "Get Incident test requires proxy mode. Set Export URL to /api/neris/export, then retry.",
-        );
-      }
-
-      const requestedEntityId = getRequestedEntityId(requestConfig).trim();
-      if (!requestedEntityId) {
-        throw new Error(
-          "Missing NERIS entity ID. Set Vendor/Department code in Customization > NERIS Export Configuration.",
-        );
-      }
-
-      const incidentNerisId = getExistingIncidentNerisIdHint();
-      if (!NERIS_INCIDENT_ID_PATTERN.test(incidentNerisId)) {
-        throw new Error(
-          "No valid incident NERIS ID is available yet. Export this report once, then run Get Incident.",
-        );
-      }
-
-      const getIncidentUrl = requestConfig.exportUrl.replace(
-        "/api/neris/export",
-        "/api/neris/debug/incident",
-      );
-      const query = new URLSearchParams({
-        entityId: requestedEntityId,
-        incidentNerisId,
-      });
-      const response = await fetch(`${getIncidentUrl}?${query.toString()}`, {
-        method: "GET",
-      });
-      const responseText = await response.text();
-      const responseJson = parseJsonResponseText(responseText);
-      const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
-      setIncidentTestResponseDetail(responseDetail);
-
-      if (!response.ok) {
-        const summary =
-          typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
-            ? responseJson.message.trim()
-            : `${response.status} ${response.statusText}`;
-        throw new Error(`Get Incident failed (${response.status} ${response.statusText}). ${summary}`);
-      }
-
-      const responseIncidentId =
-        typeof responseJson?.incidentNerisId === "string" &&
-        responseJson.incidentNerisId.trim().length > 0
-          ? responseJson.incidentNerisId.trim()
-          : incidentNerisId;
-      const retrievedIncident =
-        responseJson?.neris && typeof responseJson.neris === "object"
-          ? (responseJson.neris as Record<string, unknown>)
-          : null;
-      if (retrievedIncident) {
-        const submittedPayload = readLatestSubmittedPayloadForCompare();
-        if (submittedPayload) {
-          setIncidentCompareRows(buildIncidentCompareRows(submittedPayload, retrievedIncident));
-        }
-      }
-      setUnmappedFilledFieldLabels(collectUnmappedFilledFieldLabels());
-      setSaveMessage(
-        `Get Incident succeeded for ${responseIncidentId}. Full response is shown below.`,
-      );
-    } catch (error) {
-      setSaveMessage("");
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unexpected Get Incident test error.",
-      );
-    } finally {
-      setIsFetchingIncidentTest(false);
-    }
-  };
-
-  const handleValidationModalClose = () => {
-    setValidationModal(null);
-  };
-
-  const handleValidationModalReturn = () => {
-    setValidationModal(null);
-    navigate("/reporting/neris");
-  };
-
-  const handleValidationModalFixIssues = () => {
-    setValidationModal(null);
-    setActiveSectionId("core");
-  };
-
-  const handleValidationModalCancelAdmin = () => {
-    setValidationModal(null);
-  };
-
-  const handleValidationValidatorNameSubmit = (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault();
-    void handleAdminValidateAndExport();
-  };
-
-  const handleValidationValidatorNameChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setValidatorName(event.currentTarget.value);
-  };
-
-  const handleValidationModalValidateFromSuccess = () => {
-    setValidationModal(null);
-    navigate("/reporting/neris");
-  };
-
-  const handleSaveDraft = () => {
-    setSectionErrors({});
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    stampSavedAt("manual");
-  };
-
-  const goToNextSection = () => {
-    if (!hasNextSection) {
-      return;
-    }
-    setSectionErrors({});
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    stampSavedAt("auto");
-    const nextSection = visibleNerisSections[sectionIndex + 1];
-    if (nextSection) {
-      setActiveSectionId(nextSection.id);
-    }
-  };
-
-  const handleBack = () => {
-    if (sectionIndex > 0) {
-      const previousSection = visibleNerisSections[sectionIndex - 1];
-      if (previousSection) {
-        setActiveSectionId(previousSection.id);
-      }
-      return;
-    }
-    navigate("/reporting/neris");
-  };
-
-  const addAdditionalAidEntry = () => {
-    setAdditionalAidEntries((previous) => [...previous, { ...EMPTY_AID_ENTRY }]);
-    setValidationModal(null);
-  };
-
-  const updateAdditionalAidEntry = (
-    index: number,
-    field: keyof AidEntry,
-    nextValue: string,
-  ) => {
-    setAdditionalAidEntries((previous) =>
-      previous.map((entry, entryIndex) =>
-        entryIndex === index
-          ? {
-              ...entry,
-              [field]: nextValue,
-            }
-          : entry,
-      ),
-    );
-    setSaveMessage("");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
-  const addAdditionalNonFdAidEntry = () => {
-    setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
-    setValidationModal(null);
-  };
-
-  const updateAdditionalNonFdAidEntry = (index: number, nextValue: string) => {
-    setAdditionalNonFdAidEntries((previous) =>
-      previous.map((entry, entryIndex) =>
-        entryIndex === index
-          ? {
-              ...entry,
-              aidType: nextValue,
-            }
-          : entry,
-      ),
-    );
-    setSaveMessage("");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
-  const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
-    const inputId = `neris-field-${field.id}`;
-    const value = formValues[field.id] ?? "";
-    const isRequired = isNerisFieldRequired(field, formValues);
-    const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
-    const error = sectionErrors[field.id];
-    const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
-    const normalizedSingleValue = normalizeNerisEnumValue(value);
-    const isPrimaryIncidentTypeField =
-      field.id === "primary_incident_type" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "incident_type";
-    const isAdditionalIncidentTypesField =
-      field.id === "additional_incident_types" &&
-      field.inputKind === "multiselect" &&
-      field.optionsKey === "incident_type";
-    const isActionsTakenField =
-      field.id === "incident_actions_taken" &&
-      field.inputKind === "multiselect" &&
-      field.optionsKey === "action_tactic";
-    const isSpecialIncidentModifiersField =
-      field.id === "special_incident_modifiers" &&
-      field.inputKind === "multiselect" &&
-      field.optionsKey === "incident_modifier";
-    const isLocationUseField =
-      (field.id === "location_use_primary" || field.id === "location_use_secondary") &&
-      field.inputKind === "select" &&
-      field.optionsKey === "location_use";
-    const isLocationInUseField =
-      field.id === "location_in_use" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "yes_no";
-    const isLocationUsedAsIntendedField =
-      field.id === "location_used_as_intended" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "yes_no";
-    const isNoActionReasonField =
-      field.id === "incident_noaction" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "no_action";
-    const isAutomaticAlarmField =
-      field.id === "dispatch_automatic_alarm" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "yes_no";
-    const isPeoplePresentField =
-      field.id === "incident_people_present" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "yes_no";
-    const isDisplacedNumberField =
-      field.id === "incident_displaced_number" && field.inputKind === "text";
-    const isDisplacementCauseField =
-      field.id === "incident_displaced_cause" &&
-      field.inputKind === "multiselect" &&
-      field.optionsKey === "displace_cause_incident";
-    const isAidGivenQuestionField =
-      field.id === "incident_has_aid" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "yes_no";
-    const isAidAgencyTypeField =
-      field.id === "incident_aid_agency_type" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "aid_agency_type";
-    const isAidDirectionField =
-      field.id === "incident_aid_direction" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "aid_direction";
-    const isAidTypeField =
-      field.id === "incident_aid_type" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "aid_type";
-    const isAidDepartmentField =
-      field.id === "incident_aid_department_name" &&
-      field.inputKind === "select" &&
-      field.optionsKey === "aid_department";
-    const isAidNonFdField =
-      field.id === "incident_aid_nonfd" &&
-      field.inputKind === "multiselect" &&
-      field.optionsKey === "aid_nonfd";
-    const isAidManagedHiddenField =
-      isAidAgencyTypeField ||
-      isAidDirectionField ||
-      isAidTypeField ||
-      isAidDepartmentField ||
-      isAidNonFdField;
-    const hasNoActionSelected = (formValues.incident_noaction ?? "").trim().length > 0;
-    const isNoActionReasonDisabled = (formValues.incident_actions_taken ?? "").trim().length > 0;
-    const isActionsTakenDisabled = hasNoActionSelected;
-    const isSingleChoiceButtonField =
-      isNoActionReasonField ||
-      isAutomaticAlarmField ||
-      isPeoplePresentField ||
-      isLocationInUseField ||
-      isLocationUsedAsIntendedField;
-    const displacedNumberValue = Number.parseInt(
-      (formValues.incident_displaced_number ?? "").trim(),
-      10,
-    );
-    const selectedPrimaryAidDepartment = (formValues.incident_aid_department_name ?? "").trim();
-    const selectedAdditionalAidDepartments = additionalAidEntries
-      .map((entry) => entry.aidDepartment.trim())
-      .filter((entry) => entry.length > 0);
-    const selectedPrimaryNonFdAidTypes = (formValues.incident_aid_nonfd ?? "")
-      .split(",")
-      .map((entry) => entry.trim())
-      .filter((entry) => entry.length > 0);
-    const selectedAdditionalNonFdAidTypes = additionalNonFdAidEntries
-      .map((entry) => entry.aidType.trim())
-      .filter((entry) => entry.length > 0);
-
-    if (
-      field.id === "incident_displaced_cause" &&
-      (Number.isNaN(displacedNumberValue) || displacedNumberValue <= 0)
-    ) {
-      return null;
-    }
-    if (isDisplacedNumberField && (formValues.incident_people_present ?? "") !== "YES") {
-      return null;
-    }
-    if (isAidManagedHiddenField) {
-      return null;
-    }
-    if (field.id === "location_direction_of_travel" && !showDirectionOfTravelField) {
-      return null;
-    }
-    if (field.id === "location_cross_street_type" && !showCrossStreetTypeField) {
-      return null;
-    }
-    if (field.id === "location_cross_street_name" && !showCrossStreetTypeField) {
-      return null;
-    }
-    if (
-      isLocationUsedAsIntendedField &&
-      (formValues.location_in_use ?? "").trim() !== "YES"
-    ) {
-      return null;
-    }
-    if (currentSection.id === "resources" && field.id.startsWith("resource_")) {
-      return null;
-    }
-    if (currentSection.id === "riskReduction") {
-      return null;
-    }
-    if (
-      currentSection.id === "emergingHazards" &&
-      [
-        "emerg_haz_electric_type",
-        "emerg_haz_pv_type",
-        "emerg_haz_pv_source_target",
-        "emerg_haz_suppression_methods",
-      ].includes(field.id)
-    ) {
-      return null;
-    }
-
-    return (
-      <div key={fieldKey} className={wrapperClassName}>
-        {!isAidGivenQuestionField ? (
-          <label
-            htmlFor={inputId}
-            className={isNoActionReasonField ? "neris-field-label-italic" : undefined}
-          >
-            {field.label}
-            {isRequired ? " *" : ""}
-          </label>
-        ) : null}
-
-        {field.inputKind === "textarea" ? (
-          <textarea
-            id={inputId}
-            rows={field.rows ?? 6}
-            value={value}
-            placeholder={field.placeholder}
-            onChange={(event) => updateFieldValue(field.id, event.target.value)}
-          />
-        ) : null}
-
-        {(field.inputKind === "text" ||
-          field.inputKind === "date" ||
-          field.inputKind === "time" ||
-          field.inputKind === "datetime" ||
-          field.inputKind === "readonly") ? (
-          <input
-            id={inputId}
-            type={
-              field.inputKind === "readonly"
-                ? "text"
-                : field.inputKind === "datetime"
-                  ? "datetime-local"
-                  : field.inputKind
-            }
-            step={field.inputKind === "time" ? 1 : undefined}
-            readOnly={field.inputKind === "readonly"}
-            value={value}
-            placeholder={field.placeholder}
-            onChange={(event) => updateFieldValue(field.id, event.target.value)}
-          />
-        ) : null}
-
-        {isAidGivenQuestionField ? (
-          <div className="neris-aid-block">
-            <div className="neris-aid-question">
-              <label>Was aid given or received?</label>
-              <div className="neris-single-choice-row" role="group" aria-label="Was aid given or received?">
-                {getNerisValueOptions("yes_no").map((option) => {
-                  const isSelected = option.value === (formValues.incident_has_aid ?? "");
-                  return (
-                    <button
-                      key={`incident-has-aid-${option.value}`}
-                      type="button"
-                      className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                      aria-pressed={isSelected}
-                      onClick={() =>
-                        updateFieldValue(
-                          "incident_has_aid",
-                          togglePillValue(formValues.incident_has_aid ?? "", option.value),
-                        )
-                      }
-                    >
-                      {option.label}
-                    </button>
-                  );
-                })}
-              </div>
-              {sectionErrors.incident_has_aid ? (
-                <small className="field-error">{sectionErrors.incident_has_aid}</small>
-              ) : null}
-            </div>
-
-            {(formValues.incident_has_aid ?? "") === "YES" ? (
-              <div className="neris-aid-question">
-                <label>Aid Type</label>
-                <div className="neris-single-choice-row" role="group" aria-label="Aid Type">
-                  {getNerisValueOptions("aid_agency_type").map((option) => {
-                    const isSelected = option.value === (formValues.incident_aid_agency_type ?? "");
-                    return (
-                      <button
-                        key={`incident-aid-agency-${option.value}`}
-                        type="button"
-                        className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                        aria-pressed={isSelected}
-                        onClick={() =>
-                          updateFieldValue(
-                            "incident_aid_agency_type",
-                            togglePillValue(
-                              formValues.incident_aid_agency_type ?? "",
-                              option.value,
-                            ),
-                          )
-                        }
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {sectionErrors.incident_aid_agency_type ? (
-                  <small className="field-error">{sectionErrors.incident_aid_agency_type}</small>
-                ) : null}
-              </div>
-            ) : null}
-
-            {(formValues.incident_has_aid ?? "") === "YES" &&
-            (formValues.incident_aid_agency_type ?? "") === "NON_FD_AID" ? (
-              <div className="neris-aid-question">
-                <label>Non FD Aid</label>
-                <NerisFlatMultiOptionSelect
-                  inputId={`${inputId}-nonfd`}
-                  value={formValues.incident_aid_nonfd ?? ""}
-                  options={getNerisValueOptions("aid_nonfd")}
-                  onChange={(nextValue) => updateFieldValue("incident_aid_nonfd", nextValue)}
-                  placeholder="Select non FD aid"
-                  searchPlaceholder="Search non FD aid..."
-                />
-                {sectionErrors.incident_aid_nonfd ? (
-                  <small className="field-error">{sectionErrors.incident_aid_nonfd}</small>
-                ) : null}
-                {additionalNonFdAidEntries.map((entry, entryIndex) => (
-                  <div
-                    key={`additional-nonfd-aid-${entryIndex}`}
-                    className="neris-additional-aid-entry"
-                  >
-                    <label className="neris-aid-subfield-label">Aid Type</label>
-                    <NerisFlatSingleOptionSelect
-                      inputId={`${inputId}-additional-nonfd-aid-type-${entryIndex}`}
-                      value={entry.aidType}
-                      options={getNerisValueOptions("aid_nonfd")}
-                      onChange={(nextValue) =>
-                        updateAdditionalNonFdAidEntry(entryIndex, nextValue)
-                      }
-                      placeholder="Select non FD aid type"
-                      searchPlaceholder="Search non FD aid types..."
-                      isOptionDisabled={(optionValue) => {
-                        if (optionValue === entry.aidType) {
-                          return false;
-                        }
-                        if (selectedPrimaryNonFdAidTypes.includes(optionValue)) {
-                          return true;
-                        }
-                        return selectedAdditionalNonFdAidTypes.includes(optionValue);
-                      }}
-                    />
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="neris-link-button"
-                  onClick={addAdditionalNonFdAidEntry}
-                >
-                  Add Additional Aid Type -&gt; RL
-                </button>
-              </div>
-            ) : null}
-
-            {(formValues.incident_has_aid ?? "") === "YES" &&
-            (formValues.incident_aid_agency_type ?? "") === "FIRE_DEPARTMENT" ? (
-              <div className="neris-aid-question">
-                <label>Aid direction</label>
-                <div className="neris-single-choice-row" role="group" aria-label="Aid direction">
-                  {getNerisValueOptions("aid_direction").map((option) => {
-                    const isSelected = option.value === (formValues.incident_aid_direction ?? "");
-                    return (
-                      <button
-                        key={`incident-aid-direction-${option.value}`}
-                        type="button"
-                        className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                        aria-pressed={isSelected}
-                        onClick={() =>
-                          updateFieldValue(
-                            "incident_aid_direction",
-                            togglePillValue(
-                              formValues.incident_aid_direction ?? "",
-                              option.value,
-                            ),
-                          )
-                        }
-                      >
-                        {option.label}
-                      </button>
-                    );
-                  })}
-                </div>
-                {sectionErrors.incident_aid_direction ? (
-                  <small className="field-error">{sectionErrors.incident_aid_direction}</small>
-                ) : null}
-
-                <label className="neris-aid-subfield-label">Aid Type</label>
-                <NerisFlatSingleOptionSelect
-                  inputId={`${inputId}-aid-type`}
-                  value={formValues.incident_aid_type ?? ""}
-                  options={getNerisValueOptions("aid_type")}
-                  onChange={(nextValue) => updateFieldValue("incident_aid_type", nextValue)}
-                  placeholder="Select aid type"
-                  searchPlaceholder="Search aid types..."
-                />
-                {sectionErrors.incident_aid_type ? (
-                  <small className="field-error">{sectionErrors.incident_aid_type}</small>
-                ) : null}
-
-                <label className="neris-aid-subfield-label">Aid department name(s)</label>
-                <NerisFlatSingleOptionSelect
-                  inputId={`${inputId}-aid-department`}
-                  value={formValues.incident_aid_department_name ?? ""}
-                  options={aidDepartmentOptions}
-                  onChange={(nextValue) =>
-                    updateFieldValue("incident_aid_department_name", nextValue)
-                  }
-                  placeholder="Select aid department"
-                  searchPlaceholder="Search aid departments..."
-                  isOptionDisabled={(optionValue) =>
-                    optionValue !== selectedPrimaryAidDepartment &&
-                    selectedAdditionalAidDepartments.includes(optionValue)
-                  }
-                />
-                {sectionErrors.incident_aid_department_name ? (
-                  <small className="field-error">{sectionErrors.incident_aid_department_name}</small>
-                ) : null}
-
-                <>
-                  {additionalAidEntries.map((entry, entryIndex) => (
-                    <div key={`additional-aid-${entryIndex}`} className="neris-additional-aid-entry">
-                      <label className="neris-aid-subfield-label">Aid direction</label>
-                      <div
-                        className="neris-single-choice-row"
-                        role="group"
-                        aria-label="Additional aid direction"
-                      >
-                        {getNerisValueOptions("aid_direction").map((option) => {
-                          const isSelected = option.value === entry.aidDirection;
-                          return (
-                            <button
-                              key={`additional-aid-direction-${entryIndex}-${option.value}`}
-                              type="button"
-                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                              aria-pressed={isSelected}
-                              onClick={() =>
-                                updateAdditionalAidEntry(
-                                  entryIndex,
-                                  "aidDirection",
-                                  togglePillValue(entry.aidDirection, option.value),
-                                )
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      <label className="neris-aid-subfield-label">Aid Type</label>
-                      <NerisFlatSingleOptionSelect
-                        inputId={`${inputId}-additional-aid-type-${entryIndex}`}
-                        value={entry.aidType}
-                        options={getNerisValueOptions("aid_type")}
-                        onChange={(nextValue) =>
-                          updateAdditionalAidEntry(entryIndex, "aidType", nextValue)
-                        }
-                        placeholder="Select aid type"
-                        searchPlaceholder="Search aid types..."
-                      />
-
-                      <label className="neris-aid-subfield-label">Aid department name(s)</label>
-                      <NerisFlatSingleOptionSelect
-                        inputId={`${inputId}-additional-aid-department-${entryIndex}`}
-                        value={entry.aidDepartment}
-                        options={aidDepartmentOptions}
-                        onChange={(nextValue) =>
-                          updateAdditionalAidEntry(entryIndex, "aidDepartment", nextValue)
-                        }
-                        placeholder="Select aid department"
-                        searchPlaceholder="Search aid departments..."
-                        isOptionDisabled={(optionValue) => {
-                          if (optionValue === entry.aidDepartment) {
-                            return false;
-                          }
-                          if (selectedPrimaryAidDepartment === optionValue) {
-                            return true;
-                          }
-                          return additionalAidEntries.some(
-                            (candidateEntry, candidateIndex) =>
-                              candidateIndex !== entryIndex &&
-                              candidateEntry.aidDepartment.trim() === optionValue,
-                          );
-                        }}
-                      />
-                    </div>
-                  ))}
-
-                  <button
-                    type="button"
-                    className="neris-link-button"
-                    onClick={addAdditionalAidEntry}
-                  >
-                    Add Additional Aid Type -&gt; RL
-                  </button>
-                </>
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {field.inputKind === "select" ? (
-          isAidGivenQuestionField ? null : isSingleChoiceButtonField ? (
-            <div
-              className={`neris-single-choice-row${
-                isNoActionReasonField && isNoActionReasonDisabled ? " disabled" : ""
-              }`}
-              role="group"
-              aria-label={field.label}
-              aria-disabled={isNoActionReasonField && isNoActionReasonDisabled}
-            >
-              {options.map((option) => {
-                const isSelected = option.value === normalizedSingleValue;
-                const isDisabled = isNoActionReasonField && isNoActionReasonDisabled;
-                return (
-                  <button
-                    key={`${field.id}-${option.value}`}
-                    type="button"
-                    className={`neris-single-choice-button${isSelected ? " selected" : ""}${
-                      isDisabled ? " disabled" : ""
-                    }`}
-                    aria-pressed={isSelected}
-                    disabled={isDisabled}
-                    onClick={() => {
-                      if (isDisabled) {
-                        return;
-                      }
-                      updateFieldValue(
-                        field.id,
-                        togglePillValue(normalizedSingleValue, option.value),
-                      );
-                    }}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-          ) : isPrimaryIncidentTypeField ? (
-            <NerisGroupedOptionSelect
-              inputId={inputId}
-              value={normalizedSingleValue}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              mode="single"
-              variant="incidentType"
-              placeholder=""
-              searchPlaceholder="Search incident types..."
-            />
-          ) : isLocationUseField ? (
-            <NerisGroupedOptionSelect
-              inputId={inputId}
-              value={normalizedSingleValue}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              mode="single"
-              variant="incidentType"
-              placeholder={`Select ${field.label.toLowerCase()}`}
-              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
-            />
-          ) : (
-            <NerisFlatSingleOptionSelect
-              inputId={inputId}
-              value={normalizedSingleValue}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              placeholder={`Select ${field.label.toLowerCase()}`}
-              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
-              allowClear={!isRequired}
-            />
-          )
-        ) : null}
-
-        {field.inputKind === "multiselect" ? (
-          isAdditionalIncidentTypesField ? (
-            <NerisGroupedOptionSelect
-              inputId={inputId}
-              value={value}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              mode="multi"
-              variant="incidentType"
-              placeholder="Select up to 2 incident types"
-              searchPlaceholder="Search incident types..."
-              maxSelections={2}
-              showCheckboxes
-            />
-          ) : isSpecialIncidentModifiersField ? (
-            <NerisFlatMultiOptionSelect
-              inputId={inputId}
-              value={value}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              placeholder="Select special incident modifier(s)"
-              searchPlaceholder="Search special modifiers..."
-            />
-          ) : isDisplacementCauseField ? (
-            <NerisFlatMultiOptionSelect
-              inputId={inputId}
-              value={value}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              placeholder="Select displacement cause(s)"
-              searchPlaceholder="Search displacement causes..."
-            />
-          ) : isActionsTakenField ? (
-            <NerisGroupedOptionSelect
-              inputId={inputId}
-              value={value}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              mode="multi"
-              variant="actionTactic"
-              placeholder="Select action(s) taken"
-              searchPlaceholder="Search actions..."
-              showCheckboxes
-              disabled={isActionsTakenDisabled}
-            />
-          ) : (
-            <NerisFlatMultiOptionSelect
-              inputId={inputId}
-              value={value}
-              options={options}
-              onChange={(nextValue) => updateFieldValue(field.id, nextValue)}
-              placeholder={`Select ${field.label.toLowerCase()}`}
-              searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
-            />
-          )
-        ) : null}
-
-        {field.helperText ? <small className="field-hint">{field.helperText}</small> : null}
-
-        {field.maxLength ? (
-          <small className="field-hint">
-            {value.length} / {field.maxLength} characters
-          </small>
-        ) : null}
-
-        {error ? <small className="field-error">{error}</small> : null}
-      </div>
-    );
-  };
-
-  const compareMatchedCount = incidentCompareRows.filter((row) => row.status === "match").length;
-  const compareNeedsReviewCount = incidentCompareRows.length - compareMatchedCount;
-  const visibleUnmappedFieldLabels = unmappedFilledFieldLabels.slice(0, 8);
-  const hiddenUnmappedFieldCount = Math.max(
-    0,
-    unmappedFilledFieldLabels.length - visibleUnmappedFieldLabels.length,
-  );
-
-  if (!detail) {
-    return (
-      <section className="page-section">
-        <header className="page-header">
-          <div>
-            <h1>NERIS report not found</h1>
-            <p>No matching incident exists for report ID {callNumber}.</p>
-          </div>
-          <div className="header-actions">
-            <NavLink className="secondary-button button-link" to="/reporting/neris">
-              Back to NERIS Queue
-            </NavLink>
-          </div>
-        </header>
-      </section>
-    );
-  }
-
-  return (
-    <section className="page-section">
-      <header className="page-header">
-        <div>
-          <h1>{detail.callNumber}</h1>
-          <p>
-            <strong>{detail.incidentType}</strong> at {detail.address}
-          </p>
-          <div className="neris-incident-meta">
-            <span>
-              Incident date <strong>{formValues.incident_onset_date || "Not set"}</strong>
-            </span>
-            <span>
-              Last saved <strong>{lastSavedAt}</strong>
-            </span>
-            <span>
-              Status{" "}
-              <strong className={toToneClass(toneFromNerisStatus(reportStatus))}>
-                {reportStatus}
-              </strong>
-            </span>
-          </div>
-          {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
-          {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
-          {incidentCompareRows.length > 0 ? (
-            <section className="neris-incident-compare panel" aria-live="polite">
-              <div className="neris-incident-compare-header">
-                <h2>Submitted vs Retrieved</h2>
-                <p>
-                  {compareMatchedCount} matched • {compareNeedsReviewCount} need review
-                </p>
-              </div>
-              <div className="neris-incident-compare-list">
-                {incidentCompareRows.map((row) => (
-                  <article
-                    key={row.id}
-                    className={`neris-incident-compare-row neris-incident-compare-row-${row.status}`}
-                  >
-                    <div className="neris-incident-compare-row-top">
-                      <h3>{row.label}</h3>
-                      <span
-                        className={`neris-incident-compare-badge neris-incident-compare-badge-${row.status}`}
-                      >
-                        {row.status === "match" ? "Matched" : "Needs review"}
-                      </span>
-                    </div>
-                    <div className="neris-incident-compare-values">
-                      <div>
-                        <span>Submitted</span>
-                        <p>{row.submittedValue}</p>
-                      </div>
-                      <div>
-                        <span>Retrieved</span>
-                        <p>{row.retrievedValue}</p>
-                      </div>
-                    </div>
-                    {row.helpText ? (
-                      <p className="neris-incident-compare-help-text">{row.helpText}</p>
-                    ) : null}
-                  </article>
-                ))}
-              </div>
-              {visibleUnmappedFieldLabels.length > 0 ? (
-                <div className="neris-incident-compare-unmapped">
-                  <h3>Form fields with values not yet sent to NERIS</h3>
-                  <p>
-                    These fields currently have values in Fire Ultimate, but are not mapped into
-                    the export payload yet.
-                  </p>
-                  <div className="neris-incident-compare-unmapped-list">
-                    {visibleUnmappedFieldLabels.map((label) => (
-                      <span key={`unmapped-${label}`} className="neris-incident-compare-unmapped-pill">
-                        {label}
-                      </span>
-                    ))}
-                    {hiddenUnmappedFieldCount > 0 ? (
-                      <span className="neris-incident-compare-unmapped-pill">
-                        +{hiddenUnmappedFieldCount} more
-                      </span>
-                    ) : null}
-                  </div>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
-          {incidentTestResponseDetail ? (
-            <details className="neris-incident-test-response">
-              <summary>Get Incident test response</summary>
-              <pre className="export-attempt-json">{incidentTestResponseDetail}</pre>
-            </details>
-          ) : null}
-        </div>
-        <div className="header-actions">
-          <button type="button" className="secondary-button compact-button">
-            Import
-          </button>
-          <button
-            type="button"
-            className="primary-button compact-button"
-            onClick={handleExportReport}
-            disabled={isExporting}
-          >
-            {isExporting ? "Exporting..." : "Export"}
-          </button>
-          <button
-            type="button"
-            className="secondary-button compact-button"
-            onClick={handleGetIncidentTest}
-            disabled={isExporting || isFetchingIncidentTest}
-          >
-            {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
-          </button>
-          <button type="button" className="secondary-button compact-button">
-            CAD notes
-          </button>
-          <button type="button" className="secondary-button compact-button">
-            Print
-          </button>
-          <button
-            type="button"
-            className="secondary-button compact-button"
-            onClick={handleCheckForErrors}
-            disabled={isExporting}
-          >
-            Check for Errors
-          </button>
-          {role === "admin" ? (
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={handleOpenAdminValidateModal}
-              disabled={isExporting}
-            >
-              Validate
-            </button>
-          ) : null}
-          <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
-            {reportStatus}
-          </span>
-        </div>
-      </header>
-
-      {validationModal ? (
-        <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
-          <div className="validation-modal panel">
-            {validationModal.mode === "checkSuccess" ? (
-              <>
-                <h2>Check complete</h2>
-                <p>
-                  No required-field issues were found. Status has been updated to
-                  In Review.
-                </p>
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={handleValidationModalClose}
-                  >
-                    Continue Editing
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={handleValidationModalReturn}
-                  >
-                    Return to Incidents
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {validationModal.mode === "issues" ? (
-              <>
-                <h2>Validation requires updates</h2>
-                <p>The following required fields still need values:</p>
-                <ul>
-                  {validationModal.issues.map((issue: string) => (
-                    <li key={`validation-modal-${issue}`}>{issue}</li>
-                  ))}
-                </ul>
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={handleValidationModalClose}
-                  >
-                    Close
-                  </button>
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={handleValidationModalFixIssues}
-                  >
-                    Fix issues now
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {validationModal.mode === "adminConfirm" ? (
-              <form className="validation-modal-form" onSubmit={handleValidationValidatorNameSubmit}>
-                <h2>Admin Validate + Auto Export</h2>
-                <p>
-                  Pre-export checks are complete. Enter the validator username, then
-                  Validate to auto-export this report.
-                </p>
-                <label htmlFor="neris-validator-name">Validator username</label>
-                <input
-                  id="neris-validator-name"
-                  type="text"
-                  value={validatorName}
-                  onChange={handleValidationValidatorNameChange}
-                  placeholder="Enter validator username"
-                />
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={handleValidationModalCancelAdmin}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="primary-button compact-button"
-                    disabled={isExporting}
-                  >
-                    {isExporting ? "Validating..." : "Validate + Export"}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-            {validationModal.mode === "adminSuccess" ? (
-              <>
-                <h2>Report validated and exported</h2>
-                <p>
-                  Status has been set to Validated and this export is now logged in
-                  View Exports.
-                </p>
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={handleValidationModalValidateFromSuccess}
-                  >
-                    Return to Incidents
-                  </button>
-                </div>
-              </>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      <section className="neris-report-layout">
-        <aside className="panel neris-sidebar">
-          <div className="neris-sidebar-header">
-            <h2>Fire Incidents</h2>
-            <p>NERIS sections</p>
-          </div>
-          <nav className="neris-section-nav" aria-label="NERIS section navigation">
-            {visibleNerisSections.map((section) => (
-              <button
-                key={section.id}
-                type="button"
-                className={section.id === currentSection.id ? "active" : ""}
-                onClick={() => setActiveSectionId(section.id)}
-              >
-                {section.label}
-              </button>
-            ))}
-          </nav>
-        </aside>
-
-        <article className="panel neris-form-panel">
-          {currentSection.id !== "core" &&
-          currentSection.id !== "location" &&
-          currentSection.id !== "emergingHazards" &&
-          currentSection.id !== "riskReduction" ? (
-            <div className="panel-header">
-              <h2>{currentSection.label}</h2>
-            </div>
-          ) : null}
-          {currentSection.id !== "core" && currentSection.helper.trim().length > 0 ? (
-            <p className="panel-description">{currentSection.helper}</p>
-          ) : null}
-          <div className="settings-form neris-field-grid">
-            {currentSection.id === "emergingHazards" ? (
-              <section className="field-span-two neris-emerging-hazard-layout">
-                <div className="neris-core-field-heading">EMERGING HAZARDS</div>
-
-                <article className="neris-emerging-hazard-group">
-                  <div className="neris-emerging-hazard-group-header">
-                    <h3 className="neris-core-field-heading">ELECTROCUTION</h3>
-                    <button
-                      type="button"
-                      className="rl-box-button"
-                      onClick={addEmergingElectrocutionItem}
-                    >
-                      + Add item
-                    </button>
-                  </div>
-
-                  {emergingElectrocutionItems.length ? (
-                    <div className="neris-emerging-hazard-item-list">
-                      {emergingElectrocutionItems.map((item, itemIndex) => (
-                        <div key={item.id} className="neris-emerging-hazard-item-card">
-                          <div className="neris-emerging-hazard-item-title">
-                            <span>Hazard {itemIndex + 1}</span>
-                            <button
-                              type="button"
-                              className="neris-emerging-hazard-delete-button"
-                              aria-label={`Delete electrocution hazard ${itemIndex + 1}`}
-                              onClick={() => deleteEmergingElectrocutionItem(item.id)}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                          <div className="neris-emerging-hazard-field-grid">
-                            <div className="neris-emerging-hazard-field">
-                              <label>Electrical Hazard Type</label>
-                              <NerisGroupedOptionSelect
-                                inputId={`${item.id}-electrical-type`}
-                                value={item.electricalHazardType}
-                                options={getNerisValueOptions("emerg_haz_elec")}
-                                onChange={(nextValue) =>
-                                  updateEmergingElectrocutionItem(
-                                    item.id,
-                                    "electricalHazardType",
-                                    nextValue,
-                                  )
-                                }
-                                mode="single"
-                                variant="incidentType"
-                                placeholder="Select electrical hazard type"
-                                searchPlaceholder="Search electrical hazard types..."
-                              />
-                            </div>
-                            <div className="neris-emerging-hazard-field">
-                              <label>Emerging Hazard Suppression Method(s)</label>
-                              <NerisFlatMultiOptionSelect
-                                inputId={`${item.id}-electrical-suppression`}
-                                value={item.suppressionMethods}
-                                options={getNerisValueOptions("emerg_haz_suppression")}
-                                onChange={(nextValue) =>
-                                  updateEmergingElectrocutionItem(
-                                    item.id,
-                                    "suppressionMethods",
-                                    nextValue,
-                                  )
-                                }
-                                placeholder="Select suppression method(s)"
-                                searchPlaceholder="Search suppression methods..."
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-
-                <article className="neris-emerging-hazard-group">
-                  <div className="neris-emerging-hazard-group-header">
-                    <h3 className="neris-core-field-heading">POWER GENERATION</h3>
-                    <button
-                      type="button"
-                      className="rl-box-button"
-                      onClick={addEmergingPowerGenerationItem}
-                    >
-                      + Add item
-                    </button>
-                  </div>
-
-                  {emergingPowerGenerationItems.length ? (
-                    <div className="neris-emerging-hazard-item-list">
-                      {emergingPowerGenerationItems.map((item, itemIndex) => (
-                        <div key={item.id} className="neris-emerging-hazard-item-card">
-                          <div className="neris-emerging-hazard-item-title">
-                            <span>Hazard {itemIndex + 1}</span>
-                            <button
-                              type="button"
-                              className="neris-emerging-hazard-delete-button"
-                              aria-label={`Delete power generation hazard ${itemIndex + 1}`}
-                              onClick={() => deleteEmergingPowerGenerationItem(item.id)}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                          </div>
-                          <div className="neris-emerging-hazard-field-grid">
-                            <div className="neris-emerging-hazard-field">
-                              <label>Photovoltaic Hazard Type</label>
-                              <NerisFlatSingleOptionSelect
-                                inputId={`${item.id}-pv-type`}
-                                value={item.photovoltaicHazardType}
-                                options={getNerisValueOptions("emerg_haz_pv")}
-                                onChange={(nextValue) =>
-                                  updateEmergingPowerGenerationItem(
-                                    item.id,
-                                    "photovoltaicHazardType",
-                                    nextValue,
-                                  )
-                                }
-                                placeholder="Select photovoltaic hazard type"
-                                searchPlaceholder="Search photovoltaic hazard types..."
-                              />
-                            </div>
-                            <div className="neris-emerging-hazard-field">
-                              <label>Was PV the Source or Target?</label>
-                              <div className="neris-single-choice-row" role="group" aria-label="Was PV the Source or Target?">
-                                {pvSourceTargetOptions.map((option) => {
-                                  const isSelected = option.value === item.pvSourceTarget;
-                                  return (
-                                    <button
-                                      key={`${item.id}-pv-source-target-${option.value}`}
-                                      type="button"
-                                      className={`neris-single-choice-button${
-                                        isSelected ? " selected" : ""
-                                      }`}
-                                      aria-pressed={isSelected}
-                                      onClick={() =>
-                                        updateEmergingPowerGenerationItem(
-                                          item.id,
-                                          "pvSourceTarget",
-                                          togglePillValue(item.pvSourceTarget, option.value),
-                                        )
-                                      }
-                                    >
-                                      {option.label}
-                                    </button>
-                                  );
-                                })}
-                              </div>
-                            </div>
-                            <div className="neris-emerging-hazard-field field-span-two">
-                              <label>Emerging Hazard Suppression Method(s)</label>
-                              <NerisFlatMultiOptionSelect
-                                inputId={`${item.id}-power-suppression`}
-                                value={item.suppressionMethods}
-                                options={getNerisValueOptions("emerg_haz_suppression")}
-                                onChange={(nextValue) =>
-                                  updateEmergingPowerGenerationItem(
-                                    item.id,
-                                    "suppressionMethods",
-                                    nextValue,
-                                  )
-                                }
-                                placeholder="Select suppression method(s)"
-                                searchPlaceholder="Search suppression methods..."
-                              />
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
-                </article>
-              </section>
-            ) : null}
-            {currentSection.id === "riskReduction" ? (
-              <section className="field-span-two neris-risk-reduction-layout">
-                <div className="neris-core-field-heading">RISK REDUCTION</div>
-
-                <div className="neris-risk-reduction-grid">
-                  <div className="neris-risk-reduction-field">
-                    <label>Risk reduction completed</label>
-                    <div className="neris-single-choice-row" role="group" aria-label="Risk reduction completed">
-                      {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                        const isSelected = option.value === riskReductionCompletedValue;
-                        return (
-                          <button
-                            key={`risk-reduction-completed-${option.value}`}
-                            type="button"
-                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                            aria-pressed={isSelected}
-                            onClick={() =>
-                              updateFieldValue(
-                                "risk_reduction_completed",
-                                togglePillValue(riskReductionCompletedValue, option.value),
-                              )
-                            }
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="neris-risk-reduction-field">
-                    <label>Follow-up required</label>
-                    <div className="neris-single-choice-row" role="group" aria-label="Follow-up required">
-                      {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                        const isSelected = option.value === riskReductionFollowUpValue;
-                        return (
-                          <button
-                            key={`risk-reduction-follow-up-${option.value}`}
-                            type="button"
-                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                            aria-pressed={isSelected}
-                            onClick={() =>
-                              updateFieldValue(
-                                "risk_reduction_follow_up_required",
-                                togglePillValue(riskReductionFollowUpValue, option.value),
-                              )
-                            }
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-
-                  <div className="neris-risk-reduction-field">
-                    <label>Contact Made?</label>
-                    <div className="neris-single-choice-row" role="group" aria-label="Contact made">
-                      {RISK_REDUCTION_YES_NO_OPTIONS.map((option) => {
-                        const isSelected = option.value === riskReductionContactMadeValue;
-                        return (
-                          <button
-                            key={`risk-reduction-contact-made-${option.value}`}
-                            type="button"
-                            className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                            aria-pressed={isSelected}
-                            onClick={() =>
-                              updateFieldValue(
-                                "risk_reduction_contacts_made",
-                                togglePillValue(riskReductionContactMadeValue, option.value),
-                              )
-                            }
-                          >
-                            {option.label}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {riskReductionContactMadeValue === "YES" ? (
-                  <section className="neris-risk-reduction-contact-box">
-                    <div className="neris-risk-reduction-contact-grid">
-                      <label>
-                        Full Name
-                        <input
-                          type="text"
-                          value={formValues.risk_reduction_contact_full_name ?? ""}
-                          onChange={(event) =>
-                            updateFieldValue(
-                              "risk_reduction_contact_full_name",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        Phone Number
-                        <input
-                          type="text"
-                          value={formValues.risk_reduction_contact_phone_number ?? ""}
-                          onChange={(event) =>
-                            updateFieldValue(
-                              "risk_reduction_contact_phone_number",
-                              event.target.value,
-                            )
-                          }
-                        />
-                      </label>
-                      <label>
-                        Street
-                        <input
-                          type="text"
-                          value={formValues.risk_reduction_contact_street ?? ""}
-                          onChange={(event) =>
-                            updateFieldValue("risk_reduction_contact_street", event.target.value)
-                          }
-                        />
-                      </label>
-                      <label>
-                        City
-                        <input
-                          type="text"
-                          value={formValues.risk_reduction_contact_city ?? ""}
-                          onChange={(event) =>
-                            updateFieldValue("risk_reduction_contact_city", event.target.value)
-                          }
-                        />
-                      </label>
-                      <label>
-                        State
-                        <input
-                          type="text"
-                          value={formValues.risk_reduction_contact_state ?? ""}
-                          onChange={(event) =>
-                            updateFieldValue("risk_reduction_contact_state", event.target.value)
-                          }
-                        />
-                      </label>
-                      <label>
-                        Zip Code
-                        <input
-                          type="text"
-                          value={formValues.risk_reduction_contact_zip_code ?? ""}
-                          onChange={(event) =>
-                            updateFieldValue("risk_reduction_contact_zip_code", event.target.value)
-                          }
-                        />
-                      </label>
-                    </div>
-                  </section>
-                ) : null}
-
-                {riskReductionCompletedValue === "YES" ? (
-                  <div className="neris-risk-reduction-conditional-layout">
-                    <section className="neris-risk-reduction-question-card">
-                      <label>Was there at least one smoke alarm present?</label>
-                      <div
-                        className="neris-single-choice-row"
-                        role="group"
-                        aria-label="Was there at least one smoke alarm present?"
-                      >
-                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                          const isSelected = option.value === riskReductionSmokeAlarmPresentValue;
-                          return (
-                            <button
-                              key={`risk-reduction-smoke-alarm-present-${option.value}`}
-                              type="button"
-                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                              aria-pressed={isSelected}
-                              onClick={() =>
-                                updateFieldValue(
-                                  "risk_reduction_smoke_alarm_present",
-                                  togglePillValue(riskReductionSmokeAlarmPresentValue, option.value),
-                                )
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {riskReductionSmokeAlarmPresentValue === "YES" ? (
-                        <div className="neris-risk-reduction-subfields">
-                          <div>
-                            <label>
-                              Was there at least one working or successfully test smoke alarm?
-                            </label>
-                            <div
-                              className="neris-single-choice-row"
-                              role="group"
-                              aria-label="Was there at least one working or successfully test smoke alarm?"
-                            >
-                              {RISK_REDUCTION_YES_NO_OPTIONS.map((option) => {
-                                const isSelected =
-                                  option.value === riskReductionSmokeAlarmWorkingValue;
-                                return (
-                                  <button
-                                    key={`risk-reduction-smoke-working-${option.value}`}
-                                    type="button"
-                                    className={`neris-single-choice-button${
-                                      isSelected ? " selected" : ""
-                                    }`}
-                                    aria-pressed={isSelected}
-                                    onClick={() =>
-                                      updateFieldValue(
-                                        "risk_reduction_smoke_alarm_working",
-                                        togglePillValue(
-                                          riskReductionSmokeAlarmWorkingValue,
-                                          option.value,
-                                        ),
-                                      )
-                                    }
-                                  >
-                                    {option.label}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                          <div>
-                            <label>Smoke Alarm Type(s)</label>
-                            <NerisFlatMultiOptionSelect
-                              inputId="risk-reduction-smoke-alarm-types"
-                              value={formValues.risk_reduction_smoke_alarm_types ?? ""}
-                              options={RISK_REDUCTION_SMOKE_ALARM_TYPE_OPTIONS}
-                              onChange={(nextValue) =>
-                                updateFieldValue("risk_reduction_smoke_alarm_types", nextValue)
-                              }
-                              placeholder="Select smoke alarm type(s)"
-                              searchPlaceholder="Search smoke alarm types..."
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </section>
-
-                    <section className="neris-risk-reduction-question-card">
-                      <label>Was there at least one fire alarm present?</label>
-                      <div
-                        className="neris-single-choice-row"
-                        role="group"
-                        aria-label="Was there at least one fire alarm present?"
-                      >
-                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                          const isSelected = option.value === riskReductionFireAlarmPresentValue;
-                          return (
-                            <button
-                              key={`risk-reduction-fire-alarm-present-${option.value}`}
-                              type="button"
-                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                              aria-pressed={isSelected}
-                              onClick={() =>
-                                updateFieldValue(
-                                  "risk_reduction_fire_alarm_present",
-                                  togglePillValue(riskReductionFireAlarmPresentValue, option.value),
-                                )
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {riskReductionFireAlarmPresentValue === "YES" ? (
-                        <div className="neris-risk-reduction-subfields">
-                          <div>
-                            <label>Fire Alarm Type(s)</label>
-                            <NerisFlatMultiOptionSelect
-                              inputId="risk-reduction-fire-alarm-types"
-                              value={formValues.risk_reduction_fire_alarm_types ?? ""}
-                              options={RISK_REDUCTION_FIRE_ALARM_TYPE_OPTIONS}
-                              onChange={(nextValue) =>
-                                updateFieldValue("risk_reduction_fire_alarm_types", nextValue)
-                              }
-                              placeholder="Select fire alarm type(s)"
-                              searchPlaceholder="Search fire alarm types..."
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </section>
-
-                    <section className="neris-risk-reduction-question-card">
-                      <label>Were there any other alarms present?</label>
-                      <div
-                        className="neris-single-choice-row"
-                        role="group"
-                        aria-label="Were there any other alarms present?"
-                      >
-                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                          const isSelected = option.value === riskReductionOtherAlarmPresentValue;
-                          return (
-                            <button
-                              key={`risk-reduction-other-alarm-present-${option.value}`}
-                              type="button"
-                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                              aria-pressed={isSelected}
-                              onClick={() =>
-                                updateFieldValue(
-                                  "risk_reduction_other_alarm_present",
-                                  togglePillValue(riskReductionOtherAlarmPresentValue, option.value),
-                                )
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {riskReductionOtherAlarmPresentValue === "YES" ? (
-                        <div className="neris-risk-reduction-subfields">
-                          <div>
-                            <label>Other Alarm Type(s)</label>
-                            <NerisFlatMultiOptionSelect
-                              inputId="risk-reduction-other-alarm-types"
-                              value={formValues.risk_reduction_other_alarm_types ?? ""}
-                              options={RISK_REDUCTION_OTHER_ALARM_TYPE_OPTIONS}
-                              onChange={(nextValue) =>
-                                updateFieldValue("risk_reduction_other_alarm_types", nextValue)
-                              }
-                              placeholder="Select other alarm type(s)"
-                              searchPlaceholder="Search other alarm types..."
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </section>
-
-                    <section className="neris-risk-reduction-question-card">
-                      <label>Were there any fire suppresion systems present?</label>
-                      <div
-                        className="neris-single-choice-row"
-                        role="group"
-                        aria-label="Were there any fire suppression systems present?"
-                      >
-                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                          const isSelected =
-                            option.value === riskReductionFireSuppressionPresentValue;
-                          return (
-                            <button
-                              key={`risk-reduction-fire-suppression-present-${option.value}`}
-                              type="button"
-                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                              aria-pressed={isSelected}
-                              onClick={() => {
-                                const nextValue = togglePillValue(
-                                  riskReductionFireSuppressionPresentValue,
-                                  option.value,
-                                );
-                                updateFieldValue(
-                                  "risk_reduction_fire_suppression_present",
-                                  nextValue,
-                                );
-                                if (
-                                  nextValue === "YES" &&
-                                  riskReductionSuppressionSystems.length === 0
-                                ) {
-                                  addRiskReductionSuppressionSystem();
-                                }
-                              }}
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-
-                      {riskReductionFireSuppressionPresentValue === "YES" ? (
-                        <div className="neris-risk-reduction-subfields">
-                          {riskReductionSuppressionSystems.map((system, systemIndex) => (
-                            <div
-                              key={system.id}
-                              className="neris-risk-reduction-suppression-system-card"
-                            >
-                              <div className="neris-risk-reduction-suppression-system-header">
-                                <strong>Fire Suppression System {systemIndex + 1}</strong>
-                                <button
-                                  type="button"
-                                  className="neris-emerging-hazard-delete-button"
-                                  aria-label={`Delete fire suppression system ${systemIndex + 1}`}
-                                  onClick={() => deleteRiskReductionSuppressionSystem(system.id)}
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                              <div className="neris-risk-reduction-subfield-grid">
-                                <label>
-                                  Fire Suppression Type
-                                  <input
-                                    type="text"
-                                    value={system.suppressionType}
-                                    onChange={(event) =>
-                                      updateRiskReductionSuppressionSystem(
-                                        system.id,
-                                        "suppressionType",
-                                        event.target.value,
-                                      )
-                                    }
-                                  />
-                                </label>
-                                <div>
-                                  <label>Suppression System Coverage</label>
-                                  <div
-                                    className="neris-single-choice-row"
-                                    role="group"
-                                    aria-label="Suppression system coverage"
-                                  >
-                                    {RISK_REDUCTION_SUPPRESSION_COVERAGE_OPTIONS.map((option) => {
-                                      const isSelected =
-                                        option.value === system.suppressionCoverage;
-                                      return (
-                                        <button
-                                          key={`${system.id}-coverage-${option.value}`}
-                                          type="button"
-                                          className={`neris-single-choice-button${
-                                            isSelected ? " selected" : ""
-                                          }`}
-                                          aria-pressed={isSelected}
-                                          onClick={() =>
-                                            updateRiskReductionSuppressionSystem(
-                                              system.id,
-                                              "suppressionCoverage",
-                                              togglePillValue(
-                                                system.suppressionCoverage,
-                                                option.value,
-                                              ),
-                                            )
-                                          }
-                                        >
-                                          {option.label}
-                                        </button>
-                                      );
-                                    })}
-                                  </div>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
-
-                          <button
-                            type="button"
-                            className="fl-link-button"
-                            onClick={addRiskReductionSuppressionSystem}
-                          >
-                            + Add Another Fire Suppression System
-                          </button>
-                        </div>
-                      ) : null}
-                    </section>
-
-                    <section className="neris-risk-reduction-question-card">
-                      <label>
-                        Was there at least one cooking fire suppression system present?
-                      </label>
-                      <div
-                        className="neris-single-choice-row"
-                        role="group"
-                        aria-label="Was there at least one cooking fire suppression system present?"
-                      >
-                        {RISK_REDUCTION_YES_NO_UNKNOWN_OPTIONS.map((option) => {
-                          const isSelected =
-                            option.value === riskReductionCookingSuppressionPresentValue;
-                          return (
-                            <button
-                              key={`risk-reduction-cooking-suppression-present-${option.value}`}
-                              type="button"
-                              className={`neris-single-choice-button${isSelected ? " selected" : ""}`}
-                              aria-pressed={isSelected}
-                              onClick={() =>
-                                updateFieldValue(
-                                  "risk_reduction_cooking_suppression_present",
-                                  togglePillValue(
-                                    riskReductionCookingSuppressionPresentValue,
-                                    option.value,
-                                  ),
-                                )
-                              }
-                            >
-                              {option.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      {riskReductionCookingSuppressionPresentValue === "YES" ? (
-                        <div className="neris-risk-reduction-subfields">
-                          <div>
-                            <label>Cooking Fire Suppression Type(s)</label>
-                            <NerisFlatMultiOptionSelect
-                              inputId="risk-reduction-cooking-suppression-types"
-                              value={formValues.risk_reduction_cooking_suppression_types ?? ""}
-                              options={RISK_REDUCTION_COOKING_SUPPRESSION_TYPE_OPTIONS}
-                              onChange={(nextValue) =>
-                                updateFieldValue(
-                                  "risk_reduction_cooking_suppression_types",
-                                  nextValue,
-                                )
-                              }
-                              placeholder="Select cooking fire suppression type(s)"
-                              searchPlaceholder="Search cooking suppression types..."
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </section>
-                  </div>
-                ) : null}
-              </section>
-            ) : null}
-            {currentSection.id === "resources" ? (
-              <section className="field-span-two neris-resource-unit-list">
-                {resourceUnits.length ? (
-                  resourceUnits.map((unitEntry) => {
-                    const selectedPersonnelValues = unitEntry.personnel
-                      .split(",")
-                      .map((entry) => entry.trim())
-                      .filter((entry) => entry.length > 0);
-                    const selectedPersonnelOptions = selectedPersonnelValues
-                      .map((value) =>
-                        RESOURCE_PERSONNEL_OPTIONS.find((option) => option.value === value),
-                      )
-                      .filter((option): option is NerisValueOption => Boolean(option));
-                    const reportWriterOptions = selectedPersonnelOptions.length
-                      ? selectedPersonnelOptions
-                      : RESOURCE_PERSONNEL_OPTIONS;
-                    const staffingDisplay = getStaffingValueForUnit(
-                      unitEntry.unitId,
-                      unitEntry.personnel,
-                    );
-                    const unitTypeDisplayLabel =
-                      unitTypeOptions.find((option) => option.value === unitEntry.unitType)?.label ??
-                      unitEntry.unitType;
-                    const personnelError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "personnel")] ?? "";
-                    const dispatchTimeError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "dispatchTime")] ??
-                      "";
-                    const enrouteTimeError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "enrouteTime")] ??
-                      "";
-                    const stagedTimeError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "stagedTime")] ?? "";
-                    const onSceneTimeError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "onSceneTime")] ??
-                      "";
-                    const canceledTimeError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "canceledTime")] ?? "";
-                    const clearTimeError =
-                      sectionErrors[resourceUnitValidationErrorKey(unitEntry.id, "clearTime")] ?? "";
-
-                    return (
-                      <article key={unitEntry.id} className="neris-resource-unit-card">
-                        <header className="neris-resource-unit-header">
-                          <div className="neris-resource-unit-summary">
-                            <strong className="neris-resource-unit-name">
-                              {unitEntry.unitId || "Unassigned unit"}
-                            </strong>
-                            <button
-                              type="button"
-                              className={`neris-resource-complete-chip ${
-                                unitEntry.isComplete ? "complete" : "incomplete"
-                              }`}
-                              onClick={() => toggleResourceUnitComplete(unitEntry.id)}
-                            >
-                              <span className="neris-resource-complete-check">
-                                {unitEntry.isComplete ? "x" : ""}
-                              </span>
-                              {unitEntry.isComplete ? "Complete" : "Incomplete"}
-                            </button>
-                            <span className="neris-resource-personnel-indicator">
-                              <Users size={14} />
-                              <strong>{staffingDisplay || "0"}</strong>
-                            </span>
-                            <div className="neris-resource-time-grid">
-                              <div className="neris-resource-time-item">
-                                <span>Dispatch</span>
-                                <strong>{toResourceSummaryTime(unitEntry.dispatchTime)}</strong>
-                              </div>
-                              <div className="neris-resource-time-item">
-                                <span>Enroute</span>
-                                <strong>{toResourceSummaryTime(unitEntry.enrouteTime)}</strong>
-                              </div>
-                              <div className="neris-resource-time-item">
-                                <span>Staged</span>
-                                <strong>{toResourceSummaryTime(unitEntry.stagedTime)}</strong>
-                              </div>
-                              <div className="neris-resource-time-item">
-                                <span>On Scene</span>
-                                <strong>{toResourceSummaryTime(unitEntry.onSceneTime)}</strong>
-                              </div>
-                              <div className="neris-resource-time-item">
-                                <span>Canceled</span>
-                                <strong>{toResourceSummaryTime(unitEntry.canceledTime)}</strong>
-                              </div>
-                              <div className="neris-resource-time-item">
-                                <span>Clear</span>
-                                <strong>{toResourceSummaryTime(unitEntry.clearTime)}</strong>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="neris-resource-unit-actions">
-                            <button
-                              type="button"
-                              className="neris-resource-delete-button"
-                              onClick={() => deleteResourceUnit(unitEntry.id)}
-                              aria-label={`Delete ${unitEntry.unitId || "unit"} block`}
-                            >
-                              <Trash2 size={14} />
-                            </button>
-                            <button
-                              type="button"
-                              className="icon-button"
-                              aria-label={
-                                unitEntry.isExpanded
-                                  ? "Collapse unit details"
-                                  : "Expand unit details"
-                              }
-                              onClick={() => toggleResourceUnitExpanded(unitEntry.id)}
-                            >
-                              <ChevronDown
-                                size={14}
-                                className={`neris-resource-expand-icon${
-                                  unitEntry.isExpanded ? " open" : ""
-                                }`}
-                              />
-                            </button>
-                          </div>
-                        </header>
-                        {unitEntry.isExpanded ? (
-                          <div className="neris-resource-unit-body">
-                            <div className="neris-resource-field-grid">
-                              <div className="neris-resource-field field-span-two">
-                                <label>Unit Response Mode</label>
-                                <div className="neris-single-choice-row" role="group" aria-label="Unit response mode">
-                                  {responseModeOptions.map((option) => {
-                                    const isSelected = option.value === unitEntry.responseMode;
-                                    return (
-                                      <button
-                                        key={`${unitEntry.id}-response-mode-${option.value}`}
-                                        type="button"
-                                        className={`neris-single-choice-button${
-                                          isSelected ? " selected" : ""
-                                        }`}
-                                        aria-pressed={isSelected}
-                                        onClick={() =>
-                                          updateResourceUnitField(
-                                            unitEntry.id,
-                                            "responseMode",
-                                            isSelected ? "" : option.value,
-                                          )
-                                        }
-                                      >
-                                        {option.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="neris-resource-field field-span-two">
-                                <label>Transport Mode (to hospital)</label>
-                                <div className="neris-single-choice-row" role="group" aria-label="Unit transport mode">
-                                  {responseModeOptions.map((option) => {
-                                    const isSelected = option.value === unitEntry.transportMode;
-                                    return (
-                                      <button
-                                        key={`${unitEntry.id}-transport-mode-${option.value}`}
-                                        type="button"
-                                        className={`neris-single-choice-button${
-                                          isSelected ? " selected" : ""
-                                        }`}
-                                        aria-pressed={isSelected}
-                                        onClick={() =>
-                                          updateResourceUnitField(
-                                            unitEntry.id,
-                                            "transportMode",
-                                            isSelected ? "" : option.value,
-                                          )
-                                        }
-                                      >
-                                        {option.label}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
-                              </div>
-                              <div className="neris-resource-field">
-                                <label>Responding Unit ID</label>
-                                <NerisFlatSingleOptionSelect
-                                  inputId={`${unitEntry.id}-unit-id`}
-                                  value={unitEntry.unitId}
-                                  options={availableResourceUnitOptions}
-                                  onChange={(nextValue) =>
-                                    handleResourceUnitIdChange(unitEntry.id, nextValue)
-                                  }
-                                  isOptionDisabled={(optionValue) =>
-                                    optionValue !== unitEntry.unitId &&
-                                    resourceUnits.some(
-                                      (otherUnit) =>
-                                        otherUnit.id !== unitEntry.id &&
-                                        otherUnit.unitId.trim() === optionValue,
-                                    )
-                                  }
-                                  placeholder="Select responding unit"
-                                  searchPlaceholder="Search responding units..."
-                                />
-                              </div>
-                              <div className="neris-resource-field">
-                                <label>Unit Type</label>
-                                <input
-                                  type="text"
-                                  value={unitTypeDisplayLabel}
-                                  readOnly
-                                  className="neris-resource-unit-type-input"
-                                  placeholder="Auto-populates from unit setup"
-                                />
-                              </div>
-                            </div>
-
-                            <div className="neris-resource-inline-links">
-                              <button
-                                type="button"
-                                className="link-button"
-                                aria-expanded={unitEntry.showTimesEditor}
-                                onClick={() => toggleResourceTimesEditor(unitEntry.id)}
-                              >
-                                Edit Times
-                              </button>
-                              <label className="neris-resource-canceled-enroute-inline">
-                                <input
-                                  type="checkbox"
-                                  checked={unitEntry.isCanceledEnroute}
-                                  onChange={() => toggleResourceCanceledEnroute(unitEntry.id)}
-                                />
-                                <span>Dispatched and canceled en route</span>
-                              </label>
-                            </div>
-
-                            {unitEntry.showTimesEditor ? (
-                              <div className="neris-resource-times-editor">
-                                <div className="neris-resource-times-editor-grid">
-                                  <label>
-                                    Dispatch
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.dispatchTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "dispatchTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {dispatchTimeError ? (
-                                      <small className="field-error">{dispatchTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label>
-                                    Enroute
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.enrouteTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "enrouteTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {enrouteTimeError ? (
-                                      <small className="field-error">{enrouteTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label>
-                                    Staged
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.stagedTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "stagedTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {stagedTimeError ? (
-                                      <small className="field-error">{stagedTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label>
-                                    On Scene
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.onSceneTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "onSceneTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {onSceneTimeError ? (
-                                      <small className="field-error">{onSceneTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label>
-                                    Canceled
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.canceledTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "canceledTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {canceledTimeError ? (
-                                      <small className="field-error">{canceledTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label>
-                                    Clear
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.clearTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "clearTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
-                                    {clearTimeError ? (
-                                      <small className="field-error">{clearTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                </div>
-                                <button
-                                  type="button"
-                                  className={`neris-resource-canceled-enroute-button${
-                                    unitEntry.isCanceledEnroute ? " active" : ""
-                                  }`}
-                                  aria-pressed={unitEntry.isCanceledEnroute}
-                                  onClick={() => toggleResourceCanceledEnroute(unitEntry.id)}
-                                >
-                                  Dispatched and canceled en route
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondary-button compact-button"
-                                  onClick={() => populateResourceTimesFromDispatch(unitEntry.id)}
-                                >
-                                  Populate Date
-                                </button>
-                              </div>
-                            ) : null}
-
-                            <section className="neris-resource-personnel-panel">
-                              <div className="neris-resource-personnel-header-row">
-                                <h4>Personnel</h4>
-                                <button
-                                  type="button"
-                                  className="link-button"
-                                  onClick={() => openResourcePersonnelModal(unitEntry.id)}
-                                >
-                                  Add Personnel
-                                </button>
-                              </div>
-                              <div className="neris-resource-personnel-table-head">
-                                <span>Name</span>
-                              </div>
-                              {selectedPersonnelOptions.length ? (
-                                <ul className="neris-resource-personnel-list">
-                                  {selectedPersonnelOptions.map((option) => (
-                                    <li key={`${unitEntry.id}-personnel-${option.value}`}>
-                                      <span>{option.label}</span>
-                                      <div className="neris-resource-personnel-row-actions">
-                                        <button
-                                          type="button"
-                                          className="icon-button"
-                                          aria-label={`Edit ${option.label} assignment`}
-                                        >
-                                          <Pencil size={13} />
-                                        </button>
-                                        <button
-                                          type="button"
-                                          className="icon-button"
-                                          aria-label={`Remove ${option.label} from this unit`}
-                                          onClick={() =>
-                                            removeResourcePersonnel(unitEntry.id, option.value)
-                                          }
-                                        >
-                                          <Trash2 size={13} />
-                                        </button>
-                                      </div>
-                                    </li>
-                                  ))}
-                                </ul>
-                              ) : (
-                                <div className="neris-resource-personnel-empty">
-                                  <Users size={24} className="neris-resource-personnel-empty-icon" />
-                                  <p>No personnel assigned to this unit.</p>
-                                  <small>Add personnel using the Add Personnel link above.</small>
-                                </div>
-                              )}
-                              {personnelError ? (
-                                <small className="field-error neris-resource-personnel-error">
-                                  {personnelError}
-                                </small>
-                              ) : null}
-                            </section>
-
-                            <div className="neris-resource-field">
-                              <label>Unit Report Writer</label>
-                              <NerisFlatSingleOptionSelect
-                                inputId={`${unitEntry.id}-report-writer`}
-                                value={unitEntry.reportWriter}
-                                options={reportWriterOptions}
-                                onChange={(nextValue) =>
-                                  updateResourceUnitField(
-                                    unitEntry.id,
-                                    "reportWriter",
-                                    nextValue,
-                                  )
-                                }
-                                placeholder="Select report writer"
-                                searchPlaceholder="Search personnel..."
-                                allowClear
-                              />
-                            </div>
-
-                            <div className="neris-resource-unit-narrative">
-                              <div className="neris-core-field-heading neris-resource-unit-narrative-heading">
-                                UNIT NARRATIVE
-                              </div>
-                              <textarea
-                                rows={6}
-                                value={unitEntry.unitNarrative}
-                                placeholder="Insert text here..."
-                                onChange={(event) =>
-                                  updateResourceUnitField(
-                                    unitEntry.id,
-                                    "unitNarrative",
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                            </div>
-
-                            <div className="neris-resource-footer-actions">
-                              <button
-                                type="button"
-                                className="primary-button compact-button neris-resource-complete-collapse-button"
-                                onClick={() => completeAndCollapseResourceUnit(unitEntry.id)}
-                              >
-                                Complete and Collapse
-                              </button>
-                              <button
-                                type="button"
-                                className="primary-button compact-button"
-                                onClick={() => collapseResourceUnit(unitEntry.id)}
-                              >
-                                Collapse
-                              </button>
-                            </div>
-                          </div>
-                        ) : null}
-                      </article>
-                    );
-                  })
-                ) : (
-                  <div className="neris-resource-empty-state">
-                    No responding units are available for this incident yet.
-                  </div>
-                )}
-              </section>
-            ) : null}
-            {currentSection.id === "resources" && activeResourcePersonnelUnit ? (
-              <div
-                className="neris-resource-personnel-modal-backdrop"
-                role="dialog"
-                aria-modal="true"
-                onClick={(event) => {
-                  if (event.target === event.currentTarget) {
-                    closeResourcePersonnelModal();
-                  }
-                }}
-              >
-                <section
-                  className="panel neris-resource-personnel-modal"
-                  onWheel={(event) => event.stopPropagation()}
-                >
-                  <div className="neris-resource-personnel-modal-header">
-                    <h3>
-                      Add Personnel
-                      {activeResourcePersonnelUnit.unitId
-                        ? ` - ${activeResourcePersonnelUnit.unitId}`
-                        : ""}
-                    </h3>
-                    <button
-                      type="button"
-                      className="secondary-button compact-button"
-                      onClick={closeResourcePersonnelModal}
-                    >
-                      Close
-                    </button>
-                  </div>
-                  <NerisFlatMultiOptionSelect
-                    inputId={`resource-personnel-modal-${activeResourcePersonnelUnit.id}`}
-                    value={activeResourcePersonnelUnit.personnel}
-                    options={RESOURCE_PERSONNEL_OPTIONS}
-                    onChange={(nextValue) =>
-                      updateResourceUnitField(activeResourcePersonnelUnit.id, "personnel", nextValue)
-                    }
-                    placeholder="Select personnel"
-                    searchPlaceholder="Search personnel..."
-                    isOptionDisabled={(optionValue) =>
-                      personnelAssignedToOtherUnits.has(optionValue)
-                    }
-                  />
-                  <small className="field-hint">
-                    Select one or more personnel. Click outside this dialog to close.
-                  </small>
-                </section>
-              </div>
-            ) : null}
-            {displayedSectionFields.flatMap((field) => {
-              const nodes: ReactNode[] = [];
-              const headingLabel =
-                currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
-              if (headingLabel) {
-                nodes.push(
-                  <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
-                    {headingLabel}
-                  </div>,
-                );
-              }
-              if (currentSection.id === "location" && field.id === "location_state") {
-                nodes.push(
-                  <div
-                    key="heading-location-usage"
-                    className="field-span-two neris-core-field-heading"
-                  >
-                    LOCATION / USAGE
-                  </div>,
-                );
-                nodes.push(
-                  <div
-                    key="location-imported-address"
-                    className="field-span-two neris-imported-address-block"
-                  >
-                    <div className="neris-imported-address-header">
-                      <label htmlFor="location-imported-address-box">Imported address</label>
-                      <button
-                        type="button"
-                        className="secondary-button compact-button neris-imported-address-sync-button"
-                        onClick={handlePullLocationFromImportedAddress}
-                      >
-                        Pull location data
-                      </button>
-                    </div>
-                    <div id="location-imported-address-box" className="neris-imported-address">
-                      {importedLocationAddress}
-                    </div>
-                  </div>,
-                );
-              }
-              if (currentSection.id === "location" && field.id === "location_direction_of_travel") {
-                nodes.push(
-                  <div
-                    key="location-direction-of-travel-link"
-                    className="field-span-two neris-location-add-links"
-                  >
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-expanded={showDirectionOfTravelField}
-                      onClick={() =>
-                        setShowDirectionOfTravelField((previous) => !previous)
-                      }
-                    >
-                      Add Direction of Travel
-                    </button>
-                  </div>,
-                );
-              }
-              if (currentSection.id === "location" && field.id === "location_cross_street_type") {
-                nodes.push(
-                  <div
-                    key="location-cross-street-link"
-                    className="field-span-two neris-location-add-links"
-                  >
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-expanded={showCrossStreetTypeField}
-                      onClick={() =>
-                        setShowCrossStreetTypeField((previous) => !previous)
-                      }
-                    >
-                      Add Cross Street -&gt; RL
-                    </button>
-                  </div>,
-                );
-              }
-              nodes.push(renderNerisField(field, `field-${field.id}`));
-              return nodes;
-            })}
-          </div>
-
-          {validationIssues.length ? (
-            <div className="validation-issue-list">
-              <p>Required fields to complete:</p>
-              <ul>
-                {validationIssues.map((fieldLabel) => (
-                  <li key={`validation-issue-${fieldLabel}`}>{fieldLabel}</li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
-
-          <details className="neris-required-matrix">
-            <summary>NERIS required field matrix (minimum + incident-family)</summary>
-            <div className="neris-required-matrix-grid">
-              <div>
-                <strong>Core minimum</strong>
-                <ul>
-                  {requiredMatrixRows.coreRows.map((row) => (
-                    <li key={`required-core-${row.fieldId}`}>{row.label}</li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <strong>
-                  Incident family: {primaryIncidentCategory || "Select Primary Incident Type"}
-                </strong>
-                <ul>
-                  {requiredMatrixRows.familyRows.length ? (
-                    requiredMatrixRows.familyRows.map((row) => (
-                      <li key={`required-family-${row.fieldId}`}>{row.label}</li>
-                    ))
-                  ) : (
-                    <li>No additional family-specific requirements yet.</li>
-                  )}
-                </ul>
-              </div>
-            </div>
-          </details>
-
-          <div className="neris-form-actions">
-            <button type="button" className="secondary-button compact-button" onClick={handleBack}>
-              Back
-            </button>
-            <button
-              type="button"
-              className="secondary-button compact-button"
-              onClick={handleSaveDraft}
-            >
-              Save
-            </button>
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={goToNextSection}
-              disabled={!hasNextSection}
-            >
-              Next
-            </button>
-          </div>
-        </article>
-      </section>
-    </section>
-  );
-}
-
-function DepartmentDetailsPage() {
+function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetailsPageProps) {
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
+  const sessionUserName = readSession().username.trim().toLocaleLowerCase();
+  const uiPreferenceUserKey = sessionUserName || USER_UI_PREFERENCES_FALLBACK_KEY;
+  const initialUiPreferencesByUser =
+    initialDepartmentDraft.uiPreferencesByUser &&
+    typeof initialDepartmentDraft.uiPreferencesByUser === "object"
+      ? (initialDepartmentDraft.uiPreferencesByUser as Record<string, Record<string, unknown>>)
+      : {};
+  const initialUserUiPreferences =
+    initialUiPreferencesByUser[uiPreferenceUserKey] ??
+    initialUiPreferencesByUser[USER_UI_PREFERENCES_FALLBACK_KEY] ??
+    {};
   const [departmentName, setDepartmentName] = useState(String(initialDepartmentDraft.departmentName ?? ""));
   const [departmentStreet, setDepartmentStreet] = useState(String(initialDepartmentDraft.departmentStreet ?? ""));
   const [departmentCity, setDepartmentCity] = useState(String(initialDepartmentDraft.departmentCity ?? ""));
@@ -10404,13 +3755,32 @@ function DepartmentDetailsPage() {
     Array.isArray(initialDepartmentDraft.stationRecords) ? (initialDepartmentDraft.stationRecords as DepartmentStationRecord[]) : [],
   );
   const [apparatusRecords, setApparatusRecords] = useState<DepartmentApparatusRecord[]>(
-    Array.isArray(initialDepartmentDraft.apparatusRecords) ? (initialDepartmentDraft.apparatusRecords as DepartmentApparatusRecord[]) : [],
+    Array.isArray(initialDepartmentDraft.masterApparatusRecords)
+      ? (initialDepartmentDraft.masterApparatusRecords as DepartmentApparatusRecord[])
+      : [],
+  );
+  const [schedulerApparatusRecords, setSchedulerApparatusRecords] = useState<SchedulerApparatusRecord[]>(
+    Array.isArray(initialDepartmentDraft.schedulerApparatusRecords)
+      ? (initialDepartmentDraft.schedulerApparatusRecords as SchedulerApparatusRecord[])
+      : [],
   );
   const [shiftInformationEntries, setShiftInformationEntries] = useState<ShiftInformationEntry[]>(
     Array.isArray(initialDepartmentDraft.shiftInformationEntries) ? (initialDepartmentDraft.shiftInformationEntries as ShiftInformationEntry[]) : [],
   );
+  const [userRecords, setUserRecords] = useState<DepartmentUserRecord[]>(() => {
+    const raw = initialDepartmentDraft.userRecords;
+    if (!Array.isArray(raw)) return [];
+    return raw
+      .map((entry: Record<string, unknown>) => ({
+        name: String(entry.name ?? "").trim(),
+        userType: String(entry.userType ?? "").trim(),
+        username: String(entry.username ?? "").trim(),
+        password: String(entry.password ?? ""),
+      }))
+      .filter((entry) => entry.name.length > 0);
+  });
   const [personnelRecords, setPersonnelRecords] = useState<DepartmentPersonnelRecord[]>(() => {
-    const raw = initialDepartmentDraft.personnelRecords;
+    const raw = initialDepartmentDraft.schedulerPersonnelRecords;
     if (!Array.isArray(raw)) return [];
     return raw.map((entry: Record<string, unknown>) => ({
       name: String(entry.name ?? ""),
@@ -10423,6 +3793,17 @@ function DepartmentDetailsPage() {
         : [],
     }));
   });
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [personnelSearchQuery, setPersonnelSearchQuery] = useState("");
+  const [schedulerEnabled, setSchedulerEnabled] = useState(
+    Boolean(initialDepartmentDraft.schedulerEnabled ?? false),
+  );
+  const [standardOvertimeSlot, setStandardOvertimeSlot] = useState(
+    Math.max(1, Math.floor(Number(initialDepartmentDraft.standardOvertimeSlot ?? 24) || 24)),
+  );
+  const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
+    normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
+  );
   const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
   );
@@ -10435,11 +3816,39 @@ function DepartmentDetailsPage() {
   const [selectedMutualAidIds, setSelectedMutualAidIds] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.selectedMutualAidIds) ? (initialDepartmentDraft.selectedMutualAidIds as string[]) : [],
   );
+  const [kellyRotations, setKellyRotations] = useState<KellyRotationEntry[]>(
+    Array.isArray(initialDepartmentDraft.kellyRotations)
+      ? (initialDepartmentDraft.kellyRotations as KellyRotationEntry[])
+      : [],
+  );
+  const [editingKellyRotationIndex, setEditingKellyRotationIndex] = useState<number | null>(null);
+  const [kellyRotationDraft, setKellyRotationDraft] = useState<KellyRotationEntry>({
+    personnel: "",
+    repeatsEveryValue: 14,
+    repeatsEveryUnit: "Shifts",
+    startsOn: "",
+  });
   const [activeCollectionEditor, setActiveCollectionEditor] = useState<DepartmentCollectionKey | null>(null);
   const [isMultiEditMode, setIsMultiEditMode] = useState(false);
   const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
   const [selectedMultiIndices, setSelectedMultiIndices] = useState<number[]>([]);
   const [statusMessage, setStatusMessage] = useState("");
+  const [isMultiAddOpen, setIsMultiAddOpen] = useState(false);
+  const [multiAddUsernameTemplate, setMultiAddUsernameTemplate] = useState("${last:3}${first:1}");
+  const [multiAddPasswordTemplate, setMultiAddPasswordTemplate] = useState("${Last}12345!");
+  const [multiAddDefaultUserType, setMultiAddDefaultUserType] = useState("User");
+  const [multiAddRows, setMultiAddRows] = useState<MultiAddUserDraft[]>([
+    { firstName: "", lastName: "", userType: "" },
+  ]);
+  const [multiAddError, setMultiAddError] = useState("");
+  const [multiAddSuccess, setMultiAddSuccess] = useState("");
+  const [isMultiAddingUsers, setIsMultiAddingUsers] = useState(false);
+  const [resetPasswordTargetIndex, setResetPasswordTargetIndex] = useState<number | null>(null);
+  const [resetPasswordValue, setResetPasswordValue] = useState("");
+  const [resetPasswordConfirmValue, setResetPasswordConfirmValue] = useState("");
+  const [isResettingPassword, setIsResettingPassword] = useState(false);
+  const [resetPasswordError, setResetPasswordError] = useState("");
+  const [resetPasswordSuccess, setResetPasswordSuccess] = useState("");
   const [stationDraft, setStationDraft] = useState<DepartmentStationRecord>({
     name: "",
     address: "",
@@ -10450,8 +3859,16 @@ function DepartmentDetailsPage() {
   });
   const [apparatusDraft, setApparatusDraft] = useState<DepartmentApparatusRecord>({
     unitId: "",
+    commonName: "",
     unitType: "",
+    make: "",
+    model: "",
+    year: "",
+  });
+  const [schedulerApparatusDraft, setSchedulerApparatusDraft] = useState<SchedulerApparatusRecord>({
+    apparatus: "",
     minimumPersonnel: 0,
+    maximumPersonnel: 2,
     personnelRequirements: [],
     station: "",
   });
@@ -10470,6 +3887,12 @@ function DepartmentDetailsPage() {
     userType: "",
     qualifications: [],
   });
+  const [userDraft, setUserDraft] = useState<DepartmentUserRecord>({
+    name: "",
+    userType: "",
+    username: "",
+    password: "",
+  });
   const [personnelBulkDraft, setPersonnelBulkDraft] = useState({
     shift: "",
     apparatusAssignment: "",
@@ -10479,17 +3902,45 @@ function DepartmentDetailsPage() {
   });
   const [userTypeDraft, setUserTypeDraft] = useState("");
   const [qualificationDraft, setQualificationDraft] = useState("");
+  const [additionalFieldDraft, setAdditionalFieldDraft] = useState<AdditionalFieldRecord>({
+    id: "",
+    fieldName: "",
+    numberOfSlots: 1,
+    valueMode: "personnel",
+    personnelOverride: true,
+  });
+  const [editingAdditionalFieldIndex, setEditingAdditionalFieldIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isEntryFormOpen, setIsEntryFormOpen] = useState(false);
   const [editingQualificationIndex, setEditingQualificationIndex] = useState<number | null>(null);
   const [dragQualificationIndex, setDragQualificationIndex] = useState<number | null>(null);
   const [dragUserTypeIndex, setDragUserTypeIndex] = useState<number | null>(null);
+  const [dragSchedulerApparatusIndex, setDragSchedulerApparatusIndex] = useState<number | null>(null);
+  const [dragAdditionalFieldIndex, setDragAdditionalFieldIndex] = useState<number | null>(null);
+  const [isImportApparatusModalOpen, setIsImportApparatusModalOpen] = useState(false);
+  const [uiPreferencesByUser, setUiPreferencesByUser] = useState<
+    Record<string, Record<string, unknown>>
+  >(initialUiPreferencesByUser);
   const [autoSaveTick, setAutoSaveTick] = useState(0);
+  const [schedulerApparatusFieldWidths, setSchedulerApparatusFieldWidths] = useState<
+    Record<SchedulerApparatusGridFieldId, number>
+  >(() =>
+    normalizeSchedulerApparatusFieldWidths(
+      initialUserUiPreferences.schedulerApparatusFieldWidths,
+    ),
+  );
+  const [schedulerPersonnelFieldWidths, setSchedulerPersonnelFieldWidths] = useState<
+    Record<SchedulerPersonnelGridFieldId, number>
+  >(() =>
+    normalizeSchedulerPersonnelFieldWidths(
+      initialUserUiPreferences.schedulerPersonnelFieldWidths,
+    ),
+  );
   const [apparatusFieldWidths, setApparatusFieldWidths] = useState<Record<ApparatusGridFieldId, number>>(
-    () => ({ ...DEFAULT_APPARATUS_FIELD_WIDTHS }),
+    () => normalizeApparatusFieldWidths(initialUserUiPreferences.apparatusFieldWidths),
   );
   const [apparatusFieldOrder, setApparatusFieldOrder] = useState<ApparatusGridFieldId[]>(() => [
-    ...APPARATUS_GRID_FIELD_ORDER,
+    ...normalizeApparatusFieldOrder(initialUserUiPreferences.apparatusFieldOrder),
   ]);
   const [isApparatusFieldEditorOpen, setIsApparatusFieldEditorOpen] = useState(false);
   const [dragApparatusFieldId, setDragApparatusFieldId] = useState<ApparatusGridFieldId | null>(null);
@@ -10498,29 +3949,42 @@ function DepartmentDetailsPage() {
     startX: number;
     startWidth: number;
   } | null>(null);
+  const activeSchedulerApparatusResizeField = useRef<{
+    fieldId: SchedulerApparatusGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const activeSchedulerPersonnelResizeField = useRef<{
+    fieldId: SchedulerPersonnelGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
 
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
   const apparatusFieldLabelById = useMemo(
     () =>
       ({
+        commonName: "Common Name",
         unitType: "Unit Type",
-        minPersonnel: "Min Personnel",
-        personnelRequirements: "Minimum Requirements",
-        station: "Station",
+        make: "Make",
+        model: "Model",
+        year: "Year",
       }) as Record<ApparatusGridFieldId, string>,
     [],
   );
   const getApparatusFieldValue = useCallback(
     (apparatus: DepartmentApparatusRecord, fieldId: ApparatusGridFieldId): string => {
       switch (fieldId) {
+        case "commonName":
+          return apparatus.commonName || "—";
         case "unitType":
           return (unitTypeOptions.find((o) => o.value === apparatus.unitType)?.label ?? apparatus.unitType) || "—";
-        case "minPersonnel":
-          return String(apparatus.minimumPersonnel);
-        case "personnelRequirements":
-          return apparatus.personnelRequirements.length > 0 ? apparatus.personnelRequirements.join(", ") : "—";
-        case "station":
-          return apparatus.station || "—";
+        case "make":
+          return apparatus.make || "—";
+        case "model":
+          return apparatus.model || "—";
+        case "year":
+          return apparatus.year || "—";
         default:
           return "—";
       }
@@ -10542,6 +4006,42 @@ function DepartmentDetailsPage() {
           .join(" "),
       }) as CSSProperties,
     [apparatusFieldOrder, apparatusFieldWidths],
+  );
+  const schedulerApparatusGridStyle = useMemo(
+    () =>
+      ({
+        "--scheduler-apparatus-grid-columns": SCHEDULER_APPARATUS_GRID_FIELD_ORDER
+          .map((fieldId) => {
+            const width =
+              schedulerApparatusFieldWidths[fieldId] ??
+              DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS[fieldId];
+            const clampedWidth = Math.min(
+              MAX_SCHEDULER_APPARATUS_FIELD_WIDTH,
+              Math.max(MIN_SCHEDULER_APPARATUS_FIELD_WIDTH, width),
+            );
+            return `${clampedWidth}px`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [schedulerApparatusFieldWidths],
+  );
+  const schedulerPersonnelGridStyle = useMemo(
+    () =>
+      ({
+        "--scheduler-personnel-grid-columns": SCHEDULER_PERSONNEL_GRID_FIELD_ORDER
+          .map((fieldId) => {
+            const width =
+              schedulerPersonnelFieldWidths[fieldId] ??
+              DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS[fieldId];
+            const clampedWidth = Math.min(
+              MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
+              Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, width),
+            );
+            return `${clampedWidth}px`;
+          })
+          .join(" "),
+      }) as CSSProperties,
+    [schedulerPersonnelFieldWidths],
   );
   useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
@@ -10567,6 +4067,75 @@ function DepartmentDetailsPage() {
       }
       activeApparatusResizeField.current = null;
       document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeSchedulerApparatusResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_SCHEDULER_APPARATUS_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_APPARATUS_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+      setSchedulerApparatusFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeSchedulerApparatusResizeField.current) {
+        return;
+      }
+      activeSchedulerApparatusResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeSchedulerPersonnelResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
+        Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, activeResize.startWidth + delta),
+      );
+      setSchedulerPersonnelFieldWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeSchedulerPersonnelResizeField.current) {
+        return;
+      }
+      activeSchedulerPersonnelResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", stopResize);
@@ -10589,6 +4158,36 @@ function DepartmentDetailsPage() {
     };
     document.body.classList.add("resizing-dispatch-columns");
   };
+  const startSchedulerApparatusFieldResize = (
+    fieldId: SchedulerApparatusGridFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeSchedulerApparatusResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth:
+        schedulerApparatusFieldWidths[fieldId] ??
+        DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+  const startSchedulerPersonnelFieldResize = (
+    fieldId: SchedulerPersonnelGridFieldId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeSchedulerPersonnelResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth:
+        schedulerPersonnelFieldWidths[fieldId] ??
+        DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
   const handleApparatusFieldDrop = (targetFieldId: ApparatusGridFieldId) => {
     if (!dragApparatusFieldId || dragApparatusFieldId === targetFieldId) {
       return;
@@ -10603,6 +4202,7 @@ function DepartmentDetailsPage() {
     nextOrder.splice(toIndex, 0, dragApparatusFieldId);
     setApparatusFieldOrder(nextOrder);
     setDragApparatusFieldId(null);
+    setAutoSaveTick((previous) => previous + 1);
   };
   const activeCollectionDefinition = useMemo(
     () =>
@@ -10621,15 +4221,15 @@ function DepartmentDetailsPage() {
     [stationRecords],
   );
   const sortedApparatusRecords = useMemo(
-    () => [...apparatusRecords].sort((a, b) => (a.unitId || "").localeCompare(b.unitId || "", undefined, { sensitivity: "base" })),
+    () => [...apparatusRecords].sort((a, b) => (a.commonName || "").localeCompare(b.commonName || "", undefined, { sensitivity: "base" })),
     [apparatusRecords],
   );
   const apparatusNames = useMemo(
     () =>
-      apparatusRecords
-        .map((apparatus) => `${apparatus.unitId}${apparatus.unitType ? ` (${apparatus.unitType})` : ""}`)
+      schedulerApparatusRecords
+        .map((apparatus) => apparatus.apparatus)
         .filter((entry) => entry.trim().length > 0),
-    [apparatusRecords],
+    [schedulerApparatusRecords],
   );
   const shiftOptionValues = useMemo(
     () =>
@@ -10644,15 +4244,60 @@ function DepartmentDetailsPage() {
       }),
     [shiftInformationEntries],
   );
+  const sortedPersonnelNames = useMemo(
+    () =>
+      Array.from(
+        new Set(userRecords.map((record) => record.name.trim()).filter((name) => name.length > 0)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [userRecords],
+  );
+  const addKellyRotation = () => {
+    if (!kellyRotationDraft.personnel.trim() || !kellyRotationDraft.startsOn) {
+      return;
+    }
+    const normalized: KellyRotationEntry = {
+      personnel: kellyRotationDraft.personnel.trim(),
+      repeatsEveryValue: Math.max(1, Math.floor(kellyRotationDraft.repeatsEveryValue || 1)),
+      repeatsEveryUnit: kellyRotationDraft.repeatsEveryUnit,
+      startsOn: kellyRotationDraft.startsOn,
+    };
+    setKellyRotations((previous) =>
+      editingKellyRotationIndex === null
+        ? [...previous.filter((entry) => entry.personnel !== normalized.personnel), normalized]
+        : previous.map((entry, index) => (index === editingKellyRotationIndex ? normalized : entry)),
+    );
+    setKellyRotationDraft({
+      personnel: "",
+      repeatsEveryValue: 14,
+      repeatsEveryUnit: "Shifts",
+      startsOn: "",
+    });
+    setEditingKellyRotationIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
 
   const detailCardOrder: DepartmentCollectionKey[] = [
     "stations",
-    "personnelQualifications",
     "apparatus",
+  ];
+  const schedulerSettingsCardOrder: DepartmentCollectionKey[] = [
     "shiftInformation",
-    "personnel",
+    "additionalFields",
+    "overtimeSetup",
+    "personnelQualifications",
+    "schedulerApparatus",
+    "schedulerPersonnel",
+    "kellyRotation",
   ];
   const detailCards = detailCardOrder
+    .map((key) =>
+      DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
+    )
+    .filter((definition): definition is DepartmentCollectionDefinition =>
+      Boolean(definition),
+    );
+  const schedulerSettingsCards = schedulerSettingsCardOrder
     .map((key) =>
       DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
     )
@@ -10665,14 +4310,142 @@ function DepartmentDetailsPage() {
   const accessCards = DEPARTMENT_COLLECTION_DEFINITIONS.filter(
     (definition) => definition.key === "userType",
   );
+  const personnelManagementCardOrder: DepartmentCollectionKey[] = ["personnel"];
+  const personnelManagementCards = personnelManagementCardOrder
+    .map((key) =>
+      DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
+    )
+    .filter((definition): definition is DepartmentCollectionDefinition =>
+      Boolean(definition),
+    );
+  const filteredUserRows = useMemo(() => {
+    const query = userSearchQuery.trim().toLocaleLowerCase();
+    const rows = userRecords.map((user, index) => ({ user, index }));
+    if (!query) {
+      return rows;
+    }
+    return rows.filter(({ user }) => {
+      const fields = [user.name, user.username, user.userType]
+        .map((value) => String(value ?? "").toLocaleLowerCase());
+      return fields.some((value) => value.includes(query));
+    });
+  }, [userRecords, userSearchQuery]);
+  const filteredPersonnelRows = useMemo(() => {
+    const query = personnelSearchQuery.trim().toLocaleLowerCase();
+    const rows = personnelRecords.map((personnel, index) => ({ personnel, index }));
+    if (!query) {
+      return rows;
+    }
+    return rows.filter(({ personnel }) => {
+      const fields = [
+        personnel.name,
+        personnel.shift,
+        personnel.apparatusAssignment,
+        personnel.station,
+        personnel.userType,
+        personnel.qualifications.join(", "),
+      ].map((value) => String(value ?? "").toLocaleLowerCase());
+      return fields.some((value) => value.includes(query));
+    });
+  }, [personnelRecords, personnelSearchQuery]);
+  const showDepartmentDetailsSection = mode === "departmentDetails";
+  const showSchedulerSettingsSection = mode === "schedulerSettings";
+  const showPersonnelManagementSection = mode === "personnelManagement";
+  const pageTitle = showDepartmentDetailsSection
+    ? "Admin Functions | Department Details"
+    : showSchedulerSettingsSection
+      ? "Admin Functions | Scheduler Settings"
+      : "Admin Functions | Personnel Management";
+  const pageSubtitle = showDepartmentDetailsSection
+    ? "Department setup and configuration values used throughout the system."
+    : showSchedulerSettingsSection
+      ? "Scheduler configuration and staffing control settings."
+      : "Manage users and personnel access settings.";
+  const saveButtonLabel = showSchedulerSettingsSection
+    ? "Save Scheduler Settings"
+    : showPersonnelManagementSection
+      ? "Save Personnel Management"
+      : "Save Department Details";
 
   const isStationsEditor = activeCollectionEditor === "stations";
   const isApparatusEditor = activeCollectionEditor === "apparatus";
-  const isPersonnelEditor = activeCollectionEditor === "personnel";
+  const isSchedulerApparatusEditor = activeCollectionEditor === "schedulerApparatus";
+  const isUsersEditor = activeCollectionEditor === "personnel";
+  const isSchedulerPersonnelEditor = activeCollectionEditor === "schedulerPersonnel";
   const isShiftEditor = activeCollectionEditor === "shiftInformation";
+  const isAdditionalFieldsEditor = activeCollectionEditor === "additionalFields";
+  const isOvertimeSetupEditor = activeCollectionEditor === "overtimeSetup";
   const isQualificationsEditor = activeCollectionEditor === "personnelQualifications";
+  const isKellyRotationEditor = activeCollectionEditor === "kellyRotation";
   const isUserTypeEditor = activeCollectionEditor === "userType";
   const isMutualAidEditor = activeCollectionEditor === "mutualAidDepartments";
+
+  useEffect(() => {
+    if (multiAddDefaultUserType.trim()) {
+      return;
+    }
+    const fallback = userTypeValues.find((value) => value.trim().length > 0) ?? "User";
+    setMultiAddDefaultUserType(fallback);
+  }, [multiAddDefaultUserType, userTypeValues]);
+
+  const multiAddPreview = useMemo(() => {
+    const existingUsernames = new Set(
+      userRecords.map((record) => record.username.trim().toLowerCase()).filter(Boolean),
+    );
+    const generatedCounts = new Map<string, number>();
+
+    const generated = multiAddRows.map((row, index) => {
+      const first = row.firstName.trim();
+      const last = row.lastName.trim();
+      const fullName = [first, last].filter(Boolean).join(" ").trim();
+      const generatedUsername = applyNameTemplate(multiAddUsernameTemplate, first, last)
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, "");
+      const generatedPassword = applyNameTemplate(multiAddPasswordTemplate, first, last).trim();
+      const userType = row.userType.trim() || multiAddDefaultUserType.trim() || "User";
+      if (generatedUsername) {
+        generatedCounts.set(generatedUsername, (generatedCounts.get(generatedUsername) ?? 0) + 1);
+      }
+      return {
+        index,
+        first,
+        last,
+        fullName,
+        username: generatedUsername,
+        password: generatedPassword,
+        userType,
+      };
+    });
+
+    return generated.map((entry) => {
+      const issues: string[] = [];
+      if (!entry.first || !entry.last) {
+        issues.push("First and Last Name are required.");
+      }
+      if (!entry.username) {
+        issues.push("Generated username is empty.");
+      }
+      if (!entry.password) {
+        issues.push("Generated password is empty.");
+      }
+      if (entry.username && existingUsernames.has(entry.username)) {
+        issues.push("Username already exists.");
+      }
+      if ((generatedCounts.get(entry.username) ?? 0) > 1) {
+        issues.push("Username collides with another row in this batch.");
+      }
+      return {
+        ...entry,
+        error: issues.join(" "),
+      };
+    });
+  }, [
+    multiAddRows,
+    multiAddUsernameTemplate,
+    multiAddPasswordTemplate,
+    multiAddDefaultUserType,
+    userRecords,
+  ]);
 
   useEffect(() => {
     let isMounted = true;
@@ -10732,20 +4505,103 @@ function DepartmentDetailsPage() {
         setSecondaryContactName(String(d.secondaryContactName ?? ""));
         setSecondaryContactPhone(String(d.secondaryContactPhone ?? ""));
         setDepartmentLogoFileName(String(d.departmentLogoFileName ?? "No file selected"));
+        const apiUiPreferencesByUser =
+          d.uiPreferencesByUser && typeof d.uiPreferencesByUser === "object"
+            ? (d.uiPreferencesByUser as Record<string, Record<string, unknown>>)
+            : {};
+        setUiPreferencesByUser(apiUiPreferencesByUser);
+        const apiUserUiPreferences =
+          apiUiPreferencesByUser[uiPreferenceUserKey] ??
+          apiUiPreferencesByUser[USER_UI_PREFERENCES_FALLBACK_KEY] ??
+          {};
+        setApparatusFieldWidths(
+          normalizeApparatusFieldWidths(apiUserUiPreferences.apparatusFieldWidths),
+        );
+        setApparatusFieldOrder(
+          normalizeApparatusFieldOrder(apiUserUiPreferences.apparatusFieldOrder),
+        );
+        setSchedulerApparatusFieldWidths(
+          normalizeSchedulerApparatusFieldWidths(
+            apiUserUiPreferences.schedulerApparatusFieldWidths,
+          ),
+        );
+        setSchedulerPersonnelFieldWidths(
+          normalizeSchedulerPersonnelFieldWidths(
+            apiUserUiPreferences.schedulerPersonnelFieldWidths,
+          ),
+        );
         setStationRecords(
           Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [],
         );
         setApparatusRecords(
-          Array.isArray(d.apparatusRecords) ? (d.apparatusRecords as DepartmentApparatusRecord[]) : [],
+          Array.isArray(d.masterApparatusRecords)
+            ? (d.masterApparatusRecords as DepartmentApparatusRecord[])
+            : [],
+        );
+        setSchedulerApparatusRecords(
+          Array.isArray(d.schedulerApparatusRecords)
+            ? (d.schedulerApparatusRecords as SchedulerApparatusRecord[])
+            : [],
         );
         setShiftInformationEntries(
           Array.isArray(d.shiftInformationEntries)
             ? (d.shiftInformationEntries as ShiftInformationEntry[])
             : [],
         );
+        // Prefer /api/users for Department Access (Wave 3); fallback to payload userRecords for older data.
+        const usersRes = await fetch("/api/users");
+        if (usersRes.ok && isMounted) {
+          const usersJson = (await usersRes.json()) as { ok?: boolean; users?: { id: string; username: string; userType: string; name?: string }[] };
+          if (usersJson?.ok && Array.isArray(usersJson.users)) {
+            setUserRecords(
+              usersJson.users.map((u) => ({
+                id: u.id,
+                name: String(u.name ?? u.username ?? "").trim(),
+                userType: String(u.userType ?? "User").trim(),
+                username: String(u.username ?? "").trim(),
+                password: "",
+              })),
+            );
+          } else {
+            setUserRecords(
+              Array.isArray(d.userRecords)
+                ? (d.userRecords as Record<string, unknown>[])
+                    .map((entry) => ({
+                      id: typeof entry.id === "string" ? entry.id : undefined,
+                      name: String(entry.name ?? "").trim(),
+                      userType: String(entry.userType ?? "").trim(),
+                      username: String(entry.username ?? "").trim(),
+                      password: String(entry.password ?? ""),
+                    }))
+                    .filter((entry) => entry.name.length > 0)
+                : [],
+            );
+          }
+        } else if (isMounted) {
+          setUserRecords(
+            Array.isArray(d.userRecords)
+              ? (d.userRecords as Record<string, unknown>[])
+                  .map((entry) => ({
+                    id: typeof entry.id === "string" ? entry.id : undefined,
+                    name: String(entry.name ?? "").trim(),
+                    userType: String(entry.userType ?? "").trim(),
+                    username: String(entry.username ?? "").trim(),
+                    password: String(entry.password ?? ""),
+                  }))
+                  .filter((entry) => entry.name.length > 0)
+              : [],
+          );
+        }
         setPersonnelRecords(
-          Array.isArray(d.personnelRecords) ? (d.personnelRecords as DepartmentPersonnelRecord[]) : [],
+          Array.isArray(d.schedulerPersonnelRecords)
+            ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
+            : [],
         );
+        setSchedulerEnabled(Boolean(d.schedulerEnabled ?? false));
+        setStandardOvertimeSlot(
+          Math.max(1, Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24)),
+        );
+        setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
         );
@@ -10757,6 +4613,9 @@ function DepartmentDetailsPage() {
         setSelectedMutualAidIds(
           Array.isArray(d.selectedMutualAidIds) ? (d.selectedMutualAidIds as string[]) : [],
         );
+        setKellyRotations(
+          Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
+        );
       } catch {
         // Keep localStorage initial values.
       }
@@ -10765,7 +4624,7 @@ function DepartmentDetailsPage() {
     return () => {
       isMounted = false;
     };
-  }, []);
+  }, [uiPreferenceUserKey]);
 
   const handleLogoSelection = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
@@ -10796,6 +4655,19 @@ function DepartmentDetailsPage() {
   const openCollectionEditor = (collectionKey: DepartmentCollectionKey) => {
     setActiveCollectionEditor(collectionKey);
     resetEditorSelection();
+    setIsMultiAddOpen(false);
+    setMultiAddError("");
+    setMultiAddSuccess("");
+    setUserSearchQuery("");
+    setPersonnelSearchQuery("");
+    if (
+      collectionKey === "apparatus" ||
+      collectionKey === "personnel" ||
+      collectionKey === "schedulerPersonnel" ||
+      collectionKey === "schedulerApparatus"
+    ) {
+      setIsMultiEditMode(false);
+    }
     if (collectionKey === "userType") {
       setUserTypeDraft("");
     }
@@ -10803,11 +4675,37 @@ function DepartmentDetailsPage() {
       setQualificationDraft("");
       setEditingQualificationIndex(null);
     }
+    if (collectionKey === "kellyRotation") {
+      setEditingKellyRotationIndex(null);
+      setKellyRotationDraft({
+        personnel: "",
+        repeatsEveryValue: 14,
+        repeatsEveryUnit: "Shifts",
+        startsOn: "",
+      });
+    }
+    if (collectionKey === "additionalFields") {
+      setEditingAdditionalFieldIndex(null);
+      setAdditionalFieldDraft({
+        id: "",
+        fieldName: "",
+        numberOfSlots: 1,
+        valueMode: "personnel",
+        personnelOverride: true,
+      });
+    }
   };
 
   const closeCollectionEditor = () => {
     setActiveCollectionEditor(null);
     resetEditorSelection();
+    setIsMultiAddOpen(false);
+    setResetPasswordTargetIndex(null);
+    setResetPasswordValue("");
+    setResetPasswordConfirmValue("");
+    setIsResettingPassword(false);
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
   };
 
   const setSelectionFromMultiSelect = (event: ChangeEvent<HTMLSelectElement>) => {
@@ -10833,13 +4731,31 @@ function DepartmentDetailsPage() {
     if (isApparatusEditor) {
       setApparatusDraft({
         unitId: "",
+        commonName: "",
         unitType: "",
+        make: "",
+        model: "",
+        year: "",
+      });
+    }
+    if (isSchedulerApparatusEditor) {
+      setSchedulerApparatusDraft({
+        apparatus: "",
         minimumPersonnel: 0,
+        maximumPersonnel: 2,
         personnelRequirements: [],
         station: "",
       });
     }
-    if (isPersonnelEditor) {
+    if (isUsersEditor) {
+      setUserDraft({
+        name: "",
+        userType: "",
+        username: "",
+        password: "",
+      });
+    }
+    if (isSchedulerPersonnelEditor) {
       setPersonnelDraft({
         name: "",
         shift: "",
@@ -10873,7 +4789,13 @@ function DepartmentDetailsPage() {
       if (isApparatusEditor && apparatusRecords[index]) {
         setApparatusDraft(apparatusRecords[index]!);
       }
-      if (isPersonnelEditor && personnelRecords[index]) {
+      if (isSchedulerApparatusEditor && schedulerApparatusRecords[index]) {
+        setSchedulerApparatusDraft(schedulerApparatusRecords[index]!);
+      }
+      if (isUsersEditor && userRecords[index]) {
+        setUserDraft(userRecords[index]!);
+      }
+      if (isSchedulerPersonnelEditor && personnelRecords[index]) {
         setPersonnelDraft(personnelRecords[index]!);
       }
       setIsEntryFormOpen(true);
@@ -10897,13 +4819,23 @@ function DepartmentDetailsPage() {
     if (isApparatusEditor) {
       setApparatusDraft({
         unitId: "",
+        commonName: "",
         unitType: "",
+        make: "",
+        model: "",
+        year: "",
+      });
+    }
+    if (isSchedulerApparatusEditor) {
+      setSchedulerApparatusDraft({
+        apparatus: "",
         minimumPersonnel: 0,
+        maximumPersonnel: 2,
         personnelRequirements: [],
         station: "",
       });
     }
-    if (isPersonnelEditor) {
+    if (isSchedulerPersonnelEditor) {
       setPersonnelBulkDraft({
         shift: "",
         apparatusAssignment: "",
@@ -10949,54 +4881,581 @@ function DepartmentDetailsPage() {
   };
 
   const saveApparatusForm = () => {
-    if (!isMultiEditMode) {
-      if (!apparatusDraft.unitId.trim() || !apparatusDraft.unitType.trim()) {
-        return;
-      }
-      const minReq = Number.isFinite(apparatusDraft.minimumPersonnel) ? apparatusDraft.minimumPersonnel : 0;
-      if (apparatusDraft.personnelRequirements.length !== minReq) {
-        setStatusMessage(
-          "Minimum Requirements selection count must match Minimum Personnel.",
-        );
-        return;
-      }
-      const normalized = {
-        ...apparatusDraft,
-        unitId: apparatusDraft.unitId.trim(),
-        minimumPersonnel: Number.isFinite(apparatusDraft.minimumPersonnel)
-          ? apparatusDraft.minimumPersonnel
-          : 0,
-      };
-      setApparatusRecords((previous) =>
-        editingIndex === null
-          ? [...previous, normalized]
-          : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
-      );
-    } else {
-      setApparatusRecords((previous) =>
-        previous.map((entry, index) => {
-          if (!selectedMultiIndices.includes(index)) {
-            return entry;
-          }
-          return {
-            ...entry,
-            unitType: apparatusDraft.unitType || entry.unitType,
-            minimumPersonnel:
-              apparatusDraft.minimumPersonnel > 0
-                ? apparatusDraft.minimumPersonnel
-                : entry.minimumPersonnel,
-            personnelRequirements:
-              apparatusDraft.personnelRequirements.length > 0
-                ? apparatusDraft.personnelRequirements
-                : entry.personnelRequirements,
-            station: apparatusDraft.station || entry.station,
-          };
-        }),
-      );
+    if (!apparatusDraft.unitId.trim() || !apparatusDraft.commonName.trim() || !apparatusDraft.unitType.trim()) {
+      return;
     }
+    const normalized = {
+      ...apparatusDraft,
+      unitId: apparatusDraft.unitId.trim(),
+      commonName: apparatusDraft.commonName.trim(),
+      unitType: apparatusDraft.unitType.trim(),
+      make: apparatusDraft.make.trim(),
+      model: apparatusDraft.model.trim(),
+      year: apparatusDraft.year.trim(),
+    };
+    setApparatusRecords((previous) =>
+      editingIndex === null
+        ? [...previous, normalized]
+        : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
+    );
     setIsEntryFormOpen(false);
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
+  };
+
+  const normalizeSchedulerStationGrouping = (
+    records: SchedulerApparatusRecord[],
+  ): SchedulerApparatusRecord[] => {
+    const groups = new Map<string, SchedulerApparatusRecord[]>();
+    const stationOrder: string[] = [];
+    records.forEach((entry) => {
+      const key = entry.station.trim().toLocaleLowerCase();
+      if (!groups.has(key)) {
+        groups.set(key, []);
+        stationOrder.push(key);
+      }
+      groups.get(key)!.push(entry);
+    });
+    return stationOrder.flatMap((key) => groups.get(key) ?? []);
+  };
+
+  const saveSchedulerApparatusForm = () => {
+    if (!schedulerApparatusDraft.apparatus.trim()) {
+      return;
+    }
+    const minimumPersonnel = Number.isFinite(schedulerApparatusDraft.minimumPersonnel)
+      ? Math.max(0, Math.floor(schedulerApparatusDraft.minimumPersonnel))
+      : 0;
+    const maximumPersonnel = Number.isFinite(schedulerApparatusDraft.maximumPersonnel)
+      ? Math.max(1, Math.floor(schedulerApparatusDraft.maximumPersonnel))
+      : 1;
+    if (maximumPersonnel < minimumPersonnel) {
+      setStatusMessage("Max Personnel must be greater than or equal to Min Personnel.");
+      return;
+    }
+    if (schedulerApparatusDraft.personnelRequirements.length !== minimumPersonnel) {
+      setStatusMessage("Minimum Requirements selection count must match Minimum Personnel.");
+      return;
+    }
+    const normalized: SchedulerApparatusRecord = {
+      apparatus: schedulerApparatusDraft.apparatus.trim(),
+      minimumPersonnel,
+      maximumPersonnel,
+      personnelRequirements: schedulerApparatusDraft.personnelRequirements.filter(Boolean),
+      station: schedulerApparatusDraft.station.trim(),
+    };
+    setSchedulerApparatusRecords((previous) => {
+      const next =
+        editingIndex === null
+          ? [...previous, normalized]
+          : previous.map((entry, index) => (index === editingIndex ? normalized : entry));
+      return normalizeSchedulerStationGrouping(next);
+    });
+    setIsEntryFormOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const importSchedulerApparatusFromDepartment = () => {
+    setSchedulerApparatusRecords((previous) => {
+      const existing = new Set(
+        previous.map((entry) => entry.apparatus.trim().toLocaleLowerCase()).filter(Boolean),
+      );
+      const imported = apparatusRecords
+        .map((entry) => entry.commonName.trim())
+        .filter((name) => name.length > 0 && !existing.has(name.toLocaleLowerCase()))
+        .map((name) => ({
+          apparatus: name,
+          minimumPersonnel: 0,
+          maximumPersonnel: 2,
+          personnelRequirements: [] as string[],
+          station: "",
+        }));
+      return normalizeSchedulerStationGrouping([...previous, ...imported]);
+    });
+    setIsImportApparatusModalOpen(false);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Imported apparatus into Scheduler Settings.");
+  };
+
+  const handleSchedulerApparatusDrop = (targetIndex: number) => {
+    setSchedulerApparatusRecords((previous) => {
+      const fromIndex = dragSchedulerApparatusIndex;
+      if (fromIndex === null || fromIndex < 0 || fromIndex >= previous.length) {
+        return previous;
+      }
+      if (targetIndex < 0 || targetIndex >= previous.length) {
+        return previous;
+      }
+      const fromStation = previous[fromIndex]?.station.trim().toLocaleLowerCase() ?? "";
+      const targetStation = previous[targetIndex]?.station.trim().toLocaleLowerCase() ?? "";
+      const next = [...previous];
+
+      if (fromStation && fromStation === targetStation) {
+        const [moved] = next.splice(fromIndex, 1);
+        next.splice(targetIndex, 0, moved!);
+        return next;
+      }
+
+      const sourceIndexes = next
+        .map((entry, index) => ({ entry, index }))
+        .filter(({ entry }) => entry.station.trim().toLocaleLowerCase() === fromStation)
+        .map(({ index }) => index);
+
+      if (sourceIndexes.length === 0) {
+        return previous;
+      }
+
+      const movedGroup = sourceIndexes.map((index) => next[index]!);
+      const remaining = next.filter((_, index) => !sourceIndexes.includes(index));
+      const insertIndex = remaining.findIndex(
+        (entry) => entry.station.trim().toLocaleLowerCase() === targetStation,
+      );
+      const safeInsertIndex = insertIndex < 0 ? remaining.length : insertIndex;
+      remaining.splice(safeInsertIndex, 0, ...movedGroup);
+      return remaining;
+    });
+    setDragSchedulerApparatusIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Scheduler apparatus order updated.");
+  };
+
+  const saveUserForm = async () => {
+    const normalizedName = userDraft.name.trim();
+    const normalizedUsername = userDraft.username.trim().toLowerCase();
+    if (!normalizedName) {
+      return;
+    }
+    const isNewUser = editingIndex === null;
+    if (!normalizedUsername || (isNewUser && !userDraft.password.trim())) {
+      setStatusMessage("Users require username and password.");
+      return;
+    }
+    if (isNewUser) {
+      const passwordError = validatePasswordPolicyClient(userDraft.password);
+      if (passwordError) {
+        setStatusMessage(passwordError);
+        return;
+      }
+    } else if (userDraft.password.trim()) {
+      const passwordError = validatePasswordPolicyClient(userDraft.password);
+      if (passwordError) {
+        setStatusMessage(passwordError);
+        return;
+      }
+    }
+    const duplicateUsernameIndex = userRecords.findIndex(
+      (entry, index) =>
+        index !== editingIndex &&
+        entry.username.trim().toLowerCase() === normalizedUsername,
+    );
+    if (duplicateUsernameIndex >= 0) {
+      setStatusMessage("Username already exists. Choose a different username.");
+      return;
+    }
+    const previousName = editingIndex !== null ? userRecords[editingIndex]?.name.trim() ?? "" : "";
+    const userId = editingIndex !== null ? userRecords[editingIndex]?.id : undefined;
+    try {
+      if (isNewUser) {
+        const res = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: normalizedName,
+            username: normalizedUsername,
+            password: userDraft.password.trim(),
+            userType: userDraft.userType || "User",
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          user?: { id: string; username: string; userType: string; name?: string };
+          message?: string;
+        };
+        if (!res.ok) {
+          setStatusMessage(json?.message ?? "Failed to create user.");
+          return;
+        }
+        const created = json.user!;
+        const nextUserRecords = [
+          ...userRecords,
+          {
+            id: created.id,
+            name: String(created.name ?? normalizedName),
+            userType: created.userType,
+            username: created.username,
+            password: "",
+          },
+        ];
+        setUserRecords(nextUserRecords);
+        setPersonnelRecords((prev) => {
+          const byName = new Map(
+            prev
+              .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+              .filter(([name]) => name.length > 0),
+          );
+          return nextUserRecords
+            .map((user) => {
+              const userName = user.name.trim();
+              const existing = byName.get(userName.toLocaleLowerCase());
+              if (existing) {
+                const matched = nextUserRecords.find(
+                  (u) => u.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+                );
+                return { ...existing, name: userName, userType: matched?.userType ?? existing.userType };
+              }
+              const matched = nextUserRecords.find(
+                (r) => r.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+              );
+              return {
+                name: userName,
+                shift: "",
+                apparatusAssignment: "",
+                station: "",
+                userType: matched?.userType ?? "",
+                qualifications: [],
+              } satisfies DepartmentPersonnelRecord;
+            })
+            .filter((entry) => entry.name.length > 0);
+        });
+      } else {
+        let targetId = userId;
+        if (!targetId) {
+          const listRes = await fetch("/api/users");
+          const listJson = (await listRes.json()) as { ok?: boolean; users?: { id: string; username: string }[] };
+          if (listJson?.ok && Array.isArray(listJson.users)) {
+            const found = listJson.users.find(
+              (u) => u.username.toLowerCase() === userRecords[editingIndex!]?.username?.toLowerCase(),
+            );
+            targetId = found?.id;
+          }
+        }
+        if (!targetId) {
+          setStatusMessage("Could not find user to update. Refresh the page and try again.");
+          return;
+        }
+        const res = await fetch(`/api/users/${targetId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: normalizedName,
+            username: normalizedUsername,
+            ...(userDraft.password.trim() ? { password: userDraft.password.trim() } : {}),
+            userType: userDraft.userType || "User",
+          }),
+        });
+        const json = (await res.json()) as {
+          ok?: boolean;
+          user?: { id: string; username: string; userType: string; name?: string };
+          message?: string;
+        };
+        if (!res.ok) {
+          setStatusMessage(json?.message ?? "Failed to update user.");
+          return;
+        }
+        const updated = json.user!;
+        const nextUserRecords = userRecords.map((entry, index) =>
+          index === editingIndex
+            ? {
+                id: updated.id,
+                name: String(updated.name ?? normalizedName),
+                userType: updated.userType,
+                username: updated.username,
+                password: "",
+              }
+            : entry,
+        );
+        setUserRecords(nextUserRecords);
+        setPersonnelRecords((prev) => {
+          const byName = new Map(
+            prev
+              .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+              .filter(([name]) => name.length > 0),
+          );
+          return nextUserRecords
+            .map((user) => {
+              const userName = user.name.trim();
+              const existing = byName.get(userName.toLocaleLowerCase());
+              if (existing) {
+                const matched = nextUserRecords.find(
+                  (u) => u.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+                );
+                return { ...existing, name: userName, userType: matched?.userType ?? existing.userType };
+              }
+              const matched = nextUserRecords.find(
+                (r) => r.name.trim().localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+              );
+              return {
+                name: userName,
+                shift: "",
+                apparatusAssignment: "",
+                station: "",
+                userType: matched?.userType ?? "",
+                qualifications: [],
+              } satisfies DepartmentPersonnelRecord;
+            })
+            .filter((entry) => entry.name.length > 0);
+        });
+        if (
+          previousName &&
+          normalizedName &&
+          previousName.localeCompare(normalizedName, undefined, { sensitivity: "base" }) !== 0
+        ) {
+          setKellyRotations((previous) =>
+            previous.map((entry) =>
+              entry.personnel.trim() === previousName ? { ...entry, personnel: normalizedName } : entry,
+            ),
+          );
+        }
+      }
+      setIsEntryFormOpen(false);
+      setStatusMessage("User saved.");
+    } catch {
+      setStatusMessage("Network error saving user.");
+    }
+  };
+
+  const updateMultiAddRow = (
+    index: number,
+    key: keyof MultiAddUserDraft,
+    value: string,
+  ) => {
+    setMultiAddRows((previous) =>
+      previous.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, [key]: value } : row,
+      ),
+    );
+  };
+
+  const addMultiAddRow = () => {
+    setMultiAddRows((previous) => [
+      ...previous,
+      { firstName: "", lastName: "", userType: "" },
+    ]);
+  };
+
+  const removeMultiAddRow = (index: number) => {
+    setMultiAddRows((previous) => {
+      const next = previous.filter((_row, rowIndex) => rowIndex !== index);
+      return next.length > 0 ? next : [{ firstName: "", lastName: "", userType: "" }];
+    });
+  };
+
+  const submitMultiAddUsers = async () => {
+    setMultiAddError("");
+    setMultiAddSuccess("");
+    const invalid = multiAddPreview.filter((row) => row.error.length > 0);
+    if (invalid.length > 0) {
+      setMultiAddError("Fix preview errors before creating users.");
+      return;
+    }
+    if (multiAddPreview.length === 0) {
+      setMultiAddError("Add at least one user row.");
+      return;
+    }
+
+    setIsMultiAddingUsers(true);
+    const createdRows: DepartmentUserRecord[] = [];
+    const failedRows: Array<{ index: number; message: string }> = [];
+
+    for (const row of multiAddPreview) {
+      try {
+        const response = await fetch("/api/users", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            name: row.fullName,
+            username: row.username,
+            password: row.password,
+            userType: row.userType,
+          }),
+        });
+        const json = (await response.json()) as {
+          ok?: boolean;
+          user?: { id: string; username: string; userType: string; name?: string };
+          message?: string;
+        };
+        if (!response.ok || !json?.ok || !json.user) {
+          failedRows.push({
+            index: row.index,
+            message: json?.message ?? "Create user failed.",
+          });
+          continue;
+        }
+        createdRows.push({
+          id: json.user.id,
+          name: String(json.user.name ?? row.fullName),
+          userType: String(json.user.userType ?? row.userType),
+          username: String(json.user.username ?? row.username),
+          password: "",
+        });
+      } catch {
+        failedRows.push({
+          index: row.index,
+          message: "Network error.",
+        });
+      }
+    }
+
+    if (createdRows.length > 0) {
+      const nextUserRecords = [...userRecords];
+      const existingUsernames = new Set(
+        nextUserRecords.map((record) => record.username.trim().toLowerCase()),
+      );
+      createdRows.forEach((created) => {
+        const normalizedUsername = created.username.trim().toLowerCase();
+        if (!existingUsernames.has(normalizedUsername)) {
+          nextUserRecords.push(created);
+          existingUsernames.add(normalizedUsername);
+        }
+      });
+      setUserRecords(nextUserRecords);
+      setPersonnelRecords((prev) => {
+        const byName = new Map(
+          prev
+            .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+            .filter(([name]) => name.length > 0),
+        );
+        return nextUserRecords
+          .map((user) => {
+            const userName = user.name.trim();
+            const existing = byName.get(userName.toLocaleLowerCase());
+            if (existing) {
+              const matched = nextUserRecords.find(
+                (u) =>
+                  u.name
+                    .trim()
+                    .localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+              );
+              return {
+                ...existing,
+                name: userName,
+                userType: matched?.userType ?? existing.userType,
+              };
+            }
+            const matched = nextUserRecords.find(
+              (r) =>
+                r.name
+                  .trim()
+                  .localeCompare(userName, undefined, { sensitivity: "base" }) === 0,
+            );
+            return {
+              name: userName,
+              shift: "",
+              apparatusAssignment: "",
+              station: "",
+              userType: matched?.userType ?? "",
+              qualifications: [],
+            } satisfies DepartmentPersonnelRecord;
+          })
+          .filter((entry) => entry.name.length > 0);
+      });
+    }
+
+    if (failedRows.length > 0) {
+      setMultiAddError(
+        failedRows
+          .map((failure) => `Row ${failure.index + 1}: ${failure.message}`)
+          .join(" "),
+      );
+      setMultiAddRows(
+        failedRows.map((failure) => multiAddRows[failure.index]!).filter(Boolean),
+      );
+    } else {
+      setMultiAddRows([{ firstName: "", lastName: "", userType: "" }]);
+      setMultiAddSuccess(`${createdRows.length} user(s) created.`);
+      setStatusMessage(`${createdRows.length} user(s) created.`);
+      setIsMultiAddOpen(false);
+    }
+    setIsMultiAddingUsers(false);
+  };
+
+  const openResetPasswordForm = (index: number) => {
+    setResetPasswordTargetIndex(index);
+    setResetPasswordValue("");
+    setResetPasswordConfirmValue("");
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
+  };
+
+  const submitResetUserPassword = async () => {
+    if (resetPasswordTargetIndex === null) {
+      return;
+    }
+    const target = userRecords[resetPasswordTargetIndex];
+    if (!target) {
+      setResetPasswordError("Could not find selected user.");
+      return;
+    }
+    const trimmed = resetPasswordValue.trim();
+    const trimmedConfirm = resetPasswordConfirmValue.trim();
+    if (!trimmed || !trimmedConfirm) {
+      setResetPasswordError("Please enter and confirm the new password.");
+      return;
+    }
+    if (trimmed !== trimmedConfirm) {
+      setResetPasswordError("New password and confirm password must match.");
+      return;
+    }
+    const policyError = validatePasswordPolicyClient(trimmed);
+    if (policyError) {
+      setResetPasswordError(policyError);
+      return;
+    }
+    setIsResettingPassword(true);
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
+    try {
+      let targetId = target.id?.trim();
+      if (!targetId && target.username.trim()) {
+        const listRes = await fetch("/api/users");
+        const listJson = (await listRes.json()) as {
+          ok?: boolean;
+          users?: { id: string; username: string }[];
+        };
+        if (listJson?.ok && Array.isArray(listJson.users)) {
+          const matched = listJson.users.find(
+            (user) =>
+              user.username.trim().toLowerCase() === target.username.trim().toLowerCase(),
+          );
+          targetId = matched?.id?.trim() ?? "";
+        }
+      }
+      if (!targetId) {
+        setResetPasswordError("Unable to find this user for password reset. Refresh and try again.");
+        return;
+      }
+      const res = await fetch(`/api/users/${targetId}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ newPassword: trimmed }),
+      });
+      const json = (await res.json()) as { ok?: boolean; message?: string };
+      if (!res.ok || !json?.ok) {
+        setResetPasswordError(json?.message ?? "Unable to reset password.");
+        return;
+      }
+      setResetPasswordSuccess("Password reset.");
+      setStatusMessage("Password reset.");
+      setResetPasswordValue("");
+      setResetPasswordConfirmValue("");
+    } catch {
+      setResetPasswordError("Unable to reach reset-password service.");
+    } finally {
+      setIsResettingPassword(false);
+    }
+  };
+
+  const resetUserPassword = async (index: number) => {
+    openResetPasswordForm(index);
+  };
+
+  const closeResetPasswordForm = () => {
+    setResetPasswordTargetIndex(null);
+    setResetPasswordValue("");
+    setResetPasswordConfirmValue("");
+    setResetPasswordError("");
+    setResetPasswordSuccess("");
   };
 
   const savePersonnelForm = () => {
@@ -11004,6 +5463,8 @@ function DepartmentDetailsPage() {
       if (!personnelDraft.name.trim()) {
         return;
       }
+      const previousName =
+        editingIndex !== null ? personnelRecords[editingIndex]?.name.trim() ?? "" : "";
       const normalized = {
         ...personnelDraft,
         name: personnelDraft.name.trim(),
@@ -11014,6 +5475,19 @@ function DepartmentDetailsPage() {
           ? [...previous, normalized]
           : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
       );
+      if (
+        previousName &&
+        normalized.name &&
+        previousName.localeCompare(normalized.name, undefined, { sensitivity: "base" }) !== 0
+      ) {
+        setKellyRotations((previous) =>
+          previous.map((entry) =>
+            entry.personnel.trim() === previousName
+              ? { ...entry, personnel: normalized.name }
+              : entry,
+          ),
+        );
+      }
     } else {
       setPersonnelRecords((previous) =>
         previous.map((entry, index) => {
@@ -11105,10 +5579,121 @@ function DepartmentDetailsPage() {
     setStatusMessage("Auto-saved.");
   };
 
+  const resetAdditionalFieldDraft = useCallback(() => {
+    setAdditionalFieldDraft({
+      id: "",
+      fieldName: "",
+      numberOfSlots: 1,
+      valueMode: "personnel",
+      personnelOverride: true,
+    });
+  }, []);
+
+  const saveAdditionalField = () => {
+    const normalizedName = additionalFieldDraft.fieldName.trim();
+    if (!normalizedName) {
+      return;
+    }
+    const normalizedSlots = Math.max(1, Math.floor(Number(additionalFieldDraft.numberOfSlots) || 1));
+    const normalizedMode: AdditionalFieldValueMode =
+      additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
+    const normalizedOverride =
+      normalizedMode === "personnel" ? Boolean(additionalFieldDraft.personnelOverride) : false;
+
+    setAdditionalFieldRecords((previous) => {
+      const existingRow =
+        editingAdditionalFieldIndex !== null ? previous[editingAdditionalFieldIndex] : undefined;
+      const preserveKellyId = existingRow?.id === "support-kelly-day";
+      const baseId = existingRow?.id ?? toAdditionalFieldId(normalizedName);
+      let nextId = preserveKellyId ? "support-kelly-day" : baseId;
+      const takenIds = new Set(
+        previous
+          .map((entry, index) => ({ entry, index }))
+          .filter(({ index }) => index !== editingAdditionalFieldIndex)
+          .map(({ entry }) => entry.id),
+      );
+      if (takenIds.has(nextId)) {
+        let counter = 2;
+        while (takenIds.has(`${nextId}-${counter}`)) {
+          counter += 1;
+        }
+        nextId = `${nextId}-${counter}`;
+      }
+      const normalizedRow: AdditionalFieldRecord = {
+        id: nextId,
+        fieldName: normalizedName,
+        numberOfSlots: normalizedSlots,
+        valueMode: preserveKellyId ? "personnel" : normalizedMode,
+        personnelOverride: preserveKellyId ? true : normalizedOverride,
+      };
+      return editingAdditionalFieldIndex === null
+        ? [...previous, normalizedRow]
+        : previous.map((entry, index) =>
+            index === editingAdditionalFieldIndex ? normalizedRow : entry,
+          );
+    });
+
+    setEditingAdditionalFieldIndex(null);
+    resetAdditionalFieldDraft();
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const removeAdditionalField = (index: number) => {
+    const record = additionalFieldRecords[index];
+    if (!record) return;
+    if (record.id === "support-kelly-day") {
+      setStatusMessage("Kelly Day is required and cannot be removed.");
+      return;
+    }
+    setAdditionalFieldRecords((previous) =>
+      previous.filter((_, fieldIndex) => fieldIndex !== index),
+    );
+    if (editingAdditionalFieldIndex === index) {
+      setEditingAdditionalFieldIndex(null);
+      resetAdditionalFieldDraft();
+    }
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const handleAdditionalFieldDrop = (targetIndex: number) => {
+    setAdditionalFieldRecords((previous) => {
+      const fromIndex = dragAdditionalFieldIndex;
+      if (fromIndex === null || fromIndex < 0 || fromIndex >= previous.length) {
+        return previous;
+      }
+      if (targetIndex < 0 || targetIndex >= previous.length || targetIndex === fromIndex) {
+        return previous;
+      }
+      const next = [...previous];
+      const [moved] = next.splice(fromIndex, 1);
+      if (!moved) {
+        return previous;
+      }
+      next.splice(targetIndex, 0, moved);
+      return next;
+    });
+    setDragAdditionalFieldIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Additional field order updated.");
+  };
+
   const persistDepartmentDetails = useCallback(() => {
     if (typeof window === "undefined") {
       return;
     }
+    const nextUiPreferencesByUser = {
+      ...uiPreferencesByUser,
+      [uiPreferenceUserKey]: {
+        ...(uiPreferencesByUser[uiPreferenceUserKey] ?? {}),
+        apparatusFieldWidths,
+        apparatusFieldOrder,
+        schedulerApparatusFieldWidths,
+        schedulerPersonnelFieldWidths,
+      },
+    };
+    // Omit userRecords from payload: auth lives in User table only (Wave 3), not in DepartmentDetails.payloadJson.
     const payload = {
       departmentName,
       departmentStreet,
@@ -11122,12 +5707,18 @@ function DepartmentDetailsPage() {
       secondaryContactPhone,
       departmentLogoFileName,
       stationRecords,
-      apparatusRecords,
+      masterApparatusRecords: apparatusRecords,
+      schedulerApparatusRecords,
+      additionalFields: additionalFieldRecords,
+      standardOvertimeSlot,
       shiftInformationEntries,
-      personnelRecords,
+      schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
       userTypeValues,
       selectedMutualAidIds,
+      kellyRotations,
+      schedulerEnabled,
+      uiPreferencesByUser: nextUiPreferencesByUser,
     };
     window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(payload));
     fetch("/api/department-details", {
@@ -11137,7 +5728,7 @@ function DepartmentDetailsPage() {
     })
       .then((res) => {
         if (res.ok) {
-          setStatusMessage("Department details saved to file (data/department-details.json).");
+          setStatusMessage("Department details saved.");
         } else {
           setStatusMessage("Saved locally. File save failed—ensure npm run proxy is running.");
         }
@@ -11146,6 +5737,8 @@ function DepartmentDetailsPage() {
         setStatusMessage("Saved locally. File save failed—ensure npm run proxy is running.");
       });
   }, [
+    apparatusFieldOrder,
+    apparatusFieldWidths,
     apparatusRecords,
     departmentCity,
     departmentLogoFileName,
@@ -11156,8 +5749,17 @@ function DepartmentDetailsPage() {
     departmentZipCode,
     mainContactName,
     mainContactPhone,
+    kellyRotations,
+    additionalFieldRecords,
+    standardOvertimeSlot,
     personnelQualifications,
     personnelRecords,
+    schedulerApparatusFieldWidths,
+    schedulerApparatusRecords,
+    schedulerEnabled,
+    schedulerPersonnelFieldWidths,
+    uiPreferenceUserKey,
+    uiPreferencesByUser,
     secondaryContactName,
     secondaryContactPhone,
     selectedMutualAidIds,
@@ -11183,13 +5785,16 @@ function DepartmentDetailsPage() {
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Admin Functions | Department Details</h1>
-          <p>Department setup and configuration values used throughout the system.</p>
+          <h1>{pageTitle}</h1>
+          <p>{pageSubtitle}</p>
         </div>
       </header>
 
       <form className="panel-grid" onSubmit={handleDepartmentDetailsSave}>
-        <section className="panel-grid two-column">
+        <section
+          className="panel-grid two-column"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <article className="panel">
             <div className="panel-header">
               <h2>Department Profile</h2>
@@ -11236,7 +5841,10 @@ function DepartmentDetailsPage() {
           </article>
         </section>
 
-        <section className="panel-grid two-column">
+        <section
+          className="panel-grid two-column"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <article className="panel">
             <div className="panel-header">
               <h2>Main Contact</h2>
@@ -11261,7 +5869,10 @@ function DepartmentDetailsPage() {
           </article>
         </section>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Department Details</h2>
           </div>
@@ -11282,7 +5893,9 @@ function DepartmentDetailsPage() {
                       : definition.key === "shiftInformation"
                         ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
                         : definition.key === "personnel"
-                          ? `Total Personnel: ${personnelRecords.length}`
+                          ? `Total Users: ${userRecords.length}`
+                        : definition.key === "kellyRotation"
+                          ? `Total Kelly Rotations: ${kellyRotations.length}`
                           : `Total Qualifications: ${personnelQualifications.length}`}
                 </p>
               </div>
@@ -11290,7 +5903,65 @@ function DepartmentDetailsPage() {
           </div>
         </article>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showSchedulerSettingsSection ? undefined : "none" }}
+        >
+          <div className="panel-header">
+            <h2>Scheduler Settings</h2>
+            <label className="field-hint" style={{ marginLeft: "auto" }}>
+              <input
+                type="checkbox"
+                checked={schedulerEnabled}
+                onChange={(event) => {
+                  setSchedulerEnabled(event.target.checked);
+                  setAutoSaveTick((previous) => previous + 1);
+                  setStatusMessage("Auto-saved.");
+                }}
+                style={{ marginRight: "0.35rem" }}
+              />
+              Enable Scheduler Settings
+            </label>
+          </div>
+          {schedulerEnabled ? (
+            <div className="department-collection-grid">
+              {schedulerSettingsCards.map((definition) => (
+                <div key={definition.key} className="department-collection-card">
+                  <div className="department-collection-card-header">
+                    <h3>{definition.label}</h3>
+                    <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                      {definition.editButtonLabel}
+                    </button>
+                  </div>
+                  <p className="field-hint">
+                    {definition.key === "shiftInformation"
+                      ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
+                      : definition.key === "additionalFields"
+                      ? `Total Additional Fields: ${additionalFieldRecords.length}`
+                      : definition.key === "overtimeSetup"
+                      ? `Standard Overtime Slot: ${standardOvertimeSlot} hour(s)`
+                      : definition.key === "schedulerApparatus"
+                      ? `Total Apparatus: ${schedulerApparatusRecords.length}`
+                      : definition.key === "schedulerPersonnel"
+                      ? `Total Personnel: ${personnelRecords.length}`
+                      : definition.key === "kellyRotation"
+                        ? `Total Kelly Rotations: ${kellyRotations.length}`
+                        : `Total Qualifications: ${personnelQualifications.length}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="field-hint">
+              Scheduler settings are hidden until this feature is enabled by a super admin.
+            </p>
+          )}
+        </article>
+
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Department Resources</h2>
           </div>
@@ -11309,7 +5980,10 @@ function DepartmentDetailsPage() {
           </div>
         </article>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Department Access</h2>
           </div>
@@ -11328,9 +6002,35 @@ function DepartmentDetailsPage() {
           </div>
         </article>
 
+        <article
+          className="panel"
+          style={{ display: showPersonnelManagementSection ? undefined : "none" }}
+        >
+          <div className="panel-header">
+            <h2>Personnel Management</h2>
+          </div>
+          <div className="department-collection-grid">
+            {personnelManagementCards.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button
+                    type="button"
+                    className="rl-box-button"
+                    onClick={() => openCollectionEditor(definition.key)}
+                  >
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p className="field-hint">Total Users: {userRecords.length}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
         <div className="header-actions">
           <button type="submit" className="primary-button">
-            Save Department Details
+            {saveButtonLabel}
           </button>
           {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
         </div>
@@ -11346,134 +6046,532 @@ function DepartmentDetailsPage() {
               </button>
             </div>
 
-            {(isStationsEditor || isApparatusEditor || isPersonnelEditor) ? (
+            {(isStationsEditor || isApparatusEditor || isUsersEditor || isSchedulerPersonnelEditor || isSchedulerApparatusEditor || isAdditionalFieldsEditor) ? (
               <>
                 <div className="department-editor-toolbar-actions">
-                  <button type="button" className="secondary-button compact-button" onClick={openAddForm}>
-                    Add
-                  </button>
-                  <button
-                    type="button"
-                    className={`secondary-button compact-button ${isMultiEditMode ? "department-toggle-active" : ""}`}
-                    onClick={() => {
-                      setIsMultiEditMode((previous) => !previous);
-                      setSelectedSingleIndex(null);
-                      setSelectedMultiIndices([]);
-                    }}
-                  >
-                    Edit Multiple
-                  </button>
-                  <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
-                    Edit
-                  </button>
+                  {!isSchedulerPersonnelEditor && !isSchedulerApparatusEditor && !isAdditionalFieldsEditor ? (
+                    <button type="button" className="secondary-button compact-button" onClick={openAddForm}>
+                      Add
+                    </button>
+                  ) : null}
+                  {isUsersEditor ? (
+                    <button
+                      type="button"
+                      className={`secondary-button compact-button ${isMultiAddOpen ? "department-toggle-active" : ""}`}
+                      onClick={() => {
+                        setIsMultiAddOpen((previous) => !previous);
+                        setMultiAddError("");
+                        setMultiAddSuccess("");
+                      }}
+                    >
+                      Multi-Add
+                    </button>
+                  ) : null}
+                  {isStationsEditor ? (
+                    <button
+                      type="button"
+                      className={`secondary-button compact-button ${isMultiEditMode ? "department-toggle-active" : ""}`}
+                      onClick={() => {
+                        setIsMultiEditMode((previous) => !previous);
+                        setSelectedSingleIndex(null);
+                        setSelectedMultiIndices([]);
+                      }}
+                    >
+                      Edit Multiple
+                    </button>
+                  ) : null}
                 </div>
 
-                {isPersonnelEditor ? (
+                {isUsersEditor ? (
                   <div className="department-apparatus-list-wrapper">
-                      <div className="table-wrapper">
+                    {isMultiAddOpen ? (
+                      <div className="panel" style={{ marginBottom: "0.75rem" }}>
+                        <div className="panel-header">
+                          <h3>Multi-Add Users</h3>
+                        </div>
+                        <div className="settings-form">
+                          <label>
+                            Username Template
+                            <input
+                              type="text"
+                              value={multiAddUsernameTemplate}
+                              onChange={(event) => setMultiAddUsernameTemplate(event.target.value)}
+                              placeholder="${last:3}${first:1}"
+                            />
+                          </label>
+                          <label>
+                            Password Template
+                            <input
+                              type="text"
+                              value={multiAddPasswordTemplate}
+                              onChange={(event) => setMultiAddPasswordTemplate(event.target.value)}
+                              placeholder="${Last}12345!"
+                            />
+                          </label>
+                          <label>
+                            Default User Type
+                            <select
+                              value={multiAddDefaultUserType}
+                              onChange={(event) => setMultiAddDefaultUserType(event.target.value)}
+                            >
+                              {userTypeValues.map((option) => (
+                                <option key={`multi-add-type-${option}`} value={option}>
+                                  {option}
+                                </option>
+                              ))}
+                            </select>
+                          </label>
+                          <p className="field-hint">
+                            Tokens: {"${first}"}, {"${last}"}, {"${first:1}"}, {"${last:3}"},{" "}
+                            {"${First}"}, {"${Last}"}. Quick shortcuts: <code>LLLF</code> and{" "}
+                            <code>f(last name)</code>.
+                          </p>
+                          <div className="table-wrapper">
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>First Name</th>
+                                  <th>Last Name</th>
+                                  <th>User Type</th>
+                                  <th>Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {multiAddRows.map((row, rowIndex) => (
+                                  <tr key={`multi-add-row-${rowIndex}`}>
+                                    <td>
+                                      <input
+                                        type="text"
+                                        value={row.firstName}
+                                        onChange={(event) =>
+                                          updateMultiAddRow(rowIndex, "firstName", event.target.value)
+                                        }
+                                      />
+                                    </td>
+                                    <td>
+                                      <input
+                                        type="text"
+                                        value={row.lastName}
+                                        onChange={(event) =>
+                                          updateMultiAddRow(rowIndex, "lastName", event.target.value)
+                                        }
+                                      />
+                                    </td>
+                                    <td>
+                                      <select
+                                        value={row.userType}
+                                        onChange={(event) =>
+                                          updateMultiAddRow(rowIndex, "userType", event.target.value)
+                                        }
+                                      >
+                                        <option value="">Use default</option>
+                                        {userTypeValues.map((option) => (
+                                          <option key={`multi-add-row-type-${rowIndex}-${option}`} value={option}>
+                                            {option}
+                                          </option>
+                                        ))}
+                                      </select>
+                                    </td>
+                                    <td>
+                                      <button
+                                        type="button"
+                                        className="secondary-button compact-button"
+                                        onClick={() => removeMultiAddRow(rowIndex)}
+                                      >
+                                        Remove
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <div className="department-editor-toolbar-actions">
+                            <button type="button" className="secondary-button compact-button" onClick={addMultiAddRow}>
+                              Add Row
+                            </button>
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void submitMultiAddUsers()}
+                              disabled={isMultiAddingUsers}
+                            >
+                              {isMultiAddingUsers ? "Creating..." : "Create Users"}
+                            </button>
+                          </div>
+
+                          <div className="table-wrapper" style={{ marginTop: "0.5rem" }}>
+                            <table>
+                              <thead>
+                                <tr>
+                                  <th>Full Name</th>
+                                  <th>Generated Username</th>
+                                  <th>Generated Password</th>
+                                  <th>User Type</th>
+                                  <th>Status</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {multiAddPreview.map((row) => (
+                                  <tr key={`multi-add-preview-${row.index}`}>
+                                    <td>{row.fullName || "—"}</td>
+                                    <td>{row.username || "—"}</td>
+                                    <td>{row.password || "—"}</td>
+                                    <td>{row.userType || "—"}</td>
+                                    <td>{row.error || "Ready"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+
+                          {multiAddError ? <p className="auth-error">{multiAddError}</p> : null}
+                          {multiAddSuccess ? <p className="save-message">{multiAddSuccess}</p> : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    {resetPasswordTargetIndex !== null && userRecords[resetPasswordTargetIndex] ? (
+                      <div className="panel" style={{ marginBottom: "0.75rem" }}>
+                        <div className="panel-header">
+                          <h3>Reset Password</h3>
+                        </div>
+                        <div className="settings-form">
+                          <p className="field-hint">
+                            Reset password for{" "}
+                            <strong>
+                              {userRecords[resetPasswordTargetIndex]?.username ||
+                                userRecords[resetPasswordTargetIndex]?.name ||
+                                "selected user"}
+                            </strong>
+                            .
+                          </p>
+                          <label>
+                            New Password
+                            <input
+                              type="password"
+                              value={resetPasswordValue}
+                              onChange={(event) => setResetPasswordValue(event.target.value)}
+                              autoComplete="new-password"
+                            />
+                          </label>
+                          <label>
+                            Confirm New Password
+                            <input
+                              type="password"
+                              value={resetPasswordConfirmValue}
+                              onChange={(event) => setResetPasswordConfirmValue(event.target.value)}
+                              autoComplete="new-password"
+                            />
+                          </label>
+                          <p className="field-hint">
+                            Password policy: 8+ chars, uppercase, lowercase, number, and special
+                            character.
+                          </p>
+                          <div className="department-editor-toolbar-actions">
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void submitResetUserPassword()}
+                              disabled={isResettingPassword}
+                            >
+                              {isResettingPassword ? "Resetting..." : "Save Reset Password"}
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={closeResetPasswordForm}
+                              disabled={isResettingPassword}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                          {resetPasswordError ? <p className="auth-error">{resetPasswordError}</p> : null}
+                          {resetPasswordSuccess ? <p className="save-message">{resetPasswordSuccess}</p> : null}
+                        </div>
+                      </div>
+                    ) : null}
+                    <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                      <input
+                        type="search"
+                        value={userSearchQuery}
+                        onChange={(event) => setUserSearchQuery(event.target.value)}
+                        placeholder="Search users by name, username, or user type..."
+                        aria-label="Search users"
+                      />
+                    </div>
+                    <div className="table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th>User Full Name</th>
+                            <th>Username</th>
+                            <th>User Type</th>
+                            <th>Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {filteredUserRows.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="department-apparatus-empty">
+                                {userRecords.length === 0
+                                  ? "No users. Click Add to create one."
+                                  : "No users match the search."}
+                              </td>
+                            </tr>
+                          ) : (
+                            filteredUserRows.map(({ user, index }) => (
+                              <tr
+                                key={`user-row-${index}-${user.name}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openEditForm(index)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openEditForm(index);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{user.name || "—"}</strong>
+                                </td>
+                                <td>
+                                  <span className="department-apparatus-field">{user.username || "—"}</span>
+                                </td>
+                                <td>
+                                  <span className="department-apparatus-field">{user.userType || "—"}</span>
+                                </td>
+                                <td>
+                                  <button
+                                    type="button"
+                                    className="secondary-button compact-button"
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
+                                      void resetUserPassword(index);
+                                    }}
+                                  >
+                                    Reset Password
+                                  </button>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : isSchedulerApparatusEditor ? (
+                  <div className="department-apparatus-list-wrapper">
+                    <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={() => setIsImportApparatusModalOpen(true)}
+                      >
+                        Import Apparatus
+                      </button>
+                    </div>
+                    <div className="table-wrapper scheduler-apparatus-table-wrapper">
+                      <table>
+                        <thead>
+                          <tr>
+                            <th style={{ width: "42px" }} aria-label="Drag handle" />
+                            <th>Apparatus</th>
+                            <th>
+                              <div
+                                className="department-scheduler-apparatus-grid-line department-personnel-grid-header"
+                                style={schedulerApparatusGridStyle}
+                              >
+                                {SCHEDULER_APPARATUS_GRID_FIELD_ORDER.map((fieldId, idx) => {
+                                  const label =
+                                    fieldId === "minPersonnel"
+                                      ? "Min Personnel"
+                                      : fieldId === "maxPersonnel"
+                                        ? "Max Personnel"
+                                      : fieldId === "personnelRequirements"
+                                        ? "Minimum Requirements"
+                                        : "Station";
+                                  return (
+                                    <span
+                                      key={`scheduler-apparatus-header-${fieldId}`}
+                                      className="department-apparatus-field department-apparatus-header-field"
+                                    >
+                                      <span className="department-apparatus-header-label">{label}</span>
+                                      {idx < SCHEDULER_APPARATUS_GRID_FIELD_ORDER.length - 1 ? (
+                                        <span
+                                          className="dispatch-column-resizer"
+                                          role="separator"
+                                          aria-label={`Resize ${label} column`}
+                                          aria-orientation="vertical"
+                                          onPointerDown={(event) =>
+                                            startSchedulerApparatusFieldResize(fieldId, event)
+                                          }
+                                          title={`Drag to resize ${label}`}
+                                        >
+                                          |
+                                        </span>
+                                      ) : null}
+                                    </span>
+                                  );
+                                })}
+                              </div>
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {schedulerApparatusRecords.length === 0 ? (
+                            <tr>
+                              <td colSpan={3} className="department-apparatus-empty">
+                                No scheduler apparatus yet. Click Import Apparatus to add rows.
+                              </td>
+                            </tr>
+                          ) : (
+                            schedulerApparatusRecords.map((entry, index) => (
+                              <tr
+                                key={`scheduler-apparatus-${index}-${entry.apparatus}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                draggable
+                                onDragStart={() => setDragSchedulerApparatusIndex(index)}
+                                onDragEnd={() => setDragSchedulerApparatusIndex(null)}
+                                onDragOver={(event) => event.preventDefault()}
+                                onDrop={() => handleSchedulerApparatusDrop(index)}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => openEditForm(index)}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    openEditForm(index);
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <span className="drag-handle" aria-hidden="true">
+                                    <span />
+                                    <span />
+                                    <span />
+                                  </span>
+                                </td>
+                                <td>
+                                  <strong className="call-number-text">{entry.apparatus || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div
+                                      className="department-scheduler-apparatus-grid-line"
+                                      style={schedulerApparatusGridStyle}
+                                    >
+                                      <span className="department-apparatus-field">{String(entry.minimumPersonnel)}</span>
+                                      <span className="department-apparatus-field">{String(entry.maximumPersonnel)}</span>
+                                      <span className="department-apparatus-field">
+                                        {entry.personnelRequirements.length > 0 ? entry.personnelRequirements.join(", ") : "—"}
+                                      </span>
+                                      <span className="department-apparatus-field">{entry.station || "—"}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                ) : isSchedulerPersonnelEditor ? (
+                  <div className="department-apparatus-list-wrapper">
+                      <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                        <input
+                          type="search"
+                          value={personnelSearchQuery}
+                          onChange={(event) => setPersonnelSearchQuery(event.target.value)}
+                          placeholder="Search personnel by name, shift, apparatus, station, or qualification..."
+                          aria-label="Search personnel"
+                        />
+                      </div>
+                      <div className="table-wrapper scheduler-personnel-table-wrapper">
                         <table>
                           <thead>
                             <tr>
-                              {isMultiEditMode ? (
-                                <th className="department-personnel-checkbox-col">
-                                  <input
-                                    type="checkbox"
-                                    aria-label="Select all personnel"
-                                    checked={
-                                      personnelRecords.length > 0 &&
-                                      selectedMultiIndices.length === personnelRecords.length
-                                    }
-                                    ref={(el) => {
-                                      if (el) {
-                                        el.indeterminate =
-                                          selectedMultiIndices.length > 0 &&
-                                          selectedMultiIndices.length < personnelRecords.length;
-                                      }
-                                    }}
-                                    onChange={() => {
-                                      if (selectedMultiIndices.length === personnelRecords.length) {
-                                        setSelectedMultiIndices([]);
-                                      } else {
-                                        setSelectedMultiIndices(personnelRecords.map((_, i) => i));
-                                      }
-                                    }}
-                                  />
-                                </th>
-                              ) : null}
                               <th>Name</th>
                               <th>
-                                <div className="department-personnel-grid-line department-personnel-grid-header">
-                                  <span>Shift</span>
-                                  <span>Apparatus</span>
-                                  <span>Station</span>
-                                  <span>User Type</span>
-                                  <span>Qualifications</span>
+                                <div
+                                  className="department-personnel-grid-line--four department-personnel-grid-header"
+                                  style={schedulerPersonnelGridStyle}
+                                >
+                                  {SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.map((fieldId, idx) => {
+                                    const label =
+                                      fieldId === "shift"
+                                        ? "Shift"
+                                        : fieldId === "apparatusAssignment"
+                                          ? "Apparatus"
+                                          : fieldId === "station"
+                                            ? "Station"
+                                            : "Qualifications";
+                                    return (
+                                      <span
+                                        key={`scheduler-personnel-header-${fieldId}`}
+                                        className="department-apparatus-field department-apparatus-header-field"
+                                      >
+                                        <span className="department-apparatus-header-label">{label}</span>
+                                        {idx < SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.length - 1 ? (
+                                          <span
+                                            className="dispatch-column-resizer"
+                                            role="separator"
+                                            aria-label={`Resize ${label} column`}
+                                            aria-orientation="vertical"
+                                            onPointerDown={(event) =>
+                                              startSchedulerPersonnelFieldResize(fieldId, event)
+                                            }
+                                            title={`Drag to resize ${label}`}
+                                          >
+                                            |
+                                          </span>
+                                        ) : null}
+                                      </span>
+                                    );
+                                  })}
                                 </div>
                               </th>
                             </tr>
                           </thead>
                           <tbody>
-                            {personnelRecords.length === 0 ? (
+                            {filteredPersonnelRows.length === 0 ? (
                               <tr>
-                                <td colSpan={isMultiEditMode ? 3 : 2} className="department-apparatus-empty">
-                                  No personnel. Click Add to create one.
+                                <td colSpan={2} className="department-apparatus-empty">
+                                  {personnelRecords.length === 0
+                                    ? "No personnel yet. Add users first in Admin Functions -> Personnel Management."
+                                    : "No personnel match the search."}
                                 </td>
                               </tr>
                             ) : (
-                              personnelRecords.map((personnel, index) => (
+                              filteredPersonnelRows.map(({ personnel, index }) => (
                                 <tr
                                   key={`personnel-row-${index}-${personnel.name}`}
-                                  className={`clickable-row ${!isMultiEditMode && selectedSingleIndex === index ? "clickable-row-selected" : ""} ${isMultiEditMode && selectedMultiIndices.includes(index) ? "clickable-row-selected" : ""}`}
-                                  role={isMultiEditMode ? undefined : "button"}
-                                  tabIndex={isMultiEditMode ? undefined : 0}
-                                  onClick={
-                                    isMultiEditMode
-                                      ? undefined
-                                      : () => openEditForm(index)
-                                  }
-                                  onKeyDown={
-                                    isMultiEditMode
-                                      ? undefined
-                                      : (event) => {
-                                          if (event.key === "Enter" || event.key === " ") {
-                                            event.preventDefault();
-                                            openEditForm(index);
-                                          }
-                                        }
-                                  }
+                                  className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                  role="button"
+                                  tabIndex={0}
+                                  onClick={() => openEditForm(index)}
+                                  onKeyDown={(event) => {
+                                    if (event.key === "Enter" || event.key === " ") {
+                                      event.preventDefault();
+                                      openEditForm(index);
+                                    }
+                                  }}
                                 >
-                                  {isMultiEditMode ? (
-                                    <td className="department-personnel-checkbox-col">
-                                      <input
-                                        type="checkbox"
-                                        aria-label={`Select ${personnel.name || "personnel"}`}
-                                        checked={selectedMultiIndices.includes(index)}
-                                        onChange={(e) => {
-                                          e.stopPropagation();
-                                          if (e.target.checked) {
-                                            setSelectedMultiIndices((prev) =>
-                                              [...prev, index].sort((a, b) => a - b),
-                                            );
-                                          } else {
-                                            setSelectedMultiIndices((prev) =>
-                                              prev.filter((i) => i !== index),
-                                            );
-                                          }
-                                        }}
-                                        onClick={(e) => e.stopPropagation()}
-                                      />
-                                    </td>
-                                  ) : null}
                                   <td>
                                     <strong className="call-number-text">{personnel.name || "—"}</strong>
                                   </td>
                                   <td>
                                     <div className="dispatch-info-cell">
-                                      <div className="department-personnel-grid-line">
+                                      <div
+                                        className="department-personnel-grid-line--four"
+                                        style={schedulerPersonnelGridStyle}
+                                      >
                                         <span className="department-apparatus-field">{personnel.shift || "—"}</span>
                                         <span className="department-apparatus-field">{personnel.apparatusAssignment || "—"}</span>
                                         <span className="department-apparatus-field">{personnel.station || "—"}</span>
-                                        <span className="department-apparatus-field">{personnel.userType || "—"}</span>
                                         <span className="department-apparatus-field">
                                           {personnel.qualifications.length > 0 ? personnel.qualifications.join(", ") : "—"}
                                         </span>
@@ -11848,6 +6946,200 @@ function DepartmentDetailsPage() {
               </>
             ) : null}
 
+            {isAdditionalFieldsEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <input
+                    type="text"
+                    value={additionalFieldDraft.fieldName}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => ({
+                        ...previous,
+                        fieldName: event.target.value,
+                      }))
+                    }
+                    placeholder="Field Name"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    value={additionalFieldDraft.numberOfSlots}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => ({
+                        ...previous,
+                        numberOfSlots: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                      }))
+                    }
+                    placeholder="Number of Slots"
+                  />
+                  <select
+                    value={additionalFieldDraft.valueMode}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => ({
+                        ...previous,
+                        valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
+                        personnelOverride:
+                          event.target.value === "text" ? false : previous.personnelOverride,
+                      }))
+                    }
+                  >
+                    <option value="text">Text</option>
+                    <option value="personnel">Personnel</option>
+                  </select>
+                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        additionalFieldDraft.valueMode === "personnel" &&
+                        additionalFieldDraft.personnelOverride
+                      }
+                      disabled={additionalFieldDraft.valueMode !== "personnel"}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          personnelOverride: event.target.checked,
+                        }))
+                      }
+                    />
+                    Personnel Override
+                  </label>
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={saveAdditionalField}
+                  >
+                    {editingAdditionalFieldIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  `Text` behaves like the Info row. `Personnel` allows slot assignments in Personnel Schedule.
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th style={{ width: "32px" }} aria-label="Drag to reorder" />
+                          <th>Field Name</th>
+                          <th style={{ width: "110px" }}>Slots</th>
+                          <th style={{ width: "120px" }}>Type</th>
+                          <th style={{ width: "160px" }}>Personnel Override</th>
+                          <th style={{ width: "90px" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {additionalFieldRecords.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="department-apparatus-empty">
+                              No additional fields. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          additionalFieldRecords.map((entry, index) => (
+                            <tr
+                              key={`additional-field-${entry.id}-${index}`}
+                              className={`clickable-row ${
+                                editingAdditionalFieldIndex === index ? "clickable-row-selected" : ""
+                              }`}
+                              draggable
+                              onDragStart={() => setDragAdditionalFieldIndex(index)}
+                              onDragEnd={() => setDragAdditionalFieldIndex(null)}
+                              onDragOver={(event) => event.preventDefault()}
+                              onDrop={() => handleAdditionalFieldDrop(index)}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingAdditionalFieldIndex(index);
+                                setAdditionalFieldDraft(entry);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingAdditionalFieldIndex(index);
+                                  setAdditionalFieldDraft(entry);
+                                }
+                              }}
+                            >
+                              <td
+                                className="department-qualification-drag-cell"
+                                onClick={(event) => event.stopPropagation()}
+                              >
+                                <span className="drag-handle" aria-hidden="true">
+                                  <span />
+                                  <span />
+                                  <span />
+                                </span>
+                              </td>
+                              <td>
+                                <strong className="call-number-text">{entry.fieldName || "—"}</strong>
+                                {entry.id === "support-kelly-day" ? (
+                                  <small className="field-hint" style={{ marginLeft: "0.45rem" }}>
+                                    Required
+                                  </small>
+                                ) : null}
+                              </td>
+                              <td>{entry.numberOfSlots}</td>
+                              <td>{entry.valueMode === "text" ? "Text" : "Personnel"}</td>
+                              <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeAdditionalField(index);
+                                  }}
+                                  disabled={entry.id === "support-kelly-day"}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+
+            {isOvertimeSetupEditor ? (
+              <>
+                <div className="department-edit-grid">
+                  <label>
+                    Standard Overtime Slot (hours)
+                    <input
+                      type="number"
+                      min={1}
+                      value={standardOvertimeSlot}
+                      onChange={(event) =>
+                        setStandardOvertimeSlot(
+                          Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                        )
+                      }
+                    />
+                  </label>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem" }}>
+                  Minimum apparatus slots can be overtime-split in day block view. Example: 12 =&gt; 2 personnel in one
+                  slot, 8 =&gt; 3 personnel in one slot.
+                </p>
+                <div className="department-editor-toolbar-actions">
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={() => {
+                      setAutoSaveTick((previous) => previous + 1);
+                      setStatusMessage("Auto-saved.");
+                    }}
+                  >
+                    Save
+                  </button>
+                </div>
+              </>
+            ) : null}
+
             {isQualificationsEditor ? (
               <>
                 <div className="department-editor-add-row">
@@ -12078,6 +7370,137 @@ function DepartmentDetailsPage() {
                 </div>
               </>
             ) : null}
+
+            {isKellyRotationEditor ? (
+              <>
+                <div className="department-editor-add-row">
+                  <select
+                    value={kellyRotationDraft.personnel}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({ ...previous, personnel: event.target.value }))
+                    }
+                  >
+                    <option value="">Select personnel</option>
+                    {sortedPersonnelNames.map((name) => (
+                      <option key={`kelly-person-${name}`} value={name}>
+                        {name}
+                      </option>
+                    ))}
+                  </select>
+                  <input
+                    type="number"
+                    min={1}
+                    value={kellyRotationDraft.repeatsEveryValue}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({
+                        ...previous,
+                        repeatsEveryValue: Number(event.target.value) || 1,
+                      }))
+                    }
+                    placeholder="Repeats Every"
+                  />
+                  <select
+                    value={kellyRotationDraft.repeatsEveryUnit}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({
+                        ...previous,
+                        repeatsEveryUnit: (event.target.value as KellyRotationUnit) || "Shifts",
+                      }))
+                    }
+                  >
+                    <option value="Days">Days</option>
+                    <option value="Shifts">Shifts</option>
+                  </select>
+                  <input
+                    type="date"
+                    value={kellyRotationDraft.startsOn}
+                    onChange={(event) =>
+                      setKellyRotationDraft((previous) => ({ ...previous, startsOn: event.target.value }))
+                    }
+                  />
+                  <button type="button" className="primary-button compact-button" onClick={addKellyRotation}>
+                    {editingKellyRotationIndex === null ? "Add" : "Update"}
+                  </button>
+                </div>
+                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
+                  Click a row to edit.
+                </p>
+                <div className="department-qualifications-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Personnel</th>
+                          <th>Repeats Every</th>
+                          <th>Starts On</th>
+                          <th style={{ width: "90px" }}>Action</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {kellyRotations.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="department-apparatus-empty">
+                              No Kelly rotations. Add one above.
+                            </td>
+                          </tr>
+                        ) : (
+                          kellyRotations.map((entry, index) => (
+                            <tr
+                              key={`kelly-rotation-${entry.personnel}-${index}`}
+                              className={`clickable-row ${editingKellyRotationIndex === index ? "clickable-row-selected" : ""}`}
+                              role="button"
+                              tabIndex={0}
+                              onClick={() => {
+                                setEditingKellyRotationIndex(index);
+                                setKellyRotationDraft(entry);
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter" || event.key === " ") {
+                                  event.preventDefault();
+                                  setEditingKellyRotationIndex(index);
+                                  setKellyRotationDraft(entry);
+                                }
+                              }}
+                            >
+                              <td>
+                                <strong className="call-number-text">{entry.personnel || "—"}</strong>
+                              </td>
+                              <td>{entry.repeatsEveryValue} {entry.repeatsEveryUnit}</td>
+                              <td>{entry.startsOn || "—"}</td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    setKellyRotations((previous) =>
+                                      previous.filter((_, rotationIndex) => rotationIndex !== index),
+                                    );
+                                    if (editingKellyRotationIndex === index) {
+                                      setEditingKellyRotationIndex(null);
+                                      setKellyRotationDraft({
+                                        personnel: "",
+                                        repeatsEveryValue: 14,
+                                        repeatsEveryUnit: "Shifts",
+                                        startsOn: "",
+                                      });
+                                    }
+                                    setAutoSaveTick((previous) => previous + 1);
+                                    setStatusMessage("Auto-saved.");
+                                  }}
+                                >
+                                  Remove
+                                </button>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
           </article>
         </div>
       ) : null}
@@ -12087,14 +7510,14 @@ function DepartmentDetailsPage() {
           <article className="panel department-editor-modal">
             <div className="panel-header">
               <h2>
-                {isPersonnelEditor
-                  ? isMultiEditMode
-                    ? "Edit Multiple Personnel"
-                    : "Personnel Entry"
+                {isUsersEditor
+                  ? "User Entry"
+                  : isSchedulerApparatusEditor
+                    ? "Scheduler Apparatus Entry"
+                  : isSchedulerPersonnelEditor
+                    ? "Scheduler Personnel Entry"
                   : isApparatusEditor
-                    ? isMultiEditMode
-                      ? "Edit Multiple Apparatus"
-                      : "Apparatus Entry"
+                    ? "Apparatus Entry"
                     : isMultiEditMode
                       ? "Edit Multiple Stations"
                       : "Station Entry"}
@@ -12137,12 +7560,14 @@ function DepartmentDetailsPage() {
 
             {isApparatusEditor ? (
               <div className="department-edit-grid">
-                {!isMultiEditMode ? (
-                  <label>
-                    Unit ID
-                    <input type="text" value={apparatusDraft.unitId} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, unitId: event.target.value }))} />
-                  </label>
-                ) : null}
+                <label>
+                  Unit ID
+                  <input type="text" value={apparatusDraft.unitId} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, unitId: event.target.value }))} />
+                </label>
+                <label>
+                  Common Name
+                  <input type="text" value={apparatusDraft.commonName} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, commonName: event.target.value }))} />
+                </label>
                 <label>
                   Unit Type
                   <NerisFlatSingleOptionSelect
@@ -12159,13 +7584,34 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
-                  Minimum Personnel
+                  Make
+                  <input type="text" value={apparatusDraft.make} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, make: event.target.value }))} />
+                </label>
+                <label>
+                  Model
+                  <input type="text" value={apparatusDraft.model} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, model: event.target.value }))} />
+                </label>
+                <label>
+                  Year
+                  <input type="text" value={apparatusDraft.year} onChange={(event) => setApparatusDraft((previous) => ({ ...previous, year: event.target.value }))} />
+                </label>
+              </div>
+            ) : null}
+
+            {isSchedulerApparatusEditor ? (
+              <div className="department-edit-grid">
+                <label>
+                  Apparatus
+                  <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                </label>
+                <label>
+                  Min Personnel
                   <input
                     type="number"
                     min={0}
-                    value={apparatusDraft.minimumPersonnel}
+                    value={schedulerApparatusDraft.minimumPersonnel}
                     onChange={(event) =>
-                      setApparatusDraft((previous) => ({
+                      setSchedulerApparatusDraft((previous) => ({
                         ...previous,
                         minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
                       }))
@@ -12173,13 +7619,27 @@ function DepartmentDetailsPage() {
                   />
                 </label>
                 <label>
+                  Max Personnel
+                  <input
+                    type="number"
+                    min={1}
+                    value={schedulerApparatusDraft.maximumPersonnel}
+                    onChange={(event) =>
+                      setSchedulerApparatusDraft((previous) => ({
+                        ...previous,
+                        maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
                   Minimum Requirements (select all that apply)
                   <NerisFlatMultiOptionSelect
-                    inputId="apparatus-personnel-requirements"
-                    value={apparatusDraft.personnelRequirements.join(",")}
+                    inputId="scheduler-apparatus-personnel-requirements"
+                    value={schedulerApparatusDraft.personnelRequirements.join(",")}
                     options={personnelQualifications.map((q) => ({ value: q, label: q }))}
                     onChange={(nextValue) =>
-                      setApparatusDraft((previous) => ({
+                      setSchedulerApparatusDraft((previous) => ({
                         ...previous,
                         personnelRequirements: nextValue
                           .split(",")
@@ -12187,23 +7647,24 @@ function DepartmentDetailsPage() {
                           .filter(Boolean),
                       }))
                     }
-                    placeholder="Select personnel requirement(s)"
+                    placeholder="Select minimum requirement(s)"
                     searchPlaceholder="Search qualifications..."
-                    maxSelections={apparatusDraft.minimumPersonnel > 0 ? apparatusDraft.minimumPersonnel : undefined}
+                    maxSelections={
+                      schedulerApparatusDraft.minimumPersonnel > 0
+                        ? schedulerApparatusDraft.minimumPersonnel
+                        : undefined
+                    }
                     usePortal
                   />
-                  {personnelQualifications.length === 0 ? (
-                    <small className="field-hint">Add qualifications in Edit Personnel Qualifications first.</small>
-                  ) : null}
                 </label>
                 <label>
                   Station
                   <NerisFlatSingleOptionSelect
-                    inputId="apparatus-station"
-                    value={apparatusDraft.station}
+                    inputId="scheduler-apparatus-station"
+                    value={schedulerApparatusDraft.station}
                     options={stationNames.map((s) => ({ value: s, label: s }))}
                     onChange={(nextValue) =>
-                      setApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                      setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
                     }
                     placeholder="Select station"
                     searchPlaceholder="Search stations..."
@@ -12214,25 +7675,81 @@ function DepartmentDetailsPage() {
               </div>
             ) : null}
 
-            {isPersonnelEditor ? (
+            {isUsersEditor ? (
               <div className="department-edit-grid">
-                {!isMultiEditMode ? (
-                  <label>
-                    Personnel Name
-                    <input type="text" value={personnelDraft.name} onChange={(event) => setPersonnelDraft((previous) => ({ ...previous, name: event.target.value }))} />
-                  </label>
-                ) : null}
+                <label>
+                  User Full Name
+                  <input
+                    type="text"
+                    value={userDraft.name}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({ ...previous, name: event.target.value }))
+                    }
+                  />
+                </label>
+                <label>
+                  Username
+                  <input
+                    type="text"
+                    value={userDraft.username}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({
+                        ...previous,
+                        username: event.target.value,
+                      }))
+                    }
+                  />
+                </label>
+                <label>
+                  Password
+                  <input
+                    type="password"
+                    value={userDraft.password}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({
+                        ...previous,
+                        password: event.target.value,
+                      }))
+                    }
+                  />
+                  <small className="field-hint">
+                    Password policy: 8+ chars, uppercase, lowercase, number, and special character.
+                  </small>
+                </label>
+                <label>
+                  User Type
+                  <select
+                    value={userDraft.userType}
+                    onChange={(event) =>
+                      setUserDraft((previous) => ({ ...previous, userType: event.target.value }))
+                    }
+                  >
+                    <option value="">Select user type</option>
+                    {userTypeValues.map((option) => (
+                      <option key={`user-user-type-${option}`} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              </div>
+            ) : null}
+
+            {isSchedulerPersonnelEditor ? (
+              <div className="department-edit-grid">
+                <label>
+                  Personnel Name
+                  <input type="text" value={personnelDraft.name} readOnly />
+                </label>
                 <label>
                   Shift
                   <select
-                    value={!isMultiEditMode ? personnelDraft.shift : personnelBulkDraft.shift}
+                    value={personnelDraft.shift}
                     onChange={(event) =>
-                      !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, shift: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, shift: event.target.value }))
+                      setPersonnelDraft((previous) => ({ ...previous, shift: event.target.value }))
                     }
                   >
-                    <option value="">{isMultiEditMode ? "No change" : "Select shift"}</option>
+                    <option value="">Select shift</option>
                     {shiftOptionValues.map((option) => (
                       <option key={`personnel-shift-${option}`} value={option}>
                         {option}
@@ -12243,30 +7760,21 @@ function DepartmentDetailsPage() {
                 <label>
                   Apparatus Assignment
                   <select
-                    value={!isMultiEditMode ? personnelDraft.apparatusAssignment : personnelBulkDraft.apparatusAssignment}
+                    value={personnelDraft.apparatusAssignment}
                     onChange={(event) => {
                       const nextApparatus = event.target.value;
-                      const matchedApparatus = apparatusRecords.find(
-                        (a) =>
-                          `${a.unitId}${a.unitType ? ` (${a.unitType})` : ""}`.trim() === nextApparatus,
+                      const matchedApparatus = schedulerApparatusRecords.find(
+                        (a) => a.apparatus.trim() === nextApparatus,
                       );
                       const defaultStation = matchedApparatus?.station?.trim() ?? "";
-                      if (!isMultiEditMode) {
-                        setPersonnelDraft((previous) => ({
-                          ...previous,
-                          apparatusAssignment: nextApparatus,
-                          station: defaultStation ? defaultStation : previous.station,
-                        }));
-                      } else {
-                        setPersonnelBulkDraft((previous) => ({
-                          ...previous,
-                          apparatusAssignment: nextApparatus,
-                          station: defaultStation ? defaultStation : previous.station,
-                        }));
-                      }
+                      setPersonnelDraft((previous) => ({
+                        ...previous,
+                        apparatusAssignment: nextApparatus,
+                        station: defaultStation ? defaultStation : previous.station,
+                      }));
                     }}
                   >
-                    <option value="">{isMultiEditMode ? "No change" : "Select apparatus"}</option>
+                    <option value="">Select apparatus</option>
                     {apparatusNames.map((option) => (
                       <option key={`personnel-apparatus-${option}`} value={option}>
                         {option}
@@ -12278,56 +7786,26 @@ function DepartmentDetailsPage() {
                   Station
                   <NerisFlatSingleOptionSelect
                     inputId="personnel-station"
-                    value={!isMultiEditMode ? personnelDraft.station : personnelBulkDraft.station}
+                    value={personnelDraft.station}
                     options={stationNames.map((s) => ({ value: s, label: s }))}
                     onChange={(nextValue) => {
-                      if (!isMultiEditMode) {
-                        setPersonnelDraft((previous) => ({ ...previous, station: nextValue }));
-                      } else {
-                        setPersonnelBulkDraft((previous) => ({ ...previous, station: nextValue }));
-                      }
+                      setPersonnelDraft((previous) => ({ ...previous, station: nextValue }));
                     }}
-                    placeholder={isMultiEditMode ? "No change" : "Select station"}
+                    placeholder="Select station"
                     searchPlaceholder="Search stations..."
                     allowClear
                     usePortal
                   />
                 </label>
-                <label>
-                  User Type
-                  <select
-                    value={!isMultiEditMode ? personnelDraft.userType : personnelBulkDraft.userType}
-                    onChange={(event) =>
-                      !isMultiEditMode
-                        ? setPersonnelDraft((previous) => ({ ...previous, userType: event.target.value }))
-                        : setPersonnelBulkDraft((previous) => ({ ...previous, userType: event.target.value }))
-                    }
-                  >
-                    <option value="">{isMultiEditMode ? "No change" : "Select user type"}</option>
-                    {userTypeValues.map((option) => (
-                      <option key={`personnel-user-type-${option}`} value={option}>
-                        {option}
-                      </option>
-                    ))}
-                  </select>
-                </label>
                 <label className="department-qualifications-field-label">
                   Qualifications (select all that apply)
                   <NerisFlatMultiOptionSelect
                     inputId="personnel-qualifications"
-                    value={
-                      !isMultiEditMode
-                        ? personnelDraft.qualifications.join(",")
-                        : personnelBulkDraft.qualifications.join(",")
-                    }
+                    value={personnelDraft.qualifications.join(",")}
                     options={personnelQualifications.map((q) => ({ value: q, label: q }))}
                     onChange={(nextValue) => {
                       const arr = nextValue.split(",").map((s) => s.trim()).filter(Boolean);
-                      if (!isMultiEditMode) {
-                        setPersonnelDraft((previous) => ({ ...previous, qualifications: arr }));
-                      } else {
-                        setPersonnelBulkDraft((previous) => ({ ...previous, qualifications: arr }));
-                      }
+                      setPersonnelDraft((previous) => ({ ...previous, qualifications: arr }));
                     }}
                     placeholder="Select qualification(s)"
                     searchPlaceholder="Search qualifications..."
@@ -12349,7 +7827,11 @@ function DepartmentDetailsPage() {
                     saveStationForm();
                   } else if (isApparatusEditor) {
                     saveApparatusForm();
-                  } else if (isPersonnelEditor) {
+                  } else if (isSchedulerApparatusEditor) {
+                    saveSchedulerApparatusForm();
+                  } else if (isUsersEditor) {
+                    saveUserForm();
+                  } else if (isSchedulerPersonnelEditor) {
                     savePersonnelForm();
                   }
                 }}
@@ -12360,103 +7842,58 @@ function DepartmentDetailsPage() {
           </article>
         </div>
       ) : null}
-    </section>
-  );
-}
 
-function HydrantsAdminPage() {
-  const [fileName, setFileName] = useState("No file selected");
-  const [statusMessage, setStatusMessage] = useState("");
-
-  const handleUpload = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setStatusMessage("CSV upload staged in prototype mode. Parsing comes next.");
-  };
-
-  return (
-    <section className="page-section">
-      <header className="page-header">
-        <div>
-          <h1>Admin Functions | Hydrants</h1>
-          <p>
-            Mass upload hydrants via CSV and maintain hydrant placement manually on
-            the map.
-          </p>
-        </div>
-      </header>
-
-      <section className="panel-grid two-column">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>CSV Upload</h2>
-          </div>
-          <form className="settings-form" onSubmit={handleUpload}>
-            <label htmlFor="hydrant-upload">Hydrant CSV File</label>
-            <input
-              id="hydrant-upload"
-              type="file"
-              accept=".csv,text/csv"
-              onChange={(event) =>
-                setFileName(event.target.files?.[0]?.name ?? "No file selected")
-              }
-            />
-            <p className="field-hint">Selected file: {fileName}</p>
-            <button type="submit" className="primary-button">
-              Upload CSV
-            </button>
-            {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
-          </form>
-        </article>
-
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Hydrant Map Editing</h2>
-          </div>
-          <div className="dispatch-map-placeholder">
-            <p>
-              Hydrant map editor placeholder. This screen will support manual pin
-              placement and hydrant attribute editing.
+      {isImportApparatusModalOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>Import Apparatus</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setIsImportApparatusModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <p className="field-hint">
+              Continue will import all Apparatus Common Names from Department Details into Scheduler Settings.
             </p>
-            <ul>
-              <li>Drag hydrant markers to adjust map location</li>
-              <li>Update flow rate, status, and service notes</li>
-              <li>Sync map marker overlays for incident response</li>
-            </ul>
-          </div>
-        </article>
-      </section>
-
-      <section className="panel-grid">
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Hydrant Records</h2>
-          </div>
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Hydrant ID</th>
-                  <th>Status</th>
-                  <th>Zone</th>
-                  <th>Last Inspection</th>
-                  <th>Flow Rate</th>
-                </tr>
-              </thead>
-              <tbody>
-                {HYDRANT_ADMIN_TABLE_ROWS.map((row) => (
-                  <tr key={row.hydrantId}>
-                    <td>{row.hydrantId}</td>
-                    <td>{row.status}</td>
-                    <td>{row.zone}</td>
-                    <td>{row.lastInspection}</td>
-                    <td>{row.flowRate}</td>
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Common Name</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </article>
-      </section>
+                </thead>
+                <tbody>
+                  {apparatusRecords.length === 0 ? (
+                    <tr>
+                      <td className="department-apparatus-empty">No apparatus available to import.</td>
+                    </tr>
+                  ) : (
+                    apparatusRecords.map((entry, index) => (
+                      <tr key={`import-apparatus-${index}-${entry.commonName}`}>
+                        <td>{entry.commonName || "—"}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="department-editor-toolbar-actions">
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={importSchedulerApparatusFromDepartment}
+                disabled={apparatusRecords.length === 0}
+              >
+                Continue
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
     </section>
   );
 }
@@ -13078,15 +8515,151 @@ function CustomizationPage({
   );
 }
 
-function ProfileManagementPage() {
+function ProfileManagementPage({ username }: { username: string }) {
+  const [accountUserId, setAccountUserId] = useState("");
+  const [accountUsername, setAccountUsername] = useState(username);
   const [fullName, setFullName] = useState("Command User");
   const [email, setEmail] = useState("command@example.org");
   const [phone, setPhone] = useState("(555) 555-0191");
   const [message, setMessage] = useState("");
+  const [profileError, setProfileError] = useState("");
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmNewPassword, setConfirmNewPassword] = useState("");
+  const [passwordError, setPasswordError] = useState("");
+  const [passwordMessage, setPasswordMessage] = useState("");
+  const [isSavingPassword, setIsSavingPassword] = useState(false);
 
-  const handleSave = (event: FormEvent<HTMLFormElement>) => {
+  useEffect(() => {
+    let isMounted = true;
+    const loadProfile = async () => {
+      try {
+        const response = await fetch("/api/users");
+        if (!response.ok || !isMounted) {
+          return;
+        }
+        const json = (await response.json()) as {
+          ok?: boolean;
+          users?: { id: string; username: string; name?: string }[];
+        };
+        if (!json?.ok || !Array.isArray(json.users) || !isMounted) {
+          return;
+        }
+        const normalizedSessionUsername = username.trim().toLowerCase();
+        const matched = json.users.find(
+          (user) => user.username.trim().toLowerCase() === normalizedSessionUsername,
+        );
+        if (!matched) {
+          return;
+        }
+        setAccountUserId(matched.id);
+        setAccountUsername(matched.username);
+        setFullName(String(matched.name ?? matched.username));
+      } catch {
+        // Keep defaults if profile lookup fails.
+      }
+    };
+    void loadProfile();
+    return () => {
+      isMounted = false;
+    };
+  }, [username]);
+
+  const handleSave = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setMessage("Profile updates saved in this prototype.");
+    setProfileError("");
+    setMessage("");
+    const trimmedName = fullName.trim();
+    if (!accountUserId) {
+      setProfileError("Could not find the signed-in account. Log out and sign in again.");
+      return;
+    }
+    if (!trimmedName) {
+      setProfileError("Full Name is required.");
+      return;
+    }
+    setIsSavingProfile(true);
+    try {
+      const response = await fetch(`/api/users/${accountUserId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: trimmedName }),
+      });
+      const json = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !json?.ok) {
+        setProfileError(json?.message ?? "Unable to save profile.");
+        return;
+      }
+      setMessage("Profile saved.");
+    } catch {
+      setProfileError("Unable to reach profile service.");
+    } finally {
+      setIsSavingProfile(false);
+    }
+  };
+
+  const handlePasswordSave = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setPasswordError("");
+    setPasswordMessage("");
+    const trimmedCurrent = currentPassword.trim();
+    const trimmedNew = newPassword.trim();
+    const trimmedConfirm = confirmNewPassword.trim();
+    if (!trimmedCurrent || !trimmedNew || !trimmedConfirm) {
+      setPasswordError("Please complete all password fields.");
+      return;
+    }
+    if (trimmedNew !== trimmedConfirm) {
+      setPasswordError("New password and confirm password must match.");
+      return;
+    }
+    if (trimmedNew.length < 8) {
+      setPasswordError("Password must be at least 8 characters.");
+      return;
+    }
+    if (!/[a-z]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one lowercase letter.");
+      return;
+    }
+    if (!/[A-Z]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one uppercase letter.");
+      return;
+    }
+    if (!/[0-9]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one number.");
+      return;
+    }
+    if (!/[^A-Za-z0-9]/.test(trimmedNew)) {
+      setPasswordError("Password must include at least one special character.");
+      return;
+    }
+
+    setIsSavingPassword(true);
+    try {
+      const response = await fetch("/api/auth/change-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: accountUsername || username,
+          currentPassword: trimmedCurrent,
+          newPassword: trimmedNew,
+        }),
+      });
+      const json = (await response.json()) as { ok?: boolean; message?: string };
+      if (!response.ok || !json?.ok) {
+        setPasswordError(json?.message ?? "Unable to update password.");
+        return;
+      }
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmNewPassword("");
+      setPasswordMessage("Password updated.");
+    } catch {
+      setPasswordError("Unable to reach password service.");
+    } finally {
+      setIsSavingPassword(false);
+    }
   };
 
   return (
@@ -13125,10 +8698,56 @@ function ProfileManagementPage() {
               onChange={(event) => setPhone(event.target.value)}
             />
 
-            <button type="submit" className="primary-button">
-              Save Profile
+            <button type="submit" className="primary-button" disabled={isSavingProfile}>
+              {isSavingProfile ? "Saving..." : "Save Profile"}
             </button>
+            {profileError ? <p className="auth-error">{profileError}</p> : null}
             {message ? <p className="save-message">{message}</p> : null}
+          </form>
+        </article>
+        <article className="panel">
+          <form className="settings-form" onSubmit={handlePasswordSave}>
+            <h2>Change Password</h2>
+            <p className="field-hint">
+              Account username: <strong>{accountUsername || username || "(unknown)"}</strong>
+            </p>
+
+            <label htmlFor="current-password">Current Password</label>
+            <input
+              id="current-password"
+              type="password"
+              value={currentPassword}
+              onChange={(event) => setCurrentPassword(event.target.value)}
+              autoComplete="current-password"
+            />
+
+            <label htmlFor="new-password">New Password</label>
+            <input
+              id="new-password"
+              type="password"
+              value={newPassword}
+              onChange={(event) => setNewPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+
+            <label htmlFor="confirm-new-password">Confirm New Password</label>
+            <input
+              id="confirm-new-password"
+              type="password"
+              value={confirmNewPassword}
+              onChange={(event) => setConfirmNewPassword(event.target.value)}
+              autoComplete="new-password"
+            />
+
+            <p className="field-hint">
+              Password policy: 8+ chars, uppercase, lowercase, number, and special character.
+            </p>
+
+            <button type="submit" className="primary-button" disabled={isSavingPassword}>
+              {isSavingPassword ? "Updating..." : "Update Password"}
+            </button>
+            {passwordError ? <p className="auth-error">{passwordError}</p> : null}
+            {passwordMessage ? <p className="save-message">{passwordMessage}</p> : null}
           </form>
         </article>
       </section>
@@ -13254,7 +8873,7 @@ function RouteResolver({
   }
 
   if (path === "/settings/profile") {
-    return <ProfileManagementPage />;
+    return <ProfileManagementPage username={username} />;
   }
 
   if (path === "/settings/display") {
@@ -13338,7 +8957,19 @@ function RouteResolver({
   }
 
   if (path === "/admin-functions/department-details") {
-    return <DepartmentDetailsPage />;
+    return <DepartmentDetailsPage mode="departmentDetails" />;
+  }
+
+  if (path === "/admin-functions/scheduler-settings") {
+    return <DepartmentDetailsPage mode="schedulerSettings" />;
+  }
+
+  if (path === "/admin-functions/personnel-management") {
+    return <DepartmentDetailsPage mode="personnelManagement" />;
+  }
+
+  if (path === "/personnel/schedule") {
+    return <PersonnelSchedulePage />;
   }
 
   if (path === "/admin-functions/hydrants") {
@@ -13392,15 +9023,37 @@ function App() {
   const [nerisExportSettings, setNerisExportSettings] =
     useState<NerisExportSettings>(() => readNerisExportSettings());
 
-  const handleLogin = (username: string, unit: string, role: UserRole) => {
-    const nextSession: SessionState = {
-      isAuthenticated: true,
-      username,
-      unit,
-      role,
-    };
-    setSession(nextSession);
-    writeSession(nextSession);
+  const handleLogin = async (
+    department: string,
+    username: string,
+    password: string,
+  ): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ department, username, password }),
+      });
+      const json = (await response.json()) as {
+        ok?: boolean;
+        message?: string;
+        user?: { name?: string; userType?: string; username?: string };
+      };
+      if (!response.ok || !json?.ok || !json.user) {
+        return json?.message ?? "Login failed.";
+      }
+      const nextSession: SessionState = {
+        isAuthenticated: true,
+        username: String(json.user.username ?? username).trim(),
+        unit: department || "",
+        role: mapUserTypeToRole(String(json.user.userType ?? "")),
+      };
+      setSession(nextSession);
+      writeSession(nextSession);
+      return null;
+    } catch {
+      return "Unable to reach login service.";
+    }
   };
 
   const handleLogout = () => {

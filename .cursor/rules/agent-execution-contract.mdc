@@ -1,0 +1,30 @@
+---
+description: Session execution checklist for safe multi-tenant changes
+alwaysApply: true
+---
+
+# Agent Execution Contract
+
+## Required Preflight (before edits)
+- Read `cursoragent-context.md`.
+- Read `docs/task-2-multitenant-domain-plan.md`.
+- Restate: task, constraints, acceptance criteria, and risks.
+
+## Delivery Rules
+- Work in small approved batches (one wave at a time).
+- Do not make architecture changes that are not explicitly approved.
+- Preserve tenant isolation on all reads and writes.
+- Do not store auth secrets in `DepartmentDetails.payloadJson`.
+- Keep `demo` tenant persistent (no automatic reset unless explicitly requested).
+
+## Verification Rules
+- After each batch run: `npm run lint`.
+- Run targeted API checks relevant to changed routes.
+- Report exactly what changed and what was verified.
+- If verification fails, fix before continuing.
+
+## Handoff Rules
+- Update `docs/task-2-multitenant-domain-plan.md` when decisions change.
+- Call out any deferred work under "Now vs Later".
+- Explicitly list blockers/assumptions instead of guessing.
+- At the end of every response, state: **Agent used for this response:** followed by the Cursor agent/model if known (e.g. Auto, Codex 5.3). If you do not have access to the user's selection, say so and suggest they check Cursor's UI for this chat; if they tell you which agent they used, you may add it to session notes.

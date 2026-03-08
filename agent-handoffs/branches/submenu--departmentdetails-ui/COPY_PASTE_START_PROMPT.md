@@ -1,5 +1,7 @@
 # Copy/Paste Start Prompt (submenu--departmentdetails-ui)
 
+The agent will state at the end of each response **which agent/model was used** for that response (or that it cannot see your Cursor selection so you can check the UI). You do not need to record this yourself each session.
+
 ```text
 Before doing any feature work, understand the Branch Rules:
 
@@ -10,6 +12,10 @@ Before doing any feature work, understand the Branch Rules:
    - agent-handoffs/branches/submenu--departmentdetails-ui/ACTIVE_CONTEXT.md
    - latest relevant note(s) in agent-handoffs/branches/submenu--departmentdetails-ui/sessions/
    - all conversations in agent-handoffs/branches/submenu--departmentdetails-ui/conversations/
+4) Read and follow before any edits: 
+   - docs/agent-execution-contract.md 
+   - docs/task-2-multitenant-domain-plan.md
+   - docs/later-changes-backlog.md
 4) Before coding, summarize:
    - current branch
    - identify latest commits
@@ -17,6 +23,7 @@ Before doing any feature work, understand the Branch Rules:
    - current blocker/status
    - exact next implementation step
    - summarize what changed and what is still pending
+   - include explicit **Now vs Later** callouts (what is in scope now vs deferred follow-up)
 5) Follow beginner-friendly communication and explain commands clearly.
 6) After meaningful changes:
    - update session note
@@ -34,6 +41,8 @@ After acknowledging the rules above:
 4) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
 5) Before ending:
    - update session note + branch ACTIVE_CONTEXT.md
+   - create a copy of entire full-conversation in agent-handoffs/branches/submenu--departmentdetails-ui/conversations
    - commit + push on submenu/departmentdetails-ui
    - report branch, commit hash, changed files, and next-step checklist
+   - include **Now vs Later** callouts in the final report and handoff note
 ```

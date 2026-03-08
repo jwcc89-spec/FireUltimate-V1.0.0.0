@@ -42,13 +42,88 @@
       "state": "IL",
       "phone": "8159363666",
       "mobilePhone": ""
+    },
+    {
+      "name": "Station 1",
+      "address": "385 E Oak St",
+      "city": "Kankakee",
+      "state": "IL",
+      "phone": "8159330450",
+      "mobilePhone": ""
     }
   ],
-  "apparatusRecords": [
+  "masterApparatusRecords": [
     {
       "unitId": "Ambulance 1",
+      "commonName": "Ambulance 1",
       "unitType": "ALS_AMB",
+      "make": "Ford",
+      "model": "F350",
+      "year": "2008"
+    },
+    {
+      "unitId": "Ambulance 2",
+      "commonName": "Ambulance 2",
+      "unitType": "ALS_AMB",
+      "make": "",
+      "model": "",
+      "year": ""
+    },
+    {
+      "unitId": "Engine 5",
+      "commonName": "Engine 5",
+      "unitType": "ENGINE_STRUCT",
+      "make": "",
+      "model": "",
+      "year": ""
+    },
+    {
+      "unitId": "Engine 6",
+      "commonName": "Engine 6",
+      "unitType": "ENGINE_STRUCT",
+      "make": "",
+      "model": "",
+      "year": ""
+    },
+    {
+      "unitId": "Engine 4",
+      "commonName": "Engine 4",
+      "unitType": "ENGINE_STRUCT",
+      "make": "",
+      "model": "",
+      "year": ""
+    },
+    {
+      "unitId": "Tower 1",
+      "commonName": "Tower 1",
+      "unitType": "LADDER_TALL",
+      "make": "",
+      "model": "",
+      "year": ""
+    },
+    {
+      "unitId": "Car 6",
+      "commonName": "Car 6",
+      "unitType": "CHIEF_STAFF_COMMAND",
+      "make": "",
+      "model": "",
+      "year": ""
+    }
+  ],
+  "schedulerApparatusRecords": [
+    {
+      "apparatus": "Car 6",
+      "minimumPersonnel": 1,
+      "maximumPersonnel": 2,
+      "personnelRequirements": [
+        "Captain OOR"
+      ],
+      "station": "Station 3"
+    },
+    {
+      "apparatus": "Ambulance 1",
       "minimumPersonnel": 2,
+      "maximumPersonnel": 3,
       "personnelRequirements": [
         "Lead Paramedic",
         "EMT-B"
@@ -56,39 +131,9 @@
       "station": "Station 3"
     },
     {
-      "unitId": "Ambulance 2",
-      "unitType": "ALS_AMB",
+      "apparatus": "Engine 4",
       "minimumPersonnel": 2,
-      "personnelRequirements": [
-        "Lead Paramedic",
-        "EMT-B"
-      ],
-      "station": "Station 4"
-    },
-    {
-      "unitId": "Engine 5",
-      "unitType": "ENGINE_STRUCT",
-      "minimumPersonnel": 2,
-      "personnelRequirements": [
-        "Lieutenant OOR",
-        "Engine 5 Driver"
-      ],
-      "station": "Station 5"
-    },
-    {
-      "unitId": "Engine 6",
-      "unitType": "ENGINE_STRUCT",
-      "minimumPersonnel": 2,
-      "personnelRequirements": [
-        "Lieutenant OOR",
-        "Engine 6 Driver"
-      ],
-      "station": "Station 6"
-    },
-    {
-      "unitId": "Engine 4",
-      "unitType": "ENGINE_STRUCT",
-      "minimumPersonnel": 2,
+      "maximumPersonnel": 4,
       "personnelRequirements": [
         "Lieutenant OOR",
         "Engine 4 Driver"
@@ -96,22 +141,102 @@
       "station": "Station 4"
     },
     {
-      "unitId": "Tower 1",
-      "unitType": "LADDER_TALL",
-      "minimumPersonnel": 0,
-      "personnelRequirements": [],
+      "apparatus": "Ambulance 2",
+      "minimumPersonnel": 2,
+      "maximumPersonnel": 3,
+      "personnelRequirements": [
+        "Lead Paramedic",
+        "EMT-B"
+      ],
+      "station": "Station 4"
+    },
+    {
+      "apparatus": "Engine 5",
+      "minimumPersonnel": 2,
+      "maximumPersonnel": 4,
+      "personnelRequirements": [
+        "Lieutenant OOR",
+        "Engine 5 Driver"
+      ],
+      "station": "Station 5"
+    },
+    {
+      "apparatus": "Engine 6",
+      "minimumPersonnel": 2,
+      "maximumPersonnel": 4,
+      "personnelRequirements": [
+        "Lieutenant OOR",
+        "Engine 6 Driver"
+      ],
       "station": "Station 6"
     },
     {
-      "unitId": "Car 6",
-      "unitType": "CHIEF_STAFF_COMMAND",
-      "minimumPersonnel": 1,
-      "personnelRequirements": [
-        "Captain OOR"
-      ],
-      "station": "Station 3"
+      "apparatus": "Tower 1",
+      "minimumPersonnel": 0,
+      "maximumPersonnel": 4,
+      "personnelRequirements": [],
+      "station": "Station 6"
     }
   ],
+  "additionalFields": [
+    {
+      "id": "support-info",
+      "fieldName": "Info",
+      "numberOfSlots": 4,
+      "valueMode": "text",
+      "personnelOverride": false
+    },
+    {
+      "id": "support-chief-on-call",
+      "fieldName": "Chief on Call",
+      "numberOfSlots": 1,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    },
+    {
+      "id": "support-kelly-day",
+      "fieldName": "Kelly Day",
+      "numberOfSlots": 2,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    },
+    {
+      "id": "support-vacation",
+      "fieldName": "Vacation",
+      "numberOfSlots": 2,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    },
+    {
+      "id": "support-sick",
+      "fieldName": "Sick",
+      "numberOfSlots": 2,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    },
+    {
+      "id": "support-injured",
+      "fieldName": "Injured",
+      "numberOfSlots": 2,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    },
+    {
+      "id": "support-other",
+      "fieldName": "Other",
+      "numberOfSlots": 2,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    },
+    {
+      "id": "support-trade",
+      "fieldName": "Trade",
+      "numberOfSlots": 8,
+      "valueMode": "personnel",
+      "personnelOverride": true
+    }
+  ],
+  "standardOvertimeSlot": 12,
   "shiftInformationEntries": [
     {
       "shiftType": "A Shift",
@@ -142,21 +267,155 @@
       "location": ""
     }
   ],
-  "personnelRecords": [
+  "userRecords": [
     {
-      "name": "Jeremy",
-      "shift": "C Shift | 24 | Every 3 days",
-      "apparatusAssignment": "Engine 4 (ENGINE_STRUCT)",
-      "station": "Station 4",
+      "name": "Jeremy Wichtner",
+      "userType": "Super Admin",
+      "username": "jwichtner",
+      "password": "12345"
+    },
+    {
+      "name": "Kyle Nesbitt",
       "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Chris Wulff",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Adam Heid",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Dave Ritter",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Sean Russell",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Tim Johnson",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Rick Campione",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Landon LeDuke",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Matt Harnisch",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Seth Zeedyk",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Abraham Hurtado",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Trevor Allen",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Sebastian Diaz",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Dave Wiechen",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Mark Swanson",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Jed Beaupre",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Luke Shepherd",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Jeremy Rettke",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Nate Boyce",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "John Raimondo",
+      "userType": "User",
+      "username": "",
+      "password": ""
+    },
+    {
+      "name": "Demo",
+      "userType": "User",
+      "username": "demo1",
+      "password": "demo1"
+    }
+  ],
+  "schedulerPersonnelRecords": [
+    {
+      "name": "Jeremy Wichtner",
+      "shift": "C Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 4",
+      "station": "Station 4",
+      "userType": "Super Admin",
       "qualifications": [
         "Lieutenant"
       ]
     },
     {
-      "name": "Kyle",
+      "name": "Kyle Nesbitt",
       "shift": "C Shift | 24 | Every 3 days",
-      "apparatusAssignment": "Engine 5 (ENGINE_STRUCT)",
+      "apparatusAssignment": "Engine 5",
       "station": "Station 5",
       "userType": "User",
       "qualifications": [
@@ -164,7 +423,7 @@
       ]
     },
     {
-      "name": "Chris",
+      "name": "Chris Wulff",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "Engine 6 (ENGINE_STRUCT)",
       "station": "Station 6",
@@ -174,7 +433,7 @@
       ]
     },
     {
-      "name": "Adam",
+      "name": "Adam Heid",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "Car 6 (CHIEF_STAFF_COMMAND)",
       "station": "Station 3",
@@ -184,7 +443,7 @@
       ]
     },
     {
-      "name": "Dave",
+      "name": "Dave Ritter",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "Engine 4 (ENGINE_STRUCT)",
       "station": "Station 4",
@@ -194,7 +453,7 @@
       ]
     },
     {
-      "name": "Sean",
+      "name": "Sean Russell",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "Engine 5 (ENGINE_STRUCT)",
       "station": "Station 5",
@@ -207,7 +466,7 @@
       ]
     },
     {
-      "name": "Tim",
+      "name": "Tim Johnson",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "Engine 6 (ENGINE_STRUCT)",
       "station": "Station 6",
@@ -217,7 +476,7 @@
       ]
     },
     {
-      "name": "Rick",
+      "name": "Rick Campione",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -227,7 +486,7 @@
       ]
     },
     {
-      "name": "Landon",
+      "name": "Landon LeDuke",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -239,7 +498,7 @@
       ]
     },
     {
-      "name": "Matt",
+      "name": "Matt Harnisch",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -252,7 +511,7 @@
       ]
     },
     {
-      "name": "Seth",
+      "name": "Seth Zeedyk",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -263,7 +522,7 @@
       ]
     },
     {
-      "name": "Abraham",
+      "name": "Abraham Hurtado",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -273,7 +532,7 @@
       ]
     },
     {
-      "name": "Trevor",
+      "name": "Trevor Allen",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -287,7 +546,7 @@
       ]
     },
     {
-      "name": "Sebastian",
+      "name": "Sebastian Diaz",
       "shift": "C Shift | 24 | Every 3 days",
       "apparatusAssignment": "",
       "station": "",
@@ -296,10 +555,91 @@
         "Lead Paramedic",
         "EMT-P"
       ]
+    },
+    {
+      "name": "Dave Wiechen",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Car 6 (CHIEF_STAFF_COMMAND)",
+      "station": "Station 3",
+      "userType": "User",
+      "qualifications": [
+        "Captain"
+      ]
+    },
+    {
+      "name": "Mark Swanson",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 4 (ENGINE_STRUCT)",
+      "station": "Station 4",
+      "userType": "User",
+      "qualifications": [
+        "Captain OOR"
+      ]
+    },
+    {
+      "name": "Jed Beaupre",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 6 (ENGINE_STRUCT)",
+      "station": "Station 6",
+      "userType": "User",
+      "qualifications": [
+        "Captain OOR"
+      ]
+    },
+    {
+      "name": "Luke Shepherd",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 5 (ENGINE_STRUCT)",
+      "station": "Station 5",
+      "userType": "User",
+      "qualifications": [
+        "Captain OOR"
+      ]
+    },
+    {
+      "name": "Jeremy Rettke",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 5 (ENGINE_STRUCT)",
+      "station": "Station 5",
+      "userType": "User",
+      "qualifications": [
+        "Lieutenant OOR"
+      ]
+    },
+    {
+      "name": "Nate Boyce",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "Engine 4 (ENGINE_STRUCT)",
+      "station": "Station 4",
+      "userType": "User",
+      "qualifications": [
+        "Lieutenant OOR"
+      ]
+    },
+    {
+      "name": "John Raimondo",
+      "shift": "A Shift | 24 | Every 3 days",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": [
+        "Engine 4 Driver",
+        "Engine 5 Driver",
+        "Engine 6 Driver"
+      ]
+    },
+    {
+      "name": "Demo",
+      "shift": "",
+      "apparatusAssignment": "",
+      "station": "",
+      "userType": "User",
+      "qualifications": []
     }
   ],
   "personnelQualifications": [
     "Chief",
+    "Deputy Chief",
     "Captain",
     "Captain OOR",
     "Lieutenant",
@@ -316,7 +656,53 @@
   "userTypeValues": [
     "Super Admin",
     "Admin",
-    "User"
+    "User",
+    "Demo"
   ],
-  "selectedMutualAidIds": []
+  "selectedMutualAidIds": [],
+  "kellyRotations": [
+    {
+      "personnel": "Jeremy Wichtner",
+      "repeatsEveryValue": 14,
+      "repeatsEveryUnit": "Shifts",
+      "startsOn": "2026-02-06"
+    },
+    {
+      "personnel": "Rick Campione",
+      "repeatsEveryValue": 14,
+      "repeatsEveryUnit": "Shifts",
+      "startsOn": "2026-02-09"
+    }
+  ],
+  "schedulerEnabled": true,
+  "uiPreferencesByUser": {
+    "kanka": {
+      "apparatusFieldWidths": {
+        "commonName": 150,
+        "unitType": 120,
+        "make": 70,
+        "model": 70,
+        "year": 90
+      },
+      "apparatusFieldOrder": [
+        "commonName",
+        "unitType",
+        "make",
+        "model",
+        "year"
+      ],
+      "schedulerApparatusFieldWidths": {
+        "minPersonnel": 70,
+        "maxPersonnel": 70,
+        "personnelRequirements": 176.125,
+        "station": 120
+      },
+      "schedulerPersonnelFieldWidths": {
+        "shift": 120,
+        "apparatusAssignment": 160,
+        "station": 120,
+        "qualifications": 210
+      }
+    }
+  }
 }
