@@ -88,6 +88,48 @@ For each host pair (A/B):
 - Mapped host:
   - must resolve tenant and return context.
 
+### 8) Frontend stability hardening gate (required before prod cutover)
+
+Run this on at least two tenant hostnames (for example `demo` and `cifpdil`) after each staging deploy.
+
+#### A) SPA deep-route refresh verification
+
+1. Open tenant host and sign in.
+2. Navigate to deep routes (at minimum `/settings` and `/scheduler`).
+3. Hard refresh each deep route (`Cmd+Shift+R` on macOS).
+
+Pass criteria:
+- App reloads normally on each deep route.
+- No `Cannot GET /settings` / `Cannot GET /scheduler` errors.
+
+#### B) Static asset integrity verification
+
+1. Open browser DevTools -> Network tab.
+2. Refresh and inspect main JS/CSS requests under `/assets/*`.
+3. Confirm there are no failed core app assets.
+
+Pass criteria:
+- Core JS/CSS return `200` or `304`.
+- No critical `404`/failed requests for app bundles.
+- UI renders with expected styling (no unstyled fallback state).
+
+#### C) API path and response verification
+
+1. In DevTools Network, filter for `api`.
+2. Perform login and at least one save action.
+3. Confirm requests target `/api/*` on the same tenant host.
+4. Confirm successful responses for key routes.
+5. Re-run tenant-context checks:
+
+```bash
+curl -s https://demo.staging.fireultimate.app/api/tenant/context
+curl -s https://cifpdil.staging.fireultimate.app/api/tenant/context
+```
+
+Pass criteria:
+- API calls remain on `/api/*` and succeed (`200`/`204` expected for normal flows).
+- Tenant context slugs match hostnames (`demo` on demo host, `cifpdil` on cifpdil host).
+
 ## Wave 6 completion checklist
 
 - [ ] TenantDomain rows verified.
@@ -97,6 +139,7 @@ For each host pair (A/B):
 - [ ] Login works per host with expected role behavior.
 - [ ] Data isolation confirmed between at least two tenants.
 - [ ] Unknown host rejection confirmed.
+- [ ] Frontend stability hardening gate passed (deep-route refresh, assets, `/api/*` verification).
 
 ## Now vs Later
 

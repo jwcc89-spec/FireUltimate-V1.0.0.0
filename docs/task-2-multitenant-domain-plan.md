@@ -416,7 +416,7 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 **Exit criteria:**
 - Tenant URLs work via domain-based routing.
 
-**Phase 6 status:** In progress (app/runtime tenant resolution is implemented; external DNS + SSL configuration remains environment work).
+**Phase 6 status:** Done (staging DNS + SSL + tenant-domain routing verified, tenant-context endpoint validated per host, and frontend stability hardening gate passed on both staging tenant hosts).
 
 ---
 

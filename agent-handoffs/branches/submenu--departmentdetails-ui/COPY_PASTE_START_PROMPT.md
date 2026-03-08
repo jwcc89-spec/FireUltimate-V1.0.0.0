@@ -40,7 +40,7 @@ After acknowledging the rules above:
 4) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
 5) Before ending:
    - update session note + branch ACTIVE_CONTEXT.md
-   - create a copy of entire conversation in agent-handoffs/branches/submenu--departmentdetails-ui/conversations
+   - create a copy of entire full-conversation in agent-handoffs/branches/submenu--departmentdetails-ui/conversations
    - commit + push on submenu/departmentdetails-ui
    - report branch, commit hash, changed files, and next-step checklist
    - include **Now vs Later** callouts in the final report and handoff note
