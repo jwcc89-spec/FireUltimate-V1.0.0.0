@@ -1,5 +1,8 @@
 import bcrypt from "bcryptjs";
 import express from "express";
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 
 import pkg from "@prisma/client";
 const { PrismaClient } = pkg;
@@ -2906,7 +2909,27 @@ app.post("/api/neris/export", async (request, response) => {
 });
 
 const config = getProxyConfig();
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const frontendDistDir = path.resolve(__dirname, "../dist");
+const frontendIndexPath = path.join(frontendDistDir, "index.html");
+const hasFrontendBuild = fs.existsSync(frontendIndexPath);
+
+if (hasFrontendBuild) {
+  app.use(express.static(frontendDistDir));
+  app.get(/^\/(?!api(?:\/|$)).*/, (request, response) => {
+    response.sendFile(frontendIndexPath);
+  });
+} else {
+  app.get("/", (_request, response) => {
+    response.status(404).send("Frontend build not found. Run `npm run build` before starting staging web UI.");
+  });
+}
+
 app.listen(config.proxyPort, () => {
   console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
   console.log(`NERIS base URL: ${config.baseUrl}`);
+  if (hasFrontendBuild) {
+    console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
+  }
 });
