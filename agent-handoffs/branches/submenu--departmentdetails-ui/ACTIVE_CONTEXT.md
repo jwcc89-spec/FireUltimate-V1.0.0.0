@@ -4,7 +4,7 @@
 - `submenu/departmentdetails-ui`
 
 ## Current focus
-- Task 2 multi-tenant: Wave 6 closed; next phase is Wave 7 (DEMO safety controls), then Wave 8 full validation.
+- Task 2 multi-tenant closeout: Wave 6, Wave 7, and Wave 8 are completed; active work has moved to Department Details / Personnel Management UI refinements on this branch.
 
 ## Latest known status
 - Staging backend deploy is live on Render and now binds `PORT` correctly.
@@ -14,14 +14,21 @@
 - Frontend can be served by proxy from `dist` (root route support) when Render build includes `npm run build`.
 - `docs/wave-6-domain-routing-runbook.md` now includes a required frontend stability hardening gate (deep-route refresh, static assets, `/api/*` verification).
 - User confirmed the Wave 6 stability gate checklist was completed on both staging tenant hosts.
-- `docs/task-2-multitenant-domain-plan.md` updated: Phase 6 status marked done.
+- `docs/task-2-multitenant-domain-plan.md` updated: Phase 6, Phase 7, and Phase 8 are marked done.
+- Added `docs/later-changes-backlog.md` as the dedicated structured "Later" backlog file for all future deferred work (menu/submenu organized).
+- Updated `COPY_PASTE_START_PROMPT.md` required startup reading to include `docs/later-changes-backlog.md`.
+- Department Details UI restructuring in progress/completed on branch:
+  - Added dedicated Admin submenu route for Scheduler Settings.
+  - Added dedicated Admin submenu route for Personnel Management.
+  - Moved Users editor entry point from Department Details into Personnel Management.
+  - Added search bars to Edit Users and Edit Personnel list views.
+  - Kept User Type in Department Details -> Department Access (removed duplicate appearance from Personnel Management).
 - Lint: passing.
 
 ## Current blocker / status
 - No blocker reported.
-- Pending user decision for Wave 7 scope:
-  - Option A: keep DEMO fully editable persistent sandbox (documentation-only closeout).
-  - Option B: add DEMO-only restrictions for selected sensitive/admin actions.
+- Task 2 phase gating blocker: none.
+- Remaining open items are optional/deferred backlog and requested UI refinements.
 
 ## External dependency status
 - Render service/environment is now the main external dependency for staging validation.
@@ -35,6 +42,6 @@
 
 ## Next agent should do this first
 1. Read `cursoragent-context.md`, this file, `docs/agent-execution-contract.md`, `docs/task-2-multitenant-domain-plan.md`, and the latest session note.
-2. Confirm whether Wave 7 is Option A (no new restrictions) or Option B (implement DEMO restrictions).
-3. If implementing Wave 7 behavior changes, keep tenant scoping explicit and run `npm run lint` plus targeted route checks.
-4. Continue to Wave 8 verification checklist after Wave 7 closes.
+2. Treat Task 2 (Wave 3-8 core scope) as complete unless user explicitly reopens a phase.
+3. For UI follow-ups, continue in small batches and keep User Type under Department Details -> Department Access.
+4. Run `npm run lint` after each change batch and update handoff/session note before ending session.

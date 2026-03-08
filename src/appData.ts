@@ -415,7 +415,15 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Department Details",
         path: "/admin-functions/department-details",
         summary:
-          "Set department profile information, contacts, address, and managed lists.",
+          "Set department profile information, contacts, address, and resources.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
+        label: "Scheduler Settings",
+        path: "/admin-functions/scheduler-settings",
+        summary:
+          "Configure scheduler shift rules, apparatus settings, additional fields, and qualifications.",
         isBuilt: true,
         adminOnly: true,
       },
@@ -430,7 +438,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Personnel Management",
         path: "/admin-functions/personnel-management",
         summary: "Manage accounts, permissions, and personnel settings.",
-        isBuilt: false,
+        isBuilt: true,
         adminOnly: true,
       },
       {

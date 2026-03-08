@@ -3718,7 +3718,16 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
   );
 }
 
-function DepartmentDetailsPage() {
+type DepartmentDetailsPageMode =
+  | "departmentDetails"
+  | "schedulerSettings"
+  | "personnelManagement";
+
+interface DepartmentDetailsPageProps {
+  mode?: DepartmentDetailsPageMode;
+}
+
+function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetailsPageProps) {
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
   const sessionUserName = readSession().username.trim().toLocaleLowerCase();
   const uiPreferenceUserKey = sessionUserName || USER_UI_PREFERENCES_FALLBACK_KEY;
@@ -3784,6 +3793,8 @@ function DepartmentDetailsPage() {
         : [],
     }));
   });
+  const [userSearchQuery, setUserSearchQuery] = useState("");
+  const [personnelSearchQuery, setPersonnelSearchQuery] = useState("");
   const [schedulerEnabled, setSchedulerEnabled] = useState(
     Boolean(initialDepartmentDraft.schedulerEnabled ?? false),
   );
@@ -4269,7 +4280,6 @@ function DepartmentDetailsPage() {
   const detailCardOrder: DepartmentCollectionKey[] = [
     "stations",
     "apparatus",
-    "personnel",
   ];
   const schedulerSettingsCardOrder: DepartmentCollectionKey[] = [
     "shiftInformation",
@@ -4300,6 +4310,62 @@ function DepartmentDetailsPage() {
   const accessCards = DEPARTMENT_COLLECTION_DEFINITIONS.filter(
     (definition) => definition.key === "userType",
   );
+  const personnelManagementCardOrder: DepartmentCollectionKey[] = ["personnel"];
+  const personnelManagementCards = personnelManagementCardOrder
+    .map((key) =>
+      DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
+    )
+    .filter((definition): definition is DepartmentCollectionDefinition =>
+      Boolean(definition),
+    );
+  const filteredUserRows = useMemo(() => {
+    const query = userSearchQuery.trim().toLocaleLowerCase();
+    const rows = userRecords.map((user, index) => ({ user, index }));
+    if (!query) {
+      return rows;
+    }
+    return rows.filter(({ user }) => {
+      const fields = [user.name, user.username, user.userType]
+        .map((value) => String(value ?? "").toLocaleLowerCase());
+      return fields.some((value) => value.includes(query));
+    });
+  }, [userRecords, userSearchQuery]);
+  const filteredPersonnelRows = useMemo(() => {
+    const query = personnelSearchQuery.trim().toLocaleLowerCase();
+    const rows = personnelRecords.map((personnel, index) => ({ personnel, index }));
+    if (!query) {
+      return rows;
+    }
+    return rows.filter(({ personnel }) => {
+      const fields = [
+        personnel.name,
+        personnel.shift,
+        personnel.apparatusAssignment,
+        personnel.station,
+        personnel.userType,
+        personnel.qualifications.join(", "),
+      ].map((value) => String(value ?? "").toLocaleLowerCase());
+      return fields.some((value) => value.includes(query));
+    });
+  }, [personnelRecords, personnelSearchQuery]);
+  const showDepartmentDetailsSection = mode === "departmentDetails";
+  const showSchedulerSettingsSection = mode === "schedulerSettings";
+  const showPersonnelManagementSection = mode === "personnelManagement";
+  const pageTitle = showDepartmentDetailsSection
+    ? "Admin Functions | Department Details"
+    : showSchedulerSettingsSection
+      ? "Admin Functions | Scheduler Settings"
+      : "Admin Functions | Personnel Management";
+  const pageSubtitle = showDepartmentDetailsSection
+    ? "Department setup and configuration values used throughout the system."
+    : showSchedulerSettingsSection
+      ? "Scheduler configuration and staffing control settings."
+      : "Manage users and personnel access settings.";
+  const saveButtonLabel = showSchedulerSettingsSection
+    ? "Save Scheduler Settings"
+    : showPersonnelManagementSection
+      ? "Save Personnel Management"
+      : "Save Department Details";
 
   const isStationsEditor = activeCollectionEditor === "stations";
   const isApparatusEditor = activeCollectionEditor === "apparatus";
@@ -4592,6 +4658,8 @@ function DepartmentDetailsPage() {
     setIsMultiAddOpen(false);
     setMultiAddError("");
     setMultiAddSuccess("");
+    setUserSearchQuery("");
+    setPersonnelSearchQuery("");
     if (
       collectionKey === "apparatus" ||
       collectionKey === "personnel" ||
@@ -5717,13 +5785,16 @@ function DepartmentDetailsPage() {
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Admin Functions | Department Details</h1>
-          <p>Department setup and configuration values used throughout the system.</p>
+          <h1>{pageTitle}</h1>
+          <p>{pageSubtitle}</p>
         </div>
       </header>
 
       <form className="panel-grid" onSubmit={handleDepartmentDetailsSave}>
-        <section className="panel-grid two-column">
+        <section
+          className="panel-grid two-column"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <article className="panel">
             <div className="panel-header">
               <h2>Department Profile</h2>
@@ -5770,7 +5841,10 @@ function DepartmentDetailsPage() {
           </article>
         </section>
 
-        <section className="panel-grid two-column">
+        <section
+          className="panel-grid two-column"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <article className="panel">
             <div className="panel-header">
               <h2>Main Contact</h2>
@@ -5795,7 +5869,10 @@ function DepartmentDetailsPage() {
           </article>
         </section>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Department Details</h2>
           </div>
@@ -5826,7 +5903,10 @@ function DepartmentDetailsPage() {
           </div>
         </article>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showSchedulerSettingsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Scheduler Settings</h2>
             <label className="field-hint" style={{ marginLeft: "auto" }}>
@@ -5878,7 +5958,10 @@ function DepartmentDetailsPage() {
           )}
         </article>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Department Resources</h2>
           </div>
@@ -5897,7 +5980,10 @@ function DepartmentDetailsPage() {
           </div>
         </article>
 
-        <article className="panel">
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
           <div className="panel-header">
             <h2>Department Access</h2>
           </div>
@@ -5916,9 +6002,35 @@ function DepartmentDetailsPage() {
           </div>
         </article>
 
+        <article
+          className="panel"
+          style={{ display: showPersonnelManagementSection ? undefined : "none" }}
+        >
+          <div className="panel-header">
+            <h2>Personnel Management</h2>
+          </div>
+          <div className="department-collection-grid">
+            {personnelManagementCards.map((definition) => (
+              <div key={definition.key} className="department-collection-card">
+                <div className="department-collection-card-header">
+                  <h3>{definition.label}</h3>
+                  <button
+                    type="button"
+                    className="rl-box-button"
+                    onClick={() => openCollectionEditor(definition.key)}
+                  >
+                    {definition.editButtonLabel}
+                  </button>
+                </div>
+                <p className="field-hint">Total Users: {userRecords.length}</p>
+              </div>
+            ))}
+          </div>
+        </article>
+
         <div className="header-actions">
           <button type="submit" className="primary-button">
-            Save Department Details
+            {saveButtonLabel}
           </button>
           {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
         </div>
@@ -6178,6 +6290,15 @@ function DepartmentDetailsPage() {
                         </div>
                       </div>
                     ) : null}
+                    <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                      <input
+                        type="search"
+                        value={userSearchQuery}
+                        onChange={(event) => setUserSearchQuery(event.target.value)}
+                        placeholder="Search users by name, username, or user type..."
+                        aria-label="Search users"
+                      />
+                    </div>
                     <div className="table-wrapper">
                       <table>
                         <thead>
@@ -6189,14 +6310,16 @@ function DepartmentDetailsPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {userRecords.length === 0 ? (
+                          {filteredUserRows.length === 0 ? (
                             <tr>
                               <td colSpan={4} className="department-apparatus-empty">
-                                No users. Click Add to create one.
+                                {userRecords.length === 0
+                                  ? "No users. Click Add to create one."
+                                  : "No users match the search."}
                               </td>
                             </tr>
                           ) : (
-                            userRecords.map((user, index) => (
+                            filteredUserRows.map(({ user, index }) => (
                               <tr
                                 key={`user-row-${index}-${user.name}`}
                                 className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
@@ -6358,6 +6481,15 @@ function DepartmentDetailsPage() {
                   </div>
                 ) : isSchedulerPersonnelEditor ? (
                   <div className="department-apparatus-list-wrapper">
+                      <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                        <input
+                          type="search"
+                          value={personnelSearchQuery}
+                          onChange={(event) => setPersonnelSearchQuery(event.target.value)}
+                          placeholder="Search personnel by name, shift, apparatus, station, or qualification..."
+                          aria-label="Search personnel"
+                        />
+                      </div>
                       <div className="table-wrapper scheduler-personnel-table-wrapper">
                         <table>
                           <thead>
@@ -6405,14 +6537,16 @@ function DepartmentDetailsPage() {
                             </tr>
                           </thead>
                           <tbody>
-                            {personnelRecords.length === 0 ? (
+                            {filteredPersonnelRows.length === 0 ? (
                               <tr>
                                 <td colSpan={2} className="department-apparatus-empty">
-                                  No personnel yet. Add users first in Department Details -&gt; Users.
+                                  {personnelRecords.length === 0
+                                    ? "No personnel yet. Add users first in Admin Functions -> Personnel Management."
+                                    : "No personnel match the search."}
                                 </td>
                               </tr>
                             ) : (
-                              personnelRecords.map((personnel, index) => (
+                              filteredPersonnelRows.map(({ personnel, index }) => (
                                 <tr
                                   key={`personnel-row-${index}-${personnel.name}`}
                                   className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
@@ -8823,7 +8957,15 @@ function RouteResolver({
   }
 
   if (path === "/admin-functions/department-details") {
-    return <DepartmentDetailsPage />;
+    return <DepartmentDetailsPage mode="departmentDetails" />;
+  }
+
+  if (path === "/admin-functions/scheduler-settings") {
+    return <DepartmentDetailsPage mode="schedulerSettings" />;
+  }
+
+  if (path === "/admin-functions/personnel-management") {
+    return <DepartmentDetailsPage mode="personnelManagement" />;
   }
 
   if (path === "/personnel/schedule") {

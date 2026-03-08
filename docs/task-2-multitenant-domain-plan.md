@@ -352,6 +352,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 - Wave 3 + Wave 4 core auth/account scope is complete (tenant-scoped users, login hardening, password change/reset, password policy enforcement).
 - Wave 6 domain routing and staging stability gate are complete.
 - Wave 7 DEMO safety decision is complete: `demo` remains a persistent, fully editable sandbox (no automatic reset, no new restrictions in this phase).
+- Wave 8 verification checklist is complete: tenant login/isolation checks, cross-tenant save separation checks, scheduler/personnel/Kelly validation, and lint/build + smoke checks in staging.
 
 ### Later (deferred hardening backlog)
 - Replace prompt-based admin reset-password UX with an in-app modal/dialog flow.
@@ -360,7 +361,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 - Deploy frontend staging on Render (keep local frontend for now while backend/domain setup is completed).
 - Implement configurable tenant policy controls for demo-style tenants (for example, optional restricted mode flags per tenant) when business rules are finalized.
 
-Use this section as the running backlog for deferred security/quality follow-ups so future agents can continue without rediscovery.
+Use this section as the high-level backlog pointer. Track detailed deferred/future items in `docs/later-changes-backlog.md` going forward.
 
 ---
 
@@ -446,6 +447,8 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 
 **Exit criteria:**
 - Multi-tenant domain-based behavior is stable in staging/demo.
+
+**Phase 8 status:** Done (user confirmed full Phase 8 checklist completion across staging tenant hosts, including tenant isolation and cross-tenant save separation validation).
 
 ---
 
