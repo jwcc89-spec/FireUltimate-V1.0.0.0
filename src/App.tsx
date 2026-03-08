@@ -601,8 +601,8 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   },
   {
     key: "apparatus",
-    label: "Apparatus",
-    editButtonLabel: "Edit Apparatus",
+    label: "Department Apparatus",
+    editButtonLabel: "Edit Department Apparatus",
     helperText: "",
   },
   {
@@ -625,8 +625,8 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   },
   {
     key: "schedulerApparatus",
-    label: "Apparatus",
-    editButtonLabel: "Edit Apparatus",
+    label: "Scheduler Apparatus",
+    editButtonLabel: "Edit Scheduler Apparatus",
     helperText: "",
   },
   {
@@ -4056,6 +4056,7 @@ function DepartmentDetailsPage() {
       }
       activeApparatusResizeField.current = null;
       document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", stopResize);
@@ -4089,6 +4090,7 @@ function DepartmentDetailsPage() {
       }
       activeSchedulerApparatusResizeField.current = null;
       document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", stopResize);
@@ -4122,6 +4124,7 @@ function DepartmentDetailsPage() {
       }
       activeSchedulerPersonnelResizeField.current = null;
       document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
     };
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", stopResize);
@@ -4188,6 +4191,7 @@ function DepartmentDetailsPage() {
     nextOrder.splice(toIndex, 0, dragApparatusFieldId);
     setApparatusFieldOrder(nextOrder);
     setDragApparatusFieldId(null);
+    setAutoSaveTick((previous) => previous + 1);
   };
   const activeCollectionDefinition = useMemo(
     () =>
@@ -5962,14 +5966,6 @@ function DepartmentDetailsPage() {
                       }}
                     >
                       Edit Multiple
-                    </button>
-                  ) : null}
-                  {!isSchedulerPersonnelEditor &&
-                  !isSchedulerApparatusEditor &&
-                  !isAdditionalFieldsEditor &&
-                  !isUsersEditor ? (
-                    <button type="button" className="primary-button compact-button" onClick={() => openEditForm()}>
-                      Edit
                     </button>
                   ) : null}
                 </div>
