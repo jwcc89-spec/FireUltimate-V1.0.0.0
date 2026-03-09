@@ -50,6 +50,12 @@ Purpose: keep all deferred or future work in one place from this point forward, 
 
 ---
 
+## UI Conventions
+
+- [Done][P3] Demo-only helper text pattern: gate by tenant context (`/api/tenant/context`, demo-like slug) and style helper text in blue using `.demo-helper-text`.
+
+---
+
 ## Done (history)
 
 - (Move completed backlog items here with date/commit when finished.)

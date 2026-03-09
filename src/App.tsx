@@ -78,6 +78,7 @@ import {
   NerisFlatSingleOptionSelect,
 } from "./NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
+import { getRecurrenceIntervalDays, toDateKey } from "./scheduleUtils";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -243,6 +244,19 @@ interface KellyRotationEntry {
   repeatsEveryValue: number;
   repeatsEveryUnit: KellyRotationUnit;
   startsOn: string;
+}
+
+interface KellyRotationMultiAddDraft {
+  shift: string;
+  repeatsEveryValue: number;
+  repeatsEveryUnit: KellyRotationUnit;
+  startsOn: string;
+  occurrenceSlots: string[][];
+}
+
+interface KellyMultiAddPendingConfirmation {
+  entries: KellyRotationEntry[];
+  replacements: string[];
 }
 
 interface DepartmentPersonnelRecord {
@@ -468,6 +482,7 @@ const DEFAULT_SCHEDULER_APPARATUS_FIELD_WIDTHS: Record<SchedulerApparatusGridFie
   station: 120,
 };
 type SchedulerPersonnelGridFieldId = "shift" | "apparatusAssignment" | "station" | "qualifications";
+type UserTableColumnId = "name" | "username" | "userType";
 const SCHEDULER_PERSONNEL_GRID_FIELD_ORDER: SchedulerPersonnelGridFieldId[] = [
   "shift",
   "apparatusAssignment",
@@ -481,6 +496,13 @@ const DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS: Record<SchedulerPersonnelGridFie
   apparatusAssignment: 160,
   station: 120,
   qualifications: 210,
+};
+const MIN_USER_TABLE_COLUMN_WIDTH = 120;
+const MAX_USER_TABLE_COLUMN_WIDTH = 440;
+const DEFAULT_USER_TABLE_COLUMN_WIDTHS: Record<UserTableColumnId, number> = {
+  name: 240,
+  username: 200,
+  userType: 180,
 };
 const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
   { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false },
@@ -573,6 +595,23 @@ function normalizeSchedulerPersonnelFieldWidths(
       next[fieldId] = Math.min(
         MAX_SCHEDULER_PERSONNEL_FIELD_WIDTH,
         Math.max(MIN_SCHEDULER_PERSONNEL_FIELD_WIDTH, candidate),
+      );
+    }
+  });
+  return next;
+}
+
+function normalizeUserTableColumnWidths(
+  raw: unknown,
+): Record<UserTableColumnId, number> {
+  const source = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
+  const next = { ...DEFAULT_USER_TABLE_COLUMN_WIDTHS };
+  (Object.keys(DEFAULT_USER_TABLE_COLUMN_WIDTHS) as UserTableColumnId[]).forEach((columnId) => {
+    const candidate = Number(source[columnId]);
+    if (Number.isFinite(candidate)) {
+      next[columnId] = Math.min(
+        MAX_USER_TABLE_COLUMN_WIDTH,
+        Math.max(MIN_USER_TABLE_COLUMN_WIDTH, candidate),
       );
     }
   });
@@ -3722,6 +3761,13 @@ type DepartmentDetailsPageMode =
   | "departmentDetails"
   | "schedulerSettings"
   | "personnelManagement";
+type UserSortColumn = "name" | "username" | "userType";
+type PersonnelSortColumn =
+  | "name"
+  | "shift"
+  | "apparatusAssignment"
+  | "station"
+  | "qualifications";
 
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
@@ -3795,6 +3841,11 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   });
   const [userSearchQuery, setUserSearchQuery] = useState("");
   const [personnelSearchQuery, setPersonnelSearchQuery] = useState("");
+  const [userSortColumn, setUserSortColumn] = useState<UserSortColumn>("name");
+  const [userSortDirection, setUserSortDirection] = useState<"asc" | "desc">("asc");
+  const [personnelSortColumn, setPersonnelSortColumn] =
+    useState<PersonnelSortColumn>("name");
+  const [personnelSortDirection, setPersonnelSortDirection] = useState<"asc" | "desc">("asc");
   const [schedulerEnabled, setSchedulerEnabled] = useState(
     Boolean(initialDepartmentDraft.schedulerEnabled ?? false),
   );
@@ -3828,6 +3879,18 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     repeatsEveryUnit: "Shifts",
     startsOn: "",
   });
+  const [isKellyMultiAddOpen, setIsKellyMultiAddOpen] = useState(false);
+  const [kellyMultiAddError, setKellyMultiAddError] = useState("");
+  const [kellyMultiAddDraft, setKellyMultiAddDraft] =
+    useState<KellyRotationMultiAddDraft>({
+      shift: "",
+      repeatsEveryValue: 14,
+      repeatsEveryUnit: "Shifts",
+      startsOn: "",
+      occurrenceSlots: [],
+    });
+  const [kellyMultiAddPendingConfirmation, setKellyMultiAddPendingConfirmation] =
+    useState<KellyMultiAddPendingConfirmation | null>(null);
   const [activeCollectionEditor, setActiveCollectionEditor] = useState<DepartmentCollectionKey | null>(null);
   const [isMultiEditMode, setIsMultiEditMode] = useState(false);
   const [selectedSingleIndex, setSelectedSingleIndex] = useState<number | null>(null);
@@ -3936,6 +3999,13 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       initialUserUiPreferences.schedulerPersonnelFieldWidths,
     ),
   );
+  const [userTableColumnWidths, setUserTableColumnWidths] = useState<
+    Record<UserTableColumnId, number>
+  >(() =>
+    normalizeUserTableColumnWidths(
+      initialUserUiPreferences.userTableColumnWidths,
+    ),
+  );
   const [apparatusFieldWidths, setApparatusFieldWidths] = useState<Record<ApparatusGridFieldId, number>>(
     () => normalizeApparatusFieldWidths(initialUserUiPreferences.apparatusFieldWidths),
   );
@@ -3956,6 +4026,11 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   } | null>(null);
   const activeSchedulerPersonnelResizeField = useRef<{
     fieldId: SchedulerPersonnelGridFieldId;
+    startX: number;
+    startWidth: number;
+  } | null>(null);
+  const activeUserTableResizeField = useRef<{
+    fieldId: UserTableColumnId;
     startX: number;
     startWidth: number;
   } | null>(null);
@@ -4145,6 +4220,40 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       document.body.classList.remove("resizing-dispatch-columns");
     };
   }, []);
+  useEffect(() => {
+    const handlePointerMove = (event: PointerEvent) => {
+      const activeResize = activeUserTableResizeField.current;
+      if (!activeResize) {
+        return;
+      }
+      const delta = event.clientX - activeResize.startX;
+      const nextWidth = Math.min(
+        MAX_USER_TABLE_COLUMN_WIDTH,
+        Math.max(MIN_USER_TABLE_COLUMN_WIDTH, activeResize.startWidth + delta),
+      );
+      setUserTableColumnWidths((previous) => {
+        if (previous[activeResize.fieldId] === nextWidth) {
+          return previous;
+        }
+        return { ...previous, [activeResize.fieldId]: nextWidth };
+      });
+    };
+    const stopResize = () => {
+      if (!activeUserTableResizeField.current) {
+        return;
+      }
+      activeUserTableResizeField.current = null;
+      document.body.classList.remove("resizing-dispatch-columns");
+      setAutoSaveTick((previous) => previous + 1);
+    };
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", stopResize);
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", stopResize);
+      document.body.classList.remove("resizing-dispatch-columns");
+    };
+  }, []);
   const startApparatusFieldResize = (
     fieldId: ApparatusGridFieldId,
     event: ReactPointerEvent<HTMLSpanElement>,
@@ -4185,6 +4294,21 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       startWidth:
         schedulerPersonnelFieldWidths[fieldId] ??
         DEFAULT_SCHEDULER_PERSONNEL_FIELD_WIDTHS[fieldId],
+    };
+    document.body.classList.add("resizing-dispatch-columns");
+  };
+  const startUserTableColumnResize = (
+    fieldId: UserTableColumnId,
+    event: ReactPointerEvent<HTMLSpanElement>,
+  ) => {
+    event.preventDefault();
+    event.stopPropagation();
+    activeUserTableResizeField.current = {
+      fieldId,
+      startX: event.clientX,
+      startWidth:
+        userTableColumnWidths[fieldId] ??
+        DEFAULT_USER_TABLE_COLUMN_WIDTHS[fieldId],
     };
     document.body.classList.add("resizing-dispatch-columns");
   };
@@ -4244,13 +4368,85 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       }),
     [shiftInformationEntries],
   );
-  const sortedPersonnelNames = useMemo(
+  const kellyPersonnelGroups = useMemo(() => {
+    const shiftByName = new Map<string, string>();
+    personnelRecords.forEach((entry) => {
+      const name = String(entry.name ?? "").trim();
+      const shift = String(entry.shift ?? "").trim();
+      if (!name) return;
+      shiftByName.set(name, shift);
+    });
+    const names = Array.from(
+      new Set(userRecords.map((record) => record.name.trim()).filter((name) => name.length > 0)),
+    );
+    const grouped = new Map<string, string[]>();
+    names.forEach((name) => {
+      const shiftRaw = shiftByName.get(name) ?? "";
+      const shiftKey = shiftRaw.split("|")[0]?.trim() || "Unassigned Shift";
+      const current = grouped.get(shiftKey) ?? [];
+      current.push(name);
+      grouped.set(shiftKey, current);
+    });
+    const shiftRank = (shift: string): number => {
+      const normalized = shift.trim().toUpperCase();
+      if (normalized.startsWith("A SHIFT")) return 1;
+      if (normalized.startsWith("B SHIFT")) return 2;
+      if (normalized.startsWith("C SHIFT")) return 3;
+      if (normalized.startsWith("D SHIFT")) return 4;
+      if (normalized === "UNASSIGNED SHIFT") return 99;
+      return 50;
+    };
+    return Array.from(grouped.entries())
+      .map(([shift, members]) => ({
+        shift,
+        members: [...members].sort((a, b) => a.localeCompare(b)),
+      }))
+      .sort((a, b) => {
+        const rankDiff = shiftRank(a.shift) - shiftRank(b.shift);
+        return rankDiff !== 0 ? rankDiff : a.shift.localeCompare(b.shift);
+      });
+  }, [personnelRecords, userRecords]);
+  const kellyShiftOptions = useMemo(
     () =>
-      Array.from(
-        new Set(userRecords.map((record) => record.name.trim()).filter((name) => name.length > 0)),
-      ).sort((a, b) => a.localeCompare(b)),
-    [userRecords],
+      kellyPersonnelGroups
+        .map((group) => group.shift)
+        .filter((shift) => shift.trim().length > 0 && shift !== "Unassigned Shift"),
+    [kellyPersonnelGroups],
   );
+  const selectedKellyGroup = useMemo(
+    () => kellyPersonnelGroups.find((group) => group.shift === kellyMultiAddDraft.shift),
+    [kellyPersonnelGroups, kellyMultiAddDraft.shift],
+  );
+  const kellySlotCount = useMemo(() => {
+    const kellyField = additionalFieldRecords.find((record) => record.id === "support-kelly-day");
+    return Math.max(1, Math.floor(Number(kellyField?.numberOfSlots ?? 2) || 2));
+  }, [additionalFieldRecords]);
+  const kellyOccurrencePreview = useMemo(() => {
+    if (!kellyMultiAddDraft.startsOn) {
+      return [];
+    }
+    const startDate = new Date(`${kellyMultiAddDraft.startsOn}T00:00:00`);
+    if (Number.isNaN(startDate.getTime())) {
+      return [];
+    }
+    const shiftEntry = shiftInformationEntries.find(
+      (entry) =>
+        entry.shiftType.trim() === kellyMultiAddDraft.shift.trim(),
+    );
+    const recurrenceDays = Math.max(1, getRecurrenceIntervalDays(shiftEntry));
+    const stepDays = recurrenceDays;
+    const previewCount = Math.max(1, Math.floor(kellyMultiAddDraft.repeatsEveryValue || 1));
+    return Array.from({ length: previewCount }, (_, index) => {
+      const nextDate = new Date(startDate);
+      nextDate.setDate(startDate.getDate() + index * stepDays);
+      return toDateKey(nextDate);
+    });
+  }, [
+    kellyMultiAddDraft.repeatsEveryValue,
+    kellyMultiAddDraft.shift,
+    kellyMultiAddDraft.startsOn,
+    shiftInformationEntries,
+  ]);
   const addKellyRotation = () => {
     if (!kellyRotationDraft.personnel.trim() || !kellyRotationDraft.startsOn) {
       return;
@@ -4275,6 +4471,90 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     setEditingKellyRotationIndex(null);
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
+  };
+  const openKellyMultiAdd = () => {
+    const defaultShift = kellyShiftOptions[0] ?? "";
+    setKellyMultiAddError("");
+    setKellyMultiAddDraft({
+      shift: defaultShift,
+      repeatsEveryValue: 14,
+      repeatsEveryUnit: "Shifts",
+      startsOn: "",
+      occurrenceSlots: [],
+    });
+    setKellyMultiAddPendingConfirmation(null);
+    setIsKellyMultiAddOpen(true);
+  };
+  const closeKellyMultiAdd = () => {
+    setIsKellyMultiAddOpen(false);
+    setKellyMultiAddError("");
+    setKellyMultiAddPendingConfirmation(null);
+  };
+  const updateKellyMultiAddSlot = (rowIndex: number, slotIndex: number, value: string) => {
+    setKellyMultiAddPendingConfirmation(null);
+    setKellyMultiAddDraft((previous) => {
+      const nextRows = previous.occurrenceSlots.map((row) => [...row]);
+      if (!nextRows[rowIndex]) {
+        nextRows[rowIndex] = Array.from({ length: kellySlotCount }, () => "");
+      }
+      nextRows[rowIndex]![slotIndex] = value;
+      return { ...previous, occurrenceSlots: nextRows };
+    });
+  };
+  const submitKellyMultiAdd = () => {
+    if (!kellyMultiAddDraft.shift.trim()) {
+      setKellyMultiAddError("Select a shift before creating rotation rules.");
+      return;
+    }
+    if (!kellyMultiAddDraft.startsOn) {
+      setKellyMultiAddError("Select a start date before creating rotation rules.");
+      return;
+    }
+    const selectedEntries = kellyOccurrencePreview.flatMap((dateKey, rowIndex) =>
+      (kellyMultiAddDraft.occurrenceSlots[rowIndex] ?? [])
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0)
+        .map((personnel) => ({
+          personnel,
+          repeatsEveryValue: Math.max(1, Math.floor(kellyMultiAddDraft.repeatsEveryValue || 1)),
+          repeatsEveryUnit: kellyMultiAddDraft.repeatsEveryUnit,
+          startsOn: dateKey,
+        } satisfies KellyRotationEntry)),
+    );
+    const replacementMap = new Map<string, KellyRotationEntry>();
+    selectedEntries.forEach((entry) => {
+      replacementMap.set(entry.personnel, entry);
+    });
+    if (replacementMap.size === 0) {
+      setKellyMultiAddError("Select at least one personnel slot.");
+      return;
+    }
+    const entries = Array.from(replacementMap.values());
+    const replacements = kellyRotations
+      .map((entry) => entry.personnel.trim())
+      .filter((personnel) => replacementMap.has(personnel));
+    setKellyMultiAddPendingConfirmation({
+      entries,
+      replacements,
+    });
+    setKellyMultiAddError("");
+  };
+  const confirmKellyMultiAdd = () => {
+    if (!kellyMultiAddPendingConfirmation) {
+      return;
+    }
+    const replacementMap = new Map(
+      kellyMultiAddPendingConfirmation.entries.map((entry) => [entry.personnel, entry]),
+    );
+    setKellyRotations((previous) => {
+      const withoutReplaced = previous.filter(
+        (entry) => !replacementMap.has(entry.personnel.trim()),
+      );
+      return [...withoutReplaced, ...kellyMultiAddPendingConfirmation.entries];
+    });
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Kelly rotation rules updated.");
+    closeKellyMultiAdd();
   };
 
   const detailCardOrder: DepartmentCollectionKey[] = [
@@ -4330,6 +4610,16 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       return fields.some((value) => value.includes(query));
     });
   }, [userRecords, userSearchQuery]);
+  const sortedFilteredUserRows = useMemo(() => {
+    const rows = [...filteredUserRows];
+    rows.sort((left, right) => {
+      const leftValue = String(left.user[userSortColumn] ?? "");
+      const rightValue = String(right.user[userSortColumn] ?? "");
+      const result = leftValue.localeCompare(rightValue, undefined, { sensitivity: "base" });
+      return userSortDirection === "asc" ? result : -result;
+    });
+    return rows;
+  }, [filteredUserRows, userSortColumn, userSortDirection]);
   const filteredPersonnelRows = useMemo(() => {
     const query = personnelSearchQuery.trim().toLocaleLowerCase();
     const rows = personnelRecords.map((personnel, index) => ({ personnel, index }));
@@ -4348,6 +4638,22 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       return fields.some((value) => value.includes(query));
     });
   }, [personnelRecords, personnelSearchQuery]);
+  const sortedFilteredPersonnelRows = useMemo(() => {
+    const rows = [...filteredPersonnelRows];
+    rows.sort((left, right) => {
+      const leftValue =
+        personnelSortColumn === "qualifications"
+          ? left.personnel.qualifications.join(", ")
+          : String(left.personnel[personnelSortColumn] ?? "");
+      const rightValue =
+        personnelSortColumn === "qualifications"
+          ? right.personnel.qualifications.join(", ")
+          : String(right.personnel[personnelSortColumn] ?? "");
+      const result = leftValue.localeCompare(rightValue, undefined, { sensitivity: "base" });
+      return personnelSortDirection === "asc" ? result : -result;
+    });
+    return rows;
+  }, [filteredPersonnelRows, personnelSortColumn, personnelSortDirection]);
   const showDepartmentDetailsSection = mode === "departmentDetails";
   const showSchedulerSettingsSection = mode === "schedulerSettings";
   const showPersonnelManagementSection = mode === "personnelManagement";
@@ -4380,6 +4686,23 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   const isUserTypeEditor = activeCollectionEditor === "userType";
   const isMutualAidEditor = activeCollectionEditor === "mutualAidDepartments";
 
+  const handleUserSort = (column: UserSortColumn) => {
+    if (column === userSortColumn) {
+      setUserSortDirection((previous) => (previous === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setUserSortColumn(column);
+    setUserSortDirection("asc");
+  };
+  const handlePersonnelSort = (column: PersonnelSortColumn) => {
+    if (column === personnelSortColumn) {
+      setPersonnelSortDirection((previous) => (previous === "asc" ? "desc" : "asc"));
+      return;
+    }
+    setPersonnelSortColumn(column);
+    setPersonnelSortDirection("asc");
+  };
+
   useEffect(() => {
     if (multiAddDefaultUserType.trim()) {
       return;
@@ -4387,6 +4710,21 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     const fallback = userTypeValues.find((value) => value.trim().length > 0) ?? "User";
     setMultiAddDefaultUserType(fallback);
   }, [multiAddDefaultUserType, userTypeValues]);
+  useEffect(() => {
+    setKellyMultiAddDraft((previous) => {
+      if (previous.occurrenceSlots.length === kellyOccurrencePreview.length &&
+        previous.occurrenceSlots.every((row) => row.length === kellySlotCount)
+      ) {
+        return previous;
+      }
+      const nextRows = Array.from({ length: kellyOccurrencePreview.length }, (_, rowIndex) =>
+        Array.from({ length: kellySlotCount }, (_, slotIndex) =>
+          previous.occurrenceSlots[rowIndex]?.[slotIndex] ?? "",
+        ),
+      );
+      return { ...previous, occurrenceSlots: nextRows };
+    });
+  }, [kellyOccurrencePreview.length, kellySlotCount]);
 
   const multiAddPreview = useMemo(() => {
     const existingUsernames = new Set(
@@ -4530,6 +4868,11 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
             apiUserUiPreferences.schedulerPersonnelFieldWidths,
           ),
         );
+        setUserTableColumnWidths(
+          normalizeUserTableColumnWidths(
+            apiUserUiPreferences.userTableColumnWidths,
+          ),
+        );
         setStationRecords(
           Array.isArray(d.stationRecords) ? (d.stationRecords as DepartmentStationRecord[]) : [],
         );
@@ -4656,6 +4999,8 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     setActiveCollectionEditor(collectionKey);
     resetEditorSelection();
     setIsMultiAddOpen(false);
+    setIsKellyMultiAddOpen(false);
+    setKellyMultiAddError("");
     setMultiAddError("");
     setMultiAddSuccess("");
     setUserSearchQuery("");
@@ -4700,6 +5045,8 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     setActiveCollectionEditor(null);
     resetEditorSelection();
     setIsMultiAddOpen(false);
+    setIsKellyMultiAddOpen(false);
+    setKellyMultiAddError("");
     setResetPasswordTargetIndex(null);
     setResetPasswordValue("");
     setResetPasswordConfirmValue("");
@@ -5691,6 +6038,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
         apparatusFieldOrder,
         schedulerApparatusFieldWidths,
         schedulerPersonnelFieldWidths,
+        userTableColumnWidths,
       },
     };
     // Omit userRecords from payload: auth lives in User table only (Wave 3), not in DepartmentDetails.payloadJson.
@@ -5758,6 +6106,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     schedulerApparatusRecords,
     schedulerEnabled,
     schedulerPersonnelFieldWidths,
+    userTableColumnWidths,
     uiPreferenceUserKey,
     uiPreferencesByUser,
     secondaryContactName,
@@ -6300,17 +6649,122 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                       />
                     </div>
                     <div className="table-wrapper">
-                      <table>
+                      <table className="user-edit-table">
+                        <colgroup>
+                          <col style={{ width: `${userTableColumnWidths.name}px` }} />
+                          <col style={{ width: `${userTableColumnWidths.username}px` }} />
+                          <col style={{ width: `${userTableColumnWidths.userType}px` }} />
+                          <col style={{ width: "160px" }} />
+                        </colgroup>
                         <thead>
                           <tr>
-                            <th>User Full Name</th>
-                            <th>Username</th>
-                            <th>User Type</th>
+                            <th>
+                              <div className="user-table-header-control">
+                                <button
+                                  type="button"
+                                  className={`table-sort-button ${userSortColumn === "name" ? "table-sort-button-active" : ""}`}
+                                  onClick={() => handleUserSort("name")}
+                                  aria-label="Sort by user full name"
+                                >
+                                  <span>User Full Name</span>
+                                  {userSortColumn === "name" ? (
+                                    <span
+                                      className={`table-sort-glyph table-sort-glyph-${userSortDirection}`}
+                                      aria-hidden="true"
+                                    >
+                                      <span />
+                                      <span />
+                                      <span />
+                                    </span>
+                                  ) : null}
+                                </button>
+                                <span
+                                  className="dispatch-column-resizer user-table-column-resizer"
+                                  role="separator"
+                                  aria-label="Resize user full name column"
+                                  aria-orientation="vertical"
+                                  onPointerDown={(event) =>
+                                    startUserTableColumnResize("name", event)
+                                  }
+                                  title="Drag to resize User Full Name column"
+                                >
+                                  |
+                                </span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="user-table-header-control">
+                                <button
+                                  type="button"
+                                  className={`table-sort-button ${userSortColumn === "username" ? "table-sort-button-active" : ""}`}
+                                  onClick={() => handleUserSort("username")}
+                                  aria-label="Sort by username"
+                                >
+                                  <span>Username</span>
+                                  {userSortColumn === "username" ? (
+                                    <span
+                                      className={`table-sort-glyph table-sort-glyph-${userSortDirection}`}
+                                      aria-hidden="true"
+                                    >
+                                      <span />
+                                      <span />
+                                      <span />
+                                    </span>
+                                  ) : null}
+                                </button>
+                                <span
+                                  className="dispatch-column-resizer user-table-column-resizer"
+                                  role="separator"
+                                  aria-label="Resize username column"
+                                  aria-orientation="vertical"
+                                  onPointerDown={(event) =>
+                                    startUserTableColumnResize("username", event)
+                                  }
+                                  title="Drag to resize Username column"
+                                >
+                                  |
+                                </span>
+                              </div>
+                            </th>
+                            <th>
+                              <div className="user-table-header-control">
+                                <button
+                                  type="button"
+                                  className={`table-sort-button ${userSortColumn === "userType" ? "table-sort-button-active" : ""}`}
+                                  onClick={() => handleUserSort("userType")}
+                                  aria-label="Sort by user type"
+                                >
+                                  <span>User Type</span>
+                                  {userSortColumn === "userType" ? (
+                                    <span
+                                      className={`table-sort-glyph table-sort-glyph-${userSortDirection}`}
+                                      aria-hidden="true"
+                                    >
+                                      <span />
+                                      <span />
+                                      <span />
+                                    </span>
+                                  ) : null}
+                                </button>
+                                <span
+                                  className="dispatch-column-resizer user-table-column-resizer"
+                                  role="separator"
+                                  aria-label="Resize user type column"
+                                  aria-orientation="vertical"
+                                  onPointerDown={(event) =>
+                                    startUserTableColumnResize("userType", event)
+                                  }
+                                  title="Drag to resize User Type column"
+                                >
+                                  |
+                                </span>
+                              </div>
+                            </th>
                             <th>Actions</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {filteredUserRows.length === 0 ? (
+                          {sortedFilteredUserRows.length === 0 ? (
                             <tr>
                               <td colSpan={4} className="department-apparatus-empty">
                                 {userRecords.length === 0
@@ -6319,7 +6773,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                               </td>
                             </tr>
                           ) : (
-                            filteredUserRows.map(({ user, index }) => (
+                            sortedFilteredUserRows.map(({ user, index }) => (
                               <tr
                                 key={`user-row-${index}-${user.name}`}
                                 className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
@@ -6494,7 +6948,26 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                         <table>
                           <thead>
                             <tr>
-                              <th>Name</th>
+                              <th>
+                                <button
+                                  type="button"
+                                  className={`table-sort-button ${personnelSortColumn === "name" ? "table-sort-button-active" : ""}`}
+                                  onClick={() => handlePersonnelSort("name")}
+                                  aria-label="Sort personnel by name"
+                                >
+                                  <span>Name</span>
+                                  {personnelSortColumn === "name" ? (
+                                    <span
+                                      className={`table-sort-glyph table-sort-glyph-${personnelSortDirection}`}
+                                      aria-hidden="true"
+                                    >
+                                      <span />
+                                      <span />
+                                      <span />
+                                    </span>
+                                  ) : null}
+                                </button>
+                              </th>
                               <th>
                                 <div
                                   className="department-personnel-grid-line--four department-personnel-grid-header"
@@ -6514,7 +6987,24 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                                         key={`scheduler-personnel-header-${fieldId}`}
                                         className="department-apparatus-field department-apparatus-header-field"
                                       >
-                                        <span className="department-apparatus-header-label">{label}</span>
+                                        <button
+                                          type="button"
+                                          className={`table-sort-button table-sort-button-inline ${personnelSortColumn === fieldId ? "table-sort-button-active" : ""}`}
+                                          onClick={() => handlePersonnelSort(fieldId)}
+                                          aria-label={`Sort personnel by ${label}`}
+                                        >
+                                          <span className="department-apparatus-header-label">{label}</span>
+                                          {personnelSortColumn === fieldId ? (
+                                            <span
+                                              className={`table-sort-glyph table-sort-glyph-${personnelSortDirection}`}
+                                              aria-hidden="true"
+                                            >
+                                              <span />
+                                              <span />
+                                              <span />
+                                            </span>
+                                          ) : null}
+                                        </button>
                                         {idx < SCHEDULER_PERSONNEL_GRID_FIELD_ORDER.length - 1 ? (
                                           <span
                                             className="dispatch-column-resizer"
@@ -6537,7 +7027,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                             </tr>
                           </thead>
                           <tbody>
-                            {filteredPersonnelRows.length === 0 ? (
+                            {sortedFilteredPersonnelRows.length === 0 ? (
                               <tr>
                                 <td colSpan={2} className="department-apparatus-empty">
                                   {personnelRecords.length === 0
@@ -6546,7 +7036,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                                 </td>
                               </tr>
                             ) : (
-                              filteredPersonnelRows.map(({ personnel, index }) => (
+                              sortedFilteredPersonnelRows.map(({ personnel, index }) => (
                                 <tr
                                   key={`personnel-row-${index}-${personnel.name}`}
                                   className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
@@ -7373,18 +7863,23 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
 
             {isKellyRotationEditor ? (
               <>
-                <div className="department-editor-add-row">
+                <div className="department-editor-add-row kelly-rotation-editor-row">
                   <select
+                    className="kelly-rotation-personnel-select"
                     value={kellyRotationDraft.personnel}
                     onChange={(event) =>
                       setKellyRotationDraft((previous) => ({ ...previous, personnel: event.target.value }))
                     }
                   >
                     <option value="">Select personnel</option>
-                    {sortedPersonnelNames.map((name) => (
-                      <option key={`kelly-person-${name}`} value={name}>
-                        {name}
-                      </option>
+                    {kellyPersonnelGroups.map((group) => (
+                      <optgroup key={`kelly-group-${group.shift}`} label={group.shift}>
+                        {group.members.map((name) => (
+                          <option key={`kelly-person-${group.shift}-${name}`} value={name}>
+                            {name}
+                          </option>
+                        ))}
+                      </optgroup>
                     ))}
                   </select>
                   <input
@@ -7421,7 +7916,220 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                   <button type="button" className="primary-button compact-button" onClick={addKellyRotation}>
                     {editingKellyRotationIndex === null ? "Add" : "Update"}
                   </button>
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={openKellyMultiAdd}
+                  >
+                    Multi-Add
+                  </button>
                 </div>
+                {isKellyMultiAddOpen ? (
+                  <div className="panel" style={{ marginTop: "0.65rem" }}>
+                    <div className="panel-header">
+                      <h3>Kelly Rotation Multi-Add</h3>
+                      <button
+                        type="button"
+                        className="secondary-button compact-button"
+                        onClick={closeKellyMultiAdd}
+                      >
+                        Close
+                      </button>
+                    </div>
+                    <div className="settings-form">
+                      <div className="kelly-multi-add-controls">
+                        <label>
+                          Shift
+                          <select
+                            value={kellyMultiAddDraft.shift}
+                            onChange={(event) => {
+                              setKellyMultiAddPendingConfirmation(null);
+                              setKellyMultiAddDraft((previous) => ({
+                                ...previous,
+                                shift: event.target.value,
+                                occurrenceSlots: [],
+                              }));
+                            }}
+                          >
+                            <option value="">Select shift</option>
+                            {kellyShiftOptions.map((shift) => (
+                              <option key={`kelly-multi-shift-${shift}`} value={shift}>
+                                {shift}
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+                        <label>
+                          Repeat Interval
+                          <input
+                            type="number"
+                            min={1}
+                            value={kellyMultiAddDraft.repeatsEveryValue}
+                            onChange={(event) => {
+                              setKellyMultiAddPendingConfirmation(null);
+                              setKellyMultiAddDraft((previous) => ({
+                                ...previous,
+                                repeatsEveryValue: Number(event.target.value) || 1,
+                              }));
+                            }}
+                          />
+                        </label>
+                        <label>
+                          Unit
+                          <select
+                            value={kellyMultiAddDraft.repeatsEveryUnit}
+                            onChange={(event) => {
+                              setKellyMultiAddPendingConfirmation(null);
+                              setKellyMultiAddDraft((previous) => ({
+                                ...previous,
+                                repeatsEveryUnit: (event.target.value as KellyRotationUnit) || "Shifts",
+                              }));
+                            }}
+                          >
+                            <option value="Days">Days</option>
+                            <option value="Shifts">Shifts</option>
+                          </select>
+                        </label>
+                        <label>
+                          Start Date
+                          <input
+                            type="date"
+                            value={kellyMultiAddDraft.startsOn}
+                            onChange={(event) => {
+                              setKellyMultiAddPendingConfirmation(null);
+                              setKellyMultiAddDraft((previous) => ({
+                                ...previous,
+                                startsOn: event.target.value,
+                              }));
+                            }}
+                          />
+                        </label>
+                      </div>
+                      <div className="kelly-multi-add-preview">
+                        <p className="field-hint" style={{ margin: 0 }}>
+                          Occurrence slots
+                        </p>
+                        {kellyOccurrencePreview.length > 0 ? (
+                          <div className="kelly-multi-add-occurrence-grid">
+                            {kellyOccurrencePreview.map((dateKey, index) => {
+                              const date = new Date(`${dateKey}T00:00:00`);
+                              const displayDate = Number.isNaN(date.getTime())
+                                ? dateKey
+                                : date.toLocaleDateString();
+                              return (
+                                <div
+                                  key={`kelly-multi-preview-${dateKey}-${index}`}
+                                  className="kelly-multi-add-occurrence-card"
+                                >
+                                  <div className="kelly-multi-add-occurrence-date">
+                                    <strong>#{index + 1}</strong>
+                                    <span>{displayDate}</span>
+                                  </div>
+                                  <div className="kelly-multi-add-occurrence-slots">
+                                    {Array.from({ length: kellySlotCount }, (_, slotIndex) => (
+                                      <label key={`kelly-row-slot-${index}-${slotIndex}`}>
+                                        Slot {slotIndex + 1}
+                                        <NerisFlatSingleOptionSelect
+                                          inputId={`kelly-row-${index}-slot-${slotIndex}`}
+                                          value={kellyMultiAddDraft.occurrenceSlots[index]?.[slotIndex] ?? ""}
+                                          options={(selectedKellyGroup?.members ?? []).map((name) => ({
+                                            value: name,
+                                            label: name,
+                                          }))}
+                                          onChange={(nextValue) =>
+                                            updateKellyMultiAddSlot(index, slotIndex, nextValue)
+                                          }
+                                          isOptionDisabled={(optionValue) =>
+                                            kellyMultiAddDraft.occurrenceSlots.some((row, selectedRowIndex) =>
+                                              row.some(
+                                                (selectedName, selectedSlotIndex) =>
+                                                  !(
+                                                    selectedRowIndex === index &&
+                                                    selectedSlotIndex === slotIndex
+                                                  ) &&
+                                                  selectedName.trim().length > 0 &&
+                                                  selectedName === optionValue,
+                                              ),
+                                            )
+                                          }
+                                          placeholder={
+                                            kellyMultiAddDraft.shift
+                                              ? "Select personnel"
+                                              : "Select shift first"
+                                          }
+                                          searchPlaceholder="Search personnel..."
+                                          usePortal
+                                          disabled={!kellyMultiAddDraft.shift}
+                                          allowClear
+                                        />
+                                      </label>
+                                    ))}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <p className="field-hint" style={{ margin: "0.35rem 0 0 0" }}>
+                            Select start date to preview.
+                          </p>
+                        )}
+                      </div>
+                      <div className="department-editor-toolbar-actions">
+                        <button
+                          type="button"
+                          className="primary-button compact-button"
+                          onClick={submitKellyMultiAdd}
+                          disabled={Boolean(kellyMultiAddPendingConfirmation)}
+                        >
+                          Create Rotation Rules
+                        </button>
+                        {kellyMultiAddPendingConfirmation ? (
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => setKellyMultiAddPendingConfirmation(null)}
+                          >
+                            Cancel Pending
+                          </button>
+                        ) : null}
+                      </div>
+                      {kellyMultiAddPendingConfirmation ? (
+                        <div className="panel" style={{ marginTop: "0.45rem" }}>
+                          <p className="field-hint" style={{ margin: 0 }}>
+                            Confirm creating {kellyMultiAddPendingConfirmation.entries.length} rotation
+                            rule(s).
+                            {kellyMultiAddPendingConfirmation.replacements.length > 0
+                              ? ` ${kellyMultiAddPendingConfirmation.replacements.length} existing rule(s) will be replaced.`
+                              : " No existing rules will be replaced."}
+                          </p>
+                          {kellyMultiAddPendingConfirmation.replacements.length > 0 ? (
+                            <p className="field-hint" style={{ marginTop: "0.35rem" }}>
+                              Replacing: {kellyMultiAddPendingConfirmation.replacements.join(", ")}
+                            </p>
+                          ) : null}
+                          <div className="department-editor-toolbar-actions">
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={confirmKellyMultiAdd}
+                            >
+                              Confirm Create
+                            </button>
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() => setKellyMultiAddPendingConfirmation(null)}
+                            >
+                              Cancel
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                      {kellyMultiAddError ? <p className="auth-error">{kellyMultiAddError}</p> : null}
+                    </div>
+                  </div>
+                ) : null}
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
                   Click a row to edit.
                 </p>

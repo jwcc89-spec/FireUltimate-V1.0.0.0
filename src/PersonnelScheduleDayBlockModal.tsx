@@ -175,7 +175,14 @@ export function PersonnelScheduleDayBlockModal({
                 </button>
               </div>
             </div>
-            <p className="field-hint" style={{ margin: "-0.35rem 0 0.5rem" }}>
+            <p
+              className={
+                lastScheduleAction.startsWith("Cannot assign")
+                  ? "auth-error"
+                  : "field-hint"
+              }
+              style={{ margin: "-0.35rem 0 0.5rem" }}
+            >
               Previous action: {lastScheduleAction}
             </p>
             {scheduleRows.map((row) => {
@@ -266,21 +273,34 @@ export function PersonnelScheduleDayBlockModal({
                                 row.rowType === "apparatus" &&
                                 slotIdx < row.minimumPersonnel &&
                                 isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
-                              const hasOutOfShiftWhenOvertime =
-                                isOvertime &&
-                                names.some(
-                                  (personName) =>
-                                    !shiftPersonnel.some((person) => person.name === personName),
-                                );
                               return (
-                                <div
-                                  style={
-                                    hasOutOfShiftWhenOvertime
-                                      ? { color: "#b91c1c", fontWeight: 700 }
-                                      : undefined
-                                  }
-                                >
-                                  {names.length > 0 ? names.join(" / ") : "—"}
+                                <div>
+                                  {names.length > 0 ? (
+                                    names.map((personName, personIndex) => {
+                                      const person = allPersonnel.find(
+                                        (entry) => entry.name === personName,
+                                      );
+                                      const isOffShiftWhenOvertime =
+                                        isOvertime &&
+                                        person !== undefined &&
+                                        !person.shift.includes(effectiveShift);
+                                      return (
+                                        <span
+                                          key={`${personName}-${personIndex}`}
+                                          style={
+                                            isOffShiftWhenOvertime
+                                              ? { color: "#b91c1c", fontWeight: 700 }
+                                              : undefined
+                                          }
+                                        >
+                                          {personName}
+                                          {personIndex < names.length - 1 ? " / " : ""}
+                                        </span>
+                                      );
+                                    })
+                                  ) : (
+                                    "—"
+                                  )}
                                 </div>
                               );
                             })()}

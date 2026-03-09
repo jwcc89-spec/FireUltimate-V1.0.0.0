@@ -1,3 +1,5 @@
+import { parseAssignedNames } from "./scheduleStorage";
+
 export interface ScheduleShiftEntryLike {
   recurrence?: string;
   recurrenceCustomValue?: string;
@@ -121,7 +123,13 @@ export function requirementsSatisfiedByAssignedPersonnel(
   if (requirements.length === 0) {
     return true;
   }
-  const assigned = assignedNames
+  const assigned = Array.from(
+    new Set(
+      assignedNames.flatMap((slotValue) =>
+        parseAssignedNames(slotValue).filter((name) => name.trim().length > 0),
+      ),
+    ),
+  )
     .map((name) => personnelByName.get(name))
     .filter((entry): entry is SchedulePersonLike => Boolean(entry));
   if (assigned.length < requirements.length) {
@@ -169,47 +177,59 @@ export function reorderAssignedByRequirementCoverage(
   personnelByName: Map<string, SchedulePersonLike>,
   qualificationRankMap: Map<string, number>,
 ): string[] {
-  const sanitized = Array.from(
+  const sanitizedSlots = Array.from(
     new Set(assignedNames.map((name) => name.trim()).filter((name) => name.length > 0)),
   );
-  if (sanitized.length === 0 || minimumPersonnel <= 0) {
-    return sanitized;
+  if (sanitizedSlots.length === 0 || minimumPersonnel <= 0) {
+    return sanitizedSlots;
   }
 
-  const selectedNames: string[] = [];
-  const selectedSet = new Set<string>();
-  const required = requiredQualifications.slice(0, minimumPersonnel).filter(Boolean);
+  const required = requiredQualifications.slice(0, minimumPersonnel);
+  const hasRequiredQualifications = required.some((qualification) => qualification.trim().length > 0);
+  if (!hasRequiredQualifications) {
+    return sanitizedSlots;
+  }
 
-  required.forEach((requiredQualification) => {
+  const selectedNames: string[] = Array.from({ length: minimumPersonnel }, () => "");
+  const selectedSet = new Set<string>();
+
+  required.forEach((requiredQualification, slotIndex) => {
+    const normalizedRequirement = requiredQualification.trim();
+    if (!normalizedRequirement) {
+      return;
+    }
     const requiredRank =
-      qualificationRankMap.get(requiredQualification) ?? Number.POSITIVE_INFINITY;
+      qualificationRankMap.get(normalizedRequirement) ?? Number.POSITIVE_INFINITY;
     let bestCandidate: string | null = null;
     let bestRank = Number.POSITIVE_INFINITY;
-    sanitized.forEach((name) => {
-      if (selectedSet.has(name)) return;
-      const person = personnelByName.get(name);
-      if (!person) return;
-      const personBestRank = getBestQualificationRankForPerson(person, qualificationRankMap);
-      if (personBestRank <= requiredRank && personBestRank < bestRank) {
-        bestCandidate = name;
-        bestRank = personBestRank;
+    sanitizedSlots.forEach((slotValue) => {
+      if (selectedSet.has(slotValue)) return;
+      const representedNames = parseAssignedNames(slotValue).filter(
+        (name) => name.trim().length > 0,
+      );
+      if (representedNames.length === 0) return;
+      const slotBestRank = representedNames.reduce((lowestRank, representedName) => {
+        const person = personnelByName.get(representedName);
+        if (!person) {
+          return lowestRank;
+        }
+        const personBestRank = getBestQualificationRankForPerson(
+          person,
+          qualificationRankMap,
+        );
+        return Math.min(lowestRank, personBestRank);
+      }, Number.POSITIVE_INFINITY);
+      if (slotBestRank <= requiredRank && slotBestRank < bestRank) {
+        bestCandidate = slotValue;
+        bestRank = slotBestRank;
       }
     });
     if (bestCandidate) {
-      selectedNames.push(bestCandidate);
+      selectedNames[slotIndex] = bestCandidate;
       selectedSet.add(bestCandidate);
     }
   });
 
-  if (selectedNames.length < minimumPersonnel) {
-    sanitized.forEach((name) => {
-      if (!selectedSet.has(name) && selectedNames.length < minimumPersonnel) {
-        selectedNames.push(name);
-        selectedSet.add(name);
-      }
-    });
-  }
-
-  const remaining = sanitized.filter((name) => !selectedSet.has(name));
+  const remaining = sanitizedSlots.filter((slotValue) => !selectedSet.has(slotValue));
   return [...selectedNames, ...remaining];
 }

@@ -65,6 +65,9 @@ export function PersonnelSchedulePage({
     loadScheduleOvertimeSplit(),
   );
   const [hasLoadedRemoteSchedule, setHasLoadedRemoteSchedule] = useState(false);
+  const [isDemoTenant, setIsDemoTenant] = useState(() =>
+    window.location.hostname.toLowerCase().includes("demo"),
+  );
   const [scheduleUndoStack, setScheduleUndoStack] = useState<
     Array<{
       assignments: ScheduleAssignments;
@@ -118,6 +121,17 @@ export function PersonnelSchedulePage({
     let isMounted = true;
     const load = async () => {
       try {
+        const tenantContextRes = await fetch("/api/tenant/context");
+        if (tenantContextRes.ok && isMounted) {
+          const tenantContextJson = (await tenantContextRes.json()) as {
+            ok?: boolean;
+            tenant?: { slug?: string };
+          };
+          const slug = String(tenantContextJson?.tenant?.slug ?? "").toLowerCase();
+          if (slug) {
+            setIsDemoTenant(slug.includes("demo"));
+          }
+        }
         const res = await fetch("/api/department-details");
         if (res.ok && isMounted) {
           const json = (await res.json()) as {
@@ -443,7 +457,14 @@ export function PersonnelSchedulePage({
           const merged = [...result];
           kellyNames.forEach((name) => {
             if (!merged.includes(name)) {
-              merged.push(name);
+              const emptySlotIndex = merged.findIndex(
+                (entry) => String(entry ?? "").trim().length === 0,
+              );
+              if (emptySlotIndex >= 0) {
+                merged[emptySlotIndex] = name;
+              } else {
+                merged.push(name);
+              }
             }
           });
           result = merged;
@@ -524,6 +545,7 @@ export function PersonnelSchedulePage({
   const assignPersonToSlot = useCallback(
     (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
       pushUndoSnapshot("Assign personnel to slot");
+      let blockedAssignmentReason = "";
       setScheduleAssignments((prev) => {
         const next = { ...prev };
         const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
@@ -546,18 +568,24 @@ export function PersonnelSchedulePage({
           ? isOverrideSupportPersonnelRow(targetRow)
           : false;
         const isTargetApparatusRow = targetRow?.rowType === "apparatus";
+        const targetOvertimeEnabled =
+          targetRow?.rowType === "apparatus" &&
+          slotIndex < (targetRow.minimumPersonnel ?? 0) &&
+          isOvertimeEnabledForSlot(dateKey, unitId, slotIndex);
         for (const [uid, slots] of Object.entries(dayData)) {
           const row = scheduleRows.find((candidate) => candidate.unitId === uid);
           if (!row) {
             continue;
           }
-          const shouldClear = isTargetOverrideSupportPersonnelRow
-            ? row.rowType === "apparatus" || isSupportPersonnelRow(row)
-            : isTargetApparatusRow
-              ? row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row)
-              : !isTargetSupportPersonnelRow
+          const shouldClear = targetOvertimeEnabled
+            ? isOverrideSupportPersonnelRow(row)
+            : isTargetOverrideSupportPersonnelRow
+              ? row.rowType === "apparatus" || isSupportPersonnelRow(row)
+              : isTargetApparatusRow
                 ? row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row)
-                : false;
+                : !isTargetSupportPersonnelRow
+                  ? row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row)
+                  : false;
           dayData[uid] = shouldClear
             ? slots.map((slotValue) => {
                 const remaining = parseAssignedNames(slotValue).filter(
@@ -569,12 +597,53 @@ export function PersonnelSchedulePage({
         }
         const unitSlots = [...(dayData[unitId] ?? [])];
         while (unitSlots.length <= slotIndex) unitSlots.push("");
-        const targetOvertimeEnabled =
-          targetRow?.rowType === "apparatus" &&
-          slotIndex < (targetRow.minimumPersonnel ?? 0) &&
-          isOvertimeEnabledForSlot(dateKey, unitId, slotIndex);
         const maxNamesInSlot = targetOvertimeEnabled ? overtimeSplitCount : 1;
         const existingNames = parseAssignedNames(unitSlots[slotIndex] ?? "");
+        if (targetOvertimeEnabled && !existingNames.includes(personName)) {
+          const requiredQualification =
+            targetRow?.requiredQualifications?.[slotIndex]?.trim() ?? "";
+          if (requiredQualification) {
+            const requiredRank =
+              qualificationRankMap.get(requiredQualification) ??
+              Number.POSITIVE_INFINITY;
+            const personBestRank = getBestQualificationRankForPerson(
+              personnelByName.get(personName),
+              qualificationRankMap,
+            );
+            if (!(Number.isFinite(personBestRank) && personBestRank <= requiredRank)) {
+              blockedAssignmentReason = `Cannot assign ${personName}: does not meet required qualification for that OT slot.`;
+              return prev;
+            }
+          }
+
+          const assignedInNonOtRequiredSlot = scheduleRows.some((row) => {
+            if (row.rowType !== "apparatus" || row.minimumPersonnel <= 0) {
+              return false;
+            }
+            for (
+              let requiredSlotIndex = 0;
+              requiredSlotIndex < row.minimumPersonnel;
+              requiredSlotIndex += 1
+            ) {
+              if (row.unitId === unitId && requiredSlotIndex === slotIndex) {
+                continue;
+              }
+              if (isOvertimeEnabledForSlot(dateKey, row.unitId, requiredSlotIndex)) {
+                continue;
+              }
+              const rowSlots = dayData[row.unitId] ?? [];
+              const slotValue = rowSlots[requiredSlotIndex] ?? "";
+              if (parseAssignedNames(slotValue).includes(personName)) {
+                return true;
+              }
+            }
+            return false;
+          });
+          if (assignedInNonOtRequiredSlot) {
+            blockedAssignmentReason = `Cannot assign ${personName}: already assigned to a full-shift required slot on this day.`;
+            return prev;
+          }
+        }
         const withoutDuplicates = existingNames.filter((name) => name !== personName);
         const nextNames = [...withoutDuplicates, personName].slice(0, maxNamesInSlot);
         unitSlots[slotIndex] = serializeAssignedNames(nextNames);
@@ -583,6 +652,10 @@ export function PersonnelSchedulePage({
         saveScheduleAssignments(next);
         return next;
       });
+      if (blockedAssignmentReason) {
+        setLastScheduleAction(blockedAssignmentReason);
+        return;
+      }
       setLastScheduleAction("Assigned personnel.");
     },
     [
@@ -591,6 +664,8 @@ export function PersonnelSchedulePage({
       effectiveShift,
       isOvertimeEnabledForSlot,
       overtimeSplitCount,
+      personnelByName,
+      qualificationRankMap,
       pushUndoSnapshot,
     ],
   );
@@ -676,13 +751,20 @@ export function PersonnelSchedulePage({
     (
       dateKey: string,
       row: PersonnelScheduleRow,
+      slotIndex: number,
       currentName: string,
     ): PersonnelScheduleData["personnel"] => {
+      const targetOvertimeEnabled =
+        row.rowType === "apparatus" &&
+        slotIndex < row.minimumPersonnel &&
+        isOvertimeEnabledForSlot(dateKey, row.unitId, slotIndex);
       const assignedInBlockingRows = new Set<string>();
       for (const scheduleRow of scheduleRows) {
         const isBlockingRow =
-          scheduleRow.rowType === "apparatus" ||
-          isOverrideSupportPersonnelRow(scheduleRow);
+          targetOvertimeEnabled
+            ? isOverrideSupportPersonnelRow(scheduleRow)
+            : scheduleRow.rowType === "apparatus" ||
+              isOverrideSupportPersonnelRow(scheduleRow);
         if (!isBlockingRow) {
           continue;
         }
@@ -696,6 +778,9 @@ export function PersonnelSchedulePage({
             assignedInBlockingRows.add(name),
           );
         });
+      }
+      if (targetOvertimeEnabled) {
+        // OT-enabled target slots allow cross-slot OT coverage without blocking by other OT slots.
       }
       if (currentName.trim()) {
         parseAssignedNames(currentName).forEach((name) =>
@@ -727,6 +812,64 @@ export function PersonnelSchedulePage({
       return shiftPersonnel
         .filter((person) => !assignedInBlockingRows.has(person.name))
         .filter((person) => {
+          if (targetOvertimeEnabled) {
+            const requiredQualification =
+              row.requiredQualifications[slotIndex]?.trim() ?? "";
+            if (requiredQualification) {
+              const requiredRank =
+                qualificationRankMap.get(requiredQualification) ??
+                Number.POSITIVE_INFINITY;
+              const personBestRank = getBestQualificationRankForPerson(
+                person,
+                qualificationRankMap,
+              );
+              if (!(Number.isFinite(personBestRank) && personBestRank <= requiredRank)) {
+                return false;
+              }
+            }
+            const assignedInNonOtRequiredSlot = scheduleRows.some((scheduleRow) => {
+              if (
+                scheduleRow.rowType !== "apparatus" ||
+                scheduleRow.minimumPersonnel <= 0
+              ) {
+                return false;
+              }
+              for (
+                let requiredSlotIndex = 0;
+                requiredSlotIndex < scheduleRow.minimumPersonnel;
+                requiredSlotIndex += 1
+              ) {
+                if (
+                  scheduleRow.unitId === row.unitId &&
+                  requiredSlotIndex === slotIndex
+                ) {
+                  continue;
+                }
+                if (
+                  isOvertimeEnabledForSlot(
+                    dateKey,
+                    scheduleRow.unitId,
+                    requiredSlotIndex,
+                  )
+                ) {
+                  continue;
+                }
+                const slots = getAssignmentsForDay(
+                  dateKey,
+                  scheduleRow.unitId,
+                  scheduleRow.slotCount,
+                );
+                const slotValue = slots[requiredSlotIndex] ?? "";
+                if (parseAssignedNames(slotValue).includes(person.name)) {
+                  return true;
+                }
+              }
+              return false;
+            });
+            if (assignedInNonOtRequiredSlot) {
+              return false;
+            }
+          }
           if (!requiresQualificationGate) return true;
           const bestRank = getBestQualificationRankForPerson(
             person,
@@ -748,6 +891,7 @@ export function PersonnelSchedulePage({
       getAssignmentsForDay,
       shiftPersonnel,
       departmentData.personnelQualifications,
+      isOvertimeEnabledForSlot,
     ],
   );
 
@@ -876,6 +1020,11 @@ export function PersonnelSchedulePage({
               </button>
             </div>
           </div>
+          {isDemoTenant ? (
+            <p className="demo-helper-text">
+              Double click day column to open day block.
+            </p>
+          ) : null}
           <div className="personnel-schedule-shift-select">
             <div className="personnel-schedule-controls">
               <select
@@ -919,7 +1068,15 @@ export function PersonnelSchedulePage({
                   Undo
                 </button>
               </div>
-              <small className="field-hint">Last action: {lastScheduleAction}</small>
+              <small
+                className={
+                  lastScheduleAction.startsWith("Cannot assign")
+                    ? "auth-error"
+                    : "field-hint"
+                }
+              >
+                Last action: {lastScheduleAction}
+              </small>
             </div>
           </div>
         </div>
@@ -1004,31 +1161,16 @@ export function PersonnelSchedulePage({
                     const assignedNames = slots.filter((name) => name.trim().length > 0);
                     const displaySlots =
                       row.rowType === "apparatus"
-                        ? [
-                            ...assignedNames.sort((aName, bName) => {
-                              const aRank = getBestQualificationRankForPerson(
-                                personnelByName.get(aName),
-                                qualificationRankMap,
-                              );
-                              const bRank = getBestQualificationRankForPerson(
-                                personnelByName.get(bName),
-                                qualificationRankMap,
-                              );
-                              if (aRank !== bRank) return aRank - bRank;
-                              return aName.localeCompare(bName);
-                            }),
-                            ...Array.from(
-                              {
-                                // Month/default view shows min slots unless extra personnel are assigned.
-                                length: Math.max(
-                                  0,
-                                  Math.max(row.minimumPersonnel, assignedNames.length) -
-                                    assignedNames.length,
-                                ),
-                              },
-                              () => "",
-                            ),
-                          ]
+                        ? (() => {
+                            // Keep explicit slot order so reserved/min slots can remain empty when unmet.
+                            const visibleSlotCount = Math.max(
+                              row.minimumPersonnel,
+                              assignedNames.length,
+                            );
+                            const orderedSlots = [...slots];
+                            while (orderedSlots.length < visibleSlotCount) orderedSlots.push("");
+                            return orderedSlots.slice(0, visibleSlotCount);
+                          })()
                         : slots;
                     const blockHasQualificationGap =
                       row.rowType === "apparatus" &&
@@ -1055,6 +1197,34 @@ export function PersonnelSchedulePage({
                             const isRequired = slotIdx < row.minimumPersonnel;
                             const isEmpty = !name.trim();
                             const isRed = isRequired && isEmpty;
+                            const requiredQualification = isRequired
+                              ? row.requiredQualifications[slotIdx]?.trim() ?? ""
+                              : "";
+                            const requiredRank = requiredQualification
+                              ? (qualificationRankMap.get(requiredQualification) ??
+                                Number.POSITIVE_INFINITY)
+                              : Number.POSITIVE_INFINITY;
+                            const slotBestRank = slotNames.reduce((bestRank, slotName) => {
+                              const person = personnelByName.get(slotName);
+                              if (!person) {
+                                return bestRank;
+                              }
+                              const personRank = getBestQualificationRankForPerson(
+                                person,
+                                qualificationRankMap,
+                              );
+                              return Math.min(bestRank, personRank);
+                            }, Number.POSITIVE_INFINITY);
+                            const targetSlotOvertimeEnabled =
+                              row.rowType === "apparatus" &&
+                              slotIdx < row.minimumPersonnel &&
+                              isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
+                            const isRequiredInvalid =
+                              isRequired &&
+                              requiredQualification.length > 0 &&
+                              slotNames.length > 0 &&
+                              !targetSlotOvertimeEnabled &&
+                              !(slotBestRank <= requiredRank);
                             const isTextRow =
                               row.rowType === "support" &&
                               row.supportValueMode === "text";
@@ -1065,6 +1235,7 @@ export function PersonnelSchedulePage({
                             const eligiblePeople = getEligibleShiftPersonnelForSlot(
                               dateKey,
                               row,
+                              slotIdx,
                               name,
                             );
                             return (
@@ -1078,6 +1249,10 @@ export function PersonnelSchedulePage({
                                   highlightPersonnelName &&
                                   slotNames.includes(highlightPersonnelName)
                                     ? "personnel-schedule-slot-highlighted"
+                                    : ""
+                                } ${
+                                  isRequiredInvalid
+                                    ? "personnel-schedule-slot-required-invalid"
                                     : ""
                                 }`}
                                 onClick={(event) => {
@@ -1139,11 +1314,29 @@ export function PersonnelSchedulePage({
                                     ))}
                                   </select>
                                 ) : slotNames.length > 0 ? (
-                                  slotNames
-                                    .map((entry) =>
-                                      formatSchedulePersonnelDisplayName(entry),
-                                    )
-                                    .join(" / ")
+                                  <span className="personnel-schedule-slot-name-list">
+                                    {slotNames.map((entry, nameIndex) => {
+                                      const isOffShiftInOtSlot =
+                                        targetSlotOvertimeEnabled &&
+                                        !personnelMatchesShift(
+                                          personnelByName.get(entry),
+                                          effectiveShift,
+                                        );
+                                      return (
+                                        <span
+                                          key={`${entry}-${nameIndex}`}
+                                          className={
+                                            isOffShiftInOtSlot
+                                              ? "personnel-schedule-slot-name-off-shift"
+                                              : undefined
+                                          }
+                                        >
+                                          {formatSchedulePersonnelDisplayName(entry)}
+                                          {nameIndex < slotNames.length - 1 ? " / " : ""}
+                                        </span>
+                                      );
+                                    })}
+                                  </span>
                                 ) : (
                                   "—"
                                 )}
