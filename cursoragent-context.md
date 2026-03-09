@@ -68,6 +68,7 @@
       - `PRS-EMPTY` = large gray empty-personnel state
       - `RL-BOX` = boxed reveal-link trigger
       - `FL` = field-list style used where applicable
+      - `TH-SORT` = borderless clickable table header sort control with draggable column-resize handle and a 3-line tapered glyph (wide-to-narrow) indicating active sort and direction
     - If new reusable styles are created, agents must:
       1) propose short code,
       2) define it in one line,

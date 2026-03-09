@@ -837,6 +837,87 @@ table {
   border-collapse: collapse;
 }
 
+.table-sort-button {
+  border: 0;
+  background: transparent;
+  color: #334155;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+}
+
+.table-sort-button-inline {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+}
+
+.table-sort-button:hover {
+  color: #0f172a;
+}
+
+.table-sort-button-active {
+  color: #0f172a;
+}
+
+.table-sort-glyph {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+
+.table-sort-glyph span {
+  height: 2px;
+  background-color: #475569;
+  border-radius: 99px;
+  display: block;
+}
+
+.table-sort-glyph span:nth-child(1) {
+  width: 10px;
+}
+
+.table-sort-glyph span:nth-child(2) {
+  width: 7px;
+}
+
+.table-sort-glyph span:nth-child(3) {
+  width: 4px;
+}
+
+.table-sort-glyph-desc {
+  transform: rotate(180deg);
+}
+
+.user-edit-table {
+  table-layout: fixed;
+}
+
+.user-table-header-control {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding-right: 0.25rem;
+}
+
+.user-table-column-resizer {
+  position: static;
+  top: auto;
+  right: auto;
+  bottom: auto;
+  width: 12px;
+  min-width: 12px;
+  margin-left: 0.15rem;
+  color: #64748b;
+}
+
 thead th {
   text-align: left;
   color: #64748b;
@@ -1218,6 +1299,93 @@ tbody tr:last-of-type td {
   color: #0f172a;
   padding: 0.56rem 0.65rem;
   font-size: 0.84rem;
+}
+
+.kelly-rotation-editor-row {
+  grid-template-columns: minmax(230px, 1.6fr) 60px 90px 120px auto;
+}
+
+.kelly-rotation-editor-row select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+}
+
+.kelly-rotation-personnel-select {
+  min-width: 230px;
+}
+
+.kelly-multi-add-controls {
+  display: grid;
+  grid-template-columns: minmax(130px, 1fr) 110px 110px 160px;
+  gap: 0.5rem;
+}
+
+.kelly-multi-add-controls label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.kelly-multi-add-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.5rem;
+}
+
+.kelly-multi-add-slots label {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.kelly-multi-add-preview {
+  margin-top: 0.2rem;
+}
+
+.kelly-multi-add-occurrence-grid {
+  display: grid;
+  gap: 0.5rem;
+  margin-top: 0.4rem;
+}
+
+.kelly-multi-add-occurrence-card {
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  background: #f8fafc;
+  padding: 0.45rem 0.55rem;
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  gap: 0.45rem;
+  align-items: start;
+}
+
+.kelly-multi-add-occurrence-date {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.kelly-multi-add-occurrence-date strong {
+  font-size: 0.74rem;
+  color: #475569;
+}
+
+.kelly-multi-add-occurrence-date span {
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+.kelly-multi-add-occurrence-slots {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 0.45rem;
+}
+
+.kelly-multi-add-occurrence-slots label {
+  display: grid;
+  gap: 0.25rem;
 }
 
 .department-editor-list {
@@ -3698,6 +3866,13 @@ body.resource-personnel-modal-open {
   flex-wrap: wrap;
 }
 
+.page-header .demo-helper-text {
+  margin: 0.35rem 0 0.15rem;
+  color: #2563eb;
+  font-size: 0.83rem;
+  font-weight: 600;
+}
+
 .personnel-schedule-title-row {
   display: flex;
   align-items: center;
@@ -3862,6 +4037,22 @@ body.resource-personnel-modal-open {
   background-color: #fef2f2;
   border-color: #fecaca;
   color: #991b1b;
+}
+
+.personnel-schedule-slot-required-invalid {
+  background-color: #fef2f2;
+  border-color: #fecaca;
+  color: #991b1b;
+  font-weight: 700;
+}
+
+.personnel-schedule-slot-name-list {
+  display: inline;
+}
+
+.personnel-schedule-slot-name-off-shift {
+  color: #991b1b;
+  font-weight: 700;
 }
 
 .personnel-schedule-modal-backdrop {
