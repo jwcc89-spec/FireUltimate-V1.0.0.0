@@ -1316,10 +1316,11 @@ export function PersonnelSchedulePage({
                                 ) : slotNames.length > 0 ? (
                                   <span className="personnel-schedule-slot-name-list">
                                     {slotNames.map((entry, nameIndex) => {
+                                      const person = personnelByName.get(entry);
                                       const isOffShiftInOtSlot =
                                         targetSlotOvertimeEnabled &&
                                         !personnelMatchesShift(
-                                          personnelByName.get(entry),
+                                          person ?? {},
                                           effectiveShift,
                                         );
                                       return (
