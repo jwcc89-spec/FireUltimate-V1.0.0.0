@@ -3321,8 +3321,46 @@ function PersonnelSchedulePage() {
   );
 }
 
+function useIsDemoTenant(): boolean {
+  const [isDemoTenant, setIsDemoTenant] = useState(() =>
+    window.location.hostname.toLowerCase().includes("demo"),
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const loadTenantContext = async () => {
+      try {
+        const response = await fetch("/api/tenant/context");
+        if (!response.ok || !isMounted) return;
+
+        const payload = (await response.json()) as {
+          ok?: boolean;
+          tenant?: { slug?: string };
+        };
+        const slug = String(payload?.tenant?.slug ?? "").toLowerCase();
+        if (slug) {
+          setIsDemoTenant(slug.includes("demo"));
+        }
+      } catch {
+        // Keep hostname-based default when tenant context cannot be read.
+      }
+    };
+
+    void loadTenantContext();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  return isDemoTenant;
+}
+
 function NerisReportingPage() {
   const navigate = useNavigate();
+  const isDemoTenant = useIsDemoTenant();
+  const queueCalls = useMemo(() => (isDemoTenant ? INCIDENT_CALLS : []), [isDemoTenant]);
   const fieldLabelById = useMemo(
     () =>
       Object.fromEntries(
@@ -3377,7 +3415,7 @@ function NerisReportingPage() {
                 </tr>
               </thead>
               <tbody>
-                {INCIDENT_CALLS.map((call) => (
+                {queueCalls.map((call) => (
                   <tr
                     key={`neris-${call.callNumber}`}
                     className="clickable-row"
@@ -3419,6 +3457,16 @@ function NerisReportingPage() {
                     </td>
                   </tr>
                 ))}
+                {queueCalls.length === 0 ? (
+                  <tr>
+                    <td colSpan={2}>
+                      <div className="empty-message">
+                        No sample incidents are shown for live tenants. Connect your CAD/import flow or
+                        create live incident records to begin NERIS exports.
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -3438,6 +3486,8 @@ interface NerisExportDetailsPageProps {
 
 function NerisExportsPage() {
   const navigate = useNavigate();
+  const isDemoTenant = useIsDemoTenant();
+  const queueCalls = useMemo(() => (isDemoTenant ? INCIDENT_CALLS : []), [isDemoTenant]);
   const latestExportByCall = useMemo(() => {
     const map = new Map<string, NerisExportRecord>();
     readNerisExportHistory().forEach((entry) => {
@@ -3489,7 +3539,7 @@ function NerisExportsPage() {
                 </tr>
               </thead>
               <tbody>
-                {INCIDENT_CALLS.map((call) => {
+                {queueCalls.map((call) => {
                   const latestExport = latestExportByCall.get(call.callNumber);
                   return (
                     <tr
@@ -3526,6 +3576,15 @@ function NerisExportsPage() {
                     </tr>
                   );
                 })}
+                {queueCalls.length === 0 ? (
+                  <tr>
+                    <td colSpan={8}>
+                      <div className="empty-message">
+                        No export queue rows are shown for live tenants until incidents are connected.
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>

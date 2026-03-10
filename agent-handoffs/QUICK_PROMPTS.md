@@ -28,9 +28,9 @@ After I answer:
    - create COPY_PASTE_START_PROMPT.md from COPY_PASTE_START_PROMPT_TEMPLATE.md
 6) Read these files first:
    - cursoragent-context.md
-   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-   - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
-   - all conversations in agent-handoffs/branches/<branch-slug>/conversations/
+   - ACTIVE_CONTEXT.md in all agent-handoffs/branches
+   - latest relevant note(s) in agent-handoffs/branches/.../sessions/
+   - all conversations in agent-handoffs/branches/.../conversations/
 7) Before coding, summarize:
    - current branch + latest commit
    - what previous agent completed
