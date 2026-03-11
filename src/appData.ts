@@ -98,7 +98,7 @@ export interface IncidentCallSummary {
   assignedUnits: string;
   reportedBy?: string;
   callbackNumber?: string;
-  dispatchNotes?: string;
+  dispatchNotes?: string | DispatchNote[];
   currentState: string;
   lastUpdated: string;
   receivedAt: string;
