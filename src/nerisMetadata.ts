@@ -1288,7 +1288,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   {
     id: "incident_internal_id",
     sectionId: "core",
-    label: "Incident number",
+    label: "Incident Number",
     inputKind: "text",
     required: true,
     layout: "half",
@@ -1312,7 +1312,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   {
     id: "dispatch_internal_id",
     sectionId: "core",
-    label: "Dispatch run number",
+    label: "Dispatch Number",
     inputKind: "text",
     required: true,
     layout: "half",

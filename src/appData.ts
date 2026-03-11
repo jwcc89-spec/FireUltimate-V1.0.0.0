@@ -87,11 +87,18 @@ export interface DisplayCardOption extends NavSubmenu {
 
 export interface IncidentCallSummary {
   callNumber: string;
+  incident_internal_id?: string;
+  dispatch_internal_id?: string;
+  incidentNumber?: string;
+  dispatchNumber?: string;
   incidentType: string;
   priority: string;
   address: string;
   stillDistrict: string;
   assignedUnits: string;
+  reportedBy?: string;
+  callbackNumber?: string;
+  dispatchNotes?: string;
   currentState: string;
   lastUpdated: string;
   receivedAt: string;

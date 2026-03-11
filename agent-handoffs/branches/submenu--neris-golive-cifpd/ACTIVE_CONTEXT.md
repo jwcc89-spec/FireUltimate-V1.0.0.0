@@ -4,7 +4,7 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus
-- NERIS go-live for tenant cifpdil: complete staging validation and move to controlled production export using NERIS-confirmed entity/enrollment checks.
+- NERIS go-live for tenant cifpdil: verify the newly implemented Incident setup + editable incident workflow in staging, then promote to production.
 
 ## Latest known status
 - Implemented incident queue fix for live tenants:
@@ -31,18 +31,44 @@
 - Validation completed locally:
   - `npm run lint` passes.
   - `node --check server/neris-proxy.mjs` passes.
+- Latest live endpoint checks (2026-03-11):
+  - Staging `tenant/context`: OK (tenant resolves to `cifpdil`).
+  - Staging `neris/health`: OK, `baseUrl=api-test`, `hasTenantEntityId=false`.
+  - Staging `debug/entity-check?nerisId=FD17075450`: OK for entity query/path.
+  - Production `tenant/context`: OK.
+  - Production `neris/health`: OK (`baseUrl=api`).
+  - Production `debug/entity-check`: **missing route** (`Cannot GET`) because production deploy still tracks `main` and branch work is not merged yet.
+- Latest UX implementation status (this branch, not yet staging-verified by user):
+  - Added `Incidents Setup` section under `Admin Functions -> Department Details`.
+  - Added configurable option lists for `incidentType`, `priority`, `stillDistrict`, `currentState`, and `reportedBy` (when in dropdown mode).
+  - Added `reportedBy` mode toggle (`fill-in` vs dropdown).
+  - Added required/non-required checkboxes per Create Incident field.
+  - `Create Incident` now opens a modal with all required go-live fields and supports partial save when fields are not marked required.
+  - Incident Detail now provides editable input boxes for all requested fields with Save action.
+  - `Incident #` display now resolves from `incidentNumber` (fallback to `callNumber`) in incident and NERIS queues.
+  - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
 
 ## Current blocker / status
 - No code blocker in local branch.
 - NERIS support confirmed the production client/entity enrollment is active (`3f104b60-f7cf-437e-b79c-868fe6489f31` <-> `FD17075450`) and no pending vendor-side action remains.
-- Needs deployment + migration apply on staging/prod before tenant DB-backed entity resolution is active in hosted env.
+- Deployment gate remains: production is behind branch changes until PR to `main` is merged and deployed.
+- Product verification gate remains: staging user validation is still required for the new Incident setup/modal/detail edit flow before promotion.
 
 ## External dependency status
 - Remaining dependencies are deployment/environment readiness only (staging/prod release + migration + final live credential sanity checks).
 
 ## Now vs Later
-- **Now**: deploy current branch, apply migration, verify `debug/entity-check`, queue workflow, and validate/export in staging.
-- **Later**: run controlled first production export and 24-48h stabilization monitoring.
+- **Now**:
+  - confirm/save tenant entity source so staging `hasTenantEntityId=true`,
+  - validate staging UX for:
+    - Admin `Incidents Setup` configuration save/load,
+    - Create Incident modal field behavior (required toggles + reportedBy mode),
+    - Incident Detail edit + save behavior,
+    - incident number linkage across Incidents queue, NERIS queue, and NERIS form,
+  - run staging validate/export proof.
+- **Later**:
+  - PR branch -> `main`, deploy production, verify production endpoints,
+  - run first controlled production export and 24-48h stabilization monitoring.
 
 ## Recent key commits (latest first)
 - `b62238a` Implement tenant-scoped NERIS entity resolution and live incident queue wiring.
@@ -52,11 +78,13 @@
 ## Next agent should do this first
 1. Read `cursoragent-context.md`.
 2. Read this file.
-3. Read `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_GO_LIVE_CIFPDIL_PLAN.md` and `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_WAITING_AND_POST_SUPPORT_STEPS.md`.
+3. Read:
+   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_GO_LIVE_CIFPDIL_PLAN.md`
+   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_WAITING_AND_POST_SUPPORT_STEPS.md`
+   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_RENDER_SOURCE_OF_TRUTH.md`
+   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md`
 4. Read latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`.
 5. Confirm branch with user and execute next step:
-   - Deploy current working tree changes and run migration in target env.
-   - Verify `GET /api/neris/health` reports `hasTenantEntityId` as expected per tenant.
-   - Verify `GET /api/neris/debug/entity-check?nerisId=FD17075450` on staging.
-   - Verify `Create Incident` + NERIS queue flow on `cifpdil.staging.fireultimate.app`.
-   - Run staged validate/export proof, then controlled production export.
+   - Confirm mandatory Incident Detail editable input scope with user.
+   - Implement in small batch, run lint, and validate staging click-to-edit + NERIS form flow.
+   - Only after staging pass, proceed to PR/production promotion steps.

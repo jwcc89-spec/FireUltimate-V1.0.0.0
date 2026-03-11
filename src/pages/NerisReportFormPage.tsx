@@ -49,6 +49,10 @@ export interface NerisReportFormPageProps {
   role: UserRole;
   username: string;
   incidentCalls: IncidentCallSummary[];
+  onUpdateIncidentCall: (
+    callNumber: string,
+    patch: Partial<IncidentCallSummary>,
+  ) => void;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
   writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void;
@@ -237,6 +241,8 @@ function NerisReportFormPage({
   callNumber,
   role,
   username,
+  incidentCalls,
+  onUpdateIncidentCall,
   nerisExportSettings,
   readNerisDraft,
   writeNerisDraft,
@@ -300,12 +306,26 @@ function NerisReportFormPage({
   const defaultFormValues = useMemo(
     () =>
       createDefaultNerisFormValues({
-        callNumber,
+        callNumber:
+          String(
+            detail?.incident_internal_id ??
+              detail?.incidentNumber ??
+              detail?.callNumber ??
+              callNumber,
+          ).trim() || callNumber,
         incidentType: detail?.incidentType,
         receivedAt: detail?.receivedAt,
         address: detail?.address,
       }),
-    [callNumber, detail?.incidentType, detail?.receivedAt, detail?.address],
+    [
+      callNumber,
+      detail?.incidentType,
+      detail?.receivedAt,
+      detail?.address,
+      detail?.callNumber,
+      detail?.incident_internal_id,
+      detail?.incidentNumber,
+    ],
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
   const [reportStatus, setReportStatus] = useState<string>(() =>
@@ -315,6 +335,22 @@ function NerisReportFormPage({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
   }));
+
+  useEffect(() => {
+    const incidentInternalId = String(formValues.incident_internal_id ?? "").trim();
+    const dispatchInternalId = String(formValues.dispatch_internal_id ?? "").trim();
+    onUpdateIncidentCall(callNumber, {
+      incident_internal_id: incidentInternalId,
+      dispatch_internal_id: dispatchInternalId,
+      incidentNumber: incidentInternalId,
+      dispatchNumber: dispatchInternalId,
+    });
+  }, [
+    callNumber,
+    formValues.dispatch_internal_id,
+    formValues.incident_internal_id,
+    onUpdateIncidentCall,
+  ]);
   const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
   const [validationIssues, setValidationIssues] = useState<string[]>([]);
   const [validationModal, setValidationModal] = useState<ValidationModalState | null>(

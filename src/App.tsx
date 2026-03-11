@@ -102,11 +102,29 @@ interface DashboardPageProps {
   submenuVisibility: SubmenuVisibilityMap;
 }
 
+interface IncidentCreatePayload {
+  incident_internal_id: string;
+  dispatch_internal_id: string;
+  incidentType: string;
+  priority: string;
+  stillDistrict: string;
+  currentState: string;
+  reportedBy: string;
+  assignedUnits: string[];
+  address: string;
+  callbackNumber: string;
+  dispatchNotes: string;
+}
+
 interface RouteResolverProps {
   role: UserRole;
   username: string;
   incidentCalls: IncidentCallSummary[];
-  onCreateIncidentCall: () => IncidentCallSummary;
+  onCreateIncidentCall: (payload: IncidentCreatePayload) => IncidentCallSummary;
+  onUpdateIncidentCall: (
+    callNumber: string,
+    patch: Partial<IncidentCallSummary>,
+  ) => void;
   workflowStates: string[];
   onSaveWorkflowStates: (nextStates: string[]) => void;
   incidentDisplaySettings: IncidentDisplaySettings;
@@ -127,12 +145,16 @@ interface IncidentsListPageProps {
   incidentDisplaySettings: IncidentDisplaySettings;
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   incidentCalls: IncidentCallSummary[];
-  onCreateIncidentCall: () => IncidentCallSummary;
+  onCreateIncidentCall: (payload: IncidentCreatePayload) => IncidentCallSummary;
 }
 
 interface IncidentCallDetailPageProps {
   callNumber: string;
   incidentCalls: IncidentCallSummary[];
+  onUpdateIncidentCall: (
+    callNumber: string,
+    patch: Partial<IncidentCallSummary>,
+  ) => void;
 }
 
 interface NerisQueuePageProps {
@@ -736,6 +758,65 @@ const DEPARTMENT_ENTITY_FALLBACK_OPTIONS: DepartmentNerisEntityOption[] = [
   { id: "FD00001003", name: "Fallback Fire Department 3", state: "Unknown" },
 ];
 
+type IncidentSetupRequiredFieldKey =
+  | "incidentType"
+  | "priority"
+  | "stillDistrict"
+  | "currentState"
+  | "reportedBy"
+  | "assignedUnits"
+  | "address"
+  | "callbackNumber"
+  | "incidentNumber"
+  | "dispatchNumber"
+  | "dispatchNotes";
+
+interface IncidentsSetupConfig {
+  incidentTypeOptions: string[];
+  priorityOptions: string[];
+  stillDistrictOptions: string[];
+  currentStateOptions: string[];
+  reportedByMode: "fill-in" | "dropdown";
+  reportedByOptions: string[];
+  requiredFields: Record<IncidentSetupRequiredFieldKey, boolean>;
+}
+
+const DEFAULT_INCIDENTS_SETUP_CONFIG: IncidentsSetupConfig = {
+  incidentTypeOptions: ["FIRE", "EMS", "RESCUE", "SERVICE"],
+  priorityOptions: ["1", "2", "3", "4"],
+  stillDistrictOptions: ["District 1", "District 2", "District 3"],
+  currentStateOptions: ["Draft", "Dispatched", "Enroute", "On scene", "Cleared"],
+  reportedByMode: "fill-in",
+  reportedByOptions: [],
+  requiredFields: {
+    incidentType: false,
+    priority: false,
+    stillDistrict: false,
+    currentState: false,
+    reportedBy: false,
+    assignedUnits: false,
+    address: false,
+    callbackNumber: false,
+    incidentNumber: false,
+    dispatchNumber: false,
+    dispatchNotes: false,
+  },
+};
+
+const INCIDENTS_REQUIRED_FIELD_ORDER: IncidentSetupRequiredFieldKey[] = [
+  "incidentType",
+  "priority",
+  "stillDistrict",
+  "currentState",
+  "reportedBy",
+  "assignedUnits",
+  "address",
+  "callbackNumber",
+  "incidentNumber",
+  "dispatchNumber",
+  "dispatchNotes",
+];
+
 function readDepartmentDetailsDraft(): Record<string, unknown> {
   if (typeof window === "undefined") {
     return {};
@@ -749,6 +830,89 @@ function readDepartmentDetailsDraft(): Record<string, unknown> {
   } catch {
     return {};
   }
+}
+
+function normalizeStringArray(raw: unknown): string[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return Array.from(
+    new Set(
+      raw
+        .map((value) => String(value ?? "").trim())
+        .filter((value) => value.length > 0),
+    ),
+  );
+}
+
+function normalizeIncidentsSetupConfig(raw: unknown): IncidentsSetupConfig {
+  const source: Record<string, unknown> =
+    raw && typeof raw === "object" && !Array.isArray(raw)
+      ? (raw as Record<string, unknown>)
+      : {};
+  const requiredSource =
+    source.requiredFields &&
+    typeof source.requiredFields === "object" &&
+    !Array.isArray(source.requiredFields)
+      ? (source.requiredFields as Record<string, unknown>)
+      : {};
+  const requiredFields = INCIDENTS_REQUIRED_FIELD_ORDER.reduce(
+    (accumulator, key) => {
+      accumulator[key] = Boolean(requiredSource[key]);
+      return accumulator;
+    },
+    { ...DEFAULT_INCIDENTS_SETUP_CONFIG.requiredFields } as Record<
+      IncidentSetupRequiredFieldKey,
+      boolean
+    >,
+  );
+  const reportedByMode =
+    String(source.reportedByMode ?? "").trim().toLowerCase() === "dropdown"
+      ? "dropdown"
+      : "fill-in";
+  return {
+    incidentTypeOptions:
+      normalizeStringArray(source.incidentTypeOptions).length > 0
+        ? normalizeStringArray(source.incidentTypeOptions)
+        : [...DEFAULT_INCIDENTS_SETUP_CONFIG.incidentTypeOptions],
+    priorityOptions:
+      normalizeStringArray(source.priorityOptions).length > 0
+        ? normalizeStringArray(source.priorityOptions)
+        : [...DEFAULT_INCIDENTS_SETUP_CONFIG.priorityOptions],
+    stillDistrictOptions:
+      normalizeStringArray(source.stillDistrictOptions).length > 0
+        ? normalizeStringArray(source.stillDistrictOptions)
+        : [...DEFAULT_INCIDENTS_SETUP_CONFIG.stillDistrictOptions],
+    currentStateOptions:
+      normalizeStringArray(source.currentStateOptions).length > 0
+        ? normalizeStringArray(source.currentStateOptions)
+        : [...DEFAULT_INCIDENTS_SETUP_CONFIG.currentStateOptions],
+    reportedByMode,
+    reportedByOptions: normalizeStringArray(source.reportedByOptions),
+    requiredFields,
+  };
+}
+
+function readIncidentsSetupConfigFromDraft(): IncidentsSetupConfig {
+  const draft = readDepartmentDetailsDraft();
+  return normalizeIncidentsSetupConfig(draft.incidentsSetup);
+}
+
+function readApparatusOptionsFromDraft(): NerisValueOption[] {
+  const draft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
+  const records = Array.isArray(draft.masterApparatusRecords)
+    ? (draft.masterApparatusRecords as DepartmentApparatusRecord[])
+    : [];
+  return records
+    .map((record) => ({
+      value: String(record.commonName || record.unitId || "").trim(),
+      label: String(record.commonName || record.unitId || "").trim(),
+    }))
+    .filter((option) => option.value.length > 0);
+}
+
+function getIncidentDisplayNumber(call: IncidentCallSummary): string {
+  return String(call.incident_internal_id ?? call.incidentNumber ?? call.callNumber).trim() || call.callNumber;
 }
 
 function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
@@ -2903,6 +3067,23 @@ function IncidentsListPage({
   const [callFieldWidths, setCallFieldWidths] = useState<Record<IncidentCallFieldId, number>>(
     () => ({ ...DEFAULT_CALL_FIELD_WIDTHS }),
   );
+  const [isCreateIncidentModalOpen, setIsCreateIncidentModalOpen] = useState(false);
+  const incidentsSetup = useMemo(() => readIncidentsSetupConfigFromDraft(), []);
+  const apparatusOptions = useMemo(() => readApparatusOptionsFromDraft(), []);
+  const [createIncidentDraft, setCreateIncidentDraft] = useState<IncidentCreatePayload>(() => ({
+    incident_internal_id: "",
+    dispatch_internal_id: "",
+    incidentType: incidentsSetup.incidentTypeOptions[0] ?? "",
+    priority: incidentsSetup.priorityOptions[0] ?? "",
+    stillDistrict: incidentsSetup.stillDistrictOptions[0] ?? "",
+    currentState: incidentsSetup.currentStateOptions[0] ?? "Draft",
+    reportedBy: "",
+    assignedUnits: [],
+    address: "",
+    callbackNumber: "",
+    dispatchNotes: "",
+  }));
+  const [createIncidentError, setCreateIncidentError] = useState("");
   const activeResizeField = useRef<{
     fieldId: IncidentCallFieldId;
     startX: number;
@@ -2936,8 +3117,76 @@ function IncidentsListPage({
     () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
     [incidentCalls, isDemoTenant],
   );
+  const resetCreateIncidentDraft = () => {
+    setCreateIncidentDraft({
+      incident_internal_id: "",
+      dispatch_internal_id: "",
+      incidentType: incidentsSetup.incidentTypeOptions[0] ?? "",
+      priority: incidentsSetup.priorityOptions[0] ?? "",
+      stillDistrict: incidentsSetup.stillDistrictOptions[0] ?? "",
+      currentState: incidentsSetup.currentStateOptions[0] ?? "Draft",
+      reportedBy: "",
+      assignedUnits: [],
+      address: "",
+      callbackNumber: "",
+      dispatchNotes: "",
+    });
+    setCreateIncidentError("");
+  };
+
+  const handleOpenCreateIncidentModal = () => {
+    resetCreateIncidentDraft();
+    setIsCreateIncidentModalOpen(true);
+  };
+
   const handleCreateIncident = () => {
-    const nextIncident = onCreateIncidentCall();
+    const required = incidentsSetup.requiredFields;
+    if (required.incidentNumber && !createIncidentDraft.incident_internal_id.trim()) {
+      setCreateIncidentError("Incident Number is required.");
+      return;
+    }
+    if (required.dispatchNumber && !createIncidentDraft.dispatch_internal_id.trim()) {
+      setCreateIncidentError("Dispatch Number is required.");
+      return;
+    }
+    if (required.incidentType && !createIncidentDraft.incidentType.trim()) {
+      setCreateIncidentError("Incident Type is required.");
+      return;
+    }
+    if (required.priority && !createIncidentDraft.priority.trim()) {
+      setCreateIncidentError("Priority is required.");
+      return;
+    }
+    if (required.stillDistrict && !createIncidentDraft.stillDistrict.trim()) {
+      setCreateIncidentError("Still District is required.");
+      return;
+    }
+    if (required.currentState && !createIncidentDraft.currentState.trim()) {
+      setCreateIncidentError("Current State is required.");
+      return;
+    }
+    if (required.reportedBy && !createIncidentDraft.reportedBy.trim()) {
+      setCreateIncidentError("Reported By is required.");
+      return;
+    }
+    if (required.assignedUnits && createIncidentDraft.assignedUnits.length === 0) {
+      setCreateIncidentError("At least one assigned unit is required.");
+      return;
+    }
+    if (required.address && !createIncidentDraft.address.trim()) {
+      setCreateIncidentError("Address is required.");
+      return;
+    }
+    if (required.callbackNumber && !createIncidentDraft.callbackNumber.trim()) {
+      setCreateIncidentError("Callback Number is required.");
+      return;
+    }
+    if (required.dispatchNotes && !createIncidentDraft.dispatchNotes.trim()) {
+      setCreateIncidentError("Dispatch Notes is required.");
+      return;
+    }
+    const nextIncident = onCreateIncidentCall(createIncidentDraft);
+    setIsCreateIncidentModalOpen(false);
     openCallDetail(nextIncident.callNumber);
   };
 
@@ -3053,7 +3302,7 @@ function IncidentsListPage({
           <button type="button" className="secondary-button">
             Export Call Queue
           </button>
-          <button type="button" className="primary-button" onClick={handleCreateIncident}>
+          <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
             Create Incident
           </button>
         </div>
@@ -3177,7 +3426,9 @@ function IncidentsListPage({
                     }}
                   >
                     <td>
-                      <strong className="call-number-text">{call.callNumber}</strong>
+                      <strong className="call-number-text">
+                        {getIncidentDisplayNumber(call)}
+                      </strong>
                     </td>
                     <td>
                       <div className="dispatch-info-cell">
@@ -3213,11 +3464,221 @@ function IncidentsListPage({
           </p>
         </article>
       </section>
+      {isCreateIncidentModalOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>Create Incident</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setIsCreateIncidentModalOpen(false)}
+              >
+                Close
+              </button>
+            </div>
+            <div className="settings-form">
+              <label>
+                Incident Number
+                <input
+                  type="text"
+                  value={createIncidentDraft.incident_internal_id}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incident_internal_id: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Dispatch Number
+                <input
+                  type="text"
+                  value={createIncidentDraft.dispatch_internal_id}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      dispatch_internal_id: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Incident Type
+                <NerisFlatSingleOptionSelect
+                  inputId="create-incident-type"
+                  value={createIncidentDraft.incidentType}
+                  options={incidentsSetup.incidentTypeOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentType: value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Priority
+                <NerisFlatSingleOptionSelect
+                  inputId="create-incident-priority"
+                  value={createIncidentDraft.priority}
+                  options={incidentsSetup.priorityOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      priority: value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Still District
+                <NerisFlatSingleOptionSelect
+                  inputId="create-incident-still-district"
+                  value={createIncidentDraft.stillDistrict}
+                  options={incidentsSetup.stillDistrictOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      stillDistrict: value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Current State
+                <NerisFlatSingleOptionSelect
+                  inputId="create-incident-current-state"
+                  value={createIncidentDraft.currentState}
+                  options={incidentsSetup.currentStateOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      currentState: value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Reported By
+                {incidentsSetup.reportedByMode === "dropdown" ? (
+                  <NerisFlatSingleOptionSelect
+                    inputId="create-incident-reported-by"
+                    value={createIncidentDraft.reportedBy}
+                    options={incidentsSetup.reportedByOptions.map((value) => ({
+                      value,
+                      label: value,
+                    }))}
+                    onChange={(value) =>
+                      setCreateIncidentDraft((previous) => ({
+                        ...previous,
+                        reportedBy: value,
+                      }))
+                    }
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={createIncidentDraft.reportedBy}
+                    onChange={(event) =>
+                      setCreateIncidentDraft((previous) => ({
+                        ...previous,
+                        reportedBy: event.target.value,
+                      }))
+                    }
+                  />
+                )}
+              </label>
+              <label>
+                Assigned Units
+                <NerisFlatMultiOptionSelect
+                  inputId="create-incident-assigned-units"
+                  options={apparatusOptions}
+                  value={createIncidentDraft.assignedUnits.join(",")}
+                  onChange={(nextValue) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      assignedUnits: dedupeAndCleanStrings(
+                        nextValue
+                          .split(",")
+                          .map((entry) => entry.trim())
+                          .filter((entry) => entry.length > 0),
+                      ),
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Address
+                <input
+                  type="text"
+                  value={createIncidentDraft.address}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      address: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Callback Number
+                <input
+                  type="text"
+                  value={createIncidentDraft.callbackNumber}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      callbackNumber: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Dispatch Notes
+                <textarea
+                  rows={4}
+                  value={createIncidentDraft.dispatchNotes}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      dispatchNotes: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              {createIncidentError ? <p className="auth-error">{createIncidentError}</p> : null}
+              <div className="header-actions">
+                <button type="button" className="primary-button" onClick={handleCreateIncident}>
+                  Create Incident
+                </button>
+              </div>
+            </div>
+          </article>
+        </div>
+      ) : null}
     </section>
   );
 }
 
-function IncidentCallDetailPage({ callNumber, incidentCalls }: IncidentCallDetailPageProps) {
+function IncidentCallDetailPage({
+  callNumber,
+  incidentCalls,
+  onUpdateIncidentCall,
+}: IncidentCallDetailPageProps) {
   const detail =
     getIncidentCallDetail(callNumber) ??
     (() => {
@@ -3235,6 +3696,27 @@ function IncidentCallDetailPage({ callNumber, incidentCalls }: IncidentCallDetai
       };
     })();
   const [callInfoExpanded, setCallInfoExpanded] = useState(false);
+  const incidentsSetup = useMemo(() => readIncidentsSetupConfigFromDraft(), []);
+  const apparatusOptions = useMemo(() => readApparatusOptionsFromDraft(), []);
+  const [draft, setDraft] = useState<IncidentCreatePayload>(() => ({
+    incident_internal_id: String(
+      detail?.incident_internal_id ?? detail?.incidentNumber ?? detail?.callNumber ?? "",
+    ).trim(),
+    dispatch_internal_id: String(
+      detail?.dispatch_internal_id ?? detail?.dispatchNumber ?? "",
+    ).trim(),
+    incidentType: String(detail?.incidentType ?? "").trim(),
+    priority: String(detail?.priority ?? "").trim(),
+    stillDistrict: String(detail?.stillDistrict ?? "").trim(),
+    currentState: String(detail?.currentState ?? "").trim(),
+    reportedBy: String(detail?.reportedBy ?? "").trim(),
+    assignedUnits: dedupeAndCleanStrings(String(detail?.assignedUnits ?? "").split(",")),
+    address: String(detail?.address ?? "").trim(),
+    callbackNumber: String(detail?.callbackNumber ?? "").trim(),
+    dispatchNotes: String(detail?.dispatchNotes ?? detail?.dispatchInfo ?? "").trim(),
+  }));
+  const [saveError, setSaveError] = useState("");
+  const [saveSuccess, setSaveSuccess] = useState("");
 
   if (!detail) {
     return (
@@ -3253,6 +3735,73 @@ function IncidentCallDetailPage({ callNumber, incidentCalls }: IncidentCallDetai
       </section>
     );
   }
+
+  const handleSaveDetail = () => {
+    const required = incidentsSetup.requiredFields;
+    if (required.incidentNumber && !draft.incident_internal_id.trim()) {
+      setSaveError("Incident Number is required.");
+      return;
+    }
+    if (required.dispatchNumber && !draft.dispatch_internal_id.trim()) {
+      setSaveError("Dispatch Number is required.");
+      return;
+    }
+    if (required.incidentType && !draft.incidentType.trim()) {
+      setSaveError("Incident Type is required.");
+      return;
+    }
+    if (required.priority && !draft.priority.trim()) {
+      setSaveError("Priority is required.");
+      return;
+    }
+    if (required.stillDistrict && !draft.stillDistrict.trim()) {
+      setSaveError("Still District is required.");
+      return;
+    }
+    if (required.currentState && !draft.currentState.trim()) {
+      setSaveError("Current State is required.");
+      return;
+    }
+    if (required.reportedBy && !draft.reportedBy.trim()) {
+      setSaveError("Reported By is required.");
+      return;
+    }
+    if (required.assignedUnits && draft.assignedUnits.length === 0) {
+      setSaveError("Assigned Units is required.");
+      return;
+    }
+    if (required.address && !draft.address.trim()) {
+      setSaveError("Address is required.");
+      return;
+    }
+    if (required.callbackNumber && !draft.callbackNumber.trim()) {
+      setSaveError("Callback Number is required.");
+      return;
+    }
+    if (required.dispatchNotes && !draft.dispatchNotes.trim()) {
+      setSaveError("Dispatch Notes is required.");
+      return;
+    }
+
+    onUpdateIncidentCall(callNumber, {
+      incident_internal_id: draft.incident_internal_id.trim() || detail.callNumber,
+      dispatch_internal_id: draft.dispatch_internal_id.trim(),
+      incidentNumber: draft.incident_internal_id.trim() || detail.callNumber,
+      dispatchNumber: draft.dispatch_internal_id.trim(),
+      incidentType: draft.incidentType.trim(),
+      priority: draft.priority.trim(),
+      stillDistrict: draft.stillDistrict.trim(),
+      currentState: draft.currentState.trim(),
+      reportedBy: draft.reportedBy.trim(),
+      assignedUnits: draft.assignedUnits.join(", "),
+      address: draft.address.trim(),
+      callbackNumber: draft.callbackNumber.trim(),
+      dispatchNotes: draft.dispatchNotes.trim(),
+      dispatchInfo: draft.dispatchNotes.trim() || detail.dispatchInfo,
+    });
+    setSaveError("");
+    setSaveSuccess("Incident details saved.");
+  };
 
   return (
     <section className="page-section">
@@ -3291,44 +3840,163 @@ function IncidentCallDetailPage({ callNumber, incidentCalls }: IncidentCallDetai
           </button>
 
           {callInfoExpanded ? (
-            <dl className="detail-grid">
-              <div>
-                <dt>Incident Type</dt>
-                <dd>{detail.incidentType}</dd>
+            <div className="settings-form">
+              <label>
+                Incident Number
+                <input
+                  type="text"
+                  value={draft.incident_internal_id}
+                  onChange={(event) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      incident_internal_id: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Dispatch Number
+                <input
+                  type="text"
+                  value={draft.dispatch_internal_id}
+                  onChange={(event) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      dispatch_internal_id: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Incident Type
+                <NerisFlatSingleOptionSelect
+                  inputId={`incident-detail-type-${callNumber}`}
+                  value={draft.incidentType}
+                  options={incidentsSetup.incidentTypeOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setDraft((previous) => ({ ...previous, incidentType: value }))
+                  }
+                />
+              </label>
+              <label>
+                Priority
+                <NerisFlatSingleOptionSelect
+                  inputId={`incident-detail-priority-${callNumber}`}
+                  value={draft.priority}
+                  options={incidentsSetup.priorityOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) => setDraft((previous) => ({ ...previous, priority: value }))}
+                />
+              </label>
+              <label>
+                Still District
+                <NerisFlatSingleOptionSelect
+                  inputId={`incident-detail-still-district-${callNumber}`}
+                  value={draft.stillDistrict}
+                  options={incidentsSetup.stillDistrictOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setDraft((previous) => ({ ...previous, stillDistrict: value }))
+                  }
+                />
+              </label>
+              <label>
+                Current State
+                <NerisFlatSingleOptionSelect
+                  inputId={`incident-detail-current-state-${callNumber}`}
+                  value={draft.currentState}
+                  options={incidentsSetup.currentStateOptions.map((value) => ({
+                    value,
+                    label: value,
+                  }))}
+                  onChange={(value) =>
+                    setDraft((previous) => ({ ...previous, currentState: value }))
+                  }
+                />
+              </label>
+              <label>
+                Reported By
+                {incidentsSetup.reportedByMode === "dropdown" ? (
+                  <NerisFlatSingleOptionSelect
+                    inputId={`incident-detail-reported-by-${callNumber}`}
+                    value={draft.reportedBy}
+                    options={incidentsSetup.reportedByOptions.map((value) => ({
+                      value,
+                      label: value,
+                    }))}
+                    onChange={(value) =>
+                      setDraft((previous) => ({ ...previous, reportedBy: value }))
+                    }
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={draft.reportedBy}
+                    onChange={(event) =>
+                      setDraft((previous) => ({ ...previous, reportedBy: event.target.value }))
+                    }
+                  />
+                )}
+              </label>
+              <label>
+                Assigned Units
+                <NerisFlatMultiOptionSelect
+                  inputId={`incident-detail-assigned-units-${callNumber}`}
+                  options={apparatusOptions}
+                  value={draft.assignedUnits.join(",")}
+                  onChange={(nextValue) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      assignedUnits: dedupeAndCleanStrings(nextValue.split(",")),
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Address
+                <input
+                  type="text"
+                  value={draft.address}
+                  onChange={(event) =>
+                    setDraft((previous) => ({ ...previous, address: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Callback Number
+                <input
+                  type="text"
+                  value={draft.callbackNumber}
+                  onChange={(event) =>
+                    setDraft((previous) => ({ ...previous, callbackNumber: event.target.value }))
+                  }
+                />
+              </label>
+              <label>
+                Dispatch Notes
+                <textarea
+                  rows={4}
+                  value={draft.dispatchNotes}
+                  onChange={(event) =>
+                    setDraft((previous) => ({ ...previous, dispatchNotes: event.target.value }))
+                  }
+                />
+              </label>
+              {saveError ? <p className="auth-error">{saveError}</p> : null}
+              {saveSuccess ? <p className="save-message">{saveSuccess}</p> : null}
+              <div className="header-actions">
+                <button type="button" className="primary-button" onClick={handleSaveDetail}>
+                  Save Incident Details
+                </button>
               </div>
-              <div>
-                <dt>Priority</dt>
-                <dd>{detail.priority}</dd>
-              </div>
-              <div>
-                <dt>Assigned Units</dt>
-                <dd>{detail.assignedUnits}</dd>
-              </div>
-              <div>
-                <dt>Still District</dt>
-                <dd>{detail.stillDistrict}</dd>
-              </div>
-              <div>
-                <dt>Current Status</dt>
-                <dd>{detail.currentState}</dd>
-              </div>
-              <div>
-                <dt>Map Reference</dt>
-                <dd>{detail.mapReference}</dd>
-              </div>
-              <div>
-                <dt>Reported By</dt>
-                <dd>{detail.reportedBy}</dd>
-              </div>
-              <div>
-                <dt>Callback Number</dt>
-                <dd>{detail.callbackNumber}</dd>
-              </div>
-              <div>
-                <dt>Last Updated</dt>
-                <dd>{detail.lastUpdated}</dd>
-              </div>
-            </dl>
+            </div>
           ) : null}
         </article>
       </section>
@@ -3538,7 +4206,9 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
                     }}
                   >
                     <td>
-                      <strong className="call-number-text">{call.callNumber}</strong>
+                      <strong className="call-number-text">
+                        {getIncidentDisplayNumber(call)}
+                      </strong>
                     </td>
                     <td>
                       <div className="dispatch-info-cell">
@@ -3668,7 +4338,9 @@ function NerisExportsPage({ incidentCalls }: NerisQueuePageProps) {
                       }}
                     >
                       <td>
-                        <strong className="call-number-text">{call.callNumber}</strong>
+                        <strong className="call-number-text">
+                          {getIncidentDisplayNumber(call)}
+                        </strong>
                       </td>
                       <td>{call.incidentType}</td>
                       <td>
@@ -3899,6 +4571,11 @@ interface NerisReportFormRouteProps {
   callNumber: string;
   role: UserRole;
   username: string;
+  incidentCalls: IncidentCallSummary[];
+  onUpdateIncidentCall: (
+    callNumber: string,
+    patch: Partial<IncidentCallSummary>,
+  ) => void;
   nerisExportSettings: NerisExportSettings;
 }
 
@@ -3939,6 +4616,7 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       nerisAidDepartmentIdPattern={NERIS_AID_DEPARTMENT_ID_PATTERN}
       nerisProxyMappedFormFieldIds={NERIS_PROXY_MAPPED_FORM_FIELD_IDS}
       getDefaultNerisExportSettings={getDefaultNerisExportSettings}
+      onUpdateIncidentCall={props.onUpdateIncidentCall}
     />
   );
 }
@@ -4052,6 +4730,9 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   const [mutualAidOptions, setMutualAidOptions] = useState<DepartmentNerisEntityOption[]>(DEPARTMENT_ENTITY_FALLBACK_OPTIONS);
   const [selectedMutualAidIds, setSelectedMutualAidIds] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.selectedMutualAidIds) ? (initialDepartmentDraft.selectedMutualAidIds as string[]) : [],
+  );
+  const [incidentsSetup, setIncidentsSetup] = useState<IncidentsSetupConfig>(() =>
+    normalizeIncidentsSetupConfig(initialDepartmentDraft.incidentsSetup),
   );
   const [kellyRotations, setKellyRotations] = useState<KellyRotationEntry[]>(
     Array.isArray(initialDepartmentDraft.kellyRotations)
@@ -5142,6 +5823,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
         setSelectedMutualAidIds(
           Array.isArray(d.selectedMutualAidIds) ? (d.selectedMutualAidIds as string[]) : [],
         );
+        setIncidentsSetup(normalizeIncidentsSetupConfig(d.incidentsSetup));
         setKellyRotations(
           Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
         );
@@ -6250,6 +6932,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
       personnelQualifications,
       userTypeValues,
       selectedMutualAidIds,
+      incidentsSetup,
       kellyRotations,
       schedulerEnabled,
       uiPreferencesByUser: nextUiPreferencesByUser,
@@ -6298,6 +6981,7 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
     secondaryContactName,
     secondaryContactPhone,
     selectedMutualAidIds,
+    incidentsSetup,
     shiftInformationEntries,
     stationRecords,
     userTypeValues,
@@ -6435,6 +7119,179 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                 </p>
               </div>
             ))}
+          </div>
+        </article>
+
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
+          <div className="panel-header">
+            <h2>Incidents Setup</h2>
+          </div>
+          <div className="settings-form">
+            <p className="field-hint">
+              Configure Create Incident defaults: DD-S option lists, Reported By mode, and which
+              fields are required.
+            </p>
+            <label>
+              Incident Type options (one per line)
+              <textarea
+                rows={4}
+                value={incidentsSetup.incidentTypeOptions.join("\n")}
+                onChange={(event) =>
+                  setIncidentsSetup((previous) => ({
+                    ...previous,
+                    incidentTypeOptions: Array.from(
+                      new Set(
+                        event.target.value
+                          .split(/\n|,/)
+                          .map((value) => value.trim())
+                          .filter((value) => value.length > 0),
+                      ),
+                    ),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              Priority options (one per line)
+              <textarea
+                rows={4}
+                value={incidentsSetup.priorityOptions.join("\n")}
+                onChange={(event) =>
+                  setIncidentsSetup((previous) => ({
+                    ...previous,
+                    priorityOptions: Array.from(
+                      new Set(
+                        event.target.value
+                          .split(/\n|,/)
+                          .map((value) => value.trim())
+                          .filter((value) => value.length > 0),
+                      ),
+                    ),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              Still District options (one per line)
+              <textarea
+                rows={4}
+                value={incidentsSetup.stillDistrictOptions.join("\n")}
+                onChange={(event) =>
+                  setIncidentsSetup((previous) => ({
+                    ...previous,
+                    stillDistrictOptions: Array.from(
+                      new Set(
+                        event.target.value
+                          .split(/\n|,/)
+                          .map((value) => value.trim())
+                          .filter((value) => value.length > 0),
+                      ),
+                    ),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              Current State options (one per line)
+              <textarea
+                rows={4}
+                value={incidentsSetup.currentStateOptions.join("\n")}
+                onChange={(event) =>
+                  setIncidentsSetup((previous) => ({
+                    ...previous,
+                    currentStateOptions: Array.from(
+                      new Set(
+                        event.target.value
+                          .split(/\n|,/)
+                          .map((value) => value.trim())
+                          .filter((value) => value.length > 0),
+                      ),
+                    ),
+                  }))
+                }
+              />
+            </label>
+            <label>
+              <input
+                type="checkbox"
+                checked={incidentsSetup.reportedByMode === "fill-in"}
+                onChange={(event) =>
+                  setIncidentsSetup((previous) => ({
+                    ...previous,
+                    reportedByMode: event.target.checked ? "fill-in" : "dropdown",
+                  }))
+                }
+                style={{ marginRight: "0.35rem" }}
+              />
+              Reported By uses fill-in text input (unchecked = DD-S dropdown)
+            </label>
+            {incidentsSetup.reportedByMode === "dropdown" ? (
+              <label>
+                Reported By dropdown options (one per line)
+                <textarea
+                  rows={4}
+                  value={incidentsSetup.reportedByOptions.join("\n")}
+                  onChange={(event) =>
+                    setIncidentsSetup((previous) => ({
+                      ...previous,
+                      reportedByOptions: Array.from(
+                        new Set(
+                          event.target.value
+                            .split(/\n|,/)
+                            .map((value) => value.trim())
+                            .filter((value) => value.length > 0),
+                        ),
+                      ),
+                    }))
+                  }
+                />
+              </label>
+            ) : null}
+            <div className="settings-form">
+              <p className="field-hint">Required field toggles for Create Incident</p>
+              {INCIDENTS_REQUIRED_FIELD_ORDER.map((fieldKey) => (
+                <label key={`incident-required-${fieldKey}`}>
+                  <input
+                    type="checkbox"
+                    checked={Boolean(incidentsSetup.requiredFields[fieldKey])}
+                    onChange={(event) =>
+                      setIncidentsSetup((previous) => ({
+                        ...previous,
+                        requiredFields: {
+                          ...previous.requiredFields,
+                          [fieldKey]: event.target.checked,
+                        },
+                      }))
+                    }
+                    style={{ marginRight: "0.35rem" }}
+                  />
+                  {fieldKey === "incidentType"
+                    ? "Incident Type"
+                    : fieldKey === "priority"
+                      ? "Priority"
+                      : fieldKey === "stillDistrict"
+                        ? "Still District"
+                        : fieldKey === "currentState"
+                          ? "Current State"
+                          : fieldKey === "reportedBy"
+                            ? "Reported By"
+                            : fieldKey === "assignedUnits"
+                              ? "Assigned Units"
+                              : fieldKey === "address"
+                                ? "Address"
+                                : fieldKey === "callbackNumber"
+                                  ? "Callback Number"
+                                  : fieldKey === "incidentNumber"
+                                    ? "Incident Number"
+                                    : fieldKey === "dispatchNumber"
+                                      ? "Dispatch Number"
+                                      : "Dispatch Notes"}
+                </label>
+              ))}
+            </div>
           </div>
         </article>
 
@@ -9752,6 +10609,7 @@ function RouteResolver({
   username,
   incidentCalls,
   onCreateIncidentCall,
+  onUpdateIncidentCall,
   workflowStates,
   onSaveWorkflowStates,
   incidentDisplaySettings,
@@ -9816,7 +10674,13 @@ function RouteResolver({
     const callNumber = decodeURIComponent(
       path.replace("/incidents-mapping/incidents/", ""),
     );
-    return <IncidentCallDetailPage callNumber={callNumber} incidentCalls={incidentCalls} />;
+    return (
+      <IncidentCallDetailPage
+        callNumber={callNumber}
+        incidentCalls={incidentCalls}
+        onUpdateIncidentCall={onUpdateIncidentCall}
+      />
+    );
   }
 
   if (path === "/reporting/neirs") {
@@ -9850,6 +10714,7 @@ function RouteResolver({
         role={role}
         username={username}
         incidentCalls={incidentCalls}
+        onUpdateIncidentCall={onUpdateIncidentCall}
         nerisExportSettings={nerisExportSettings}
       />
     );
@@ -9998,7 +10863,7 @@ function App() {
     writeNerisExportSettings(normalized);
   };
 
-  const handleCreateIncidentCall = (): IncidentCallSummary => {
+  const handleCreateIncidentCall = (payload: IncidentCreatePayload): IncidentCallSummary => {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, "0");
     const mm = String(now.getMinutes()).padStart(2, "0");
@@ -10007,17 +10872,28 @@ function App() {
     const month = String(now.getMonth() + 1).padStart(2, "0");
     const day = String(now.getDate()).padStart(2, "0");
     const callNumber = `I-${yyyy}${month}${day}-${hh}${mm}${ss}`;
+    const incidentInternalId = payload.incident_internal_id.trim() || callNumber;
+    const dispatchInternalId = payload.dispatch_internal_id.trim() || incidentInternalId;
     const nextIncident: IncidentCallSummary = {
       callNumber,
-      incidentType: "New Incident",
-      priority: "3",
-      address: "Update address",
-      stillDistrict: "Update district",
-      assignedUnits: "",
-      currentState: "Draft",
+      incident_internal_id: incidentInternalId,
+      dispatch_internal_id: dispatchInternalId,
+      incidentNumber: incidentInternalId,
+      dispatchNumber: dispatchInternalId,
+      incidentType: payload.incidentType.trim() || "New Incident",
+      priority: payload.priority.trim() || "3",
+      address: payload.address.trim() || "Update address",
+      stillDistrict: payload.stillDistrict.trim() || "Update district",
+      assignedUnits: payload.assignedUnits.join(", "),
+      reportedBy: payload.reportedBy.trim(),
+      callbackNumber: payload.callbackNumber.trim(),
+      dispatchNotes: payload.dispatchNotes.trim(),
+      currentState: payload.currentState.trim() || "Draft",
       lastUpdated: "Just now",
       receivedAt: `${hh}:${mm}:${ss}`,
-      dispatchInfo: "Manual incident created from Incidents / Mapping.",
+      dispatchInfo:
+        payload.dispatchNotes.trim() ||
+        "Manual incident created from Incidents / Mapping.",
     };
     setIncidentCalls((previous) => {
       const deduped = previous.filter((entry) => entry.callNumber !== callNumber);
@@ -10026,6 +10902,27 @@ function App() {
       return next;
     });
     return nextIncident;
+  };
+
+  const handleUpdateIncidentCall = (
+    callNumber: string,
+    patch: Partial<IncidentCallSummary>,
+  ) => {
+    setIncidentCalls((previous) => {
+      const next = previous.map((entry) => {
+        if (entry.callNumber !== callNumber) {
+          return entry;
+        }
+        return {
+          ...entry,
+          ...patch,
+          callNumber: entry.callNumber,
+          lastUpdated: "Just now",
+        };
+      });
+      writeIncidentQueue(next);
+      return next;
+    });
   };
 
   return (
@@ -10060,6 +10957,7 @@ function App() {
                 username={session.username}
                 incidentCalls={incidentCalls}
                 onCreateIncidentCall={handleCreateIncidentCall}
+                onUpdateIncidentCall={handleUpdateIncidentCall}
                 workflowStates={workflowStates}
                 onSaveWorkflowStates={handleSaveWorkflowStates}
                 incidentDisplaySettings={incidentDisplaySettings}
