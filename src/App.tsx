@@ -9849,6 +9849,7 @@ function RouteResolver({
         callNumber={callNumber}
         role={role}
         username={username}
+        incidentCalls={incidentCalls}
         nerisExportSettings={nerisExportSettings}
       />
     );

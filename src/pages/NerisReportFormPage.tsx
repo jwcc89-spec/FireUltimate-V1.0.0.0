@@ -8,7 +8,11 @@ import {
 } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ChevronDown, Pencil, Trash2, Users } from "lucide-react";
-import { getIncidentCallDetail, type UserRole } from "../appData";
+import {
+  getIncidentCallDetail,
+  type IncidentCallSummary,
+  type UserRole,
+} from "../appData";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
@@ -44,6 +48,7 @@ export interface NerisReportFormPageProps {
   callNumber: string;
   role: UserRole;
   username: string;
+  incidentCalls: IncidentCallSummary[];
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
   writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void;
@@ -268,7 +273,22 @@ function NerisReportFormPage({
   getDefaultNerisExportSettings,
 }: NerisReportFormPageProps) {
   const navigate = useNavigate();
-  const detail = getIncidentCallDetail(callNumber);
+  const detail =
+    getIncidentCallDetail(callNumber) ??
+    (() => {
+      const summary = incidentCalls.find((entry) => entry.callNumber === callNumber);
+      if (!summary) {
+        return null;
+      }
+      return {
+        ...summary,
+        mapReference: "Pending GIS sync",
+        reportedBy: "Manual entry",
+        callbackNumber: "",
+        apparatus: [],
+        dispatchNotes: [],
+      };
+    })();
   const detailForSideEffects = detail ?? {
     callNumber,
     incidentType: "",
