@@ -7,30 +7,41 @@
 - NERIS go-live for tenant cifpdil: live tenant creation, NERIS_BASE_URL switch to production, form fields alignment, and successful live report push.
 
 ## Latest known status
-- Latest commit: `6c831b8` - Merge pull request #15 from jwcc89-spec/submenu/departmentdetails-ui
-- Read submenu--departmentdetails-ui and submenu--neris-all ACTIVE_CONTEXT, session notes, and conversations (styling/routing + NERIS form/proxy, Department NERIS ID auto-fill from Admin Vendor/Department Code).
-- Created plan: `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_GO_LIVE_CIFPDIL_PLAN.md` (live cifpdil tenant, NERIS URL same for all tenants, step-by-step directions).
-- Patched `scripts/tenant-create.ts` to load `DATABASE_URL` from `.env` and `.env.server` (safer for Phase 1 tenant creation).
-- Added docs: `docs/PHASE_1_CIFPDIL_TENANT_LIVE.md` and `docs/TENANTS_NERIS_AND_BRANCHES_EXPLAINED.md`; updated plan phases and verification wording.
-- Executed Phase 1 discovery and tenant/domain updates against configured DB:
-  - `cifpdil` tenant already existed and was `active`.
-  - Added production domain `cifpdil.fireultimate.app` as `isPrimary: false`.
-- Deferred to `Later` backlog: wildcard DNS onboarding and Cloudflare proxied-mode hardening (to run after live NERIS cutover stability).
-- Added onboarding runbook: `docs/TENANT_ONBOARDING_CHECKLIST.md` for repeatable department setup (intake -> tenant/domain -> Render env -> NERIS checks -> first export).
-- Phase A safety checks verified from terminal:
-  - `https://cifpdil.fireultimate.app/api/neris/health` -> `hasDefaultEntityId: false` (fail-closed posture in prod).
-  - `https://cifpdil.fireultimate.app/api/tenant/context` -> host resolves to `cifpdil`.
-  - `https://cifpdil.fireultimate.app/api/neris/debug/entities` still does **not** include `FD17075450` (awaiting NERIS authorization mapping).
-- Staging branch routing now points to `submenu/neris-golive-cifpd` and `cifpdil.staging.fireultimate.app` resolves to tenant `cifpdil`.
-- Implemented code change in `src/App.tsx`: NERIS queue/export sample incidents are now demo-tenant only (non-demo/live tenants show empty-state guidance instead of fixture rows).
-- End-of-session reminder: if staging `NERIS_BASE_URL` is temporarily switched away from `api-test`, switch it back before closeout.
+- Local working tree now contains uncommitted Phase B + queue plumbing changes in:
+  - `server/neris-proxy.mjs`
+  - `src/App.tsx`
+  - `src/pages/NerisReportFormPage.tsx`
+  - `prisma/schema.prisma`
+  - `prisma/migrations/20260310120000_add_tenant_neris_entity_id/migration.sql`
+- Implemented incident queue fix for live tenants:
+  - `Incidents / Mapping | Incidents` now uses tenant-local queue storage (host-scoped localStorage key).
+  - `Create Incident` now works and creates a live queue row, then opens incident detail.
+  - `Reporting | NERIS` and `Reporting | NERIS | Exports` now read from the same queue source as Incidents.
+  - Live tenants no longer show fixture sample rows in Incidents queue.
+- Implemented Phase B tenant-scoped backend NERIS entity support:
+  - Added `Tenant.nerisEntityId` (Prisma schema + SQL migration).
+  - `POST /api/department-details` now syncs a valid entity ID into `Tenant.nerisEntityId` when present in payload.
+  - Entity resolution for validate/export/debug now prioritizes tenant entity and fails closed for tenant traffic (no env fallback for tenant requests).
+  - `/api/neris/health` now exposes `hasTenantEntityId`.
+- Updated frontend error copy in `NerisReportFormPage` to point users to tenant-scoped Department Details entity config.
+- Added step-by-step wait/after-support runbook:
+  - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_WAITING_AND_POST_SUPPORT_STEPS.md`
+- Validation completed locally:
+  - `npm run build` passes.
+  - `node --check server/neris-proxy.mjs` passes.
+  - `npx prisma generate` passes.
 
 ## Current blocker / status
-- No code blocker. Waiting on NERIS support to authorize entity `FD17075450` for client id `3f104b60-f7cf-437e-b79c-868fe6489f31`.
-- Staging still shows missing NERIS credentials in health (`hasClientCredentials: false`) and still has a default entity id in that environment; staging env sync is pending.
+- No code blocker in local branch.
+- External blocker remains: waiting on NERIS support to authorize entity `FD17075450` for client id `3f104b60-f7cf-437e-b79c-868fe6489f31`.
+- Needs deployment + migration apply on staging/prod before tenant DB-backed entity resolution is active in hosted env.
 
 ## External dependency status
 - NERIS production credentials (Entity ID, Client ID/Secret) must be obtained from NERIS for live API. DNS/SSL for cifpdil.fireultimate.app if not already in place.
+
+## Now vs Later
+- **Now**: deploy Phase B changes + apply migration + verify queue workflow and health/debug endpoints in staging.
+- **Later**: after NERIS confirms entity authorization, run staging export proof then controlled production export.
 
 ## Recent key commits (latest first)
 - `6c831b8` Merge pull request #15 from jwcc89-spec/submenu/departmentdetails-ui
@@ -41,6 +52,7 @@
 3. Read `docs/NERIS_GO_LIVE_CIFPDIL_PLAN.md` and **Phase 1 runbook:** `docs/PHASE_1_CIFPDIL_TENANT_LIVE.md`.
 4. Read latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`.
 5. Confirm branch with user and execute next step:
-   - Finish staging env sync (`api-test` base URL + client credentials, remove default entity fallback),
-   - continue Phase B tenant-specific entity work,
-   - then run live export checks when NERIS confirms authorization.
+   - Deploy current working tree changes and run migration in target env.
+   - Verify `GET /api/neris/health` reports `hasTenantEntityId` as expected per tenant.
+   - Verify `Create Incident` + NERIS queue flow on `cifpdil.staging.fireultimate.app`.
+   - Run live export checks immediately after NERIS confirms entity authorization.

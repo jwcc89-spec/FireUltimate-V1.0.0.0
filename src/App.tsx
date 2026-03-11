@@ -56,6 +56,7 @@ import {
   getVisibleMenus,
   isPathAdminOnly,
   type DisplayCardOption,
+  type IncidentCallSummary,
   type IncidentCallFieldId,
   type IncidentDisplaySettings,
   type IncidentStatId,
@@ -104,6 +105,8 @@ interface DashboardPageProps {
 interface RouteResolverProps {
   role: UserRole;
   username: string;
+  incidentCalls: IncidentCallSummary[];
+  onCreateIncidentCall: () => IncidentCallSummary;
   workflowStates: string[];
   onSaveWorkflowStates: (nextStates: string[]) => void;
   incidentDisplaySettings: IncidentDisplaySettings;
@@ -123,10 +126,17 @@ interface MainMenuLandingPageProps {
 interface IncidentsListPageProps {
   incidentDisplaySettings: IncidentDisplaySettings;
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
+  incidentCalls: IncidentCallSummary[];
+  onCreateIncidentCall: () => IncidentCallSummary;
 }
 
 interface IncidentCallDetailPageProps {
   callNumber: string;
+  incidentCalls: IncidentCallSummary[];
+}
+
+interface NerisQueuePageProps {
+  incidentCalls: IncidentCallSummary[];
 }
 
 interface MenuDisplayCardsProps {
@@ -341,6 +351,7 @@ const SHELL_SIDEBAR_WIDTH_STORAGE_KEY = "fire-ultimate-shell-sidebar-width";
 const NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts";
 const NERIS_EXPORT_SETTINGS_STORAGE_KEY = "fire-ultimate-neris-export-settings";
 const NERIS_EXPORT_HISTORY_STORAGE_KEY = "fire-ultimate-neris-export-history";
+const INCIDENT_QUEUE_STORAGE_KEY_PREFIX = "fire-ultimate-incident-queue";
 const DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY = "fire-ultimate-department-logo-data-url";
 const DEPARTMENT_DETAILS_STORAGE_KEY = "fire-ultimate-department-details";
 
@@ -1651,6 +1662,65 @@ function writeIncidentDisplaySettings(settings: IncidentDisplaySettings): void {
   );
 }
 
+function getIncidentQueueStorageKey(): string {
+  if (typeof window === "undefined") {
+    return INCIDENT_QUEUE_STORAGE_KEY_PREFIX;
+  }
+  const host = window.location.hostname.trim().toLowerCase() || "unknown-host";
+  return `${INCIDENT_QUEUE_STORAGE_KEY_PREFIX}:${host}`;
+}
+
+function normalizeIncidentSummary(candidate: unknown): IncidentCallSummary | null {
+  if (!candidate || typeof candidate !== "object" || Array.isArray(candidate)) {
+    return null;
+  }
+  const source = candidate as Record<string, unknown>;
+  const callNumber = String(source.callNumber ?? "").trim();
+  if (!callNumber) {
+    return null;
+  }
+  return {
+    callNumber,
+    incidentType: String(source.incidentType ?? "").trim() || "Unknown",
+    priority: String(source.priority ?? "").trim() || "3",
+    address: String(source.address ?? "").trim() || "Unknown",
+    stillDistrict: String(source.stillDistrict ?? "").trim() || "Unknown",
+    assignedUnits: String(source.assignedUnits ?? "").trim(),
+    currentState: String(source.currentState ?? "").trim() || "Draft",
+    lastUpdated: String(source.lastUpdated ?? "").trim() || "Just now",
+    receivedAt: String(source.receivedAt ?? "").trim(),
+    dispatchInfo: String(source.dispatchInfo ?? "").trim(),
+  };
+}
+
+function readIncidentQueue(): IncidentCallSummary[] {
+  if (typeof window === "undefined") {
+    return [];
+  }
+  const raw = window.localStorage.getItem(getIncidentQueueStorageKey());
+  if (!raw) {
+    return [];
+  }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) {
+      return [];
+    }
+    return parsed
+      .map((entry) => normalizeIncidentSummary(entry))
+      .filter((entry): entry is IncidentCallSummary => Boolean(entry));
+  } catch {
+    return [];
+  }
+}
+
+function writeIncidentQueue(calls: IncidentCallSummary[]): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(getIncidentQueueStorageKey(), JSON.stringify(calls));
+}
+
 function readSubmenuVisibility(): SubmenuVisibilityMap {
   const defaults = getDefaultSubmenuVisibilityMap();
   if (typeof window === "undefined") {
@@ -1994,7 +2064,7 @@ function appendNerisExportRecord(record: NerisExportRecord): void {
 }
 
 function getCallFieldValue(
-  call: (typeof INCIDENT_CALLS)[number],
+  call: IncidentCallSummary,
   fieldId: IncidentCallFieldId,
 ): string {
   switch (fieldId) {
@@ -2024,7 +2094,7 @@ function getNerisReportStatus(callNumber: string): string {
 }
 
 function getNerisQueueFieldValue(
-  call: (typeof INCIDENT_CALLS)[number],
+  call: IncidentCallSummary,
   fieldId: IncidentCallFieldId,
 ): string {
   if (fieldId === "status") {
@@ -2823,8 +2893,11 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
 function IncidentsListPage({
   incidentDisplaySettings,
   onSaveIncidentDisplaySettings,
+  incidentCalls,
+  onCreateIncidentCall,
 }: IncidentsListPageProps) {
   const navigate = useNavigate();
+  const isDemoTenant = useIsDemoTenant();
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
   const [callFieldWidths, setCallFieldWidths] = useState<Record<IncidentCallFieldId, number>>(
@@ -2858,6 +2931,14 @@ function IncidentsListPage({
 
   const openCallDetail = (callNumber: string) => {
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
+  };
+  const queueCalls = useMemo(
+    () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
+    [incidentCalls, isDemoTenant],
+  );
+  const handleCreateIncident = () => {
+    const nextIncident = onCreateIncidentCall();
+    openCallDetail(nextIncident.callNumber);
   };
 
   useEffect(() => {
@@ -2972,7 +3053,7 @@ function IncidentsListPage({
           <button type="button" className="secondary-button">
             Export Call Queue
           </button>
-          <button type="button" className="primary-button">
+          <button type="button" className="primary-button" onClick={handleCreateIncident}>
             Create Incident
           </button>
         </div>
@@ -3081,7 +3162,7 @@ function IncidentsListPage({
                 </tr>
               </thead>
               <tbody>
-                {INCIDENT_CALLS.map((call) => (
+                {queueCalls.map((call) => (
                   <tr
                     key={call.callNumber}
                     className="clickable-row"
@@ -3114,6 +3195,15 @@ function IncidentsListPage({
                     </td>
                   </tr>
                 ))}
+                {queueCalls.length === 0 ? (
+                  <tr>
+                    <td colSpan={2}>
+                      <div className="empty-message">
+                        No incidents yet. Click Create Incident to start a live record.
+                      </div>
+                    </td>
+                  </tr>
+                ) : null}
               </tbody>
             </table>
           </div>
@@ -3127,8 +3217,23 @@ function IncidentsListPage({
   );
 }
 
-function IncidentCallDetailPage({ callNumber }: IncidentCallDetailPageProps) {
-  const detail = getIncidentCallDetail(callNumber);
+function IncidentCallDetailPage({ callNumber, incidentCalls }: IncidentCallDetailPageProps) {
+  const detail =
+    getIncidentCallDetail(callNumber) ??
+    (() => {
+      const summary = incidentCalls.find((entry) => entry.callNumber === callNumber);
+      if (!summary) {
+        return null;
+      }
+      return {
+        ...summary,
+        mapReference: "Pending GIS sync",
+        reportedBy: "Manual entry",
+        callbackNumber: "",
+        apparatus: [],
+        dispatchNotes: [],
+      };
+    })();
   const [callInfoExpanded, setCallInfoExpanded] = useState(false);
 
   if (!detail) {
@@ -3357,10 +3462,13 @@ function useIsDemoTenant(): boolean {
   return isDemoTenant;
 }
 
-function NerisReportingPage() {
+function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
-  const queueCalls = useMemo(() => (isDemoTenant ? INCIDENT_CALLS : []), [isDemoTenant]);
+  const queueCalls = useMemo(
+    () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
+    [incidentCalls, isDemoTenant],
+  );
   const fieldLabelById = useMemo(
     () =>
       Object.fromEntries(
@@ -3482,12 +3590,16 @@ function NerisReportingPage() {
 
 interface NerisExportDetailsPageProps {
   callNumber: string;
+  incidentCalls: IncidentCallSummary[];
 }
 
-function NerisExportsPage() {
+function NerisExportsPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
-  const queueCalls = useMemo(() => (isDemoTenant ? INCIDENT_CALLS : []), [isDemoTenant]);
+  const queueCalls = useMemo(
+    () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
+    [incidentCalls, isDemoTenant],
+  );
   const latestExportByCall = useMemo(() => {
     const map = new Map<string, NerisExportRecord>();
     readNerisExportHistory().forEach((entry) => {
@@ -3594,9 +3706,24 @@ function NerisExportsPage() {
   );
 }
 
-function NerisExportDetailsPage({ callNumber }: NerisExportDetailsPageProps) {
+function NerisExportDetailsPage({ callNumber, incidentCalls }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
-  const incident = getIncidentCallDetail(callNumber);
+  const incident =
+    getIncidentCallDetail(callNumber) ??
+    (() => {
+      const summary = incidentCalls.find((entry) => entry.callNumber === callNumber);
+      if (!summary) {
+        return null;
+      }
+      return {
+        ...summary,
+        mapReference: "",
+        reportedBy: "",
+        callbackNumber: "",
+        apparatus: [],
+        dispatchNotes: [],
+      };
+    })();
   const exportHistory = useMemo(
     () => readNerisExportHistory().filter((entry) => entry.callNumber === callNumber),
     [callNumber],
@@ -9623,6 +9750,8 @@ function NotFoundPage() {
 function RouteResolver({
   role,
   username,
+  incidentCalls,
+  onCreateIncidentCall,
   workflowStates,
   onSaveWorkflowStates,
   incidentDisplaySettings,
@@ -9677,6 +9806,8 @@ function RouteResolver({
       <IncidentsListPage
         incidentDisplaySettings={incidentDisplaySettings}
         onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
+        incidentCalls={incidentCalls}
+        onCreateIncidentCall={onCreateIncidentCall}
       />
     );
   }
@@ -9685,7 +9816,7 @@ function RouteResolver({
     const callNumber = decodeURIComponent(
       path.replace("/incidents-mapping/incidents/", ""),
     );
-    return <IncidentCallDetailPage callNumber={callNumber} />;
+    return <IncidentCallDetailPage callNumber={callNumber} incidentCalls={incidentCalls} />;
   }
 
   if (path === "/reporting/neirs") {
@@ -9698,16 +9829,16 @@ function RouteResolver({
   }
 
   if (path === "/reporting/neris") {
-    return <NerisReportingPage />;
+    return <NerisReportingPage incidentCalls={incidentCalls} />;
   }
 
   if (path === "/reporting/neris/exports") {
-    return <NerisExportsPage />;
+    return <NerisExportsPage incidentCalls={incidentCalls} />;
   }
 
   if (path.startsWith("/reporting/neris/exports/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
-    return <NerisExportDetailsPage callNumber={callNumber} />;
+    return <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} />;
   }
 
   if (path.startsWith("/reporting/neris/")) {
@@ -9779,6 +9910,9 @@ function RouteResolver({
 
 function App() {
   const [session, setSession] = useState<SessionState>(() => readSession());
+  const [incidentCalls, setIncidentCalls] = useState<IncidentCallSummary[]>(() =>
+    readIncidentQueue(),
+  );
   const [workflowStates, setWorkflowStates] = useState<string[]>(() =>
     readWorkflowStates(),
   );
@@ -9863,6 +9997,36 @@ function App() {
     writeNerisExportSettings(normalized);
   };
 
+  const handleCreateIncidentCall = (): IncidentCallSummary => {
+    const now = new Date();
+    const hh = String(now.getHours()).padStart(2, "0");
+    const mm = String(now.getMinutes()).padStart(2, "0");
+    const ss = String(now.getSeconds()).padStart(2, "0");
+    const yyyy = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, "0");
+    const day = String(now.getDate()).padStart(2, "0");
+    const callNumber = `I-${yyyy}${month}${day}-${hh}${mm}${ss}`;
+    const nextIncident: IncidentCallSummary = {
+      callNumber,
+      incidentType: "New Incident",
+      priority: "3",
+      address: "Update address",
+      stillDistrict: "Update district",
+      assignedUnits: "",
+      currentState: "Draft",
+      lastUpdated: "Just now",
+      receivedAt: `${hh}:${mm}:${ss}`,
+      dispatchInfo: "Manual incident created from Incidents / Mapping.",
+    };
+    setIncidentCalls((previous) => {
+      const deduped = previous.filter((entry) => entry.callNumber !== callNumber);
+      const next = [nextIncident, ...deduped];
+      writeIncidentQueue(next);
+      return next;
+    });
+    return nextIncident;
+  };
+
   return (
     <BrowserRouter>
       <Routes>
@@ -9893,6 +10057,8 @@ function App() {
               <RouteResolver
                 role={session.role}
                 username={session.username}
+                incidentCalls={incidentCalls}
+                onCreateIncidentCall={handleCreateIncidentCall}
                 workflowStates={workflowStates}
                 onSaveWorkflowStates={handleSaveWorkflowStates}
                 incidentDisplaySettings={incidentDisplaySettings}

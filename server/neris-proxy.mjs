@@ -1404,9 +1404,11 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   return payload;
 }
 
-app.get("/api/neris/health", (request, response) => {
+app.get("/api/neris/health", async (request, response) => {
   const config = getProxyConfig();
   const requiresUserCredentials = config.grantType === "password";
+  const tenantId = trimValue(request.tenant?.id);
+  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
   response.json({
     ok: true,
     proxyPort: config.proxyPort,
@@ -1419,6 +1421,7 @@ app.get("/api/neris/health", (request, response) => {
     hasUserCredentials: Boolean(config.username && config.password),
     hasDefaultEntityId: Boolean(config.defaultEntityId),
     hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
+    hasTenantEntityId: Boolean(tenantEntityId),
   });
 });
 
@@ -1448,6 +1451,7 @@ app.post("/api/admin/tenants", async (request, response) => {
     const status = trimValue(body.status).toLowerCase() || "trial";
     const adminUsername = trimValue(body.adminUsername).toLowerCase();
     const adminPassword = String(body.adminPassword ?? "").trim();
+    const nerisEntityId = trimValue(body.nerisEntityId).toUpperCase();
 
     if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
       response.status(400).json({ ok: false, message: "slug required; lowercase letters, numbers, hyphens only." });
@@ -1473,6 +1477,14 @@ app.post("/api/admin/tenants", async (request, response) => {
       response.status(400).json({ ok: false, message: "adminPassword required." });
       return;
     }
+    if (nerisEntityId && !NERIS_ENTITY_ID_PATTERN.test(nerisEntityId)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "nerisEntityId must match FD########, VN########, FM########, or FA########.",
+      });
+      return;
+    }
 
     const existing = await prisma.tenant.findUnique({ where: { slug } });
     if (existing) {
@@ -1486,7 +1498,9 @@ app.post("/api/admin/tenants", async (request, response) => {
     }
 
     const passwordHash = await hashPassword(adminPassword);
-    const tenant = await prisma.tenant.create({ data: { slug, name, status } });
+    const tenant = await prisma.tenant.create({
+      data: { slug, name, status, nerisEntityId: nerisEntityId || null },
+    });
     await prisma.tenantDomain.create({ data: { tenantId: tenant.id, hostname, isPrimary: true } });
     await prisma.departmentDetails.create({
       data: { tenantId: tenant.id, departmentName: name, payloadJson: {} },
@@ -1497,7 +1511,14 @@ app.post("/api/admin/tenants", async (request, response) => {
 
     response.status(201).json({
       ok: true,
-      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, status: tenant.status, hostname },
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        status: tenant.status,
+        hostname,
+        nerisEntityId: trimValue(tenant.nerisEntityId),
+      },
     });
   } catch (error) {
     response.status(500).json({
@@ -1567,6 +1588,7 @@ app.use(async (request, response, next) => {
         slug: demoTenant.slug,
         name: demoTenant.name,
         host,
+        nerisEntityId: trimValue(demoTenant.nerisEntityId),
       };
       next();
       return;
@@ -1590,6 +1612,7 @@ app.use(async (request, response, next) => {
       slug: domain.tenant.slug,
       name: domain.tenant.name,
       host,
+      nerisEntityId: trimValue(domain.tenant.nerisEntityId),
     };
     next();
   } catch (error) {
@@ -1791,6 +1814,7 @@ app.post("/api/department-details", async (request, response) => {
         ? existingDetails.payloadJson
         : {};
     const payloadToStore = _dropped !== undefined ? payloadWithoutAuth : payloadWithSyncedUsers;
+    const tenantEntityIdFromPayload = readTenantEntityIdFromDepartmentPayload(payloadToStore);
     // Keep non-auth user profile metadata when saving department details.
     if (
       existingPayload.userFullNames &&
@@ -1820,6 +1844,12 @@ app.post("/api/department-details", async (request, response) => {
         payloadJson: payloadToStore,
       },
     });
+    if (tenantEntityIdFromPayload) {
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: { nerisEntityId: tenantEntityIdFromPayload },
+      });
+    }
     response.status(200).json({ ok: true });
   } catch (error) {
     response.status(500).json({
@@ -2469,6 +2499,65 @@ function readQueryValue(queryValue) {
   return trimValue(queryValue);
 }
 
+function readNestedStringValue(source, pathSegments) {
+  let cursor = source;
+  for (const segment of pathSegments) {
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
+      return "";
+    }
+    cursor = cursor[segment];
+  }
+  return trimValue(cursor);
+}
+
+function readTenantEntityIdFromDepartmentPayload(payloadJson) {
+  if (!payloadJson || typeof payloadJson !== "object" || Array.isArray(payloadJson)) {
+    return "";
+  }
+  const candidates = [
+    readNestedStringValue(payloadJson, ["nerisEntityId"]),
+    readNestedStringValue(payloadJson, ["vendorCode"]),
+    readNestedStringValue(payloadJson, ["departmentNerisId"]),
+    readNestedStringValue(payloadJson, ["fd_neris_id"]),
+    readNestedStringValue(payloadJson, ["neris", "entityId"]),
+    readNestedStringValue(payloadJson, ["nerisExportSettings", "entityId"]),
+    readNestedStringValue(payloadJson, ["nerisExportSettings", "vendorCode"]),
+  ].filter(Boolean);
+  const exactMatch = candidates.find((value) => NERIS_ENTITY_ID_PATTERN.test(value));
+  return exactMatch || "";
+}
+
+async function resolveTenantEntityId(tenantId) {
+  if (!tenantId) {
+    return "";
+  }
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { nerisEntityId: true },
+  });
+  const tenantEntityId = trimValue(tenant?.nerisEntityId);
+  if (tenantEntityId && NERIS_ENTITY_ID_PATTERN.test(tenantEntityId)) {
+    return tenantEntityId;
+  }
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const fallbackEntityId = readTenantEntityIdFromDepartmentPayload(details?.payloadJson);
+  if (
+    fallbackEntityId &&
+    fallbackEntityId !== tenantEntityId &&
+    NERIS_ENTITY_ID_PATTERN.test(fallbackEntityId)
+  ) {
+    // Keep tenant-level field populated during migration from payload-backed values.
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { nerisEntityId: fallbackEntityId },
+    });
+  }
+  return fallbackEntityId;
+}
+
 app.get("/api/neris/debug/incident", async (request, response) => {
   const config = getProxyConfig();
   const requestedIncidentNerisId =
@@ -2478,14 +2567,20 @@ app.get("/api/neris/debug/incident", async (request, response) => {
   const incidentEntityFromId = NERIS_INCIDENT_ID_PATTERN.test(requestedIncidentNerisId)
     ? requestedIncidentNerisId.split("|")[0]
     : "";
+  const resolvedTenantEntityId = await resolveEntityIdFromRequest(
+    {},
+    request.headers,
+    config,
+    request.tenant,
+  );
   const requestedEntityId =
-    readQueryValue(request.query.entityId) || incidentEntityFromId || config.defaultEntityId;
+    readQueryValue(request.query.entityId) || incidentEntityFromId || resolvedTenantEntityId;
 
   if (!requestedEntityId) {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?entityId=... or set NERIS_ENTITY_ID in .env.server.",
+        "Missing NERIS entity ID. Provide ?entityId=... or set this tenant's NERIS entity ID in Department Details.",
     });
     return;
   }
@@ -2576,7 +2671,7 @@ app.get("/api/neris/debug/incident", async (request, response) => {
   }
 });
 
-function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
+async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, tenant) {
   const integration =
     requestBody?.integration && typeof requestBody.integration === "object"
       ? requestBody.integration
@@ -2585,7 +2680,25 @@ function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
     trimValue(requestHeaders["x-neris-entity-id"]) ||
     trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  return bodyEntityId || headerEntityId || config.defaultEntityId;
+  if (bodyEntityId) {
+    return bodyEntityId;
+  }
+  if (headerEntityId) {
+    return headerEntityId;
+  }
+
+  const tenantId = trimValue(tenant?.id);
+  const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
+  if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
+    return tenantEntityIdFromContext;
+  }
+  if (tenantId) {
+    const tenantEntityId = await resolveTenantEntityId(tenantId);
+    // Fail-closed for tenant traffic: never fallback to global env value.
+    return tenantEntityId;
+  }
+
+  return config.defaultEntityId;
 }
 
 function readNerisDetailString(responseBody) {
@@ -2706,13 +2819,27 @@ function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
 
 app.post("/api/neris/validate", async (request, response) => {
   const config = getProxyConfig();
-  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
+  const entityId = await resolveEntityIdFromRequest(
+    request.body,
+    request.headers,
+    config,
+    request.tenant,
+  );
 
   if (!entityId) {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set Vendor/Department code in Customization OR set NERIS_ENTITY_ID in .env.server.",
+        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid NERIS entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: entityId,
     });
     return;
   }
@@ -2772,13 +2899,27 @@ app.post("/api/neris/validate", async (request, response) => {
 
 app.post("/api/neris/export", async (request, response) => {
   const config = getProxyConfig();
-  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
+  const entityId = await resolveEntityIdFromRequest(
+    request.body,
+    request.headers,
+    config,
+    request.tenant,
+  );
 
   if (!entityId) {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set Vendor/Department code in Customization OR set NERIS_ENTITY_ID in .env.server.",
+        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid NERIS entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: entityId,
     });
     return;
   }

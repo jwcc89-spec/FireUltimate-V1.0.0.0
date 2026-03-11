@@ -3451,7 +3451,7 @@ function NerisReportFormPage({
       const requestedEntityId = getRequestedEntityId(requestConfig).trim();
       if (!requestedEntityId) {
         throw new Error(
-          "Missing NERIS entity ID. Set Vendor/Department code in Customization > NERIS Export Configuration.",
+          "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
         );
       }
 
