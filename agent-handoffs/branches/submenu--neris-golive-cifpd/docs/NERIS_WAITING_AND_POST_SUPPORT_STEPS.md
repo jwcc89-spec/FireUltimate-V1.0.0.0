@@ -1,6 +1,6 @@
-# NERIS Support Wait Plan (Now vs Later)
+# NERIS Support + Post-Support Plan (Now vs Later)
 
-This checklist is split into what we can complete **now** while waiting on NERIS support, and what to complete **later** immediately after NERIS confirms entity authorization.
+This checklist is split into what we can complete **now** with the latest NERIS guidance, and what to complete **later** during controlled production rollout.
 
 ## NOW (while waiting on NERIS support)
 
@@ -33,18 +33,24 @@ This checklist is split into what we can complete **now** while waiting on NERIS
    - Set CIFPDIL department NERIS entity value in Department Details payload fields used by backend mapping.
    - Save and recheck `/api/neris/health` for `hasTenantEntityId:true`.
 
-7. Continue daily authorization check until support responds.
-   - Run `https://cifpdil.staging.fireultimate.app/api/neris/debug/entities`.
-   - Confirm whether `FD17075450` appears in `accessibleEntityIds`.
+7. Run authorization/enrollment checks using NERIS-recommended paths.
+   - Run `https://cifpdil.staging.fireultimate.app/api/neris/debug/entity-check?nerisId=FD17075450`.
+   - Confirm at least one of these checks returns success:
+     - `GET /entity?neris_id=FD17075450`
+     - `GET /entity/FD17075450`
+   - Confirm enrollment check result from:
+     - `GET /account/enrollment/3f104b60-f7cf-437e-b79c-868fe6489f31`
+   - Keep `debug/entities` informational only (directory listing), not an authorization gate.
 
 8. Keep one go-live candidate report prepared.
    - Complete required NERIS fields for one incident and save draft.
    - Do not force production export until authorization is confirmed.
 
-## LATER (immediately after NERIS support confirms authorization)
+## LATER (controlled go-live rollout)
 
-1. Re-run authorization verification first.
-   - Confirm `FD17075450` is present in `accessibleEntityIds` from `/api/neris/debug/entities`.
+1. Re-run NERIS-guided verification first.
+   - Re-run `debug/entity-check` for `FD17075450`.
+   - Save request/response payloads for support record if needed.
 
 2. Execute staging validation + export test.
    - Validate report via `/api/neris/validate` flow in UI.

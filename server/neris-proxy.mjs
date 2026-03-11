@@ -934,6 +934,75 @@ async function fetchAccessibleEntities(config, accessToken) {
   };
 }
 
+async function fetchEntityByNerisIdQuery(config, accessToken, nerisId) {
+  const url = `${config.baseUrl}/entity?neris_id=${encodeURIComponent(nerisId)}`;
+  const apiResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url,
+    body,
+  };
+}
+
+async function fetchEntityByPath(config, accessToken, nerisId) {
+  const url = `${config.baseUrl}/entity/${encodeURIComponent(nerisId)}`;
+  const apiResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url,
+    body,
+  };
+}
+
+async function fetchIntegrationEnrollment(config, accessToken) {
+  const clientId = trimValue(config.clientId);
+  if (!clientId) {
+    return {
+      ok: false,
+      skipped: true,
+      status: 0,
+      statusText: "Client ID unavailable",
+      url: "",
+      body: {
+        message:
+          "Skipped enrollment lookup because NERIS_CLIENT_ID is not configured on the server.",
+      },
+    };
+  }
+  const url = `${config.baseUrl}/account/enrollment/${encodeURIComponent(clientId)}`;
+  const apiResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    skipped: false,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url,
+    body,
+  };
+}
+
 function buildIncidentPayload(exportRequestBody, config, entityId) {
   const body = exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
   const formValues =
@@ -2481,6 +2550,16 @@ app.get("/api/neris/debug/entities", async (request, response) => {
       ok: entitiesResult.ok,
       status: entitiesResult.status,
       statusText: entitiesResult.statusText,
+      note:
+        "NERIS support clarified GET /entity is a directory listing endpoint, not a canonical 'authorized entities' endpoint.",
+      entityListNerisIds: entitiesResult.entityIds,
+      entityListCount: entitiesResult.entityIds.length,
+      upstreamRequest: {
+        method: "GET",
+        url: `${config.baseUrl}/entity`,
+        headers: ["Authorization: Bearer <access_token>"],
+      },
+      // Backward-compatibility for existing UI and docs.
       accessibleEntityIds: entitiesResult.entityIds,
       neris: entitiesResult.body,
     });
@@ -2488,6 +2567,74 @@ app.get("/api/neris/debug/entities", async (request, response) => {
     response.status(500).json({
       ok: false,
       message: error instanceof Error ? error.message : "Unexpected proxy debug error.",
+    });
+  }
+});
+
+app.get("/api/neris/debug/entity-check", async (request, response) => {
+  const config = getProxyConfig();
+  const requestedNerisId =
+    readQueryValue(request.query.nerisId) ||
+    readQueryValue(request.query.neris_id) ||
+    (await resolveEntityIdFromRequest({}, request.headers, config, request.tenant));
+  if (!requestedNerisId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set this tenant's NERIS entity ID in Department Details.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(requestedNerisId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: requestedNerisId,
+    });
+    return;
+  }
+
+  try {
+    const accessToken = await getAccessToken(config);
+    const [queryLookup, pathLookup, enrollmentLookup] = await Promise.all([
+      fetchEntityByNerisIdQuery(config, accessToken, requestedNerisId),
+      fetchEntityByPath(config, accessToken, requestedNerisId),
+      fetchIntegrationEnrollment(config, accessToken),
+    ]);
+    const overallOk = queryLookup.ok || pathLookup.ok;
+    const summary = {
+      entityFoundViaQuery: queryLookup.ok,
+      entityFoundViaPath: pathLookup.ok,
+      enrollmentLookupOk: enrollmentLookup.ok,
+      enrollmentLookupSkipped: Boolean(enrollmentLookup.skipped),
+    };
+    response.status(overallOk ? 200 : 502).json({
+      ok: overallOk,
+      submittedEntityId: requestedNerisId,
+      note:
+        "This endpoint follows NERIS support guidance: validate by querying /entity?neris_id=... and /entity/{neris_id}, and optionally inspect /account/enrollment/{clientId}.",
+      summary,
+      requestTemplates: {
+        entityQuery: `GET ${config.baseUrl}/entity?neris_id=${requestedNerisId}`,
+        entityPath: `GET ${config.baseUrl}/entity/${requestedNerisId}`,
+        enrollment: trimValue(config.clientId)
+          ? `GET ${config.baseUrl}/account/enrollment/${trimValue(config.clientId)}`
+          : "Unavailable: NERIS_CLIENT_ID missing on server config.",
+        authHeader: "Authorization: Bearer <access_token>",
+      },
+      checks: {
+        entityByQueryParam: queryLookup,
+        entityByPathParam: pathLookup,
+        enrollmentByClientId: enrollmentLookup,
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected entity-check debug error.",
+      submittedEntityId: requestedNerisId,
     });
   }
 });
@@ -2644,7 +2791,8 @@ app.get("/api/neris/debug/incident", async (request, response) => {
       troubleshooting = {
         message: entityIsAccessible
           ? "Token can list this entity, but read permission is denied for incident retrieval."
-          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+          : "Token may not be authorized for submittedEntityId. Compare submittedEntityId against entityNerisIds returned by GET /entity (directory list; not a canonical authorization endpoint).",
+        entityNerisIdsFromEntityList: entitiesResult.entityIds,
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
         entityIsAccessible,
@@ -2872,7 +3020,8 @@ app.post("/api/neris/validate", async (request, response) => {
       troubleshooting = {
         message: entityIsAccessible
           ? "Token can list this entity, but validate permission is denied. Confirm account role/enrollment allows validate/create actions for this entity."
-          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+          : "Token may not be authorized for submittedEntityId. Compare submittedEntityId against entityNerisIds returned by GET /entity (directory list; not a canonical authorization endpoint).",
+        entityNerisIdsFromEntityList: entitiesResult.entityIds,
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
         submittedDepartmentNerisId,
@@ -3019,7 +3168,8 @@ app.post("/api/neris/export", async (request, response) => {
       troubleshooting = {
         message: entityIsAccessible
           ? "Token can list this entity, but create/update permission is denied. Confirm account role/enrollment allows incident write actions for this entity."
-          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+          : "Token may not be authorized for submittedEntityId. Compare submittedEntityId against entityNerisIds returned by GET /entity (directory list; not a canonical authorization endpoint).",
+        entityNerisIdsFromEntityList: entitiesResult.entityIds,
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
         submittedDepartmentNerisId,

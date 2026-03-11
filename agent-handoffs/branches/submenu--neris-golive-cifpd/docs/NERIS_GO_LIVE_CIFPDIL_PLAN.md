@@ -122,7 +122,8 @@ So: **one production base URL for all tenants** — `https://api.neris.fsri.org/
    - Optional fallback for Department NERIS ID if form field is empty: `NERIS_DEPARTMENT_NERIS_ID=<live department NERIS ID>`.
 3. **Restart the proxy** so it reads the new env (e.g. redeploy on Render or restart `npm run proxy` locally).
 4. **Sanity check:**  
-   `GET /api/neris/health` (and, if available, `/api/neris/debug/entities` with live credentials) should succeed against `https://api.neris.fsri.org/v1`.
+   `GET /api/neris/health` should succeed against `https://api.neris.fsri.org/v1`.  
+   For entity verification, use `GET /api/neris/debug/entity-check?nerisId=FD########` (which checks `/entity?neris_id=...`, `/entity/{neris_id}`, and enrollment lookup) instead of treating `/debug/entities` as an authorization gate.
 
 **Important:** Test credentials will not work against the production URL; production credentials must be used with `https://api.neris.fsri.org/v1`.
 

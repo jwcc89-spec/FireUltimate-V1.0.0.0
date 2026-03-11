@@ -88,7 +88,8 @@ Notes:
 
 ### E.2 NERIS health checks
 - [ ] `GET https://<tenant>.fireultimate.app/api/neris/health` returns ok.
-- [ ] `GET https://<tenant>.fireultimate.app/api/neris/debug/entities` shows expected accessible entities.
+- [ ] `GET https://<tenant>.fireultimate.app/api/neris/debug/entity-check?nerisId=<FD########>` confirms entity lookup via NERIS `entity` endpoints.
+- [ ] `GET https://<tenant>.fireultimate.app/api/neris/debug/entities` reviewed as informational directory output only.
 
 ### E.3 Department NERIS field setup
 - [ ] Admin Customization/Department config has correct Vendor/Department code.
