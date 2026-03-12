@@ -2486,7 +2486,7 @@ export function createDefaultNerisFormValues({
   const { locationState, locationCountry } = inferLocationStateAndCountry(address);
 
   return {
-    incident_neris_id: `NERIS-${callNumber.replace(/[^A-Z0-9]/gi, "")}`,
+    incident_neris_id: "",
     incident_internal_id: (incidentInternalId ?? "").trim() || callNumber,
     incident_onset_date: "2026-02-18",
     incident_onset_time: normalizeNerisTime(receivedAt),

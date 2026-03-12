@@ -521,7 +521,12 @@ export function NerisFlatSingleOptionSelect({
                           }`}
                           aria-selected={isSelected}
                           aria-disabled={optionDisabled}
-                          onClick={() => {
+                        onMouseDown={(event) => {
+                          event.preventDefault();
+                        }}
+                        onClick={(event) => {
+                          event.preventDefault();
+                          event.stopPropagation();
                             if (optionDisabled) return;
                             onChange(option.value);
                             setIsOpen(false);
@@ -595,7 +600,12 @@ export function NerisFlatSingleOptionSelect({
                         }`}
                         aria-selected={isSelected}
                         aria-disabled={optionDisabled}
-                        onClick={() => {
+                      onMouseDown={(event) => {
+                        event.preventDefault();
+                      }}
+                      onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
                           if (optionDisabled) {
                             return;
                           }

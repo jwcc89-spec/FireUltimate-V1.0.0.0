@@ -344,11 +344,23 @@ function NerisReportFormPage({
     ...(persistedDraft?.formValues ?? {}),
   }));
   const lastSyncedIncidentIdPair = useRef("");
+  const previousIncidentIdPair = useRef("");
+  const hasInitializedIncidentIdSync = useRef(false);
 
   useEffect(() => {
     const incidentInternalId = String(formValues.incident_internal_id ?? "").trim();
     const dispatchInternalId = String(formValues.dispatch_internal_id ?? "").trim();
     const syncPair = `${incidentInternalId}::${dispatchInternalId}`;
+    if (!hasInitializedIncidentIdSync.current) {
+      hasInitializedIncidentIdSync.current = true;
+      previousIncidentIdPair.current = syncPair;
+      lastSyncedIncidentIdPair.current = syncPair;
+      return;
+    }
+    if (previousIncidentIdPair.current === syncPair) {
+      return;
+    }
+    previousIncidentIdPair.current = syncPair;
     if (lastSyncedIncidentIdPair.current === syncPair) {
       return;
     }
