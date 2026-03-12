@@ -1554,6 +1554,13 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "full",
   },
   {
+    id: "narrative_report_writer",
+    sectionId: "narrative",
+    label: "Report Writer",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
     id: "location_place_type",
     sectionId: "location",
     label: "Place type",
@@ -2537,6 +2544,7 @@ export function createDefaultNerisFormValues({
     incident_aid_nonfd: "",
     narrative_outcome: "",
     narrative_obstacles: "",
+    narrative_report_writer: "",
     location_notes: "",
     incidentTimes_notes: "",
     resources_notes: "",

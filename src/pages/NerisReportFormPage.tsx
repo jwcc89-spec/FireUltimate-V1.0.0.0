@@ -1,6 +1,4 @@
 import {
-  type ChangeEvent,
-  type FormEvent,
   type ReactNode,
   useEffect,
   useMemo,
@@ -402,7 +400,6 @@ function NerisReportFormPage({
   const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
     null,
   );
-  const [validatorName, setValidatorName] = useState<string>(() => username.trim());
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -2171,10 +2168,13 @@ function NerisReportFormPage({
     }));
 
   const buildReportWriterName = () => {
+    const narrativeWriter = (formValues.narrative_report_writer ?? "").trim();
     const rawReportWriter =
+      narrativeWriter ||
       resourceUnits
         .map((unit) => unit.reportWriter.trim())
-        .find((candidate) => candidate.length > 0) ?? username.trim();
+        .find((candidate) => candidate.length > 0) ||
+      username.trim();
     if (!rawReportWriter) {
       return "";
     }
@@ -2471,35 +2471,6 @@ function NerisReportFormPage({
     } catch {
       return null;
     }
-  };
-
-  const extractProxyApiIssues = (responseJson: Record<string, unknown> | null): string[] => {
-    if (!responseJson || typeof responseJson !== "object") {
-      return [];
-    }
-    const neris = responseJson.neris;
-    if (!neris || typeof neris !== "object") {
-      return [];
-    }
-    const detail = (neris as Record<string, unknown>).detail;
-    if (!Array.isArray(detail)) {
-      return [];
-    }
-    return detail
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return "";
-        }
-        const candidate = entry as Record<string, unknown>;
-        const loc = Array.isArray(candidate.loc)
-          ? candidate.loc
-              .filter((segment): segment is string => typeof segment === "string")
-              .join(" > ")
-          : "";
-        const message = typeof candidate.msg === "string" ? candidate.msg : "Validation issue";
-        return loc ? `API - ${loc}: ${message}` : `API - ${message}`;
-      })
-      .filter((issue) => issue.length > 0);
   };
 
   const readPathValue = (source: unknown, path: Array<string | number>): unknown => {
@@ -3092,87 +3063,6 @@ function NerisReportFormPage({
     ];
   };
 
-  const runPreExportValidation = async (requestConfig: ExportRequestConfig): Promise<string[]> => {
-    if (!requestConfig.isProxyRequest) {
-      return [];
-    }
-    if (!requestConfig.exportUrl.includes("/api/neris/export")) {
-      return [];
-    }
-
-    const validateUrl = requestConfig.exportUrl.replace(
-      "/api/neris/export",
-      "/api/neris/validate",
-    );
-
-    try {
-      const response = await fetch(validateUrl, {
-        method: "POST",
-        headers: requestConfig.headers,
-        body: JSON.stringify(requestConfig.payload),
-      });
-      const responseText = await response.text();
-      const responseJson = parseJsonResponseText(responseText);
-      const apiIssues = extractProxyApiIssues(responseJson);
-      if (apiIssues.length > 0) {
-        return apiIssues;
-      }
-      if (response.ok) {
-        return [];
-      }
-      if (response.status === 404 || response.status === 405) {
-        // If proxy validate isn't available yet, continue with export path.
-        return [];
-      }
-      if (response.status === 422) {
-        return [
-          `API - Validation failed (${response.status}). Review field values and required formats before export.`,
-        ];
-      }
-
-      const statusText = response.statusText.trim()
-        ? response.statusText
-        : response.status === 500
-          ? "Internal Server Error"
-          : "Request Failed";
-      const proxyMessage =
-        typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
-          ? responseJson.message.trim()
-          : "";
-      const troubleshootingMessage =
-        responseJson?.troubleshooting &&
-        typeof responseJson.troubleshooting === "object" &&
-        typeof (responseJson.troubleshooting as Record<string, unknown>).message === "string"
-          ? (((responseJson.troubleshooting as Record<string, unknown>).message as string).trim())
-          : "";
-      const responseSummary =
-        proxyMessage || troubleshootingMessage || responseText.slice(0, 240);
-
-      if (response.status === 500 && !responseSummary) {
-        throw new Error(
-          "Pre-export validation failed (500 Internal Server Error). No response details were returned. If using local proxy, confirm `npm run proxy` is running and check the proxy terminal logs.",
-        );
-      }
-
-      throw new Error(
-        `Pre-export validation failed (${response.status} ${statusText}). ${
-          responseSummary || "No response details."
-        }`,
-      );
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.startsWith("Pre-export validation failed") ||
-          error.message.startsWith("Pre-export validation request failed"))
-      ) {
-        throw error;
-      }
-      const reason =
-        error instanceof Error ? error.message : "Unknown validation request error.";
-      throw new Error(`Pre-export validation request failed. ${reason}`);
-    }
-  };
-
   const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
     const integration =
       requestConfig.payload.integration && typeof requestConfig.payload.integration === "object"
@@ -3452,93 +3342,6 @@ function NerisReportFormPage({
     });
   };
 
-  const handleOpenAdminValidateModal = () => {
-    if (role !== "admin") {
-      return;
-    }
-    const { mergedErrors, issueLabels } = buildValidationSnapshot();
-    setSectionErrors(mergedErrors);
-    setValidationIssues(issueLabels);
-    if (issueLabels.length > 0) {
-      applyValidationFailure(issueLabels);
-      return;
-    }
-    setErrorMessage("");
-    setSaveMessage("");
-    setValidationModal({
-      mode: "adminConfirm",
-      issues: [],
-    });
-    if (!validatorName.trim()) {
-      setValidatorName(username.trim());
-    }
-  };
-
-  const handleAdminValidateAndExport = async () => {
-    if (role !== "admin") {
-      return;
-    }
-    const normalizedValidatorName = validatorName.trim();
-    if (!normalizedValidatorName) {
-      setErrorMessage("Validator username is required before validating/exporting.");
-      return;
-    }
-
-    const localValidation = buildValidationSnapshot();
-    setSectionErrors(localValidation.mergedErrors);
-    setValidationIssues(localValidation.issueLabels);
-    if (localValidation.issueLabels.length > 0) {
-      applyValidationFailure(localValidation.issueLabels);
-      return;
-    }
-
-    setErrorMessage("");
-    setSaveMessage("Validate + export in progress...");
-    setValidationModal(null);
-    setIsExporting(true);
-    try {
-      const requestConfig = buildExportRequestConfig();
-      const preExportIssues = await runPreExportValidation(requestConfig);
-      if (preExportIssues.length > 0) {
-        setValidationIssues(preExportIssues);
-        setSectionErrors({});
-        setSaveMessage("");
-        setErrorMessage(
-          "Pre-export validation found issues that are likely to return API 422 errors.",
-        );
-        setValidationModal({
-          mode: "issues",
-          issues: preExportIssues,
-        });
-        return;
-      }
-
-      const exportResult = await executeExport(requestConfig);
-      appendExportHistoryRecord(exportResult, normalizedValidatorName, "Validated");
-      setValidationIssues([]);
-      setSectionErrors({});
-      stampSavedAt(
-        "manual",
-        "Validated",
-        exportResult.nerisId
-          ? `Validated + exported at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
-          : `Validated + exported at ${exportResult.exportedAtLabel}.`,
-      );
-      setValidationModal({
-        mode: "adminSuccess",
-        issues: [],
-      });
-    } catch (error) {
-      appendFailedExportHistoryRecord(error, normalizedValidatorName, reportStatus);
-      setSaveMessage("");
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unexpected validate/export error.",
-      );
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const handleExportReport = async () => {
     setValidationModal(null);
     setErrorMessage("");
@@ -3548,11 +3351,12 @@ function NerisReportFormPage({
       const requestConfig = buildExportRequestConfig();
       const exportResult = await executeExport(requestConfig);
       appendExportHistoryRecord(exportResult, "", reportStatus);
-      setSaveMessage(
+      const successMessage =
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
-          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`,
-      );
+          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`;
+      stampSavedAt("manual", "Exported", successMessage);
+      setSaveMessage(successMessage);
     } catch (error) {
       appendFailedExportHistoryRecord(error, "", reportStatus);
       setSaveMessage("");
@@ -3657,26 +3461,6 @@ function NerisReportFormPage({
   const handleValidationModalFixIssues = () => {
     setValidationModal(null);
     setActiveSectionId("core");
-  };
-
-  const handleValidationModalCancelAdmin = () => {
-    setValidationModal(null);
-  };
-
-  const handleValidationValidatorNameSubmit = (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault();
-    void handleAdminValidateAndExport();
-  };
-
-  const handleValidationValidatorNameChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setValidatorName(event.currentTarget.value);
-  };
-
-  const handleValidationModalValidateFromSuccess = () => {
-    setValidationModal(null);
-    navigate("/reporting/neris");
   };
 
   const handleSaveDraft = () => {
@@ -4566,20 +4350,20 @@ function NerisReportFormPage({
           </button>
           <button
             type="button"
-            className="secondary-button compact-button"
+            className="primary-button compact-button"
             onClick={handleCheckForErrors}
             disabled={isExporting}
           >
-            Check for Errors
+            Validate
           </button>
           {role === "admin" ? (
             <button
               type="button"
               className="primary-button compact-button"
-              onClick={handleOpenAdminValidateModal}
+              onClick={handleExportReport}
               disabled={isExporting}
             >
-              Validate
+              {isExporting ? "Exporting..." : "Export"}
             </button>
           ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
@@ -4639,57 +4423,6 @@ function NerisReportFormPage({
                     onClick={handleValidationModalFixIssues}
                   >
                     Fix issues now
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {validationModal.mode === "adminConfirm" ? (
-              <form className="validation-modal-form" onSubmit={handleValidationValidatorNameSubmit}>
-                <h2>Admin Validate + Auto Export</h2>
-                <p>
-                  Pre-export checks are complete. Enter the validator username, then
-                  Validate to auto-export this report.
-                </p>
-                <label htmlFor="neris-validator-name">Validator username</label>
-                <input
-                  id="neris-validator-name"
-                  type="text"
-                  value={validatorName}
-                  onChange={handleValidationValidatorNameChange}
-                  placeholder="Enter validator username"
-                />
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={handleValidationModalCancelAdmin}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="primary-button compact-button"
-                    disabled={isExporting}
-                  >
-                    {isExporting ? "Validating..." : "Validate + Export"}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-            {validationModal.mode === "adminSuccess" ? (
-              <>
-                <h2>Report validated and exported</h2>
-                <p>
-                  Status has been set to Validated and this export is now logged in
-                  View Exports.
-                </p>
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={handleValidationModalValidateFromSuccess}
-                  >
-                    Return to Incidents
                   </button>
                 </div>
               </>

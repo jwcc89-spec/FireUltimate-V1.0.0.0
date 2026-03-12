@@ -1393,6 +1393,7 @@ function toneFromState(state: string): Tone {
 function toneFromNerisStatus(status: string): Tone {
   const normalized = status.trim().toLowerCase();
   if (
+    normalized.includes("exported") ||
     normalized.includes("submitted") ||
     normalized.includes("ready") ||
     normalized.includes("approved")
