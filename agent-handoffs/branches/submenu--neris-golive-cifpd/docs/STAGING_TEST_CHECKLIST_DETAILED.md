@@ -15,7 +15,14 @@
 - **Incidents Setup** (Admin → Department Details → Incidents Setup) **is** saved via the API: when you save Department Details, that config is sent to `POST /api/department-details` and stored per tenant.
 
 **If you want incidents to be saved via API (so they persist across browsers/devices):**  
-That would require new backend work (e.g. an incident API and possibly a database table). The agent can implement that in a separate batch **after you approve** schema/API changes. For now, this checklist assumes the current behavior (incident queue = browser only) so you can complete your staging flow tests.
+See the step-by-step plan and “incident numbers” explanation in **`INCIDENT_NUMBERS_AND_API_PERSISTENCE_PLAN.md`** in this folder. The agent can implement it in batches after you approve the schema; you only run one migration command and test. For now, this checklist assumes the current behavior (incident queue = browser only) so you can complete your staging flow tests.
+
+### Auto-assigned incident number (top left)
+
+- The value in the **top left** on the incident detail page and the NERIS report form is the incident’s **call number** (e.g. `I-20260312-120412`).
+- It is **auto-generated** when you create a new incident: format `I-YYYYMMDD-HHMMSS` (date + time at creation). Example: created on 2026-03-12 at 12:04:12 → `I-20260312-120412`.
+- **Why it exists:** The app uses this as the **unique key** for each incident in the in-browser queue: incident list, detail URL, NERIS draft storage, and export history all key off it. Without a stable id, you couldn’t have multiple incidents or open a specific one.
+- **Is it necessary?** For the **current** design (incidents only in the browser), **yes**. Once incidents are **saved via API**, the server can assign the incident number (or a separate display number), and the UI can show whatever the API returns; the “auto-assign” would then be replaced by a server-assigned id.
 
 ---
 

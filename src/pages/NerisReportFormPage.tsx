@@ -2097,6 +2097,7 @@ function NerisReportFormPage({
     mode: "manual" | "auto",
     nextStatus: string = reportStatus,
     messageOverride?: string,
+    formValuesOverride?: Partial<NerisFormValues>,
   ) => {
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -2104,8 +2105,12 @@ function NerisReportFormPage({
       second: "2-digit",
       hour12: false,
     });
+    const valuesToWrite: NerisFormValues =
+      formValuesOverride != null && Object.keys(formValuesOverride).length > 0
+        ? ({ ...formValues, ...formValuesOverride } as NerisFormValues)
+        : formValues;
     writeNerisDraft(callNumber, {
-      formValues,
+      formValues: valuesToWrite,
       reportStatus: nextStatus,
       lastSavedAt: savedAt,
       additionalAidEntries: additionalAidEntries.map((entry) => ({
@@ -2117,6 +2122,9 @@ function NerisReportFormPage({
         aidType: entry.aidType,
       })),
     });
+    if (formValuesOverride != null && Object.keys(formValuesOverride).length > 0) {
+      setFormValues((prev) => ({ ...prev, ...formValuesOverride } as NerisFormValues));
+    }
     setReportStatus(nextStatus);
     setLastSavedAt(savedAt);
     setSaveMessage(
@@ -3183,12 +3191,31 @@ function NerisReportFormPage({
         second: "2-digit",
         hour12: false,
       }).format(exportedAtDate);
-      const nerisId =
+      const nerisIdFromNeris =
         typeof responseJson?.neris === "object" &&
         responseJson.neris &&
         typeof (responseJson.neris as Record<string, unknown>).neris_id === "string"
-          ? ((responseJson.neris as Record<string, unknown>).neris_id as string)
+          ? String((responseJson.neris as Record<string, unknown>).neris_id).trim()
           : "";
+      const nerisIdFromCreateResult =
+        responseJson?.createResult &&
+        typeof responseJson.createResult === "object" &&
+        typeof (responseJson.createResult as Record<string, unknown>).neris === "object" &&
+        (responseJson.createResult as Record<string, unknown>).neris &&
+        typeof ((responseJson.createResult as Record<string, unknown>).neris as Record<string, unknown>).neris_id === "string"
+          ? String(((responseJson.createResult as Record<string, unknown>).neris as Record<string, unknown>).neris_id).trim()
+          : "";
+      const nerisIdFromFallback =
+        responseJson?.fallback &&
+        typeof responseJson.fallback === "object" &&
+        typeof (responseJson.fallback as Record<string, unknown>).usedIncidentNerisId === "string"
+          ? String((responseJson.fallback as Record<string, unknown>).usedIncidentNerisId).trim()
+          : "";
+      const nerisId =
+        nerisIdFromNeris ||
+        nerisIdFromCreateResult ||
+        nerisIdFromFallback ||
+        "";
 
       return {
         exportedAtIso,
@@ -3355,7 +3382,11 @@ function NerisReportFormPage({
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
           : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`;
-      stampSavedAt("manual", "Exported", successMessage);
+      const formValuesOverride =
+        exportResult.nerisId?.trim()
+          ? { incident_neris_id: exportResult.nerisId.trim() }
+          : undefined;
+      stampSavedAt("manual", "Exported", successMessage, formValuesOverride);
       setSaveMessage(successMessage);
     } catch (error) {
       appendFailedExportHistoryRecord(error, "", reportStatus);
@@ -4325,14 +4356,6 @@ function NerisReportFormPage({
         <div className="header-actions">
           <button type="button" className="secondary-button compact-button">
             Import
-          </button>
-          <button
-            type="button"
-            className="primary-button compact-button"
-            onClick={handleExportReport}
-            disabled={isExporting}
-          >
-            {isExporting ? "Exporting..." : "Export"}
           </button>
           <button
             type="button"
