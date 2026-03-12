@@ -138,6 +138,7 @@ interface RouteResolverProps {
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
   nerisExportSettings: NerisExportSettings;
   onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
+  apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
 }
 
 interface MainMenuLandingPageProps {
@@ -1012,6 +1013,20 @@ function readApparatusOptionsFromDraft(): NerisValueOption[] {
       label: String(record.commonName || record.unitId || "").trim(),
     }))
     .filter((option) => option.value.length > 0);
+}
+
+/** Apparatus from Department Details for NERIS Resources (unit + unitType for auto-fill). */
+function readApparatusFromDepartmentDetails(): { unit: string; unitType: string }[] {
+  const draft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
+  const records = Array.isArray(draft.masterApparatusRecords)
+    ? (draft.masterApparatusRecords as DepartmentApparatusRecord[])
+    : [];
+  return records
+    .map((record) => ({
+      unit: String(record.commonName || record.unitId || "").trim(),
+      unitType: String(record.unitType ?? "").trim(),
+    }))
+    .filter((entry) => entry.unit.length > 0);
 }
 
 function getIncidentDisplayNumber(call: IncidentCallSummary): string {
@@ -5004,6 +5019,7 @@ interface NerisReportFormRouteProps {
     patch: Partial<IncidentCallSummary>,
   ) => void;
   nerisExportSettings: NerisExportSettings;
+  apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
 }
 
 function NerisReportFormPage(props: NerisReportFormRouteProps) {
@@ -11085,6 +11101,7 @@ function RouteResolver({
   onSaveSubmenuVisibility,
   nerisExportSettings,
   onSaveNerisExportSettings,
+  apparatusFromDepartmentDetails,
 }: RouteResolverProps) {
   const location = useLocation();
   const path = normalizePath(location.pathname);
@@ -11156,6 +11173,7 @@ function RouteResolver({
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
         nerisExportSettings={nerisExportSettings}
+        apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
       />
     );
   } else if (path === "/admin-functions/department-details") {
@@ -11231,6 +11249,11 @@ function App() {
   );
   const [nerisExportSettings, setNerisExportSettings] =
     useState<NerisExportSettings>(() => readNerisExportSettings());
+
+  const apparatusFromDepartmentDetails = useMemo(
+    () => readApparatusFromDepartmentDetails(),
+    [],
+  );
 
   const handleLogin = async (
     department: string,
@@ -11460,6 +11483,7 @@ function App() {
                 onSaveSubmenuVisibility={handleSaveSubmenuVisibility}
                 nerisExportSettings={nerisExportSettings}
                 onSaveNerisExportSettings={handleSaveNerisExportSettings}
+                apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
               />
             }
           />

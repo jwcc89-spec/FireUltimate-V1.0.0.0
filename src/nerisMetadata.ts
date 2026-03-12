@@ -1283,9 +1283,9 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "core",
     label: "Incident NERIS ID",
     inputKind: "readonly",
-    required: true,
+    required: false,
     layout: "full",
-    helperText: "System identifier derived from incident start time.",
+    helperText: "Populated upon export; not required for user entry.",
   },
   {
     id: "incident_internal_id",
@@ -1560,6 +1560,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     inputKind: "select",
     optionsKey: "location_place",
     layout: "half",
+    helperText: "Not in NERIS core required list; include when available for export.",
   },
   {
     id: "location_use_primary",
@@ -1605,6 +1606,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     inputKind: "select",
     optionsKey: "vacancy",
     layout: "half",
+    requiredIf: {
+      fieldId: "location_in_use",
+      operator: "equals",
+      value: "NO",
+    },
   },
   {
     id: "location_state",
