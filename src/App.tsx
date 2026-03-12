@@ -11386,15 +11386,24 @@ function App() {
     return nextIncident;
   };
 
-  const handleUpdateIncidentCall = (
+  const handleUpdateIncidentCall = useCallback((
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => {
+    const patchEntries = Object.entries(patch) as Array<[keyof IncidentCallSummary, unknown]>;
     setIncidentCalls((previous) => {
+      let didChange = false;
       const next = previous.map((entry) => {
         if (entry.callNumber !== callNumber) {
           return entry;
         }
+        const hasRealChange = patchEntries.some(
+          ([key, value]) => !Object.is(entry[key], value),
+        );
+        if (!hasRealChange) {
+          return entry;
+        }
+        didChange = true;
         return {
           ...entry,
           ...patch,
@@ -11402,10 +11411,13 @@ function App() {
           lastUpdated: "Just now",
         };
       });
+      if (!didChange) {
+        return previous;
+      }
       writeIncidentQueue(next);
       return next;
     });
-  };
+  }, []);
 
   const handleSetIncidentDeleted = (
     callNumber: string,
