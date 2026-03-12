@@ -4,6 +4,7 @@ import {
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
@@ -342,18 +343,41 @@ function NerisReportFormPage({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
   }));
+  const lastSyncedIncidentIdPair = useRef("");
 
   useEffect(() => {
     const incidentInternalId = String(formValues.incident_internal_id ?? "").trim();
     const dispatchInternalId = String(formValues.dispatch_internal_id ?? "").trim();
+    const syncPair = `${incidentInternalId}::${dispatchInternalId}`;
+    if (lastSyncedIncidentIdPair.current === syncPair) {
+      return;
+    }
+    const detailIncidentInternalId = String(
+      detail?.incident_internal_id ?? detail?.incidentNumber ?? "",
+    ).trim();
+    const detailDispatchInternalId = String(
+      detail?.dispatch_internal_id ?? detail?.dispatchNumber ?? "",
+    ).trim();
+    if (
+      detailIncidentInternalId === incidentInternalId &&
+      detailDispatchInternalId === dispatchInternalId
+    ) {
+      lastSyncedIncidentIdPair.current = syncPair;
+      return;
+    }
     onUpdateIncidentCall(callNumber, {
       incident_internal_id: incidentInternalId,
       dispatch_internal_id: dispatchInternalId,
       incidentNumber: incidentInternalId,
       dispatchNumber: dispatchInternalId,
     });
+    lastSyncedIncidentIdPair.current = syncPair;
   }, [
     callNumber,
+    detail?.dispatchNumber,
+    detail?.dispatch_internal_id,
+    detail?.incidentNumber,
+    detail?.incident_internal_id,
     formValues.dispatch_internal_id,
     formValues.incident_internal_id,
     onUpdateIncidentCall,
