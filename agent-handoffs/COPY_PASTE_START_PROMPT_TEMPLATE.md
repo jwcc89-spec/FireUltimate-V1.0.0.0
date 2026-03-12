@@ -9,14 +9,19 @@ Before doing any feature work, understand the Branch Rules:
 2) Use branch slug: submenu--neris-golive-cifpd
 3) Read continuity docs:
    - cursoragent-context.md
-   - agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md
-   - latest relevant note(s) in agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/
-   - all conversations in agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/
-4) Read and follow before any edits: 
-   - docs/agent-execution-contract.md 
+   - .cursor/project-context.md (project-level constraints)
+   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
+   - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
+   - all conversations in agent-handoffs/branches/<branch-slug>/conversations/
+4) Read and follow before any edits:
+   - docs/agent-execution-contract.md
    - docs/task-2-multitenant-domain-plan.md
+   - docs/system_architecture.md
+   - docs/data_model.md
+   - docs/incident-lifecycle.md (when touching incidents/reports/export)
+   - docs/integrations.md (when touching CAD/NERIS/NEMSIS)
    - docs/later-changes-backlog.md
-4) Before coding, summarize:
+5) Before coding, summarize:
    - current branch
    - identify latest commits
    - what previous agent completed
@@ -24,11 +29,11 @@ Before doing any feature work, understand the Branch Rules:
    - exact next implementation step
    - summarize what changed and what is still pending
    - include explicit **Now vs Later** callouts (what is in scope now vs deferred follow-up)
-5) Follow beginner-friendly communication and explain commands clearly.
-6) After meaningful changes:
+6) Follow beginner-friendly communication: step-by-step directions, clear **do this now** vs **do this later**, and explain commands clearly.
+7) After meaningful changes:
    - update session note
    - keep agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md current
-7) Before stopping:
+8) Before stopping:
    - update agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md
    - finalize session note
    - commit + push on submenu/neris-golive-cifpd

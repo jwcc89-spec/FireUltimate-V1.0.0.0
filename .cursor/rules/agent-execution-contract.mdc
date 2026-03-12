@@ -16,9 +16,11 @@ alwaysApply: true
 - Preserve tenant isolation on all reads and writes.
 - Do not store auth secrets in `DepartmentDetails.payloadJson`.
 - Keep `demo` tenant persistent (no automatic reset unless explicitly requested).
+- **Data integrity:** Do not modify the Prisma schema, migration files, or authentication/authorization logic unless the user explicitly approves.
 
 ## Verification Rules
 - After each batch run: `npm run lint`.
+- When changes touch app or server code, run **`npm run build`** (lint does not catch all build errors).
 - Run targeted API checks relevant to changed routes.
 - Report exactly what changed and what was verified.
 - If verification fails, fix before continuing.

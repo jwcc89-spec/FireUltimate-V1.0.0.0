@@ -48,17 +48,34 @@ git branch --show-current
 
 ## 3. Before Work: Sync from GitHub
 
-Run in **each** window's terminal (in that window's folder):
+Run in **each** window's terminal. Use the `cd` for that window first so you're in the right folder:
 
+**Agent A (main repo):**
 ```bash
+cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0
 git status
 git fetch origin
 git pull --rebase
+cursaves pull
+cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0
 ```
+
+**Agent B (worktree):**
+```bash
+cd /Users/jeremywichtner/CursorProjects/wt-departmentdetails-ui
+git status
+git fetch origin
+git pull --rebase
+cursaves pull
+cd /Users/jeremywichtner/CursorProjects/wt-departmentdetails-ui
+```
+
+> **Note:** `cursaves pull` changes the terminal's working directory to `~/.cursaves`. The final `cd` brings you back to the project folder so you're ready to work.
 
 - **`git status`** — Shows uncommitted changes.
 - **`git fetch origin`** — Downloads latest from GitHub.
 - **`git pull --rebase`** — Updates your branch with remote changes.
+- **`cursaves pull`** - Syncs conversations from my-cursaves
 
 ---
 
@@ -87,6 +104,8 @@ If there are changes:
 git add .
 git commit -m "Brief description of what you did"
 git push origin submenu/neris-all
+cursaves push
+cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0
 ```
 
 ### In Agent B window (worktree)
@@ -102,6 +121,8 @@ If there are changes:
 git add .
 git commit -m "Brief description of what you did"
 git push origin submenu/departmentdetails-ui
+cursaves push
+cd /Users/jeremywichtner/CursorProjects/wt-departmentdetails-ui
 ```
 
 ### Verify both branches are on GitHub
