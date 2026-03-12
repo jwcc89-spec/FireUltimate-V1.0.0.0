@@ -71,10 +71,16 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
+## Last session (2026-03-12)
+- Branch confirmed; preflight and continuity docs read.
+- Lint and full build run: both pass.
+- Confirmed Incident Detail editable inputs + Save are already implemented in `IncidentCallDetailPage` (App.tsx). GO_LIVE_CHECKPOINT “not yet built” wording is outdated for current code.
+- Next: user confirms scope (accept as-is → staging validation) or requests scope changes; then staging entity config + UX validation + validate/export.
+
 ## Recent key commits (latest first)
-- `b62238a` Implement tenant-scoped NERIS entity resolution and live incident queue wiring.
-- `06f5ef8` Advance CIFPDIL NERIS go-live prep and tenant handoff docs.
-- `6c831b8` Merge pull request #15 from jwcc89-spec/submenu/departmentdetails-ui
+- `894757f` updated cursavesinfo
+- `f731957` docs: add architecture, data model, lifecycle, integrations; agent guardrails and project context
+- `27a795b` remaining files not commit from auto cursor, go live plan etc
 
 ## Next agent should do this first
 1. Read `cursoragent-context.md`.
