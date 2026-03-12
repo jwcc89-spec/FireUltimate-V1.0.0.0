@@ -15,10 +15,17 @@
 ## Blocker status (unchanged)
 - No code blocker. Deployment gate (prod on main) and product verification gate (staging user validation) remain.
 
+## Follow-up (same day): detailed checklist and API vs localStorage
+- User asked for a completely detailed, beginner-friendly next-step checklist, with what the agent can do vs what is needed from the user.
+- User stated current plan: testing Incident Setup fields → Create new incident in Incidents | Mapping → NERIS queue crossover → NERIS form navigation not locked → ensure values from incident creation saved via API (not local browser cache).
+- Created `docs/STAGING_TEST_CHECKLIST_DETAILED.md`: step-by-step A1–A5 (what you do), Part B (what agent does), Part C (what agent needs from you). Clarified that incident queue is currently localStorage only; API persistence would require new backend work and user approval.
+- Updated ACTIVE_CONTEXT with testing plan, API vs localStorage note, and pointer to detailed checklist.
+
 ## Next steps (exact)
-1. User confirms: accept current Incident Detail scope → proceed to staging validation; or request scope changes → implement then validate.
-2. If scope accepted: ensure tenant entity saved so staging `hasTenantEntityId=true`; run full staging UX validation (Incidents Setup, Create Incident, Incident Detail edit/save, incident number linkage); run staging validate/export proof.
-3. After staging pass: PR branch → main, deploy prod, production endpoint checks, first controlled production export.
+1. User runs A1–A5 from `STAGING_TEST_CHECKLIST_DETAILED.md`; reports Pass or failure details for each.
+2. User decides: want incident creation/detail saved via API? (Yes → agent proposes plan for approval. No/not yet → keep current behavior.)
+3. Agent fixes any reported bugs (small batches, lint, build); if API persistence requested, agent proposes plan and waits for approval.
+4. After staging pass and user go-ahead: staging validate/export, then PR → main, deploy prod, first controlled production export.
 
 ## Now vs Later
 - **Now:** User confirmation on scope; then staging entity + UX validation + validate/export.

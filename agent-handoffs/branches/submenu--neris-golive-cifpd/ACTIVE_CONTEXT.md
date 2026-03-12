@@ -75,23 +75,42 @@
 - Branch confirmed; preflight and continuity docs read.
 - Lint and full build run: both pass.
 - Confirmed Incident Detail editable inputs + Save are already implemented in `IncidentCallDetailPage` (App.tsx). GO_LIVE_CHECKPOINT “not yet built” wording is outdated for current code.
-- Next: user confirms scope (accept as-is → staging validation) or requests scope changes; then staging entity config + UX validation + validate/export.
+- User testing plan recorded: (1) Incident Setup fields, (2) Create incident in Incidents | Mapping, (3) NERIS queue crossover, (4) NERIS form navigation not locked, (5) Values from incident creation saved via API (not local cache). **Important:** Incident queue and created incidents are currently stored only in localStorage (host-scoped). Saving via API would require new backend/API work and explicit user approval for schema/API changes. See `docs/STAGING_TEST_CHECKLIST_DETAILED.md`.
+- Added `docs/STAGING_TEST_CHECKLIST_DETAILED.md`: fully detailed, beginner-friendly checklist (what you do / what agent does / what agent needs from you) and API vs localStorage clarification.
 
 ## Recent key commits (latest first)
 - `894757f` updated cursavesinfo
 - `f731957` docs: add architecture, data model, lifecycle, integrations; agent guardrails and project context
 - `27a795b` remaining files not commit from auto cursor, go live plan etc
 
+## Next-step checklist (detailed)
+
+**Full instructions:** `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/STAGING_TEST_CHECKLIST_DETAILED.md`
+
+**What YOU do (in order):**
+1. **A1** — Test Incident Setup fields (options, required, Reported By mode); confirm save/reload and that they drive Create Incident and Incident Detail.
+2. **A2** — Create a new incident in Incidents | Mapping; confirm row appears; open Incident Detail; edit and save; confirm persistence in same browser.
+3. **A3** — Open Reporting | NERIS; confirm same incident appears with correct field crossover from incident to NERIS queue.
+4. **A4** — Open NERIS report form for that incident; confirm navigation is not locked (you can move freely between sections).
+5. **A5** — Confirm values from incident creation appear on NERIS form; note that today incident queue is browser-only (localStorage). If you want incidents saved via API, tell the agent; agent will propose a plan and wait for your approval before schema/API changes.
+
+**What the AGENT will do:**
+- Fix any bugs you report from A1–A5 (Incident Setup, Create Incident, Incident Detail, NERIS queue crossover, NERIS form navigation).
+- Run lint and build after changes; update ACTIVE_CONTEXT and session notes.
+- If you request API persistence for incidents: propose a small implementation plan and **not** change schema or add endpoints until you approve.
+
+**What the AGENT needs from you:**
+- For each step A1–A5: Pass or a short failure description (where, what you did, what you expected).
+- Decision: Do you want incident creation/detail saved via API? (Yes → agent proposes plan for approval. No/not yet → keep current behavior.)
+- Go-ahead to proceed to staging validate/export and PR → main / production after tests pass.
+
 ## Next agent should do this first
 1. Read `cursoragent-context.md`.
 2. Read this file.
-3. Read:
+3. Read `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/STAGING_TEST_CHECKLIST_DETAILED.md`.
+4. Read:
    - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_GO_LIVE_CIFPDIL_PLAN.md`
-   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_WAITING_AND_POST_SUPPORT_STEPS.md`
-   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_RENDER_SOURCE_OF_TRUTH.md`
    - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md`
-4. Read latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`.
-5. Confirm branch with user and execute next step:
-   - Confirm mandatory Incident Detail editable input scope with user.
-   - Implement in small batch, run lint, and validate staging click-to-edit + NERIS form flow.
-   - Only after staging pass, proceed to PR/production promotion steps.
+5. Read latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`.
+6. If user reported failures from A1–A5: fix in small batch, lint, build, report. If user requested API persistence for incidents: propose plan and wait for approval before implementing.
+7. Only after staging pass and user go-ahead: proceed to staging validate/export, then PR → main, deploy, production export.

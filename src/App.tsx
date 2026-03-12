@@ -11089,45 +11089,30 @@ function RouteResolver({
   const location = useLocation();
   const path = normalizePath(location.pathname);
 
+  let content: React.ReactNode;
+
   if (path === "/") {
-    return <Navigate to="/dashboard" replace />;
-  }
-
-  if (path === "/settings/profile") {
-    return <ProfileManagementPage username={username} />;
-  }
-
-  if (path === "/settings/display") {
-    return <EditDisplayPage />;
-  }
-
-  if (path === "/access-denied") {
-    return <AccessDeniedPage />;
-  }
-
-  if (path === "/incidents") {
-    return <Navigate to="/incidents-mapping" replace />;
-  }
-  if (path === "/incidents/dispatches") {
-    return <Navigate to="/incidents-mapping/incidents" replace />;
-  }
-  if (path === "/incidents/map-view") {
-    return <Navigate to="/incidents-mapping/map-view" replace />;
-  }
-  if (path === "/incidents/hydrants") {
-    return <Navigate to="/admin-functions/hydrants" replace />;
-  }
-
-  if (role === "user" && isPathAdminOnly(path)) {
-    return <Navigate to="/access-denied" replace />;
-  }
-
-  if (path === "/dashboard") {
-    return <DashboardPage role={role} submenuVisibility={submenuVisibility} />;
-  }
-
-  if (path === "/incidents-mapping/incidents") {
-    return (
+    content = <Navigate to="/dashboard" replace />;
+  } else if (path === "/settings/profile") {
+    content = <ProfileManagementPage username={username} />;
+  } else if (path === "/settings/display") {
+    content = <EditDisplayPage />;
+  } else if (path === "/access-denied") {
+    content = <AccessDeniedPage />;
+  } else if (path === "/incidents") {
+    content = <Navigate to="/incidents-mapping" replace />;
+  } else if (path === "/incidents/dispatches") {
+    content = <Navigate to="/incidents-mapping/incidents" replace />;
+  } else if (path === "/incidents/map-view") {
+    content = <Navigate to="/incidents-mapping/map-view" replace />;
+  } else if (path === "/incidents/hydrants") {
+    content = <Navigate to="/admin-functions/hydrants" replace />;
+  } else if (role === "user" && isPathAdminOnly(path)) {
+    content = <Navigate to="/access-denied" replace />;
+  } else if (path === "/dashboard") {
+    content = <DashboardPage role={role} submenuVisibility={submenuVisibility} />;
+  } else if (path === "/incidents-mapping/incidents") {
+    content = (
       <IncidentsListPage
         key={`incidents-list-${username}`}
         incidentDisplaySettings={incidentDisplaySettings}
@@ -11136,13 +11121,11 @@ function RouteResolver({
         onCreateIncidentCall={onCreateIncidentCall}
       />
     );
-  }
-
-  if (path.startsWith("/incidents-mapping/incidents/")) {
+  } else if (path.startsWith("/incidents-mapping/incidents/")) {
     const callNumber = decodeURIComponent(
       path.replace("/incidents-mapping/incidents/", ""),
     );
-    return (
+    content = (
       <IncidentCallDetailPage
         callNumber={callNumber}
         incidentCalls={incidentCalls}
@@ -11150,33 +11133,21 @@ function RouteResolver({
         onSetIncidentDeleted={onSetIncidentDeleted}
       />
     );
-  }
-
-  if (path === "/reporting/neirs") {
-    return <Navigate to="/reporting/neris" replace />;
-  }
-
-  if (path.startsWith("/reporting/neirs/")) {
+  } else if (path === "/reporting/neirs") {
+    content = <Navigate to="/reporting/neris" replace />;
+  } else if (path.startsWith("/reporting/neirs/")) {
     const legacyReportId = decodeURIComponent(path.replace("/reporting/neirs/", ""));
-    return <Navigate to={`/reporting/neris/${encodeURIComponent(legacyReportId)}`} replace />;
-  }
-
-  if (path === "/reporting/neris") {
-    return <NerisReportingPage incidentCalls={incidentCalls} />;
-  }
-
-  if (path === "/reporting/neris/exports") {
-    return <NerisExportsPage incidentCalls={incidentCalls} />;
-  }
-
-  if (path.startsWith("/reporting/neris/exports/")) {
+    content = <Navigate to={`/reporting/neris/${encodeURIComponent(legacyReportId)}`} replace />;
+  } else if (path === "/reporting/neris") {
+    content = <NerisReportingPage incidentCalls={incidentCalls} />;
+  } else if (path === "/reporting/neris/exports") {
+    content = <NerisExportsPage incidentCalls={incidentCalls} />;
+  } else if (path.startsWith("/reporting/neris/exports/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
-    return <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} />;
-  }
-
-  if (path.startsWith("/reporting/neris/")) {
+    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} />;
+  } else if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
-    return (
+    content = (
       <NerisReportFormPage
         key={callNumber}
         callNumber={callNumber}
@@ -11187,10 +11158,8 @@ function RouteResolver({
         nerisExportSettings={nerisExportSettings}
       />
     );
-  }
-
-  if (path === "/admin-functions/department-details") {
-    return (
+  } else if (path === "/admin-functions/department-details") {
+    content = (
       <DepartmentDetailsPage
         mode="departmentDetails"
         incidentCalls={incidentCalls}
@@ -11199,26 +11168,16 @@ function RouteResolver({
         }
       />
     );
-  }
-
-  if (path === "/admin-functions/scheduler-settings") {
-    return <DepartmentDetailsPage mode="schedulerSettings" />;
-  }
-
-  if (path === "/admin-functions/personnel-management") {
-    return <DepartmentDetailsPage mode="personnelManagement" />;
-  }
-
-  if (path === "/personnel/schedule") {
-    return <PersonnelSchedulePage />;
-  }
-
-  if (path === "/admin-functions/hydrants") {
-    return <HydrantsAdminPage />;
-  }
-
-  if (path === "/admin-functions/customization") {
-    return (
+  } else if (path === "/admin-functions/scheduler-settings") {
+    content = <DepartmentDetailsPage mode="schedulerSettings" />;
+  } else if (path === "/admin-functions/personnel-management") {
+    content = <DepartmentDetailsPage mode="personnelManagement" />;
+  } else if (path === "/personnel/schedule") {
+    content = <PersonnelSchedulePage />;
+  } else if (path === "/admin-functions/hydrants") {
+    content = <HydrantsAdminPage />;
+  } else if (path === "/admin-functions/customization") {
+    content = (
       <CustomizationPage
         workflowStates={workflowStates}
         onSaveWorkflowStates={onSaveWorkflowStates}
@@ -11230,25 +11189,31 @@ function RouteResolver({
         onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
+  } else {
+    const menu = getMainMenuByPath(path);
+    if (menu && path === menu.path) {
+      content = (
+        <MainMenuLandingPage
+          menu={menu}
+          role={role}
+          submenuVisibility={submenuVisibility}
+        />
+      );
+    } else {
+      const submenu = getSubmenuByPath(path);
+      content = submenu ? (
+        <SubmenuPlaceholderPage submenu={submenu} /> 
+      ) : (
+        <NotFoundPage />
+      );
+    }
   }
 
-  const menu = getMainMenuByPath(path);
-  if (menu && path === menu.path) {
-    return (
-      <MainMenuLandingPage
-        menu={menu}
-        role={role}
-        submenuVisibility={submenuVisibility}
-      />
-    );
-  }
-
-  const submenu = getSubmenuByPath(path);
-  if (submenu) {
-    return <SubmenuPlaceholderPage submenu={submenu} />;
-  }
-
-  return <NotFoundPage />;
+  return (
+    <div key={path} className="route-resolver-root">
+      {content}
+    </div>
+  );
 }
 
 function App() {
