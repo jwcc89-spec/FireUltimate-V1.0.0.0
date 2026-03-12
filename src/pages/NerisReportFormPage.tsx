@@ -282,7 +282,9 @@ function NerisReportFormPage({
   const detail =
     getIncidentCallDetail(callNumber) ??
     (() => {
-      const summary = incidentCalls.find((entry) => entry.callNumber === callNumber);
+      const summary = incidentCalls.find(
+        (entry) => entry.callNumber === callNumber && !entry.deletedAt,
+      );
       if (!summary) {
         return null;
       }
@@ -306,13 +308,16 @@ function NerisReportFormPage({
   const defaultFormValues = useMemo(
     () =>
       createDefaultNerisFormValues({
-        callNumber:
+        callNumber: String(detail?.callNumber ?? callNumber).trim() || callNumber,
+        incidentInternalId:
           String(
             detail?.incident_internal_id ??
               detail?.incidentNumber ??
               detail?.callNumber ??
               callNumber,
           ).trim() || callNumber,
+        dispatchInternalId:
+          String(detail?.dispatch_internal_id ?? detail?.dispatchNumber ?? "").trim() || "",
         incidentType: detail?.incidentType,
         receivedAt: detail?.receivedAt,
         address: detail?.address,
@@ -325,6 +330,8 @@ function NerisReportFormPage({
       detail?.callNumber,
       detail?.incident_internal_id,
       detail?.incidentNumber,
+      detail?.dispatch_internal_id,
+      detail?.dispatchNumber,
     ],
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");

@@ -24,11 +24,13 @@ Before doing any feature work, understand the Branch Rules:
    - exact next implementation step
    - summarize what changed and what is still pending
    - include explicit **Now vs Later** callouts (what is in scope now vs deferred follow-up)
-5) Follow beginner-friendly communication and explain commands clearly.
-6) After meaningful changes:
+   - include explicit **Risks vs Rewards** and better/alternative implementation path when applicable
+5) If preflight identifies meaningful risk, get explicit user confirmation before making edits.
+6) Follow beginner-friendly communication and explain commands clearly.
+7) After meaningful changes:
    - update session note
    - keep agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md current
-7) Before stopping:
+8) Before stopping:
    - update agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md
    - finalize session note
    - commit + push on submenu/neris-golive-cifpd

@@ -64,6 +64,8 @@ export interface NerisValidationResult {
 
 interface CreateNerisDefaultsInput {
   callNumber: string;
+  incidentInternalId?: string;
+  dispatchInternalId?: string;
   incidentType?: string;
   receivedAt?: string;
   address?: string;
@@ -2475,6 +2477,8 @@ function inferLocationStateAndCountry(address: string | undefined): {
 
 export function createDefaultNerisFormValues({
   callNumber,
+  incidentInternalId,
+  dispatchInternalId,
   receivedAt,
   address,
 }: CreateNerisDefaultsInput): NerisFormValues {
@@ -2483,10 +2487,10 @@ export function createDefaultNerisFormValues({
 
   return {
     incident_neris_id: `NERIS-${callNumber.replace(/[^A-Z0-9]/gi, "")}`,
-    incident_internal_id: callNumber,
+    incident_internal_id: (incidentInternalId ?? "").trim() || callNumber,
     incident_onset_date: "2026-02-18",
     incident_onset_time: normalizeNerisTime(receivedAt),
-    dispatch_internal_id: callNumber.replace(/^D-/, ""),
+    dispatch_internal_id: (dispatchInternalId ?? "").trim() || callNumber.replace(/^D-/, ""),
     primary_incident_type: "",
     additional_incident_types: "",
     special_incident_modifiers: "",

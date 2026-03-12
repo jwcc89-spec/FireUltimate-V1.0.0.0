@@ -91,6 +91,9 @@ export interface IncidentCallSummary {
   dispatch_internal_id?: string;
   incidentNumber?: string;
   dispatchNumber?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletedReason?: string;
   incidentType: string;
   priority: string;
   address: string;

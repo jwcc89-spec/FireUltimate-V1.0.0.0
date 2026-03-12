@@ -33,6 +33,16 @@
     - what success/failure output should look like.
 13. Keep guidance practical and concise unless user asks for deeper detail.
 14. If requirements are unclear or conflicting, ask before assuming.
+15. Before making non-trivial edits, provide a short preflight summary that explicitly lists:
+    - task understanding,
+    - constraints,
+    - acceptance criteria,
+    - risks.
+16. When the preflight includes meaningful risk, the agent must ask for explicit user confirmation before editing.
+17. In planning/execution updates, include quick callouts for:
+    - risks vs rewards,
+    - better/alternative implementation path when applicable,
+    - related follow-up tasks in **Now vs Later** form.
 
 ## 4) Git discipline
 15. Stay on the user-confirmed branch from the opening question.

@@ -125,6 +125,11 @@ interface RouteResolverProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
+  onSetIncidentDeleted: (
+    callNumber: string,
+    deleted: boolean,
+    reason?: string,
+  ) => void;
   workflowStates: string[];
   onSaveWorkflowStates: (nextStates: string[]) => void;
   incidentDisplaySettings: IncidentDisplaySettings;
@@ -154,6 +159,11 @@ interface IncidentCallDetailPageProps {
   onUpdateIncidentCall: (
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
+  ) => void;
+  onSetIncidentDeleted: (
+    callNumber: string,
+    deleted: boolean,
+    reason?: string,
   ) => void;
 }
 
@@ -856,7 +866,7 @@ const INCIDENTS_SETUP_FIELD_LABELS: Record<IncidentSetupRequiredFieldKey, string
 
 interface IncidentSetupFieldCardDefinition {
   key: IncidentSetupRequiredFieldKey;
-  editButtonLabel: string;
+  editButtonLabel?: string;
   optionsKey?: IncidentSetupOptionsKey;
 }
 
@@ -873,12 +883,12 @@ const INCIDENTS_SETUP_FIELD_CARDS: IncidentSetupFieldCardDefinition[] = [
   { key: "stillDistrict", editButtonLabel: "Edit Still District", optionsKey: "stillDistrictOptions" },
   { key: "currentState", editButtonLabel: "Edit Status", optionsKey: "currentStateOptions" },
   { key: "reportedBy", editButtonLabel: "Edit Reported By", optionsKey: "reportedByOptions" },
-  { key: "assignedUnits", editButtonLabel: "Edit Assigned Units" },
-  { key: "address", editButtonLabel: "Edit Address" },
-  { key: "callbackNumber", editButtonLabel: "Edit Callback Number" },
-  { key: "incidentNumber", editButtonLabel: "Edit Incident Number" },
-  { key: "dispatchNumber", editButtonLabel: "Edit Dispatch Number" },
-  { key: "dispatchNotes", editButtonLabel: "Edit Dispatch Notes" },
+  { key: "assignedUnits" },
+  { key: "address" },
+  { key: "callbackNumber" },
+  { key: "incidentNumber" },
+  { key: "dispatchNumber" },
+  { key: "dispatchNotes" },
 ];
 
 const INCIDENT_CALL_FIELD_TO_SETUP_FIELD: Partial<
@@ -1969,16 +1979,32 @@ function normalizeIncidentSummary(candidate: unknown): IncidentCallSummary | nul
   }
   return {
     callNumber,
+    incident_internal_id: String(source.incident_internal_id ?? source.incidentNumber ?? "").trim(),
+    dispatch_internal_id: String(source.dispatch_internal_id ?? source.dispatchNumber ?? "").trim(),
+    incidentNumber: String(source.incidentNumber ?? source.incident_internal_id ?? "").trim(),
+    dispatchNumber: String(source.dispatchNumber ?? source.dispatch_internal_id ?? "").trim(),
+    deletedAt: String(source.deletedAt ?? "").trim() || undefined,
+    deletedBy: String(source.deletedBy ?? "").trim() || undefined,
+    deletedReason: String(source.deletedReason ?? "").trim() || undefined,
     incidentType: String(source.incidentType ?? "").trim() || "Unknown",
     priority: String(source.priority ?? "").trim() || "3",
     address: String(source.address ?? "").trim() || "Unknown",
     stillDistrict: String(source.stillDistrict ?? "").trim() || "Unknown",
     assignedUnits: String(source.assignedUnits ?? "").trim(),
+    reportedBy: String(source.reportedBy ?? "").trim() || undefined,
+    callbackNumber: String(source.callbackNumber ?? "").trim() || undefined,
+    dispatchNotes: Array.isArray(source.dispatchNotes)
+      ? source.dispatchNotes.map((entry) => String(entry ?? "")).join("\n")
+      : String(source.dispatchNotes ?? "").trim() || undefined,
     currentState: String(source.currentState ?? "").trim() || "Draft",
     lastUpdated: String(source.lastUpdated ?? "").trim() || "Just now",
     receivedAt: String(source.receivedAt ?? "").trim(),
     dispatchInfo: String(source.dispatchInfo ?? "").trim(),
   };
+}
+
+function isIncidentHiddenFromQueue(call: IncidentCallSummary): boolean {
+  return Boolean(call.deletedAt && String(call.deletedAt).trim().length > 0);
 }
 
 function readIncidentQueue(): IncidentCallSummary[] {
@@ -3279,7 +3305,10 @@ function IncidentsListPage({
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
   };
   const queueCalls = useMemo(
-    () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
+    () =>
+      isDemoTenant
+        ? INCIDENT_CALLS
+        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
     [incidentCalls, isDemoTenant],
   );
   const resetCreateIncidentDraft = () => {
@@ -3986,11 +4015,14 @@ function IncidentCallDetailPage({
   callNumber,
   incidentCalls,
   onUpdateIncidentCall,
+  onSetIncidentDeleted,
 }: IncidentCallDetailPageProps) {
   const detail =
     getIncidentCallDetail(callNumber) ??
     (() => {
-      const summary = incidentCalls.find((entry) => entry.callNumber === callNumber);
+      const summary = incidentCalls.find(
+        (entry) => entry.callNumber === callNumber && !isIncidentHiddenFromQueue(entry),
+      );
       if (!summary) {
         return null;
       }
@@ -4153,6 +4185,11 @@ function IncidentCallDetailPage({
     });
     setSaveError("");
     setSaveSuccess("Incident details saved.");
+  };
+
+  const handleDeleteIncident = () => {
+    onSetIncidentDeleted(callNumber, true, "Deleted from Incident Detail page.");
+    navigate("/incidents-mapping/incidents");
   };
 
   return (
@@ -4366,6 +4403,13 @@ function IncidentCallDetailPage({
               {saveError ? <p className="auth-error">{saveError}</p> : null}
               {saveSuccess ? <p className="save-message">{saveSuccess}</p> : null}
               <div className="header-actions">
+                <button
+                  type="button"
+                  className="secondary-button"
+                  onClick={handleDeleteIncident}
+                >
+                  Delete
+                </button>
                 <button type="button" className="primary-button" onClick={handleSaveDetail}>
                   Save Incident Details
                 </button>
@@ -4508,7 +4552,10 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
   const queueCalls = useMemo(
-    () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
+    () =>
+      isDemoTenant
+        ? INCIDENT_CALLS
+        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
     [incidentCalls, isDemoTenant],
   );
   const fieldLabelById = useMemo(
@@ -4641,7 +4688,10 @@ function NerisExportsPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
   const queueCalls = useMemo(
-    () => (isDemoTenant ? INCIDENT_CALLS : incidentCalls),
+    () =>
+      isDemoTenant
+        ? INCIDENT_CALLS
+        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
     [incidentCalls, isDemoTenant],
   );
   const latestExportByCall = useMemo(() => {
@@ -4757,7 +4807,9 @@ function NerisExportDetailsPage({ callNumber, incidentCalls }: NerisExportDetail
   const incident =
     getIncidentCallDetail(callNumber) ??
     (() => {
-      const summary = incidentCalls.find((entry) => entry.callNumber === callNumber);
+      const summary = incidentCalls.find(
+        (entry) => entry.callNumber === callNumber && !isIncidentHiddenFromQueue(entry),
+      );
       if (!summary) {
         return null;
       }
@@ -5009,9 +5061,15 @@ type PersonnelSortColumn =
 
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
+  incidentCalls?: IncidentCallSummary[];
+  onRestoreIncidentCall?: (callNumber: string) => void;
 }
 
-function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetailsPageProps) {
+function DepartmentDetailsPage({
+  mode = "departmentDetails",
+  incidentCalls = [],
+  onRestoreIncidentCall,
+}: DepartmentDetailsPageProps) {
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
   const sessionUserName = readSession().username.trim().toLocaleLowerCase();
   const uiPreferenceUserKey = sessionUserName || USER_UI_PREFERENCES_FALLBACK_KEY;
@@ -5903,6 +5961,13 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   const showDepartmentDetailsSection = mode === "departmentDetails";
   const showSchedulerSettingsSection = mode === "schedulerSettings";
   const showPersonnelManagementSection = mode === "personnelManagement";
+  const deletedIncidentAuditEntries = useMemo(
+    () =>
+      incidentCalls
+        .filter((entry) => isIncidentHiddenFromQueue(entry))
+        .sort((a, b) => String(b.deletedAt ?? "").localeCompare(String(a.deletedAt ?? ""))),
+    [incidentCalls],
+  );
   const pageTitle = showDepartmentDetailsSection
     ? "Admin Functions | Department Details"
     : showSchedulerSettingsSection
@@ -7506,6 +7571,53 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
           style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
         >
           <div className="panel-header">
+            <h2>Incident Audit Log</h2>
+          </div>
+          {deletedIncidentAuditEntries.length > 0 ? (
+            <div className="table-wrapper">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Incident Number</th>
+                    <th>Deleted At</th>
+                    <th>Deleted By</th>
+                    <th>Reason</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deletedIncidentAuditEntries.map((entry) => (
+                    <tr key={`incident-audit-${entry.callNumber}`}>
+                      <td>{getIncidentDisplayNumber(entry)}</td>
+                      <td>{entry.deletedAt || "--"}</td>
+                      <td>{entry.deletedBy || "--"}</td>
+                      <td>{entry.deletedReason || "--"}</td>
+                      <td>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => onRestoreIncidentCall?.(entry.callNumber)}
+                        >
+                          Restore
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ) : (
+            <p className="field-hint">
+              No deleted incidents are currently hidden.
+            </p>
+          )}
+        </article>
+
+        <article
+          className="panel"
+          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
+        >
+          <div className="panel-header">
             <h2>Incidents Setup</h2>
           </div>
           <div className="department-collection-grid">
@@ -7519,31 +7631,33 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                 <div key={`incident-setup-${fieldKey}`} className="department-collection-card">
                   <div className="department-collection-card-header">
                     <h3>{INCIDENTS_SETUP_FIELD_LABELS[fieldKey]}</h3>
-                    <button
-                      type="button"
-                      className="rl-box-button"
-                      onClick={() => {
-                        if (isEditing) {
-                          setEditingIncidentSetupField(null);
-                          setIncidentSetupOptionDrafts((priorDrafts) => {
-                            const nextDrafts = { ...priorDrafts };
-                            delete nextDrafts[fieldKey];
-                            return nextDrafts;
-                          });
-                          return;
-                        }
-                        setEditingIncidentSetupField(fieldKey);
-                        if (fieldCard.optionsKey) {
-                          const currentOptions = incidentsSetup[fieldCard.optionsKey];
-                          setIncidentSetupOptionDrafts((priorDrafts) => ({
-                            ...priorDrafts,
-                            [fieldKey]: currentOptions.join("\n"),
-                          }));
-                        }
-                      }}
-                    >
-                      {fieldCard.editButtonLabel}
-                    </button>
+                    {fieldCard.editButtonLabel ? (
+                      <button
+                        type="button"
+                        className="rl-box-button"
+                        onClick={() => {
+                          if (isEditing) {
+                            setEditingIncidentSetupField(null);
+                            setIncidentSetupOptionDrafts((priorDrafts) => {
+                              const nextDrafts = { ...priorDrafts };
+                              delete nextDrafts[fieldKey];
+                              return nextDrafts;
+                            });
+                            return;
+                          }
+                          setEditingIncidentSetupField(fieldKey);
+                          if (fieldCard.optionsKey) {
+                            const currentOptions = incidentsSetup[fieldCard.optionsKey];
+                            setIncidentSetupOptionDrafts((priorDrafts) => ({
+                              ...priorDrafts,
+                              [fieldKey]: currentOptions.join("\n"),
+                            }));
+                          }
+                        }}
+                      >
+                        {fieldCard.editButtonLabel}
+                      </button>
+                    ) : null}
                   </div>
                   <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
                     {isVisible ? <span>Visible</span> : <em>Hidden</em>}
@@ -7561,32 +7675,30 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                       }
                     />
                   </label>
-                  <p className="field-hint">
-                    {isRequired ? "Required in Create Incident" : "Not required in Create Incident"}
-                  </p>
+                  <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                    {isRequired ? <span>Required</span> : <em>Not required</em>}
+                    <input
+                      type="checkbox"
+                      checked={isRequired}
+                      onChange={(event) =>
+                        setIncidentsSetup((previous) => ({
+                          ...previous,
+                          requiredFields: {
+                            ...previous.requiredFields,
+                            [fieldKey]: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
 
                   {isEditing ? (
                     <div className="settings-form" style={{ marginTop: "0.5rem" }}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={isRequired}
-                          onChange={(event) =>
-                            setIncidentsSetup((previous) => ({
-                              ...previous,
-                              requiredFields: {
-                                ...previous.requiredFields,
-                                [fieldKey]: event.target.checked,
-                              },
-                            }))
-                          }
-                          style={{ marginRight: "0.35rem" }}
-                        />
-                        Make {INCIDENTS_SETUP_FIELD_LABELS[fieldKey]} required
-                      </label>
-
                       {fieldCard.key === "reportedBy" ? (
-                        <label>
+                        <label
+                          className="field-hint"
+                          style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                        >
                           <input
                             type="checkbox"
                             checked={incidentsSetup.reportedByMode === "fill-in"}
@@ -7596,7 +7708,6 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                                 reportedByMode: event.target.checked ? "fill-in" : "dropdown",
                               }))
                             }
-                            style={{ marginRight: "0.35rem" }}
                           />
                           Use fill-in text input (unchecked = DD-S dropdown)
                         </label>
@@ -10964,6 +11075,7 @@ function RouteResolver({
   incidentCalls,
   onCreateIncidentCall,
   onUpdateIncidentCall,
+  onSetIncidentDeleted,
   workflowStates,
   onSaveWorkflowStates,
   incidentDisplaySettings,
@@ -11034,6 +11146,7 @@ function RouteResolver({
         callNumber={callNumber}
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
+        onSetIncidentDeleted={onSetIncidentDeleted}
       />
     );
   }
@@ -11076,7 +11189,15 @@ function RouteResolver({
   }
 
   if (path === "/admin-functions/department-details") {
-    return <DepartmentDetailsPage mode="departmentDetails" />;
+    return (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        incidentCalls={incidentCalls}
+        onRestoreIncidentCall={(targetCallNumber) =>
+          onSetIncidentDeleted(targetCallNumber, false)
+        }
+      />
+    );
   }
 
   if (path === "/admin-functions/scheduler-settings") {
@@ -11285,6 +11406,40 @@ function App() {
     });
   };
 
+  const handleSetIncidentDeleted = (
+    callNumber: string,
+    deleted: boolean,
+    reason?: string,
+  ) => {
+    const nowIso = new Date().toISOString();
+    const actor = session.username.trim() || "unknown";
+    setIncidentCalls((previous) => {
+      const next = previous.map((entry) => {
+        if (entry.callNumber !== callNumber) {
+          return entry;
+        }
+        if (deleted) {
+          return {
+            ...entry,
+            deletedAt: nowIso,
+            deletedBy: actor,
+            deletedReason: reason?.trim() || "Deleted by user.",
+            lastUpdated: "Just now",
+          };
+        }
+        return {
+          ...entry,
+          deletedAt: undefined,
+          deletedBy: undefined,
+          deletedReason: undefined,
+          lastUpdated: "Just now",
+        };
+      });
+      writeIncidentQueue(next);
+      return next;
+    });
+  };
+
   return (
     <BrowserRouter>
       <Routes>
@@ -11318,6 +11473,7 @@ function App() {
                 incidentCalls={incidentCalls}
                 onCreateIncidentCall={handleCreateIncidentCall}
                 onUpdateIncidentCall={handleUpdateIncidentCall}
+                onSetIncidentDeleted={handleSetIncidentDeleted}
                 workflowStates={workflowStates}
                 onSaveWorkflowStates={handleSaveWorkflowStates}
                 incidentDisplaySettings={incidentDisplaySettings}
