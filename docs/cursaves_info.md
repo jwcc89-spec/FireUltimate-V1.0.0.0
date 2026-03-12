@@ -48,7 +48,7 @@ This commits the deletions and pushes to your cursaves repo. Future `cursaves pu
 
 1. Open the chat sidebar in Cursor
 2. Right-click a conversation
-3. Choose **Delete**
+3. Choose **Delete** (not Archive — Delete removes the conversation from the DB and frees space; Archive only hides it and may not improve performance)
 
 Repeat for conversations you no longer need. This shrinks Cursor's SQLite DB and can improve performance.
 
@@ -56,14 +56,17 @@ Repeat for conversations you no longer need. This shrinks Cursor's SQLite DB and
 
 ## Full Delete Workflow
 
-1. **Clean up sync repo** (stop old conversations from syncing):
+Intended order (same machine or across machines):
+
+1. **Clean up sync repo** (stop old conversations from syncing to other machines):
    ```bash
-   cursaves delete --select    # or --all --yes
+   cursaves delete --select    # pick the non-relevant ones to remove
    cursaves push
    ```
 
-2. **Clean up Cursor** (speed up the app):
-   - Delete old conversations from the chat sidebar in Cursor
+2. **Clean up Cursor** (speed up the app on this machine):
+   - In the chat sidebar, right-click → **Delete** (not Archive) for conversations you don't need locally.
 
-3. **On other Macs**:
-   - Run `cursaves pull` to get the updated state without the deleted snapshots
+3. **Pull to get a clean set** (optional):
+   - On **this** machine: `cursaves pull` re-imports only the snapshots still in the remote (so Cursor ends up with just the ones you kept).
+   - On **other** machines: run `cursaves pull` so they get the updated state without the deleted snapshots.
