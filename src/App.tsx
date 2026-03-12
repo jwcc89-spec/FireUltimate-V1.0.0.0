@@ -779,6 +779,7 @@ interface IncidentsSetupConfig {
   reportedByMode: "fill-in" | "dropdown";
   reportedByOptions: string[];
   requiredFields: Record<IncidentSetupRequiredFieldKey, boolean>;
+  visibleFields: Record<IncidentSetupRequiredFieldKey, boolean>;
 }
 
 const DEFAULT_INCIDENTS_SETUP_CONFIG: IncidentsSetupConfig = {
@@ -801,6 +802,19 @@ const DEFAULT_INCIDENTS_SETUP_CONFIG: IncidentsSetupConfig = {
     dispatchNumber: false,
     dispatchNotes: false,
   },
+  visibleFields: {
+    incidentType: true,
+    priority: true,
+    stillDistrict: true,
+    currentState: true,
+    reportedBy: true,
+    assignedUnits: true,
+    address: true,
+    callbackNumber: true,
+    incidentNumber: true,
+    dispatchNumber: true,
+    dispatchNotes: true,
+  },
 };
 
 const INCIDENTS_REQUIRED_FIELD_ORDER: IncidentSetupRequiredFieldKey[] = [
@@ -816,6 +830,54 @@ const INCIDENTS_REQUIRED_FIELD_ORDER: IncidentSetupRequiredFieldKey[] = [
   "dispatchNumber",
   "dispatchNotes",
 ];
+
+const INCIDENTS_SETUP_FIELD_LABELS: Record<IncidentSetupRequiredFieldKey, string> = {
+  incidentType: "Incident Type",
+  priority: "Priority",
+  stillDistrict: "Still District",
+  currentState: "Current State",
+  reportedBy: "Reported By",
+  assignedUnits: "Assigned Units",
+  address: "Address",
+  callbackNumber: "Callback Number",
+  incidentNumber: "Incident Number",
+  dispatchNumber: "Dispatch Number",
+  dispatchNotes: "Dispatch Notes",
+};
+
+interface IncidentSetupFieldCardDefinition {
+  key: IncidentSetupRequiredFieldKey;
+  editButtonLabel: string;
+  optionsKey?:
+    | "incidentTypeOptions"
+    | "priorityOptions"
+    | "stillDistrictOptions"
+    | "currentStateOptions"
+    | "reportedByOptions";
+}
+
+const INCIDENTS_SETUP_FIELD_CARDS: IncidentSetupFieldCardDefinition[] = [
+  { key: "incidentType", editButtonLabel: "Edit Incident Type", optionsKey: "incidentTypeOptions" },
+  { key: "priority", editButtonLabel: "Edit Priority", optionsKey: "priorityOptions" },
+  { key: "stillDistrict", editButtonLabel: "Edit Still District", optionsKey: "stillDistrictOptions" },
+  { key: "currentState", editButtonLabel: "Edit Current State", optionsKey: "currentStateOptions" },
+  { key: "reportedBy", editButtonLabel: "Edit Reported By", optionsKey: "reportedByOptions" },
+  { key: "assignedUnits", editButtonLabel: "Edit Assigned Units" },
+  { key: "address", editButtonLabel: "Edit Address" },
+  { key: "callbackNumber", editButtonLabel: "Edit Callback Number" },
+  { key: "incidentNumber", editButtonLabel: "Edit Incident Number" },
+  { key: "dispatchNumber", editButtonLabel: "Edit Dispatch Number" },
+  { key: "dispatchNotes", editButtonLabel: "Edit Dispatch Notes" },
+];
+
+const INCIDENT_CALL_FIELD_TO_SETUP_FIELD: Partial<
+  Record<IncidentCallFieldId, IncidentSetupRequiredFieldKey>
+> = {
+  incidentType: "incidentType",
+  priority: "priority",
+  address: "address",
+  assignedUnits: "assignedUnits",
+};
 
 function readDepartmentDetailsDraft(): Record<string, unknown> {
   if (typeof window === "undefined") {
@@ -856,12 +918,31 @@ function normalizeIncidentsSetupConfig(raw: unknown): IncidentsSetupConfig {
     !Array.isArray(source.requiredFields)
       ? (source.requiredFields as Record<string, unknown>)
       : {};
+  const visibleSource =
+    source.visibleFields &&
+    typeof source.visibleFields === "object" &&
+    !Array.isArray(source.visibleFields)
+      ? (source.visibleFields as Record<string, unknown>)
+      : {};
   const requiredFields = INCIDENTS_REQUIRED_FIELD_ORDER.reduce(
     (accumulator, key) => {
       accumulator[key] = Boolean(requiredSource[key]);
       return accumulator;
     },
     { ...DEFAULT_INCIDENTS_SETUP_CONFIG.requiredFields } as Record<
+      IncidentSetupRequiredFieldKey,
+      boolean
+    >,
+  );
+  const visibleFields = INCIDENTS_REQUIRED_FIELD_ORDER.reduce(
+    (accumulator, key) => {
+      accumulator[key] =
+        key in visibleSource
+          ? Boolean(visibleSource[key])
+          : DEFAULT_INCIDENTS_SETUP_CONFIG.visibleFields[key];
+      return accumulator;
+    },
+    { ...DEFAULT_INCIDENTS_SETUP_CONFIG.visibleFields } as Record<
       IncidentSetupRequiredFieldKey,
       boolean
     >,
@@ -890,6 +971,7 @@ function normalizeIncidentsSetupConfig(raw: unknown): IncidentsSetupConfig {
     reportedByMode,
     reportedByOptions: normalizeStringArray(source.reportedByOptions),
     requiredFields,
+    visibleFields,
   };
 }
 
@@ -3084,6 +3166,10 @@ function IncidentsListPage({
     dispatchNotes: "",
   }));
   const [createIncidentError, setCreateIncidentError] = useState("");
+  const isIncidentFieldVisible = useCallback(
+    (fieldKey: IncidentSetupRequiredFieldKey) => incidentsSetup.visibleFields[fieldKey] !== false,
+    [incidentsSetup.visibleFields],
+  );
   const activeResizeField = useRef<{
     fieldId: IncidentCallFieldId;
     startX: number;
@@ -3095,13 +3181,21 @@ function IncidentsListPage({
   );
   const visibleCallFieldOrder = dedupeCallFieldOrder(
     incidentDisplaySettings.callFieldOrder.filter((fieldId) =>
-      VALID_CALL_FIELD_IDS.has(fieldId),
+      VALID_CALL_FIELD_IDS.has(fieldId) &&
+      (INCIDENT_CALL_FIELD_TO_SETUP_FIELD[fieldId]
+        ? isIncidentFieldVisible(INCIDENT_CALL_FIELD_TO_SETUP_FIELD[fieldId]!)
+        : true),
+    ),
+  );
+  const defaultVisibleCallFieldOrder = dedupeCallFieldOrder(
+    DEFAULT_INCIDENT_CALL_FIELD_ORDER.filter((fieldId) =>
+      INCIDENT_CALL_FIELD_TO_SETUP_FIELD[fieldId]
+        ? isIncidentFieldVisible(INCIDENT_CALL_FIELD_TO_SETUP_FIELD[fieldId]!)
+        : true,
     ),
   );
   const callFieldOrder =
-    visibleCallFieldOrder.length > 0
-      ? visibleCallFieldOrder
-      : [...DEFAULT_INCIDENT_CALL_FIELD_ORDER];
+    visibleCallFieldOrder.length > 0 ? visibleCallFieldOrder : defaultVisibleCallFieldOrder;
   const fieldLabelById = useMemo(
     () =>
       Object.fromEntries(
@@ -3141,47 +3235,91 @@ function IncidentsListPage({
 
   const handleCreateIncident = () => {
     const required = incidentsSetup.requiredFields;
-    if (required.incidentNumber && !createIncidentDraft.incident_internal_id.trim()) {
+    if (
+      isIncidentFieldVisible("incidentNumber") &&
+      required.incidentNumber &&
+      !createIncidentDraft.incident_internal_id.trim()
+    ) {
       setCreateIncidentError("Incident Number is required.");
       return;
     }
-    if (required.dispatchNumber && !createIncidentDraft.dispatch_internal_id.trim()) {
+    if (
+      isIncidentFieldVisible("dispatchNumber") &&
+      required.dispatchNumber &&
+      !createIncidentDraft.dispatch_internal_id.trim()
+    ) {
       setCreateIncidentError("Dispatch Number is required.");
       return;
     }
-    if (required.incidentType && !createIncidentDraft.incidentType.trim()) {
+    if (
+      isIncidentFieldVisible("incidentType") &&
+      required.incidentType &&
+      !createIncidentDraft.incidentType.trim()
+    ) {
       setCreateIncidentError("Incident Type is required.");
       return;
     }
-    if (required.priority && !createIncidentDraft.priority.trim()) {
+    if (
+      isIncidentFieldVisible("priority") &&
+      required.priority &&
+      !createIncidentDraft.priority.trim()
+    ) {
       setCreateIncidentError("Priority is required.");
       return;
     }
-    if (required.stillDistrict && !createIncidentDraft.stillDistrict.trim()) {
+    if (
+      isIncidentFieldVisible("stillDistrict") &&
+      required.stillDistrict &&
+      !createIncidentDraft.stillDistrict.trim()
+    ) {
       setCreateIncidentError("Still District is required.");
       return;
     }
-    if (required.currentState && !createIncidentDraft.currentState.trim()) {
+    if (
+      isIncidentFieldVisible("currentState") &&
+      required.currentState &&
+      !createIncidentDraft.currentState.trim()
+    ) {
       setCreateIncidentError("Current State is required.");
       return;
     }
-    if (required.reportedBy && !createIncidentDraft.reportedBy.trim()) {
+    if (
+      isIncidentFieldVisible("reportedBy") &&
+      required.reportedBy &&
+      !createIncidentDraft.reportedBy.trim()
+    ) {
       setCreateIncidentError("Reported By is required.");
       return;
     }
-    if (required.assignedUnits && createIncidentDraft.assignedUnits.length === 0) {
+    if (
+      isIncidentFieldVisible("assignedUnits") &&
+      required.assignedUnits &&
+      createIncidentDraft.assignedUnits.length === 0
+    ) {
       setCreateIncidentError("At least one assigned unit is required.");
       return;
     }
-    if (required.address && !createIncidentDraft.address.trim()) {
+    if (
+      isIncidentFieldVisible("address") &&
+      required.address &&
+      !createIncidentDraft.address.trim()
+    ) {
       setCreateIncidentError("Address is required.");
       return;
     }
-    if (required.callbackNumber && !createIncidentDraft.callbackNumber.trim()) {
+    if (
+      isIncidentFieldVisible("callbackNumber") &&
+      required.callbackNumber &&
+      !createIncidentDraft.callbackNumber.trim()
+    ) {
       setCreateIncidentError("Callback Number is required.");
       return;
     }
-    if (required.dispatchNotes && !createIncidentDraft.dispatchNotes.trim()) {
+    if (
+      isIncidentFieldVisible("dispatchNotes") &&
+      required.dispatchNotes &&
+      !createIncidentDraft.dispatchNotes.trim()
+    ) {
       setCreateIncidentError("Dispatch Notes is required.");
       return;
     }
@@ -3478,6 +3616,7 @@ function IncidentsListPage({
               </button>
             </div>
             <div className="settings-form">
+              {isIncidentFieldVisible("incidentNumber") ? (
               <label>
                 Incident Number
                 <input
@@ -3491,6 +3630,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("dispatchNumber") ? (
               <label>
                 Dispatch Number
                 <input
@@ -3504,6 +3645,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("incidentType") ? (
               <label>
                 Incident Type
                 <NerisFlatSingleOptionSelect
@@ -3521,6 +3664,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("priority") ? (
               <label>
                 Priority
                 <NerisFlatSingleOptionSelect
@@ -3538,6 +3683,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("stillDistrict") ? (
               <label>
                 Still District
                 <NerisFlatSingleOptionSelect
@@ -3555,6 +3702,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("currentState") ? (
               <label>
                 Current State
                 <NerisFlatSingleOptionSelect
@@ -3572,6 +3721,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("reportedBy") ? (
               <label>
                 Reported By
                 {incidentsSetup.reportedByMode === "dropdown" ? (
@@ -3602,6 +3753,8 @@ function IncidentsListPage({
                   />
                 )}
               </label>
+              ) : null}
+              {isIncidentFieldVisible("assignedUnits") ? (
               <label>
                 Assigned Units
                 <NerisFlatMultiOptionSelect
@@ -3621,6 +3774,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("address") ? (
               <label>
                 Address
                 <input
@@ -3634,6 +3789,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("callbackNumber") ? (
               <label>
                 Callback Number
                 <input
@@ -3647,6 +3804,8 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("dispatchNotes") ? (
               <label>
                 Dispatch Notes
                 <textarea
@@ -3660,6 +3819,7 @@ function IncidentsListPage({
                   }
                 />
               </label>
+              ) : null}
               {createIncidentError ? <p className="auth-error">{createIncidentError}</p> : null}
               <div className="header-actions">
                 <button type="button" className="primary-button" onClick={handleCreateIncident}>
@@ -3717,6 +3877,10 @@ function IncidentCallDetailPage({
   }));
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
+  const isIncidentFieldVisible = useCallback(
+    (fieldKey: IncidentSetupRequiredFieldKey) => incidentsSetup.visibleFields[fieldKey] !== false,
+    [incidentsSetup.visibleFields],
+  );
 
   if (!detail) {
     return (
@@ -3738,47 +3902,87 @@ function IncidentCallDetailPage({
 
   const handleSaveDetail = () => {
     const required = incidentsSetup.requiredFields;
-    if (required.incidentNumber && !draft.incident_internal_id.trim()) {
+    if (
+      isIncidentFieldVisible("incidentNumber") &&
+      required.incidentNumber &&
+      !draft.incident_internal_id.trim()
+    ) {
       setSaveError("Incident Number is required.");
       return;
     }
-    if (required.dispatchNumber && !draft.dispatch_internal_id.trim()) {
+    if (
+      isIncidentFieldVisible("dispatchNumber") &&
+      required.dispatchNumber &&
+      !draft.dispatch_internal_id.trim()
+    ) {
       setSaveError("Dispatch Number is required.");
       return;
     }
-    if (required.incidentType && !draft.incidentType.trim()) {
+    if (
+      isIncidentFieldVisible("incidentType") &&
+      required.incidentType &&
+      !draft.incidentType.trim()
+    ) {
       setSaveError("Incident Type is required.");
       return;
     }
-    if (required.priority && !draft.priority.trim()) {
+    if (
+      isIncidentFieldVisible("priority") &&
+      required.priority &&
+      !draft.priority.trim()
+    ) {
       setSaveError("Priority is required.");
       return;
     }
-    if (required.stillDistrict && !draft.stillDistrict.trim()) {
+    if (
+      isIncidentFieldVisible("stillDistrict") &&
+      required.stillDistrict &&
+      !draft.stillDistrict.trim()
+    ) {
       setSaveError("Still District is required.");
       return;
     }
-    if (required.currentState && !draft.currentState.trim()) {
+    if (
+      isIncidentFieldVisible("currentState") &&
+      required.currentState &&
+      !draft.currentState.trim()
+    ) {
       setSaveError("Current State is required.");
       return;
     }
-    if (required.reportedBy && !draft.reportedBy.trim()) {
+    if (
+      isIncidentFieldVisible("reportedBy") &&
+      required.reportedBy &&
+      !draft.reportedBy.trim()
+    ) {
       setSaveError("Reported By is required.");
       return;
     }
-    if (required.assignedUnits && draft.assignedUnits.length === 0) {
+    if (
+      isIncidentFieldVisible("assignedUnits") &&
+      required.assignedUnits &&
+      draft.assignedUnits.length === 0
+    ) {
       setSaveError("Assigned Units is required.");
       return;
     }
-    if (required.address && !draft.address.trim()) {
+    if (isIncidentFieldVisible("address") && required.address && !draft.address.trim()) {
       setSaveError("Address is required.");
       return;
     }
-    if (required.callbackNumber && !draft.callbackNumber.trim()) {
+    if (
+      isIncidentFieldVisible("callbackNumber") &&
+      required.callbackNumber &&
+      !draft.callbackNumber.trim()
+    ) {
       setSaveError("Callback Number is required.");
       return;
     }
-    if (required.dispatchNotes && !draft.dispatchNotes.trim()) {
+    if (
+      isIncidentFieldVisible("dispatchNotes") &&
+      required.dispatchNotes &&
+      !draft.dispatchNotes.trim()
+    ) {
       setSaveError("Dispatch Notes is required.");
       return;
     }
@@ -3841,6 +4045,7 @@ function IncidentCallDetailPage({
 
           {callInfoExpanded ? (
             <div className="settings-form">
+              {isIncidentFieldVisible("incidentNumber") ? (
               <label>
                 Incident Number
                 <input
@@ -3854,6 +4059,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("dispatchNumber") ? (
               <label>
                 Dispatch Number
                 <input
@@ -3867,6 +4074,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("incidentType") ? (
               <label>
                 Incident Type
                 <NerisFlatSingleOptionSelect
@@ -3881,6 +4090,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("priority") ? (
               <label>
                 Priority
                 <NerisFlatSingleOptionSelect
@@ -3893,6 +4104,8 @@ function IncidentCallDetailPage({
                   onChange={(value) => setDraft((previous) => ({ ...previous, priority: value }))}
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("stillDistrict") ? (
               <label>
                 Still District
                 <NerisFlatSingleOptionSelect
@@ -3907,6 +4120,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("currentState") ? (
               <label>
                 Current State
                 <NerisFlatSingleOptionSelect
@@ -3921,6 +4136,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("reportedBy") ? (
               <label>
                 Reported By
                 {incidentsSetup.reportedByMode === "dropdown" ? (
@@ -3945,6 +4162,8 @@ function IncidentCallDetailPage({
                   />
                 )}
               </label>
+              ) : null}
+              {isIncidentFieldVisible("assignedUnits") ? (
               <label>
                 Assigned Units
                 <NerisFlatMultiOptionSelect
@@ -3959,6 +4178,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("address") ? (
               <label>
                 Address
                 <input
@@ -3969,6 +4190,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("callbackNumber") ? (
               <label>
                 Callback Number
                 <input
@@ -3979,6 +4202,8 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
+              {isIncidentFieldVisible("dispatchNotes") ? (
               <label>
                 Dispatch Notes
                 <textarea
@@ -3989,6 +4214,7 @@ function IncidentCallDetailPage({
                   }
                 />
               </label>
+              ) : null}
               {saveError ? <p className="auth-error">{saveError}</p> : null}
               {saveSuccess ? <p className="save-message">{saveSuccess}</p> : null}
               <div className="header-actions">
@@ -4734,6 +4960,8 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   const [incidentsSetup, setIncidentsSetup] = useState<IncidentsSetupConfig>(() =>
     normalizeIncidentsSetupConfig(initialDepartmentDraft.incidentsSetup),
   );
+  const [editingIncidentSetupField, setEditingIncidentSetupField] =
+    useState<IncidentSetupRequiredFieldKey | null>(null);
   const [kellyRotations, setKellyRotations] = useState<KellyRotationEntry[]>(
     Array.isArray(initialDepartmentDraft.kellyRotations)
       ? (initialDepartmentDraft.kellyRotations as KellyRotationEntry[])
@@ -7129,169 +7357,120 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
           <div className="panel-header">
             <h2>Incidents Setup</h2>
           </div>
-          <div className="settings-form">
-            <p className="field-hint">
-              Configure Create Incident defaults: DD-S option lists, Reported By mode, and which
-              fields are required.
-            </p>
-            <label>
-              Incident Type options (one per line)
-              <textarea
-                rows={4}
-                value={incidentsSetup.incidentTypeOptions.join("\n")}
-                onChange={(event) =>
-                  setIncidentsSetup((previous) => ({
-                    ...previous,
-                    incidentTypeOptions: Array.from(
-                      new Set(
-                        event.target.value
-                          .split(/\n|,/)
-                          .map((value) => value.trim())
-                          .filter((value) => value.length > 0),
-                      ),
-                    ),
-                  }))
-                }
-              />
-            </label>
-            <label>
-              Priority options (one per line)
-              <textarea
-                rows={4}
-                value={incidentsSetup.priorityOptions.join("\n")}
-                onChange={(event) =>
-                  setIncidentsSetup((previous) => ({
-                    ...previous,
-                    priorityOptions: Array.from(
-                      new Set(
-                        event.target.value
-                          .split(/\n|,/)
-                          .map((value) => value.trim())
-                          .filter((value) => value.length > 0),
-                      ),
-                    ),
-                  }))
-                }
-              />
-            </label>
-            <label>
-              Still District options (one per line)
-              <textarea
-                rows={4}
-                value={incidentsSetup.stillDistrictOptions.join("\n")}
-                onChange={(event) =>
-                  setIncidentsSetup((previous) => ({
-                    ...previous,
-                    stillDistrictOptions: Array.from(
-                      new Set(
-                        event.target.value
-                          .split(/\n|,/)
-                          .map((value) => value.trim())
-                          .filter((value) => value.length > 0),
-                      ),
-                    ),
-                  }))
-                }
-              />
-            </label>
-            <label>
-              Current State options (one per line)
-              <textarea
-                rows={4}
-                value={incidentsSetup.currentStateOptions.join("\n")}
-                onChange={(event) =>
-                  setIncidentsSetup((previous) => ({
-                    ...previous,
-                    currentStateOptions: Array.from(
-                      new Set(
-                        event.target.value
-                          .split(/\n|,/)
-                          .map((value) => value.trim())
-                          .filter((value) => value.length > 0),
-                      ),
-                    ),
-                  }))
-                }
-              />
-            </label>
-            <label>
-              <input
-                type="checkbox"
-                checked={incidentsSetup.reportedByMode === "fill-in"}
-                onChange={(event) =>
-                  setIncidentsSetup((previous) => ({
-                    ...previous,
-                    reportedByMode: event.target.checked ? "fill-in" : "dropdown",
-                  }))
-                }
-                style={{ marginRight: "0.35rem" }}
-              />
-              Reported By uses fill-in text input (unchecked = DD-S dropdown)
-            </label>
-            {incidentsSetup.reportedByMode === "dropdown" ? (
-              <label>
-                Reported By dropdown options (one per line)
-                <textarea
-                  rows={4}
-                  value={incidentsSetup.reportedByOptions.join("\n")}
-                  onChange={(event) =>
-                    setIncidentsSetup((previous) => ({
-                      ...previous,
-                      reportedByOptions: Array.from(
-                        new Set(
-                          event.target.value
-                            .split(/\n|,/)
-                            .map((value) => value.trim())
-                            .filter((value) => value.length > 0),
-                        ),
-                      ),
-                    }))
-                  }
-                />
-              </label>
-            ) : null}
-            <div className="settings-form">
-              <p className="field-hint">Required field toggles for Create Incident</p>
-              {INCIDENTS_REQUIRED_FIELD_ORDER.map((fieldKey) => (
-                <label key={`incident-required-${fieldKey}`}>
-                  <input
-                    type="checkbox"
-                    checked={Boolean(incidentsSetup.requiredFields[fieldKey])}
-                    onChange={(event) =>
-                      setIncidentsSetup((previous) => ({
-                        ...previous,
-                        requiredFields: {
-                          ...previous.requiredFields,
-                          [fieldKey]: event.target.checked,
-                        },
-                      }))
-                    }
-                    style={{ marginRight: "0.35rem" }}
-                  />
-                  {fieldKey === "incidentType"
-                    ? "Incident Type"
-                    : fieldKey === "priority"
-                      ? "Priority"
-                      : fieldKey === "stillDistrict"
-                        ? "Still District"
-                        : fieldKey === "currentState"
-                          ? "Current State"
-                          : fieldKey === "reportedBy"
-                            ? "Reported By"
-                            : fieldKey === "assignedUnits"
-                              ? "Assigned Units"
-                              : fieldKey === "address"
-                                ? "Address"
-                                : fieldKey === "callbackNumber"
-                                  ? "Callback Number"
-                                  : fieldKey === "incidentNumber"
-                                    ? "Incident Number"
-                                    : fieldKey === "dispatchNumber"
-                                      ? "Dispatch Number"
-                                      : "Dispatch Notes"}
-                </label>
-              ))}
-            </div>
+          <div className="department-collection-grid">
+            {INCIDENTS_SETUP_FIELD_CARDS.map((fieldCard) => {
+              const fieldKey = fieldCard.key;
+              const isEditing = editingIncidentSetupField === fieldKey;
+              const optionsValue = fieldCard.optionsKey ? incidentsSetup[fieldCard.optionsKey] : [];
+              const isVisible = incidentsSetup.visibleFields[fieldKey];
+              const isRequired = incidentsSetup.requiredFields[fieldKey];
+              return (
+                <div key={`incident-setup-${fieldKey}`} className="department-collection-card">
+                  <div className="department-collection-card-header">
+                    <h3>{INCIDENTS_SETUP_FIELD_LABELS[fieldKey]}</h3>
+                    <button
+                      type="button"
+                      className="rl-box-button"
+                      onClick={() =>
+                        setEditingIncidentSetupField((previous) =>
+                          previous === fieldKey ? null : fieldKey,
+                        )
+                      }
+                    >
+                      {fieldCard.editButtonLabel}
+                    </button>
+                  </div>
+                  <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                    {isVisible ? <span>Visible</span> : <em>Hidden</em>}
+                    <input
+                      type="checkbox"
+                      checked={isVisible}
+                      onChange={(event) =>
+                        setIncidentsSetup((previous) => ({
+                          ...previous,
+                          visibleFields: {
+                            ...previous.visibleFields,
+                            [fieldKey]: event.target.checked,
+                          },
+                        }))
+                      }
+                    />
+                  </label>
+                  <p className="field-hint">
+                    {isRequired ? "Required in Create Incident" : "Not required in Create Incident"}
+                  </p>
+
+                  {isEditing ? (
+                    <div className="settings-form" style={{ marginTop: "0.5rem" }}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={isRequired}
+                          onChange={(event) =>
+                            setIncidentsSetup((previous) => ({
+                              ...previous,
+                              requiredFields: {
+                                ...previous.requiredFields,
+                                [fieldKey]: event.target.checked,
+                              },
+                            }))
+                          }
+                          style={{ marginRight: "0.35rem" }}
+                        />
+                        Make {INCIDENTS_SETUP_FIELD_LABELS[fieldKey]} required
+                      </label>
+
+                      {fieldCard.key === "reportedBy" ? (
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={incidentsSetup.reportedByMode === "fill-in"}
+                            onChange={(event) =>
+                              setIncidentsSetup((previous) => ({
+                                ...previous,
+                                reportedByMode: event.target.checked ? "fill-in" : "dropdown",
+                              }))
+                            }
+                            style={{ marginRight: "0.35rem" }}
+                          />
+                          Use fill-in text input (unchecked = DD-S dropdown)
+                        </label>
+                      ) : null}
+
+                      {fieldCard.optionsKey &&
+                      (fieldCard.key !== "reportedBy" || incidentsSetup.reportedByMode === "dropdown") ? (
+                        <label>
+                          {INCIDENTS_SETUP_FIELD_LABELS[fieldKey]} options (one per line)
+                          <textarea
+                            rows={4}
+                            value={Array.isArray(optionsValue) ? optionsValue.join("\n") : ""}
+                            onChange={(event) =>
+                              setIncidentsSetup((previous) => {
+                                const nextOptions = Array.from(
+                                  new Set(
+                                    event.target.value
+                                      .split(/\n|,/)
+                                      .map((value) => value.trim())
+                                      .filter((value) => value.length > 0),
+                                  ),
+                                );
+                                if (!fieldCard.optionsKey) {
+                                  return previous;
+                                }
+                                return {
+                                  ...previous,
+                                  [fieldCard.optionsKey]: nextOptions,
+                                } as IncidentsSetupConfig;
+                              })
+                            }
+                          />
+                        </label>
+                      ) : null}
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         </article>
 
