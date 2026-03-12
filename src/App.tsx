@@ -4017,6 +4017,7 @@ function IncidentCallDetailPage({
   onUpdateIncidentCall,
   onSetIncidentDeleted,
 }: IncidentCallDetailPageProps) {
+  const navigate = useNavigate();
   const detail =
     getIncidentCallDetail(callNumber) ??
     (() => {
