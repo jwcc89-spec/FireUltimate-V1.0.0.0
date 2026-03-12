@@ -67,6 +67,7 @@
     - incident number linkage across Incidents queue, NERIS queue, and NERIS form,
   - run staging validate/export proof.
 - **Later**:
+  - move incident table preferences (column widths/order/visibility) to backend per-user persistence so settings sync across devices and browsers,
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 

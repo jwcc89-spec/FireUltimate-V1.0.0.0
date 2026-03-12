@@ -451,6 +451,15 @@ function clearStorageValue(storageKey: string, legacyKeys: readonly string[]): v
   }
 }
 
+function normalizeStorageUserKey(username: string | null | undefined): string {
+  const cleaned = String(username ?? "").trim().toLowerCase();
+  return cleaned.length > 0 ? cleaned : "anonymous";
+}
+
+function getUserScopedStorageKey(baseKey: string, username: string | null | undefined): string {
+  return `${baseKey}:${normalizeStorageUserKey(username)}`;
+}
+
 const EMPTY_SESSION: SessionState = {
   isAuthenticated: false,
   username: "",
@@ -835,7 +844,7 @@ const INCIDENTS_SETUP_FIELD_LABELS: Record<IncidentSetupRequiredFieldKey, string
   incidentType: "Incident Type",
   priority: "Priority",
   stillDistrict: "Still District",
-  currentState: "Current State",
+  currentState: "Status",
   reportedBy: "Reported By",
   assignedUnits: "Assigned Units",
   address: "Address",
@@ -848,19 +857,21 @@ const INCIDENTS_SETUP_FIELD_LABELS: Record<IncidentSetupRequiredFieldKey, string
 interface IncidentSetupFieldCardDefinition {
   key: IncidentSetupRequiredFieldKey;
   editButtonLabel: string;
-  optionsKey?:
-    | "incidentTypeOptions"
-    | "priorityOptions"
-    | "stillDistrictOptions"
-    | "currentStateOptions"
-    | "reportedByOptions";
+  optionsKey?: IncidentSetupOptionsKey;
 }
+
+type IncidentSetupOptionsKey =
+  | "incidentTypeOptions"
+  | "priorityOptions"
+  | "stillDistrictOptions"
+  | "currentStateOptions"
+  | "reportedByOptions";
 
 const INCIDENTS_SETUP_FIELD_CARDS: IncidentSetupFieldCardDefinition[] = [
   { key: "incidentType", editButtonLabel: "Edit Incident Type", optionsKey: "incidentTypeOptions" },
   { key: "priority", editButtonLabel: "Edit Priority", optionsKey: "priorityOptions" },
   { key: "stillDistrict", editButtonLabel: "Edit Still District", optionsKey: "stillDistrictOptions" },
-  { key: "currentState", editButtonLabel: "Edit Current State", optionsKey: "currentStateOptions" },
+  { key: "currentState", editButtonLabel: "Edit Status", optionsKey: "currentStateOptions" },
   { key: "reportedBy", editButtonLabel: "Edit Reported By", optionsKey: "reportedByOptions" },
   { key: "assignedUnits", editButtonLabel: "Edit Assigned Units" },
   { key: "address", editButtonLabel: "Edit Address" },
@@ -1678,6 +1689,7 @@ function getDefaultIncidentDisplaySettings(): IncidentDisplaySettings {
   return {
     hiddenStatIds: [],
     callFieldOrder: [...DEFAULT_INCIDENT_CALL_FIELD_ORDER],
+    callFieldWidths: { ...DEFAULT_CALL_FIELD_WIDTHS },
   };
 }
 
@@ -1697,12 +1709,31 @@ function normalizeIncidentDisplaySettings(
         settings.callFieldOrder.filter((id) => VALID_CALL_FIELD_IDS.has(id)) as IncidentCallFieldId[],
       )
     : [...defaultSettings.callFieldOrder];
+  const rawWidths =
+    settings.callFieldWidths &&
+    typeof settings.callFieldWidths === "object" &&
+    !Array.isArray(settings.callFieldWidths)
+      ? (settings.callFieldWidths as Partial<Record<IncidentCallFieldId, number>>)
+      : {};
+  const callFieldWidths: Record<IncidentCallFieldId, number> = {
+    ...DEFAULT_CALL_FIELD_WIDTHS,
+  };
+  for (const fieldId of INCIDENT_CALL_FIELD_OPTIONS.map((field) => field.id)) {
+    const candidate = rawWidths[fieldId];
+    if (typeof candidate === "number" && Number.isFinite(candidate)) {
+      callFieldWidths[fieldId] = Math.min(
+        MAX_CALL_FIELD_WIDTH,
+        Math.max(MIN_CALL_FIELD_WIDTH, Math.round(candidate)),
+      );
+    }
+  }
 
   return {
     hiddenStatIds: dedupeIncidentStatIds(hiddenStatIds),
     callFieldOrder: callFieldOrder.length
       ? callFieldOrder
       : [...defaultSettings.callFieldOrder],
+    callFieldWidths,
   };
 }
 
@@ -1876,15 +1907,23 @@ function writeWorkflowStates(states: string[]): void {
   );
 }
 
-function readIncidentDisplaySettings(): IncidentDisplaySettings {
+function readIncidentDisplaySettings(username?: string): IncidentDisplaySettings {
   if (typeof window === "undefined") {
     return getDefaultIncidentDisplaySettings();
   }
 
-  const rawValue = readStorageWithMigration(
-    INCIDENT_DISPLAY_STORAGE_KEY,
-    LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS,
-  );
+  const userScopedKey = getUserScopedStorageKey(INCIDENT_DISPLAY_STORAGE_KEY, username);
+  let rawValue = readStorageWithMigration(userScopedKey, []);
+  if (!rawValue) {
+    const fallbackValue = readStorageWithMigration(
+      INCIDENT_DISPLAY_STORAGE_KEY,
+      LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS,
+    );
+    if (fallbackValue) {
+      window.localStorage.setItem(userScopedKey, fallbackValue);
+      rawValue = fallbackValue;
+    }
+  }
   if (!rawValue) {
     return getDefaultIncidentDisplaySettings();
   }
@@ -1897,13 +1936,16 @@ function readIncidentDisplaySettings(): IncidentDisplaySettings {
   }
 }
 
-function writeIncidentDisplaySettings(settings: IncidentDisplaySettings): void {
+function writeIncidentDisplaySettings(
+  settings: IncidentDisplaySettings,
+  username?: string,
+): void {
   if (typeof window === "undefined") {
     return;
   }
   writeStorageValue(
-    INCIDENT_DISPLAY_STORAGE_KEY,
-    LEGACY_INCIDENT_DISPLAY_STORAGE_KEYS,
+    getUserScopedStorageKey(INCIDENT_DISPLAY_STORAGE_KEY, username),
+    [],
     JSON.stringify(settings),
   );
 }
@@ -3145,9 +3187,22 @@ function IncidentsListPage({
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
+  const [fieldEditorError, setFieldEditorError] = useState("");
   const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
+  const [fieldEditorOrderDraft, setFieldEditorOrderDraft] = useState<IncidentCallFieldId[]>([]);
+  const [fieldEditorVisibilityDraft, setFieldEditorVisibilityDraft] = useState<
+    Record<IncidentCallFieldId, boolean>
+  >(
+    () =>
+      Object.fromEntries(
+        INCIDENT_CALL_FIELD_OPTIONS.map((field) => [field.id, true]),
+      ) as Record<IncidentCallFieldId, boolean>,
+  );
   const [callFieldWidths, setCallFieldWidths] = useState<Record<IncidentCallFieldId, number>>(
-    () => ({ ...DEFAULT_CALL_FIELD_WIDTHS }),
+    () => ({
+      ...DEFAULT_CALL_FIELD_WIDTHS,
+      ...(incidentDisplaySettings.callFieldWidths ?? {}),
+    }),
   );
   const [isCreateIncidentModalOpen, setIsCreateIncidentModalOpen] = useState(false);
   const incidentsSetup = useMemo(() => readIncidentsSetupConfigFromDraft(), []);
@@ -3175,6 +3230,9 @@ function IncidentsListPage({
     startX: number;
     startWidth: number;
   } | null>(null);
+  const callFieldWidthsRef = useRef(callFieldWidths);
+  const incidentDisplaySettingsRef = useRef(incidentDisplaySettings);
+  const onSaveIncidentDisplaySettingsRef = useRef(onSaveIncidentDisplaySettings);
 
   const visibleStats = INCIDENT_QUEUE_STATS.filter(
     (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
@@ -3202,6 +3260,19 @@ function IncidentsListPage({
         INCIDENT_CALL_FIELD_OPTIONS.map((field) => [field.id, field.label]),
       ) as Record<IncidentCallFieldId, string>,
     [],
+  );
+  const allConfigurableCallFields = useMemo(
+    () => INCIDENT_CALL_FIELD_OPTIONS.map((field) => field.id),
+    [],
+  );
+
+  const getCompleteCallFieldOrder = useCallback(
+    (sourceOrder: IncidentCallFieldId[]): IncidentCallFieldId[] => {
+      const deduped = dedupeCallFieldOrder(sourceOrder.filter((fieldId) => VALID_CALL_FIELD_IDS.has(fieldId)));
+      const missing = allConfigurableCallFields.filter((fieldId) => !deduped.includes(fieldId));
+      return [...deduped, ...missing];
+    },
+    [allConfigurableCallFields],
   );
 
   const openCallDetail = (callNumber: string) => {
@@ -3280,7 +3351,7 @@ function IncidentsListPage({
       required.currentState &&
       !createIncidentDraft.currentState.trim()
     ) {
-      setCreateIncidentError("Current State is required.");
+      setCreateIncidentError("Status is required.");
       return;
     }
     if (
@@ -3329,6 +3400,18 @@ function IncidentsListPage({
   };
 
   useEffect(() => {
+    callFieldWidthsRef.current = callFieldWidths;
+  }, [callFieldWidths]);
+
+  useEffect(() => {
+    incidentDisplaySettingsRef.current = incidentDisplaySettings;
+  }, [incidentDisplaySettings]);
+
+  useEffect(() => {
+    onSaveIncidentDisplaySettingsRef.current = onSaveIncidentDisplaySettings;
+  }, [onSaveIncidentDisplaySettings]);
+
+  useEffect(() => {
     const handlePointerMove = (event: PointerEvent) => {
       const activeResize = activeResizeField.current;
       if (!activeResize) {
@@ -3358,6 +3441,10 @@ function IncidentsListPage({
       }
       activeResizeField.current = null;
       document.body.classList.remove("resizing-dispatch-columns");
+      onSaveIncidentDisplaySettingsRef.current({
+        ...incidentDisplaySettingsRef.current,
+        callFieldWidths: { ...callFieldWidthsRef.current },
+      });
     };
 
     window.addEventListener("pointermove", handlePointerMove);
@@ -3369,34 +3456,61 @@ function IncidentsListPage({
     };
   }, []);
 
-  const saveCallFieldOrder = (nextOrder: IncidentCallFieldId[]) => {
-    onSaveIncidentDisplaySettings({
-      ...incidentDisplaySettings,
-      callFieldOrder: nextOrder,
-    });
+  const openFieldEditor = () => {
+    const visibleSet = new Set(
+      incidentDisplaySettings.callFieldOrder.filter((fieldId) => VALID_CALL_FIELD_IDS.has(fieldId)),
+    );
+    setFieldEditorOrderDraft(getCompleteCallFieldOrder(incidentDisplaySettings.callFieldOrder));
+    setFieldEditorVisibilityDraft(
+      Object.fromEntries(
+        allConfigurableCallFields.map((fieldId) => [fieldId, visibleSet.has(fieldId)]),
+      ) as Record<IncidentCallFieldId, boolean>,
+    );
+    setFieldEditorError("");
+    setIsFieldEditorOpen(true);
   };
 
   const handleFieldDrop = (targetFieldId: IncidentCallFieldId) => {
     if (!dragFieldId || dragFieldId === targetFieldId) {
       return;
     }
-
-    const fromIndex = callFieldOrder.indexOf(dragFieldId);
-    const toIndex = callFieldOrder.indexOf(targetFieldId);
-    if (fromIndex < 0 || toIndex < 0) {
-      return;
-    }
-
-    const nextOrder = [...callFieldOrder];
-    nextOrder.splice(fromIndex, 1);
-    nextOrder.splice(toIndex, 0, dragFieldId);
-    saveCallFieldOrder(nextOrder);
+    setFieldEditorOrderDraft((previous) => {
+      const fromIndex = previous.indexOf(dragFieldId);
+      const toIndex = previous.indexOf(targetFieldId);
+      if (fromIndex < 0 || toIndex < 0) {
+        return previous;
+      }
+      const nextOrder = [...previous];
+      nextOrder.splice(fromIndex, 1);
+      nextOrder.splice(toIndex, 0, dragFieldId);
+      return nextOrder;
+    });
     setDragFieldId(null);
   };
 
-  const handleSaveFieldEditor = () => {
+  const toggleFieldVisibilityFromEditor = (fieldId: IncidentCallFieldId) => {
+    setFieldEditorVisibilityDraft((previous) => ({
+      ...previous,
+      [fieldId]: !previous[fieldId],
+    }));
+  };
+
+  const applyFieldEditor = () => {
+    const visibleOrder = fieldEditorOrderDraft.filter(
+      (fieldId) => fieldEditorVisibilityDraft[fieldId],
+    );
+    if (!visibleOrder.length) {
+      setFieldEditorError("At least one column must remain visible.");
+      return;
+    }
+    onSaveIncidentDisplaySettings({
+      ...incidentDisplaySettings,
+      callFieldOrder: visibleOrder,
+      callFieldWidths: { ...callFieldWidths },
+    });
     setDragFieldId(null);
     setIsFieldEditorOpen(false);
+    setFieldEditorError("");
   };
 
   const startFieldResize = (
@@ -3470,50 +3584,15 @@ function IncidentsListPage({
         <article className="panel">
           <div className="panel-header">
             <h2>Incidents</h2>
-            {isFieldEditorOpen ? (
-              <button
-                type="button"
-                className="primary-button compact-button"
-                onClick={handleSaveFieldEditor}
-              >
-                Save
-              </button>
-            ) : (
-              <button
-                type="button"
-                className="link-button"
-                onClick={() => setIsFieldEditorOpen(true)}
-              >
-                Edit
-              </button>
-            )}
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={openFieldEditor}
+            >
+              <Settings size={15} style={{ marginRight: "0.35rem" }} />
+              Configure Table
+            </button>
           </div>
-          {isFieldEditorOpen ? (
-            <div className="field-editor-panel">
-              <p>Drag rows using the handle to reorder incident summary fields.</p>
-              <ul className="drag-order-list">
-                {callFieldOrder.map((fieldId) => (
-                  <li
-                    key={`order-${fieldId}`}
-                    draggable
-                    onDragStart={() => setDragFieldId(fieldId)}
-                    onDragEnd={() => setDragFieldId(null)}
-                    onDragOver={(event) => event.preventDefault()}
-                    onDrop={() => handleFieldDrop(fieldId)}
-                  >
-                    <div className="drag-order-row">
-                      <span>{fieldLabelById[fieldId]}</span>
-                      <span className="drag-handle" aria-hidden="true">
-                        <span />
-                        <span />
-                        <span />
-                      </span>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
           <div className="table-wrapper">
             <table>
               <thead>
@@ -3602,6 +3681,75 @@ function IncidentsListPage({
           </p>
         </article>
       </section>
+      {isFieldEditorOpen ? (
+        <div className="department-editor-backdrop" role="dialog" aria-modal="true">
+          <article className="panel department-editor-modal">
+            <div className="panel-header">
+              <h2>Configure Table</h2>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => {
+                  setIsFieldEditorOpen(false);
+                  setDragFieldId(null);
+                  setFieldEditorError("");
+                }}
+              >
+                Close
+              </button>
+            </div>
+            <p className="field-hint">Select columns to appear in the table and drag to reorder.</p>
+            <div className="field-editor-panel">
+              <ul className="drag-order-list">
+                {fieldEditorOrderDraft.map((fieldId) => (
+                  <li
+                    key={`configure-order-${fieldId}`}
+                    draggable
+                    onDragStart={() => setDragFieldId(fieldId)}
+                    onDragEnd={() => setDragFieldId(null)}
+                    onDragOver={(event) => event.preventDefault()}
+                    onDrop={() => handleFieldDrop(fieldId)}
+                  >
+                    <div className="drag-order-row" style={{ gap: "0.5rem" }}>
+                      <span className="drag-handle" aria-hidden="true">
+                        <span />
+                        <span />
+                        <span />
+                      </span>
+                      <span style={{ flex: 1 }}>{fieldLabelById[fieldId]}</span>
+                      <label className="field-hint" style={{ display: "inline-flex", gap: "0.35rem", alignItems: "center" }}>
+                        <span>{fieldEditorVisibilityDraft[fieldId] ? "On" : "Off"}</span>
+                        <input
+                          type="checkbox"
+                          checked={fieldEditorVisibilityDraft[fieldId]}
+                          onChange={() => toggleFieldVisibilityFromEditor(fieldId)}
+                        />
+                      </label>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+            {fieldEditorError ? <p className="auth-error">{fieldEditorError}</p> : null}
+            <div className="header-actions">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => {
+                  setIsFieldEditorOpen(false);
+                  setDragFieldId(null);
+                  setFieldEditorError("");
+                }}
+              >
+                Cancel
+              </button>
+              <button type="button" className="primary-button compact-button" onClick={applyFieldEditor}>
+                Apply
+              </button>
+            </div>
+          </article>
+        </div>
+      ) : null}
       {isCreateIncidentModalOpen ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
           <article className="panel department-editor-modal">
@@ -3705,7 +3853,7 @@ function IncidentsListPage({
               ) : null}
               {isIncidentFieldVisible("currentState") ? (
               <label>
-                Current State
+                Status
                 <NerisFlatSingleOptionSelect
                   inputId="create-incident-current-state"
                   value={createIncidentDraft.currentState}
@@ -3947,7 +4095,7 @@ function IncidentCallDetailPage({
       required.currentState &&
       !draft.currentState.trim()
     ) {
-      setSaveError("Current State is required.");
+      setSaveError("Status is required.");
       return;
     }
     if (
@@ -4123,7 +4271,7 @@ function IncidentCallDetailPage({
               ) : null}
               {isIncidentFieldVisible("currentState") ? (
               <label>
-                Current State
+                Status
                 <NerisFlatSingleOptionSelect
                   inputId={`incident-detail-current-state-${callNumber}`}
                   value={draft.currentState}
@@ -4962,6 +5110,9 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
   );
   const [editingIncidentSetupField, setEditingIncidentSetupField] =
     useState<IncidentSetupRequiredFieldKey | null>(null);
+  const [incidentSetupOptionDrafts, setIncidentSetupOptionDrafts] = useState<
+    Partial<Record<IncidentSetupRequiredFieldKey, string>>
+  >({});
   const [kellyRotations, setKellyRotations] = useState<KellyRotationEntry[]>(
     Array.isArray(initialDepartmentDraft.kellyRotations)
       ? (initialDepartmentDraft.kellyRotations as KellyRotationEntry[])
@@ -7371,11 +7522,25 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                     <button
                       type="button"
                       className="rl-box-button"
-                      onClick={() =>
-                        setEditingIncidentSetupField((previous) =>
-                          previous === fieldKey ? null : fieldKey,
-                        )
-                      }
+                      onClick={() => {
+                        if (isEditing) {
+                          setEditingIncidentSetupField(null);
+                          setIncidentSetupOptionDrafts((priorDrafts) => {
+                            const nextDrafts = { ...priorDrafts };
+                            delete nextDrafts[fieldKey];
+                            return nextDrafts;
+                          });
+                          return;
+                        }
+                        setEditingIncidentSetupField(fieldKey);
+                        if (fieldCard.optionsKey) {
+                          const currentOptions = incidentsSetup[fieldCard.optionsKey];
+                          setIncidentSetupOptionDrafts((priorDrafts) => ({
+                            ...priorDrafts,
+                            [fieldKey]: currentOptions.join("\n"),
+                          }));
+                        }
+                      }}
                     >
                       {fieldCard.editButtonLabel}
                     </button>
@@ -7443,25 +7608,35 @@ function DepartmentDetailsPage({ mode = "departmentDetails" }: DepartmentDetails
                           {INCIDENTS_SETUP_FIELD_LABELS[fieldKey]} options (one per line)
                           <textarea
                             rows={4}
-                            value={Array.isArray(optionsValue) ? optionsValue.join("\n") : ""}
+                            value={
+                              incidentSetupOptionDrafts[fieldKey] ??
+                              (Array.isArray(optionsValue) ? optionsValue.join("\n") : "")
+                            }
                             onChange={(event) =>
-                              setIncidentsSetup((previous) => {
-                                const nextOptions = Array.from(
-                                  new Set(
-                                    event.target.value
-                                      .split(/\n|,/)
-                                      .map((value) => value.trim())
-                                      .filter((value) => value.length > 0),
-                                  ),
-                                );
-                                if (!fieldCard.optionsKey) {
-                                  return previous;
-                                }
-                                return {
-                                  ...previous,
-                                  [fieldCard.optionsKey]: nextOptions,
-                                } as IncidentsSetupConfig;
-                              })
+                              (() => {
+                                const raw = event.target.value;
+                                setIncidentSetupOptionDrafts((previousDrafts) => ({
+                                  ...previousDrafts,
+                                  [fieldKey]: raw,
+                                }));
+                                setIncidentsSetup((previous) => {
+                                  const nextOptions = Array.from(
+                                    new Set(
+                                      raw
+                                        .split(/\n|,/)
+                                        .map((value) => value.trim())
+                                        .filter((value) => value.length > 0),
+                                    ),
+                                  );
+                                  if (!fieldCard.optionsKey) {
+                                    return previous;
+                                  }
+                                  return {
+                                    ...previous,
+                                    [fieldCard.optionsKey]: nextOptions,
+                                  } as IncidentsSetupConfig;
+                                });
+                              })()
                             }
                           />
                         </label>
@@ -10841,6 +11016,7 @@ function RouteResolver({
   if (path === "/incidents-mapping/incidents") {
     return (
       <IncidentsListPage
+        key={`incidents-list-${username}`}
         incidentDisplaySettings={incidentDisplaySettings}
         onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
         incidentCalls={incidentCalls}
@@ -10962,7 +11138,7 @@ function App() {
     readWorkflowStates(),
   );
   const [incidentDisplaySettings, setIncidentDisplaySettings] =
-    useState<IncidentDisplaySettings>(() => readIncidentDisplaySettings());
+    useState<IncidentDisplaySettings>(() => readIncidentDisplaySettings(session.username));
   const [submenuVisibility, setSubmenuVisibility] = useState<SubmenuVisibilityMap>(
     () => readSubmenuVisibility(),
   );
@@ -10995,6 +11171,7 @@ function App() {
         role: mapUserTypeToRole(String(json.user.userType ?? "")),
       };
       setSession(nextSession);
+      setIncidentDisplaySettings(readIncidentDisplaySettings(nextSession.username));
       writeSession(nextSession);
       return null;
     } catch {
@@ -11004,6 +11181,7 @@ function App() {
 
   const handleLogout = () => {
     setSession(EMPTY_SESSION);
+    setIncidentDisplaySettings(readIncidentDisplaySettings(""));
     writeSession(EMPTY_SESSION);
   };
 
@@ -11019,12 +11197,15 @@ function App() {
   const handleSaveIncidentDisplaySettings = (
     nextSettings: IncidentDisplaySettings,
   ) => {
-    const normalized = normalizeIncidentDisplaySettings(nextSettings);
+    const normalized = normalizeIncidentDisplaySettings({
+      ...nextSettings,
+      callFieldWidths: nextSettings.callFieldWidths ?? incidentDisplaySettings.callFieldWidths,
+    });
     if (!normalized.callFieldOrder.length) {
       return;
     }
     setIncidentDisplaySettings(normalized);
-    writeIncidentDisplaySettings(normalized);
+    writeIncidentDisplaySettings(normalized, session.username);
   };
 
   const handleSaveSubmenuVisibility = (nextVisibility: SubmenuVisibilityMap) => {

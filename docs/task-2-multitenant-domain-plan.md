@@ -356,6 +356,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 
 ### Later (deferred hardening backlog)
 - Complete staging and production verification of the new incident workflow configuration surface (`Admin Functions -> Department Details -> Incidents Setup`) and incident linkage behavior (`Incident #` sync between incident queue and NERIS form).
+- Move incident table display preferences (column widths, order, visibility) from browser-local per-user storage to backend-persisted per-user preferences so settings follow users across devices/browsers.
 - Replace prompt-based admin reset-password UX with an in-app modal/dialog flow.
 - Add auth rate-limiting and/or temporary lockout on repeated failed login attempts.
 - Add password-change/reset audit logging (who/when/target user) for security traceability.

@@ -138,6 +138,7 @@ export interface IncidentCallFieldOption {
 export interface IncidentDisplaySettings {
   hiddenStatIds: IncidentStatId[];
   callFieldOrder: IncidentCallFieldId[];
+  callFieldWidths?: Partial<Record<IncidentCallFieldId, number>>;
 }
 
 export interface DispatchParsingPreviewRow {
