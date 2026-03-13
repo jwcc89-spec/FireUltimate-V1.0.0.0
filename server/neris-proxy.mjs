@@ -1656,6 +1656,12 @@ app.post("/api/admin/tenants/:tenantId/domains", async (request, response) => {
 
 app.use(async (request, response, next) => {
   try {
+    // CAD inbound email is called by the Cloudflare Worker; tenant is derived from body.to (e.g. cifpdil@cad.fireultimate.app).
+    if (request.method === "POST" && request.path === "/api/cad/inbound-email") {
+      next();
+      return;
+    }
+
     const host =
       normalizeHostname(request.headers["x-forwarded-host"]) ||
       normalizeHostname(request.headers.host) ||
@@ -1715,6 +1721,57 @@ app.get("/api/tenant/context", (request, response) => {
     ok: true,
     tenant: request.tenant ?? null,
   });
+});
+
+// ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
+const CAD_INGEST_SECRET = trimValue(process.env.CAD_INGEST_SECRET);
+
+app.post("/api/cad/inbound-email", async (request, response) => {
+  try {
+    if (CAD_INGEST_SECRET) {
+      const secret = trimValue(request.headers["x-cad-ingest-secret"]);
+      if (secret !== CAD_INGEST_SECRET) {
+        response.status(401).json({ ok: false, message: "Unauthorized." });
+        return;
+      }
+    }
+
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const fromAddress = typeof body.from === "string" ? body.from.trim() : "";
+    const toAddress = typeof body.to === "string" ? body.to.trim() : "";
+    const rawBody = typeof body.raw === "string" ? body.raw : "";
+    const headersJson =
+      body.headers && typeof body.headers === "object" ? body.headers : null;
+
+    let tenantId = null;
+    const atIndex = toAddress.indexOf("@");
+    if (atIndex > 0) {
+      const localPart = toAddress.slice(0, atIndex).trim().toLowerCase();
+      if (localPart) {
+        const tenant = await prisma.tenant.findUnique({
+          where: { slug: localPart },
+        });
+        if (tenant) tenantId = tenant.id;
+      }
+    }
+
+    await prisma.cadEmailIngest.create({
+      data: {
+        tenantId,
+        fromAddress,
+        toAddress,
+        rawBody,
+        headersJson,
+      },
+    });
+
+    response.status(200).json({ ok: true });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "CAD inbound email store failed.",
+    });
+  }
 });
 
 // ----- /api/incidents (tenant-scoped; Incident table) -----

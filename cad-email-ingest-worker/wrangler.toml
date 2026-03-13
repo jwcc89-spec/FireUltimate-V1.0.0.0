@@ -1,0 +1,19 @@
+# CAD Email Ingest Worker — receives email via Cloudflare Email Routing,
+# pushes to a queue, and consumes from the queue to POST to FireUltimate API.
+# Deploy from this directory: npx wrangler deploy
+# Set CAD_INGEST_API_URL in Dashboard: Workers & Pages → cad-email-ingest-worker → Settings → Variables and Secrets
+
+name = "cad-email-ingest-worker"
+main = "src/index.js"
+compatibility_date = "2024-08-01"
+
+# Queue: producer (email handler sends here) and consumer (POSTs to API)
+[[queues.producers]]
+queue = "cad-email-ingest"
+binding = "CAD_EMAIL_QUEUE"
+
+[[queues.consumers]]
+queue = "cad-email-ingest"
+max_batch_size = 5
+max_batch_timeout = 5
+max_retries = 10

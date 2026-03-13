@@ -4,7 +4,9 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus
-- NERIS go-live for tenant cifpdil: verify the newly implemented Incident setup + editable incident workflow in staging, then promote to production.
+- **Priority 1:** CAD email ingest — user completing Part 1 (Email Routing on **fireultimate.app**, Option A; custom address **cifpdil** → **cifpdil@fireultimate.app**). Then deploy Worker, run migration, bind address to Worker (Part 4).
+- **Priority 2 (next):** NERIS not loading in another browser — persist export history (and optionally drafts) server-side; see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
+- NERIS go-live for tenant cifpdil remains: staging verification, then production promotion when ready.
 
 ## Latest known status
 - Implemented incident queue fix for live tenants:
@@ -77,6 +79,7 @@
 - Confirmed Incident Detail editable inputs + Save are already implemented in `IncidentCallDetailPage` (App.tsx). GO_LIVE_CHECKPOINT “not yet built” wording is outdated for current code.
 - User testing plan recorded: (1) Incident Setup fields, (2) Create incident in Incidents | Mapping, (3) NERIS queue crossover, (4) NERIS form navigation not locked, (5) Values from incident creation saved via API (not local cache). **Important:** Incident queue and created incidents are currently stored only in localStorage (host-scoped). Saving via API would require new backend/API work and explicit user approval for schema/API changes. See `docs/STAGING_TEST_CHECKLIST_DETAILED.md`.
 - Added `docs/STAGING_TEST_CHECKLIST_DETAILED.md`: fully detailed, beginner-friendly checklist (what you do / what agent does / what agent needs from you) and API vs localStorage clarification.
+- **Same day (later):** CAD email ingest Part 2+3 implemented: Worker **cad-email-ingest-worker/** (email→queue→API), **POST /api/cad/inbound-email**, **CadEmailIngest** table + migration. Guide updated for root domain (Option A: cifpdil@fireultimate.app) after Cloudflare rejected subdomain in Connect a domain. NERIS cross-browser findings doc added; priority doc updated (CAD #1, NERIS cross-browser #2). NERIS support email draft in docs/procedures.
 
 ## Recent key commits (latest first)
 - `894757f` updated cursavesinfo
@@ -85,32 +88,21 @@
 
 ## Next-step checklist (detailed)
 
-**Full instructions:** `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/STAGING_TEST_CHECKLIST_DETAILED.md`
+**Current priority:** CAD email ingest then NERIS cross-browser. See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`.
 
-**What YOU do (in order):**
-1. **A1** — Test Incident Setup fields (options, required, Reported By mode); confirm save/reload and that they drive Create Incident and Incident Detail.
-2. **A2** — Create a new incident in Incidents | Mapping; confirm row appears; open Incident Detail; edit and save; confirm persistence in same browser.
-3. **A3** — Open Reporting | NERIS; confirm same incident appears with correct field crossover from incident to NERIS queue.
-4. **A4** — Open NERIS report form for that incident; confirm navigation is not locked (you can move freely between sections).
-5. **A5** — Confirm values from incident creation appear on NERIS form; note that today incident queue is browser-only (localStorage). If you want incidents saved via API, tell the agent; agent will propose a plan and wait for your approval before schema/API changes.
+**CAD email ingest (you):**
+1. In **fireultimate.app** zone: Email Routing on, destination verified, custom address **cifpdil** (→ cifpdil@fireultimate.app). If UI requires a Worker now, deploy first (see below).
+2. Deploy Worker: `cd cad-email-ingest-worker` → `npm install` → `npx wrangler deploy`. Set **CAD_INGEST_API_URL** in Worker Variables and Secrets. Run `npx prisma migrate deploy`.
+3. Part 4: Bind **cifpdil** to Worker **cad-email-ingest-worker**; send test email.
 
-**What the AGENT will do:**
-- Fix any bugs you report from A1–A5 (Incident Setup, Create Incident, Incident Detail, NERIS queue crossover, NERIS form navigation).
-- Run lint and build after changes; update ACTIVE_CONTEXT and session notes.
-- If you request API persistence for incidents: propose a small implementation plan and **not** change schema or add endpoints until you approve.
+**NERIS cross-browser (agent, after CAD):** Implement server-side persistence for export history (and optionally drafts) per `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
 
-**What the AGENT needs from you:**
-- For each step A1–A5: Pass or a short failure description (where, what you did, what you expected).
-- Decision: Do you want incident creation/detail saved via API? (Yes → agent proposes plan for approval. No/not yet → keep current behavior.)
-- Go-ahead to proceed to staging validate/export and PR → main / production after tests pass.
+**Staging/incident testing (when ready):** `docs/procedures/STAGING_TEST_CHECKLIST_DETAILED.md` (A1–A5). Incident Detail editable + Save already in code; queue is localStorage until API persistence is approved.
 
 ## Next agent should do this first
-1. Read `cursoragent-context.md`.
-2. Read this file.
-3. Read `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/STAGING_TEST_CHECKLIST_DETAILED.md`.
-4. Read:
-   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/NERIS_GO_LIVE_CIFPDIL_PLAN.md`
-   - `agent-handoffs/branches/submenu--neris-golive-cifpd/docs/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md`
-5. Read latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`.
-6. If user reported failures from A1–A5: fix in small batch, lint, build, report. If user requested API persistence for incidents: propose plan and wait for approval before implementing.
-7. Only after staging pass and user go-ahead: proceed to staging validate/export, then PR → main, deploy, production export.
+1. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present).
+2. Read this file (**ACTIVE_CONTEXT.md**).
+3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
+4. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
+5. Read latest note in **agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/**.
+6. Continue from user’s current blocker only (CAD deploy/Part 4, or NERIS cross-browser, or staging tests). Do not redo completed work.

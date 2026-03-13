@@ -7,17 +7,18 @@ datasource db {
 }
 
 model Tenant {
-  id          String         @id @default(cuid())
-  slug        String         @unique
-  name        String
-  status      String         @default("active")
+  id            String           @id @default(cuid())
+  slug          String           @unique
+  name          String
+  status        String           @default("active")
   nerisEntityId String?
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  domains     TenantDomain[]
-  users       User[]
-  departments DepartmentDetails[]
-  incidents   Incident[]
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  domains       TenantDomain[]
+  users         User[]
+  departments   DepartmentDetails[]
+  incidents     Incident[]
+  cadEmails     CadEmailIngest[]
 }
 
 model TenantDomain {
@@ -102,4 +103,19 @@ model Incident {
 
   @@index([tenantId])
   @@index([tenantId, deletedAt])
+}
+
+model CadEmailIngest {
+  id          String   @id @default(cuid())
+  tenantId    String?
+  fromAddress String   @default("")
+  toAddress   String   @default("")
+  rawBody     String   @default("")
+  headersJson Json?
+  createdAt   DateTime @default(now())
+
+  tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([createdAt])
 }
