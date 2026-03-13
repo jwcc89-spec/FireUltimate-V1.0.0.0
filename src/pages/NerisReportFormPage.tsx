@@ -1,14 +1,17 @@
 import {
-  type ChangeEvent,
-  type FormEvent,
   type ReactNode,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import { ChevronDown, Pencil, Trash2, Users } from "lucide-react";
-import { getIncidentCallDetail, type UserRole } from "../appData";
+import {
+  getIncidentCallDetail,
+  type IncidentCallSummary,
+  type UserRole,
+} from "../appData";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
@@ -44,6 +47,11 @@ export interface NerisReportFormPageProps {
   callNumber: string;
   role: UserRole;
   username: string;
+  incidentCalls: IncidentCallSummary[];
+  onUpdateIncidentCall: (
+    callNumber: string,
+    patch: Partial<IncidentCallSummary>,
+  ) => void;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
   writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void;
@@ -96,6 +104,8 @@ export interface NerisReportFormPageProps {
   nerisAidDepartmentIdPattern: RegExp;
   nerisProxyMappedFormFieldIds: Set<string>;
   getDefaultNerisExportSettings: () => NerisExportSettings;
+  /** Apparatus from Admin Department Details (unit + unitType) for Resources unit-type auto-fill when incident has no apparatus. */
+  apparatusFromDepartmentDetails?: { unit: string; unitType: string }[];
 }
 
 interface IncidentCompareRow {
@@ -232,6 +242,8 @@ function NerisReportFormPage({
   callNumber,
   role,
   username,
+  incidentCalls,
+  onUpdateIncidentCall,
   nerisExportSettings,
   readNerisDraft,
   writeNerisDraft,
@@ -266,9 +278,27 @@ function NerisReportFormPage({
   nerisAidDepartmentIdPattern: NERIS_AID_DEPARTMENT_ID_PATTERN,
   nerisProxyMappedFormFieldIds: NERIS_PROXY_MAPPED_FORM_FIELD_IDS,
   getDefaultNerisExportSettings,
+  apparatusFromDepartmentDetails,
 }: NerisReportFormPageProps) {
   const navigate = useNavigate();
-  const detail = getIncidentCallDetail(callNumber);
+  const detail =
+    getIncidentCallDetail(callNumber) ??
+    (() => {
+      const summary = incidentCalls.find(
+        (entry) => entry.callNumber === callNumber && !entry.deletedAt,
+      );
+      if (!summary) {
+        return null;
+      }
+      return {
+        ...summary,
+        mapReference: "Pending GIS sync",
+        reportedBy: "Manual entry",
+        callbackNumber: "",
+        apparatus: [],
+        dispatchNotes: [],
+      };
+    })();
   const detailForSideEffects = detail ?? {
     callNumber,
     incidentType: "",
@@ -280,12 +310,31 @@ function NerisReportFormPage({
   const defaultFormValues = useMemo(
     () =>
       createDefaultNerisFormValues({
-        callNumber,
+        callNumber: String(detail?.callNumber ?? callNumber).trim() || callNumber,
+        incidentInternalId:
+          String(
+            detail?.incident_internal_id ??
+              detail?.incidentNumber ??
+              detail?.callNumber ??
+              callNumber,
+          ).trim() || callNumber,
+        dispatchInternalId:
+          String(detail?.dispatch_internal_id ?? detail?.dispatchNumber ?? "").trim() || "",
         incidentType: detail?.incidentType,
         receivedAt: detail?.receivedAt,
         address: detail?.address,
       }),
-    [callNumber, detail?.incidentType, detail?.receivedAt, detail?.address],
+    [
+      callNumber,
+      detail?.incidentType,
+      detail?.receivedAt,
+      detail?.address,
+      detail?.callNumber,
+      detail?.incident_internal_id,
+      detail?.incidentNumber,
+      detail?.dispatch_internal_id,
+      detail?.dispatchNumber,
+    ],
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
   const [reportStatus, setReportStatus] = useState<string>(() =>
@@ -295,12 +344,62 @@ function NerisReportFormPage({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
   }));
+  const lastSyncedIncidentIdPair = useRef("");
+  const previousIncidentIdPair = useRef("");
+  const hasInitializedIncidentIdSync = useRef(false);
+
+  useEffect(() => {
+    const incidentInternalId = String(formValues.incident_internal_id ?? "").trim();
+    const dispatchInternalId = String(formValues.dispatch_internal_id ?? "").trim();
+    const syncPair = `${incidentInternalId}::${dispatchInternalId}`;
+    if (!hasInitializedIncidentIdSync.current) {
+      hasInitializedIncidentIdSync.current = true;
+      previousIncidentIdPair.current = syncPair;
+      lastSyncedIncidentIdPair.current = syncPair;
+      return;
+    }
+    if (previousIncidentIdPair.current === syncPair) {
+      return;
+    }
+    previousIncidentIdPair.current = syncPair;
+    if (lastSyncedIncidentIdPair.current === syncPair) {
+      return;
+    }
+    const detailIncidentInternalId = String(
+      detail?.incident_internal_id ?? detail?.incidentNumber ?? "",
+    ).trim();
+    const detailDispatchInternalId = String(
+      detail?.dispatch_internal_id ?? detail?.dispatchNumber ?? "",
+    ).trim();
+    if (
+      detailIncidentInternalId === incidentInternalId &&
+      detailDispatchInternalId === dispatchInternalId
+    ) {
+      lastSyncedIncidentIdPair.current = syncPair;
+      return;
+    }
+    onUpdateIncidentCall(callNumber, {
+      incident_internal_id: incidentInternalId,
+      dispatch_internal_id: dispatchInternalId,
+      incidentNumber: incidentInternalId,
+      dispatchNumber: dispatchInternalId,
+    });
+    lastSyncedIncidentIdPair.current = syncPair;
+  }, [
+    callNumber,
+    detail?.dispatchNumber,
+    detail?.dispatch_internal_id,
+    detail?.incidentNumber,
+    detail?.incident_internal_id,
+    formValues.dispatch_internal_id,
+    formValues.incident_internal_id,
+    onUpdateIncidentCall,
+  ]);
   const [sectionErrors, setSectionErrors] = useState<Record<string, string>>({});
   const [validationIssues, setValidationIssues] = useState<string[]>([]);
   const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
     null,
   );
-  const [validatorName, setValidatorName] = useState<string>(() => username.trim());
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -323,6 +422,31 @@ function NerisReportFormPage({
       aidType: entry.aidType,
     })),
   );
+  const [pendingAdditionalAid, setPendingAdditionalAid] = useState<"fd" | "nonfd" | null>(null);
+  const [personnelOptionsFromApi, setPersonnelOptionsFromApi] = useState<NerisValueOption[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/users")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data: { ok?: boolean; users?: Array<{ id?: string; username?: string; name?: string }> } | null) => {
+        if (cancelled || !data?.ok || !data?.users || !Array.isArray(data.users)) {
+          return;
+        }
+        const options: NerisValueOption[] = data.users
+          .filter((u) => String(u?.username ?? "").trim().length > 0)
+          .map((u) => ({
+            value: String(u.username ?? u.id ?? "").trim(),
+            label: String(u.name ?? u.username ?? "").trim() || String(u.username ?? "").trim(),
+          }))
+          .filter((o) => o.value.length > 0);
+        setPersonnelOptionsFromApi(options);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const effectivePersonnelOptions = personnelOptionsFromApi ?? RESOURCE_PERSONNEL_OPTIONS;
   const [aidDepartmentOptions, setAidDepartmentOptions] = useState<NerisValueOption[]>(() =>
     getNerisValueOptions("aid_department"),
   );
@@ -347,32 +471,33 @@ function NerisReportFormPage({
   const responseModeOptions = useMemo(() => getNerisValueOptions("response_mode"), []);
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
   const resourceFallbackDate = (formValues.incident_onset_date ?? "").trim() || "2026-02-18";
+  const apparatusFromDept = useMemo(
+    () => apparatusFromDepartmentDetails ?? [],
+    [apparatusFromDepartmentDetails],
+  );
   const availableResourceUnitOptions = useMemo(() => {
-    if (!detail) {
-      return [] as NerisValueOption[];
-    }
-
-    const units = dedupeAndCleanStrings([
-      ...detail.apparatus.map((apparatus) => apparatus.unit),
-      ...parseAssignedUnits(detail.assignedUnits),
-    ]);
+    const fromDetail =
+      detail?.apparatus?.map((a) => a.unit) ?? [];
+    const fromAssigned = detail ? parseAssignedUnits(detail.assignedUnits) : [];
+    const fromDept = apparatusFromDept.map((a) => a.unit);
+    const units = dedupeAndCleanStrings([...fromDetail, ...fromAssigned, ...fromDept]);
     return units.map((unitId) => ({
       value: unitId,
       label: unitId,
     }));
-  }, [dedupeAndCleanStrings, detail, parseAssignedUnits]);
+  }, [dedupeAndCleanStrings, detail, parseAssignedUnits, apparatusFromDept]);
   const apparatusByResourceUnitId = useMemo(() => {
     const map = new Map<string, { unitType: string }>();
-    if (!detail) {
-      return map;
+    for (const a of apparatusFromDept) {
+      map.set(a.unit, { unitType: a.unitType });
     }
-    for (const apparatus of detail.apparatus) {
-      map.set(apparatus.unit, {
-        unitType: apparatus.unitType,
-      });
+    if (detail?.apparatus) {
+      for (const apparatus of detail.apparatus) {
+        map.set(apparatus.unit, { unitType: apparatus.unitType });
+      }
     }
     return map;
-  }, [detail]);
+  }, [detail, apparatusFromDept]);
   const defaultResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
     if (!availableResourceUnitOptions.length) {
       return [];
@@ -1075,12 +1200,14 @@ function NerisReportFormPage({
       (fieldId === "incident_aid_agency_type" && sanitizedValue === "NON_FD_AID")
     ) {
       setAdditionalAidEntries([]);
+      setPendingAdditionalAid(null);
     }
     if (
       (fieldId === "incident_has_aid" && sanitizedValue === "NO") ||
       (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT")
     ) {
       setAdditionalNonFdAidEntries([]);
+      setPendingAdditionalAid(null);
     }
 
     setSectionErrors((previous) => {
@@ -1970,6 +2097,7 @@ function NerisReportFormPage({
     mode: "manual" | "auto",
     nextStatus: string = reportStatus,
     messageOverride?: string,
+    formValuesOverride?: Partial<NerisFormValues>,
   ) => {
     const savedAt = new Date().toLocaleTimeString("en-US", {
       hour: "2-digit",
@@ -1977,8 +2105,12 @@ function NerisReportFormPage({
       second: "2-digit",
       hour12: false,
     });
+    const valuesToWrite: NerisFormValues =
+      formValuesOverride != null && Object.keys(formValuesOverride).length > 0
+        ? ({ ...formValues, ...formValuesOverride } as NerisFormValues)
+        : formValues;
     writeNerisDraft(callNumber, {
-      formValues,
+      formValues: valuesToWrite,
       reportStatus: nextStatus,
       lastSavedAt: savedAt,
       additionalAidEntries: additionalAidEntries.map((entry) => ({
@@ -1990,6 +2122,9 @@ function NerisReportFormPage({
         aidType: entry.aidType,
       })),
     });
+    if (formValuesOverride != null && Object.keys(formValuesOverride).length > 0) {
+      setFormValues((prev) => ({ ...prev, ...formValuesOverride } as NerisFormValues));
+    }
     setReportStatus(nextStatus);
     setLastSavedAt(savedAt);
     setSaveMessage(
@@ -2041,10 +2176,13 @@ function NerisReportFormPage({
     }));
 
   const buildReportWriterName = () => {
+    const narrativeWriter = (formValues.narrative_report_writer ?? "").trim();
     const rawReportWriter =
+      narrativeWriter ||
       resourceUnits
         .map((unit) => unit.reportWriter.trim())
-        .find((candidate) => candidate.length > 0) ?? username.trim();
+        .find((candidate) => candidate.length > 0) ||
+      username.trim();
     if (!rawReportWriter) {
       return "";
     }
@@ -2341,35 +2479,6 @@ function NerisReportFormPage({
     } catch {
       return null;
     }
-  };
-
-  const extractProxyApiIssues = (responseJson: Record<string, unknown> | null): string[] => {
-    if (!responseJson || typeof responseJson !== "object") {
-      return [];
-    }
-    const neris = responseJson.neris;
-    if (!neris || typeof neris !== "object") {
-      return [];
-    }
-    const detail = (neris as Record<string, unknown>).detail;
-    if (!Array.isArray(detail)) {
-      return [];
-    }
-    return detail
-      .map((entry) => {
-        if (!entry || typeof entry !== "object") {
-          return "";
-        }
-        const candidate = entry as Record<string, unknown>;
-        const loc = Array.isArray(candidate.loc)
-          ? candidate.loc
-              .filter((segment): segment is string => typeof segment === "string")
-              .join(" > ")
-          : "";
-        const message = typeof candidate.msg === "string" ? candidate.msg : "Validation issue";
-        return loc ? `API - ${loc}: ${message}` : `API - ${message}`;
-      })
-      .filter((issue) => issue.length > 0);
   };
 
   const readPathValue = (source: unknown, path: Array<string | number>): unknown => {
@@ -2962,87 +3071,6 @@ function NerisReportFormPage({
     ];
   };
 
-  const runPreExportValidation = async (requestConfig: ExportRequestConfig): Promise<string[]> => {
-    if (!requestConfig.isProxyRequest) {
-      return [];
-    }
-    if (!requestConfig.exportUrl.includes("/api/neris/export")) {
-      return [];
-    }
-
-    const validateUrl = requestConfig.exportUrl.replace(
-      "/api/neris/export",
-      "/api/neris/validate",
-    );
-
-    try {
-      const response = await fetch(validateUrl, {
-        method: "POST",
-        headers: requestConfig.headers,
-        body: JSON.stringify(requestConfig.payload),
-      });
-      const responseText = await response.text();
-      const responseJson = parseJsonResponseText(responseText);
-      const apiIssues = extractProxyApiIssues(responseJson);
-      if (apiIssues.length > 0) {
-        return apiIssues;
-      }
-      if (response.ok) {
-        return [];
-      }
-      if (response.status === 404 || response.status === 405) {
-        // If proxy validate isn't available yet, continue with export path.
-        return [];
-      }
-      if (response.status === 422) {
-        return [
-          `API - Validation failed (${response.status}). Review field values and required formats before export.`,
-        ];
-      }
-
-      const statusText = response.statusText.trim()
-        ? response.statusText
-        : response.status === 500
-          ? "Internal Server Error"
-          : "Request Failed";
-      const proxyMessage =
-        typeof responseJson?.message === "string" && responseJson.message.trim().length > 0
-          ? responseJson.message.trim()
-          : "";
-      const troubleshootingMessage =
-        responseJson?.troubleshooting &&
-        typeof responseJson.troubleshooting === "object" &&
-        typeof (responseJson.troubleshooting as Record<string, unknown>).message === "string"
-          ? (((responseJson.troubleshooting as Record<string, unknown>).message as string).trim())
-          : "";
-      const responseSummary =
-        proxyMessage || troubleshootingMessage || responseText.slice(0, 240);
-
-      if (response.status === 500 && !responseSummary) {
-        throw new Error(
-          "Pre-export validation failed (500 Internal Server Error). No response details were returned. If using local proxy, confirm `npm run proxy` is running and check the proxy terminal logs.",
-        );
-      }
-
-      throw new Error(
-        `Pre-export validation failed (${response.status} ${statusText}). ${
-          responseSummary || "No response details."
-        }`,
-      );
-    } catch (error) {
-      if (
-        error instanceof Error &&
-        (error.message.startsWith("Pre-export validation failed") ||
-          error.message.startsWith("Pre-export validation request failed"))
-      ) {
-        throw error;
-      }
-      const reason =
-        error instanceof Error ? error.message : "Unknown validation request error.";
-      throw new Error(`Pre-export validation request failed. ${reason}`);
-    }
-  };
-
   const getRequestedEntityId = (requestConfig: ExportRequestConfig): string => {
     const integration =
       requestConfig.payload.integration && typeof requestConfig.payload.integration === "object"
@@ -3163,12 +3191,31 @@ function NerisReportFormPage({
         second: "2-digit",
         hour12: false,
       }).format(exportedAtDate);
-      const nerisId =
+      const nerisIdFromNeris =
         typeof responseJson?.neris === "object" &&
         responseJson.neris &&
         typeof (responseJson.neris as Record<string, unknown>).neris_id === "string"
-          ? ((responseJson.neris as Record<string, unknown>).neris_id as string)
+          ? String((responseJson.neris as Record<string, unknown>).neris_id).trim()
           : "";
+      const nerisIdFromCreateResult =
+        responseJson?.createResult &&
+        typeof responseJson.createResult === "object" &&
+        typeof (responseJson.createResult as Record<string, unknown>).neris === "object" &&
+        (responseJson.createResult as Record<string, unknown>).neris &&
+        typeof ((responseJson.createResult as Record<string, unknown>).neris as Record<string, unknown>).neris_id === "string"
+          ? String(((responseJson.createResult as Record<string, unknown>).neris as Record<string, unknown>).neris_id).trim()
+          : "";
+      const nerisIdFromFallback =
+        responseJson?.fallback &&
+        typeof responseJson.fallback === "object" &&
+        typeof (responseJson.fallback as Record<string, unknown>).usedIncidentNerisId === "string"
+          ? String((responseJson.fallback as Record<string, unknown>).usedIncidentNerisId).trim()
+          : "";
+      const nerisId =
+        nerisIdFromNeris ||
+        nerisIdFromCreateResult ||
+        nerisIdFromFallback ||
+        "";
 
       return {
         exportedAtIso,
@@ -3322,93 +3369,6 @@ function NerisReportFormPage({
     });
   };
 
-  const handleOpenAdminValidateModal = () => {
-    if (role !== "admin") {
-      return;
-    }
-    const { mergedErrors, issueLabels } = buildValidationSnapshot();
-    setSectionErrors(mergedErrors);
-    setValidationIssues(issueLabels);
-    if (issueLabels.length > 0) {
-      applyValidationFailure(issueLabels);
-      return;
-    }
-    setErrorMessage("");
-    setSaveMessage("");
-    setValidationModal({
-      mode: "adminConfirm",
-      issues: [],
-    });
-    if (!validatorName.trim()) {
-      setValidatorName(username.trim());
-    }
-  };
-
-  const handleAdminValidateAndExport = async () => {
-    if (role !== "admin") {
-      return;
-    }
-    const normalizedValidatorName = validatorName.trim();
-    if (!normalizedValidatorName) {
-      setErrorMessage("Validator username is required before validating/exporting.");
-      return;
-    }
-
-    const localValidation = buildValidationSnapshot();
-    setSectionErrors(localValidation.mergedErrors);
-    setValidationIssues(localValidation.issueLabels);
-    if (localValidation.issueLabels.length > 0) {
-      applyValidationFailure(localValidation.issueLabels);
-      return;
-    }
-
-    setErrorMessage("");
-    setSaveMessage("Validate + export in progress...");
-    setValidationModal(null);
-    setIsExporting(true);
-    try {
-      const requestConfig = buildExportRequestConfig();
-      const preExportIssues = await runPreExportValidation(requestConfig);
-      if (preExportIssues.length > 0) {
-        setValidationIssues(preExportIssues);
-        setSectionErrors({});
-        setSaveMessage("");
-        setErrorMessage(
-          "Pre-export validation found issues that are likely to return API 422 errors.",
-        );
-        setValidationModal({
-          mode: "issues",
-          issues: preExportIssues,
-        });
-        return;
-      }
-
-      const exportResult = await executeExport(requestConfig);
-      appendExportHistoryRecord(exportResult, normalizedValidatorName, "Validated");
-      setValidationIssues([]);
-      setSectionErrors({});
-      stampSavedAt(
-        "manual",
-        "Validated",
-        exportResult.nerisId
-          ? `Validated + exported at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
-          : `Validated + exported at ${exportResult.exportedAtLabel}.`,
-      );
-      setValidationModal({
-        mode: "adminSuccess",
-        issues: [],
-      });
-    } catch (error) {
-      appendFailedExportHistoryRecord(error, normalizedValidatorName, reportStatus);
-      setSaveMessage("");
-      setErrorMessage(
-        error instanceof Error ? error.message : "Unexpected validate/export error.",
-      );
-    } finally {
-      setIsExporting(false);
-    }
-  };
-
   const handleExportReport = async () => {
     setValidationModal(null);
     setErrorMessage("");
@@ -3418,11 +3378,16 @@ function NerisReportFormPage({
       const requestConfig = buildExportRequestConfig();
       const exportResult = await executeExport(requestConfig);
       appendExportHistoryRecord(exportResult, "", reportStatus);
-      setSaveMessage(
+      const successMessage =
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
-          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`,
-      );
+          : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`;
+      const formValuesOverride =
+        exportResult.nerisId?.trim()
+          ? { incident_neris_id: exportResult.nerisId.trim() }
+          : undefined;
+      stampSavedAt("manual", "Exported", successMessage, formValuesOverride);
+      setSaveMessage(successMessage);
     } catch (error) {
       appendFailedExportHistoryRecord(error, "", reportStatus);
       setSaveMessage("");
@@ -3451,7 +3416,7 @@ function NerisReportFormPage({
       const requestedEntityId = getRequestedEntityId(requestConfig).trim();
       if (!requestedEntityId) {
         throw new Error(
-          "Missing NERIS entity ID. Set Vendor/Department code in Customization > NERIS Export Configuration.",
+          "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
         );
       }
 
@@ -3529,26 +3494,6 @@ function NerisReportFormPage({
     setActiveSectionId("core");
   };
 
-  const handleValidationModalCancelAdmin = () => {
-    setValidationModal(null);
-  };
-
-  const handleValidationValidatorNameSubmit = (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
-    event.preventDefault();
-    void handleAdminValidateAndExport();
-  };
-
-  const handleValidationValidatorNameChange = (event: ChangeEvent<HTMLInputElement>) => {
-    setValidatorName(event.currentTarget.value);
-  };
-
-  const handleValidationModalValidateFromSuccess = () => {
-    setValidationModal(null);
-    navigate("/reporting/neris");
-  };
-
   const handleSaveDraft = () => {
     setSectionErrors({});
     setErrorMessage("");
@@ -3584,7 +3529,7 @@ function NerisReportFormPage({
   };
 
   const addAdditionalAidEntry = () => {
-    setAdditionalAidEntries((previous) => [...previous, { ...EMPTY_AID_ENTRY }]);
+    setPendingAdditionalAid("fd");
     setValidationModal(null);
   };
 
@@ -3613,7 +3558,17 @@ function NerisReportFormPage({
   };
 
   const addAdditionalNonFdAidEntry = () => {
-    setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
+    setPendingAdditionalAid("nonfd");
+    setValidationModal(null);
+  };
+
+  const commitPendingAdditionalAidAs = (kind: "FIRE_DEPARTMENT" | "NON_FD_AID") => {
+    if (kind === "FIRE_DEPARTMENT") {
+      setAdditionalAidEntries((previous) => [...previous, { ...EMPTY_AID_ENTRY }]);
+    } else {
+      setAdditionalNonFdAidEntries((previous) => [...previous, { ...EMPTY_NONFD_AID_ENTRY }]);
+    }
+    setPendingAdditionalAid(null);
     setValidationModal(null);
   };
 
@@ -3770,6 +3725,12 @@ function NerisReportFormPage({
     if (
       isLocationUsedAsIntendedField &&
       (formValues.location_in_use ?? "").trim() !== "YES"
+    ) {
+      return null;
+    }
+    if (
+      field.id === "location_vacancy_cause" &&
+      (formValues.location_in_use ?? "").trim() !== "NO"
     ) {
       return null;
     }
@@ -3940,6 +3901,23 @@ function NerisReportFormPage({
                     />
                   </div>
                 ))}
+                {pendingAdditionalAid === "nonfd" ? (
+                  <div className="neris-additional-aid-entry neris-additional-aid-pending">
+                    <label className="neris-aid-subfield-label">Aid Type</label>
+                    <div className="neris-single-choice-row" role="group" aria-label="Additional aid type">
+                      {getNerisValueOptions("aid_agency_type").map((option) => (
+                        <button
+                          key={`pending-aid-type-${option.value}`}
+                          type="button"
+                          className="neris-single-choice-button"
+                          onClick={() => commitPendingAdditionalAidAs(option.value as "FIRE_DEPARTMENT" | "NON_FD_AID")}
+                        >
+                          {option.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
                 <button
                   type="button"
                   className="neris-link-button"
@@ -4083,6 +4061,24 @@ function NerisReportFormPage({
                       />
                     </div>
                   ))}
+
+                  {pendingAdditionalAid === "fd" ? (
+                    <div className="neris-additional-aid-entry neris-additional-aid-pending">
+                      <label className="neris-aid-subfield-label">Aid Type</label>
+                      <div className="neris-single-choice-row" role="group" aria-label="Additional aid type">
+                        {getNerisValueOptions("aid_agency_type").map((option) => (
+                          <button
+                            key={`pending-aid-type-fd-${option.value}`}
+                            type="button"
+                            className="neris-single-choice-button"
+                            onClick={() => commitPendingAdditionalAidAs(option.value as "FIRE_DEPARTMENT" | "NON_FD_AID")}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <button
                     type="button"
@@ -4363,14 +4359,6 @@ function NerisReportFormPage({
           </button>
           <button
             type="button"
-            className="primary-button compact-button"
-            onClick={handleExportReport}
-            disabled={isExporting}
-          >
-            {isExporting ? "Exporting..." : "Export"}
-          </button>
-          <button
-            type="button"
             className="secondary-button compact-button"
             onClick={handleGetIncidentTest}
             disabled={isExporting || isFetchingIncidentTest}
@@ -4385,20 +4373,20 @@ function NerisReportFormPage({
           </button>
           <button
             type="button"
-            className="secondary-button compact-button"
+            className="primary-button compact-button"
             onClick={handleCheckForErrors}
             disabled={isExporting}
           >
-            Check for Errors
+            Validate
           </button>
           {role === "admin" ? (
             <button
               type="button"
               className="primary-button compact-button"
-              onClick={handleOpenAdminValidateModal}
+              onClick={handleExportReport}
               disabled={isExporting}
             >
-              Validate
+              {isExporting ? "Exporting..." : "Export"}
             </button>
           ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
@@ -4458,57 +4446,6 @@ function NerisReportFormPage({
                     onClick={handleValidationModalFixIssues}
                   >
                     Fix issues now
-                  </button>
-                </div>
-              </>
-            ) : null}
-            {validationModal.mode === "adminConfirm" ? (
-              <form className="validation-modal-form" onSubmit={handleValidationValidatorNameSubmit}>
-                <h2>Admin Validate + Auto Export</h2>
-                <p>
-                  Pre-export checks are complete. Enter the validator username, then
-                  Validate to auto-export this report.
-                </p>
-                <label htmlFor="neris-validator-name">Validator username</label>
-                <input
-                  id="neris-validator-name"
-                  type="text"
-                  value={validatorName}
-                  onChange={handleValidationValidatorNameChange}
-                  placeholder="Enter validator username"
-                />
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={handleValidationModalCancelAdmin}
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    className="primary-button compact-button"
-                    disabled={isExporting}
-                  >
-                    {isExporting ? "Validating..." : "Validate + Export"}
-                  </button>
-                </div>
-              </form>
-            ) : null}
-            {validationModal.mode === "adminSuccess" ? (
-              <>
-                <h2>Report validated and exported</h2>
-                <p>
-                  Status has been set to Validated and this export is now logged in
-                  View Exports.
-                </p>
-                <div className="validation-modal-actions">
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={handleValidationModalValidateFromSuccess}
-                  >
-                    Return to Incidents
                   </button>
                 </div>
               </>
@@ -5243,12 +5180,12 @@ function NerisReportFormPage({
                       .filter((entry) => entry.length > 0);
                     const selectedPersonnelOptions = selectedPersonnelValues
                       .map((value) =>
-                        RESOURCE_PERSONNEL_OPTIONS.find((option) => option.value === value),
+                        effectivePersonnelOptions.find((option) => option.value === value),
                       )
                       .filter((option): option is NerisValueOption => Boolean(option));
                     const reportWriterOptions = selectedPersonnelOptions.length
                       ? selectedPersonnelOptions
-                      : RESOURCE_PERSONNEL_OPTIONS;
+                      : effectivePersonnelOptions;
                     const staffingDisplay = getStaffingValueForUnit(
                       unitEntry.unitId,
                       unitEntry.personnel,
@@ -5746,7 +5683,7 @@ function NerisReportFormPage({
                   <NerisFlatMultiOptionSelect
                     inputId={`resource-personnel-modal-${activeResourcePersonnelUnit.id}`}
                     value={activeResourcePersonnelUnit.personnel}
-                    options={RESOURCE_PERSONNEL_OPTIONS}
+                    options={effectivePersonnelOptions}
                     onChange={(nextValue) =>
                       updateResourceUnitField(activeResourcePersonnelUnit.id, "personnel", nextValue)
                     }

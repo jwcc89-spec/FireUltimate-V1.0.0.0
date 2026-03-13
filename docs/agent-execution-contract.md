@@ -28,8 +28,13 @@ Purpose: keep agent behavior consistent across model choices (including Auto) an
 - Use dedicated auth tables/endpoints for auth data.
 - Do not store auth secrets in `DepartmentDetails.payloadJson`.
 
+## 4.1) Data Integrity Protection
+- Agents must **not** modify the Prisma schema, existing migration files, or authentication/authorization logic unless the user **explicitly approves**.
+- If a task requires schema, migrations, or auth changes, state that clearly and wait for approval before proceeding.
+
 ## 5) Verification After Each Batch
 - Run `npm run lint`.
+- Run **`npm run build`** when changes touch app or server code (lint does not catch all build errors). Do this after each batch that could affect TypeScript, imports, or the server.
 - Run targeted endpoint checks for changed behavior.
 - Report what changed, what passed, and what still needs work.
 

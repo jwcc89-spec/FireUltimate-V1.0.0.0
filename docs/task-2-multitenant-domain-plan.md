@@ -355,6 +355,8 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 - Wave 8 verification checklist is complete: tenant login/isolation checks, cross-tenant save separation checks, scheduler/personnel/Kelly validation, and lint/build + smoke checks in staging.
 
 ### Later (deferred hardening backlog)
+- Complete staging and production verification of the new incident workflow configuration surface (`Admin Functions -> Department Details -> Incidents Setup`) and incident linkage behavior (`Incident #` sync between incident queue and NERIS form).
+- Move incident table display preferences (column widths, order, visibility) from browser-local per-user storage to backend-persisted per-user preferences so settings follow users across devices/browsers.
 - Replace prompt-based admin reset-password UX with an in-app modal/dialog flow.
 - Add auth rate-limiting and/or temporary lockout on repeated failed login attempts.
 - Add password-change/reset audit logging (who/when/target user) for security traceability.
@@ -404,6 +406,7 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 - Resolve tenant by domain first.
 - Load NERIS credentials for that tenant from DB.
 - Use `.env.server` as fallback only in local/dev where tenant config is missing.
+- Verification note: do not treat `GET /entity` as a canonical authorization list. For entity confirmation, use `GET /entity?neris_id=<id>` and/or `GET /entity/<id>` and check enrollment via `GET /account/enrollment/<client_id>`.
 
 ---
 

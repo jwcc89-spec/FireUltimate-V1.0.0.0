@@ -64,6 +64,8 @@ export interface NerisValidationResult {
 
 interface CreateNerisDefaultsInput {
   callNumber: string;
+  incidentInternalId?: string;
+  dispatchInternalId?: string;
   incidentType?: string;
   receivedAt?: string;
   address?: string;
@@ -1281,14 +1283,14 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "core",
     label: "Incident NERIS ID",
     inputKind: "readonly",
-    required: true,
+    required: false,
     layout: "full",
-    helperText: "System identifier derived from incident start time.",
+    helperText: "Populated upon export; not required for user entry.",
   },
   {
     id: "incident_internal_id",
     sectionId: "core",
-    label: "Incident number",
+    label: "Incident Number",
     inputKind: "text",
     required: true,
     layout: "half",
@@ -1312,7 +1314,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   {
     id: "dispatch_internal_id",
     sectionId: "core",
-    label: "Dispatch run number",
+    label: "Dispatch Number",
     inputKind: "text",
     required: true,
     layout: "half",
@@ -1552,12 +1554,20 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "full",
   },
   {
+    id: "narrative_report_writer",
+    sectionId: "narrative",
+    label: "Report Writer",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
     id: "location_place_type",
     sectionId: "location",
     label: "Place type",
     inputKind: "select",
     optionsKey: "location_place",
     layout: "half",
+    helperText: "Not in NERIS core required list; include when available for export.",
   },
   {
     id: "location_use_primary",
@@ -1603,6 +1613,11 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     inputKind: "select",
     optionsKey: "vacancy",
     layout: "half",
+    requiredIf: {
+      fieldId: "location_in_use",
+      operator: "equals",
+      value: "NO",
+    },
   },
   {
     id: "location_state",
@@ -2475,6 +2490,8 @@ function inferLocationStateAndCountry(address: string | undefined): {
 
 export function createDefaultNerisFormValues({
   callNumber,
+  incidentInternalId,
+  dispatchInternalId,
   receivedAt,
   address,
 }: CreateNerisDefaultsInput): NerisFormValues {
@@ -2482,11 +2499,11 @@ export function createDefaultNerisFormValues({
   const { locationState, locationCountry } = inferLocationStateAndCountry(address);
 
   return {
-    incident_neris_id: `NERIS-${callNumber.replace(/[^A-Z0-9]/gi, "")}`,
-    incident_internal_id: callNumber,
+    incident_neris_id: "",
+    incident_internal_id: (incidentInternalId ?? "").trim() || callNumber,
     incident_onset_date: "2026-02-18",
     incident_onset_time: normalizeNerisTime(receivedAt),
-    dispatch_internal_id: callNumber.replace(/^D-/, ""),
+    dispatch_internal_id: (dispatchInternalId ?? "").trim() || callNumber.replace(/^D-/, ""),
     primary_incident_type: "",
     additional_incident_types: "",
     special_incident_modifiers: "",
@@ -2527,6 +2544,7 @@ export function createDefaultNerisFormValues({
     incident_aid_nonfd: "",
     narrative_outcome: "",
     narrative_obstacles: "",
+    narrative_report_writer: "",
     location_notes: "",
     incidentTimes_notes: "",
     resources_notes: "",

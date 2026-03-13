@@ -2962,10 +2962,13 @@ body.resource-personnel-modal-open {
 }
 
 .neris-risk-reduction-layout .neris-single-choice-row {
+  display: flex;
+  flex-wrap: wrap;
   gap: 0.3rem;
 }
 
 .neris-risk-reduction-layout .neris-single-choice-button {
+  flex: 0 0 auto;
   font-size: 0.68rem;
   padding: 0.24rem 0.46rem;
 }
@@ -3249,7 +3252,7 @@ body.resource-personnel-modal-open {
 
 .neris-resource-times-editor-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(11rem, 1fr));
   gap: 0.5rem;
 }
 

@@ -33,6 +33,16 @@
     - what success/failure output should look like.
 13. Keep guidance practical and concise unless user asks for deeper detail.
 14. If requirements are unclear or conflicting, ask before assuming.
+15. Before making non-trivial edits, provide a short preflight summary that explicitly lists:
+    - task understanding,
+    - constraints,
+    - acceptance criteria,
+    - risks.
+16. When the preflight includes meaningful risk, the agent must ask for explicit user confirmation before editing.
+17. In planning/execution updates, include quick callouts for:
+    - risks vs rewards,
+    - better/alternative implementation path when applicable,
+    - related follow-up tasks in **Now vs Later** form.
 
 ## 4) Git discipline
 15. Stay on the user-confirmed branch from the opening question.
@@ -100,8 +110,10 @@
 ## 10) Session handoff workflow
 41. At session start, read:
     - this file
+    - `.cursor/project-context.md` (when present — project-level constraints)
     - `agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md`
     - latest note in `agent-handoffs/branches/<branch-slug>/sessions/`
+    - When touching architecture, data, or integrations: `docs/system_architecture.md`, `docs/data_model.md`, `docs/agent-execution-contract.md`; for incident/report/export flow: `docs/incident-lifecycle.md`; for external systems: `docs/integrations.md`.
 42. Before ending session:
     - update branch `ACTIVE_CONTEXT.md`
     - add a new timestamped session note in that same branch folder
@@ -109,3 +121,12 @@
     - Prompt #2 = new agent bootstrap flow
     - Prompt #3 = cloud continuation flow after Cursor work
 44. Include branch, commit hash, blockers, and exact next actions in every handoff.
+45. Always give clear direction: say what to **do now** vs what can be **done later**; use step-by-step instructions and **Now vs Later** callouts so the next agent (or user) knows the path.
+
+## 11) Repository analysis before code
+46. Before writing code for a task, do the following and wait for user confirmation before editing multiple files:
+    1. **Identify impacted files** — List the files you expect to change or add.
+    2. **Identify related modules** — Note any other parts of the app (e.g. API, UI, schema) that are related so nothing is missed.
+    3. **Propose a short implementation plan** — A few steps: e.g. "Step 1: add field to schema; Step 2: update API; Step 3: update UI."
+47. Wait for user confirmation before editing multiple files (unless the user has already approved the plan or a batch).
+48. Keep communication beginner-friendly: explain each step in plain language, and give clear "do this now" vs "do this later" directions.

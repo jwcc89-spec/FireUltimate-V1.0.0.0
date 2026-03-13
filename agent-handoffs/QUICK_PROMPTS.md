@@ -28,18 +28,23 @@ After I answer:
    - create COPY_PASTE_START_PROMPT.md from COPY_PASTE_START_PROMPT_TEMPLATE.md
 6) Read these files first:
    - cursoragent-context.md
-   - agent-handoffs/branches/<branch-slug>/ACTIVE_CONTEXT.md
-   - latest relevant note(s) in agent-handoffs/branches/<branch-slug>/sessions/
-   - all conversations in agent-handoffs/branches/<branch-slug>/conversations/
+   - .cursor/project-context.md (project constraints)
+   - docs/agent-execution-contract.md
+   - ACTIVE_CONTEXT.md for this branch
+   - latest relevant note(s) in agent-handoffs/branches/.../sessions/
+   - all conversations in agent-handoffs/branches/.../conversations/
+   When touching architecture, data, or integrations: also read docs/system_architecture.md, docs/data_model.md, docs/incident-lifecycle.md, docs/integrations.md.
 7) Before coding, summarize:
    - current branch + latest commit
    - what previous agent completed
    - current blocker/status
    - exact next implementation step
 8) Follow beginner-friendly communication:
+   - give clear **do this now** vs **do this later** directions
    - explain each command in plain language
    - provide step-by-step test instructions
    - report expected vs actual output
+   - include **Now vs Later** callouts in handoffs
 9) After meaningful changes:
    - update this session note
    - keep branch ACTIVE_CONTEXT.md current

@@ -173,6 +173,15 @@ function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** NERIS rejects incident_number (internal_id) when it contains spaces or other invalid chars. Normalize to allowed format. */
+function sanitizeNerisIncidentNumber(value) {
+  if (value == null || typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const replaced = trimmed.replace(/\s+/g, "_").replace(/[^A-Za-z0-9_\-]/g, "");
+  return replaced || trimmed.replace(/\s+/g, "_");
+}
+
 const BCRYPT_SALT_ROUNDS = 12;
 function isBcryptHash(value) {
   return typeof value === "string" && value.length > 0 && value.startsWith("$2");
@@ -934,6 +943,75 @@ async function fetchAccessibleEntities(config, accessToken) {
   };
 }
 
+async function fetchEntityByNerisIdQuery(config, accessToken, nerisId) {
+  const url = `${config.baseUrl}/entity?neris_id=${encodeURIComponent(nerisId)}`;
+  const apiResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url,
+    body,
+  };
+}
+
+async function fetchEntityByPath(config, accessToken, nerisId) {
+  const url = `${config.baseUrl}/entity/${encodeURIComponent(nerisId)}`;
+  const apiResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url,
+    body,
+  };
+}
+
+async function fetchIntegrationEnrollment(config, accessToken) {
+  const clientId = trimValue(config.clientId);
+  if (!clientId) {
+    return {
+      ok: false,
+      skipped: true,
+      status: 0,
+      statusText: "Client ID unavailable",
+      url: "",
+      body: {
+        message:
+          "Skipped enrollment lookup because NERIS_CLIENT_ID is not configured on the server.",
+      },
+    };
+  }
+  const url = `${config.baseUrl}/account/enrollment/${encodeURIComponent(clientId)}`;
+  const apiResponse = await fetch(url, {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    skipped: false,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url,
+    body,
+  };
+}
+
 function buildIncidentPayload(exportRequestBody, config, entityId) {
   const body = exportRequestBody && typeof exportRequestBody === "object" ? exportRequestBody : {};
   const formValues =
@@ -1141,7 +1219,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   const unitResponses = extractUnitResponses(formValues, incidentSnapshot, clientUtcOffsetMinutes);
 
   const dispatchPayload = {
-    incident_number: dispatchIncidentNumber,
+    incident_number: sanitizeNerisIncidentNumber(dispatchIncidentNumber),
     call_arrival: callArrival,
     call_answered: callAnswered,
     call_create: callCreate,
@@ -1246,7 +1324,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
 
   const basePayload = {
     department_neris_id: departmentNerisId,
-    incident_number: incidentNumber,
+    incident_number: sanitizeNerisIncidentNumber(incidentNumber),
     location: baseLocation,
   };
   if (typeof peoplePresent === "boolean") {
@@ -1404,9 +1482,11 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   return payload;
 }
 
-app.get("/api/neris/health", (request, response) => {
+app.get("/api/neris/health", async (request, response) => {
   const config = getProxyConfig();
   const requiresUserCredentials = config.grantType === "password";
+  const tenantId = trimValue(request.tenant?.id);
+  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
   response.json({
     ok: true,
     proxyPort: config.proxyPort,
@@ -1419,6 +1499,7 @@ app.get("/api/neris/health", (request, response) => {
     hasUserCredentials: Boolean(config.username && config.password),
     hasDefaultEntityId: Boolean(config.defaultEntityId),
     hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
+    hasTenantEntityId: Boolean(tenantEntityId),
   });
 });
 
@@ -1448,6 +1529,7 @@ app.post("/api/admin/tenants", async (request, response) => {
     const status = trimValue(body.status).toLowerCase() || "trial";
     const adminUsername = trimValue(body.adminUsername).toLowerCase();
     const adminPassword = String(body.adminPassword ?? "").trim();
+    const nerisEntityId = trimValue(body.nerisEntityId).toUpperCase();
 
     if (!slug || !/^[a-z0-9-]+$/.test(slug)) {
       response.status(400).json({ ok: false, message: "slug required; lowercase letters, numbers, hyphens only." });
@@ -1473,6 +1555,14 @@ app.post("/api/admin/tenants", async (request, response) => {
       response.status(400).json({ ok: false, message: "adminPassword required." });
       return;
     }
+    if (nerisEntityId && !NERIS_ENTITY_ID_PATTERN.test(nerisEntityId)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "nerisEntityId must match FD########, VN########, FM########, or FA########.",
+      });
+      return;
+    }
 
     const existing = await prisma.tenant.findUnique({ where: { slug } });
     if (existing) {
@@ -1486,7 +1576,9 @@ app.post("/api/admin/tenants", async (request, response) => {
     }
 
     const passwordHash = await hashPassword(adminPassword);
-    const tenant = await prisma.tenant.create({ data: { slug, name, status } });
+    const tenant = await prisma.tenant.create({
+      data: { slug, name, status, nerisEntityId: nerisEntityId || null },
+    });
     await prisma.tenantDomain.create({ data: { tenantId: tenant.id, hostname, isPrimary: true } });
     await prisma.departmentDetails.create({
       data: { tenantId: tenant.id, departmentName: name, payloadJson: {} },
@@ -1497,7 +1589,14 @@ app.post("/api/admin/tenants", async (request, response) => {
 
     response.status(201).json({
       ok: true,
-      tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name, status: tenant.status, hostname },
+      tenant: {
+        id: tenant.id,
+        slug: tenant.slug,
+        name: tenant.name,
+        status: tenant.status,
+        hostname,
+        nerisEntityId: trimValue(tenant.nerisEntityId),
+      },
     });
   } catch (error) {
     response.status(500).json({
@@ -1567,6 +1666,7 @@ app.use(async (request, response, next) => {
         slug: demoTenant.slug,
         name: demoTenant.name,
         host,
+        nerisEntityId: trimValue(demoTenant.nerisEntityId),
       };
       next();
       return;
@@ -1590,6 +1690,7 @@ app.use(async (request, response, next) => {
       slug: domain.tenant.slug,
       name: domain.tenant.name,
       host,
+      nerisEntityId: trimValue(domain.tenant.nerisEntityId),
     };
     next();
   } catch (error) {
@@ -1607,6 +1708,222 @@ app.get("/api/tenant/context", (request, response) => {
   });
 });
 
+// ----- /api/incidents (tenant-scoped; Incident table) -----
+function incidentRowToApi(row) {
+  if (!row) return null;
+  const deletedAt =
+    row.deletedAt instanceof Date ? row.deletedAt.toISOString() : (row.deletedAt ?? "");
+  return {
+    id: row.id,
+    callNumber: row.id,
+    incidentNumber: row.incidentNumber ?? "",
+    dispatchNumber: row.dispatchNumber ?? "",
+    incident_internal_id: row.incidentNumber ?? "",
+    dispatch_internal_id: row.dispatchNumber ?? "",
+    incidentType: row.incidentType ?? "",
+    priority: row.priority ?? "",
+    address: row.address ?? "",
+    stillDistrict: row.stillDistrict ?? "",
+    assignedUnits: row.assignedUnits ?? "",
+    reportedBy: row.reportedBy ?? "",
+    callbackNumber: row.callbackNumber ?? "",
+    dispatchNotes: row.dispatchNotes ?? "",
+    currentState: row.currentState ?? "Draft",
+    receivedAt: row.receivedAt ?? "",
+    dispatchInfo: row.dispatchInfo ?? "",
+    apparatusJson: row.apparatusJson ?? null,
+    mapReference: row.mapReference ?? "",
+    deletedAt: deletedAt || undefined,
+    deletedBy: row.deletedBy ?? undefined,
+    deletedReason: row.deletedReason ?? undefined,
+    lastUpdated: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt ?? "",
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt ?? "",
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt ?? "",
+  };
+}
+
+app.get("/api/incidents", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const includeDeleted = request.query.includeDeleted === "true";
+    const where = { tenantId };
+    if (!includeDeleted) {
+      where.deletedAt = null;
+    }
+    const rows = await prisma.incident.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+    const data = rows.map(incidentRowToApi);
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incidents list error.",
+    });
+  }
+});
+
+app.post("/api/incidents", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const incident = await prisma.incident.create({
+      data: {
+        tenantId,
+        incidentNumber: trimValue(body.incidentNumber) || null,
+        dispatchNumber: trimValue(body.dispatchNumber) || null,
+        incidentType: trimValue(body.incidentType) || "",
+        priority: trimValue(body.priority) || "",
+        address: trimValue(body.address) || "",
+        stillDistrict: trimValue(body.stillDistrict) || "",
+        assignedUnits: trimValue(body.assignedUnits) || "",
+        reportedBy: trimValue(body.reportedBy) || null,
+        callbackNumber: trimValue(body.callbackNumber) || null,
+        dispatchNotes: trimValue(body.dispatchNotes) || null,
+        currentState: trimValue(body.currentState) || "Draft",
+        receivedAt: trimValue(body.receivedAt) || "",
+        dispatchInfo: trimValue(body.dispatchInfo) || "",
+        apparatusJson:
+          body.apparatusJson != null && typeof body.apparatusJson === "object"
+            ? body.apparatusJson
+            : Array.isArray(body.apparatus)
+              ? body.apparatus
+              : null,
+        mapReference: trimValue(body.mapReference) || null,
+      },
+    });
+    response.status(201).json({ ok: true, data: incidentRowToApi(incident) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident create error.",
+    });
+  }
+});
+
+app.get("/api/incidents/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    const id = trimValue(request.params.id);
+    if (!tenantId || !id) {
+      response.status(400).json({ ok: false, message: "Missing tenant context or incident id." });
+      return;
+    }
+    const incident = await prisma.incident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!incident) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    response.json({ ok: true, data: incidentRowToApi(incident) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident get error.",
+    });
+  }
+});
+
+app.patch("/api/incidents/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    const id = trimValue(request.params.id);
+    if (!tenantId || !id) {
+      response.status(400).json({ ok: false, message: "Missing tenant context or incident id." });
+      return;
+    }
+    const existing = await prisma.incident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const update = {};
+    if (body.incidentNumber !== undefined) update.incidentNumber = trimValue(body.incidentNumber) || null;
+    if (body.dispatchNumber !== undefined) update.dispatchNumber = trimValue(body.dispatchNumber) || null;
+    if (body.incidentType !== undefined) update.incidentType = trimValue(body.incidentType) || "";
+    if (body.priority !== undefined) update.priority = trimValue(body.priority) || "";
+    if (body.address !== undefined) update.address = trimValue(body.address) || "";
+    if (body.stillDistrict !== undefined) update.stillDistrict = trimValue(body.stillDistrict) || "";
+    if (body.assignedUnits !== undefined) update.assignedUnits = trimValue(body.assignedUnits) || "";
+    if (body.reportedBy !== undefined) update.reportedBy = trimValue(body.reportedBy) || null;
+    if (body.callbackNumber !== undefined) update.callbackNumber = trimValue(body.callbackNumber) || null;
+    if (body.dispatchNotes !== undefined) update.dispatchNotes = trimValue(body.dispatchNotes) || null;
+    if (body.currentState !== undefined) update.currentState = trimValue(body.currentState) || "Draft";
+    if (body.receivedAt !== undefined) update.receivedAt = trimValue(body.receivedAt) || "";
+    if (body.dispatchInfo !== undefined) update.dispatchInfo = trimValue(body.dispatchInfo) || "";
+    if (body.mapReference !== undefined) update.mapReference = trimValue(body.mapReference) || null;
+    if (body.deletedBy !== undefined) update.deletedBy = trimValue(body.deletedBy) || null;
+    if (body.deletedReason !== undefined) update.deletedReason = trimValue(body.deletedReason) || null;
+    if (body.deletedAt !== undefined) {
+      const v = body.deletedAt;
+      update.deletedAt = v === null || v === "" ? null : v instanceof Date ? v : new Date(v);
+    }
+    if (body.apparatusJson !== undefined || body.apparatus !== undefined) {
+      const v = body.apparatusJson ?? body.apparatus;
+      update.apparatusJson = v == null ? null : (typeof v === "object" ? v : null);
+    }
+    const updated = await prisma.incident.update({
+      where: { id },
+      data: update,
+    });
+    response.json({ ok: true, data: incidentRowToApi(updated) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident update error.",
+    });
+  }
+});
+
+app.delete("/api/incidents/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    const id = trimValue(request.params.id);
+    if (!tenantId || !id) {
+      response.status(400).json({ ok: false, message: "Missing tenant context or incident id." });
+      return;
+    }
+    const existing = await prisma.incident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const deletedBy = trimValue(body.deletedBy) || null;
+    const deletedReason = trimValue(body.deletedReason) || null;
+    const updated = await prisma.incident.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        deletedBy,
+        deletedReason,
+      },
+    });
+    response.json({ ok: true, data: incidentRowToApi(updated) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident delete error.",
+    });
+  }
+});
+
+// ----- /api/department-details -----
 app.get("/api/department-details", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;
@@ -1791,6 +2108,7 @@ app.post("/api/department-details", async (request, response) => {
         ? existingDetails.payloadJson
         : {};
     const payloadToStore = _dropped !== undefined ? payloadWithoutAuth : payloadWithSyncedUsers;
+    const tenantEntityIdFromPayload = readTenantEntityIdFromDepartmentPayload(payloadToStore);
     // Keep non-auth user profile metadata when saving department details.
     if (
       existingPayload.userFullNames &&
@@ -1820,6 +2138,12 @@ app.post("/api/department-details", async (request, response) => {
         payloadJson: payloadToStore,
       },
     });
+    if (tenantEntityIdFromPayload) {
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: { nerisEntityId: tenantEntityIdFromPayload },
+      });
+    }
     response.status(200).json({ ok: true });
   } catch (error) {
     response.status(500).json({
@@ -2451,6 +2775,16 @@ app.get("/api/neris/debug/entities", async (request, response) => {
       ok: entitiesResult.ok,
       status: entitiesResult.status,
       statusText: entitiesResult.statusText,
+      note:
+        "NERIS support clarified GET /entity is a directory listing endpoint, not a canonical 'authorized entities' endpoint.",
+      entityListNerisIds: entitiesResult.entityIds,
+      entityListCount: entitiesResult.entityIds.length,
+      upstreamRequest: {
+        method: "GET",
+        url: `${config.baseUrl}/entity`,
+        headers: ["Authorization: Bearer <access_token>"],
+      },
+      // Backward-compatibility for existing UI and docs.
       accessibleEntityIds: entitiesResult.entityIds,
       neris: entitiesResult.body,
     });
@@ -2462,11 +2796,138 @@ app.get("/api/neris/debug/entities", async (request, response) => {
   }
 });
 
+app.get("/api/neris/debug/entity-check", async (request, response) => {
+  const config = getProxyConfig();
+  const requestedNerisId =
+    readQueryValue(request.query.nerisId) ||
+    readQueryValue(request.query.neris_id) ||
+    (await resolveEntityIdFromRequest({}, request.headers, config, request.tenant));
+  if (!requestedNerisId) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set this tenant's NERIS entity ID in Department Details.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(requestedNerisId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: requestedNerisId,
+    });
+    return;
+  }
+
+  try {
+    const accessToken = await getAccessToken(config);
+    const [queryLookup, pathLookup, enrollmentLookup] = await Promise.all([
+      fetchEntityByNerisIdQuery(config, accessToken, requestedNerisId),
+      fetchEntityByPath(config, accessToken, requestedNerisId),
+      fetchIntegrationEnrollment(config, accessToken),
+    ]);
+    const overallOk = queryLookup.ok || pathLookup.ok;
+    const summary = {
+      entityFoundViaQuery: queryLookup.ok,
+      entityFoundViaPath: pathLookup.ok,
+      enrollmentLookupOk: enrollmentLookup.ok,
+      enrollmentLookupSkipped: Boolean(enrollmentLookup.skipped),
+    };
+    response.status(overallOk ? 200 : 502).json({
+      ok: overallOk,
+      submittedEntityId: requestedNerisId,
+      note:
+        "This endpoint follows NERIS support guidance: validate by querying /entity?neris_id=... and /entity/{neris_id}, and optionally inspect /account/enrollment/{clientId}.",
+      summary,
+      requestTemplates: {
+        entityQuery: `GET ${config.baseUrl}/entity?neris_id=${requestedNerisId}`,
+        entityPath: `GET ${config.baseUrl}/entity/${requestedNerisId}`,
+        enrollment: trimValue(config.clientId)
+          ? `GET ${config.baseUrl}/account/enrollment/${trimValue(config.clientId)}`
+          : "Unavailable: NERIS_CLIENT_ID missing on server config.",
+        authHeader: "Authorization: Bearer <access_token>",
+      },
+      checks: {
+        entityByQueryParam: queryLookup,
+        entityByPathParam: pathLookup,
+        enrollmentByClientId: enrollmentLookup,
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected entity-check debug error.",
+      submittedEntityId: requestedNerisId,
+    });
+  }
+});
+
 function readQueryValue(queryValue) {
   if (Array.isArray(queryValue)) {
     return trimValue(queryValue[0]);
   }
   return trimValue(queryValue);
+}
+
+function readNestedStringValue(source, pathSegments) {
+  let cursor = source;
+  for (const segment of pathSegments) {
+    if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
+      return "";
+    }
+    cursor = cursor[segment];
+  }
+  return trimValue(cursor);
+}
+
+function readTenantEntityIdFromDepartmentPayload(payloadJson) {
+  if (!payloadJson || typeof payloadJson !== "object" || Array.isArray(payloadJson)) {
+    return "";
+  }
+  const candidates = [
+    readNestedStringValue(payloadJson, ["nerisEntityId"]),
+    readNestedStringValue(payloadJson, ["vendorCode"]),
+    readNestedStringValue(payloadJson, ["departmentNerisId"]),
+    readNestedStringValue(payloadJson, ["fd_neris_id"]),
+    readNestedStringValue(payloadJson, ["neris", "entityId"]),
+    readNestedStringValue(payloadJson, ["nerisExportSettings", "entityId"]),
+    readNestedStringValue(payloadJson, ["nerisExportSettings", "vendorCode"]),
+  ].filter(Boolean);
+  const exactMatch = candidates.find((value) => NERIS_ENTITY_ID_PATTERN.test(value));
+  return exactMatch || "";
+}
+
+async function resolveTenantEntityId(tenantId) {
+  if (!tenantId) {
+    return "";
+  }
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: { nerisEntityId: true },
+  });
+  const tenantEntityId = trimValue(tenant?.nerisEntityId);
+  if (tenantEntityId && NERIS_ENTITY_ID_PATTERN.test(tenantEntityId)) {
+    return tenantEntityId;
+  }
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const fallbackEntityId = readTenantEntityIdFromDepartmentPayload(details?.payloadJson);
+  if (
+    fallbackEntityId &&
+    fallbackEntityId !== tenantEntityId &&
+    NERIS_ENTITY_ID_PATTERN.test(fallbackEntityId)
+  ) {
+    // Keep tenant-level field populated during migration from payload-backed values.
+    await prisma.tenant.update({
+      where: { id: tenantId },
+      data: { nerisEntityId: fallbackEntityId },
+    });
+  }
+  return fallbackEntityId;
 }
 
 app.get("/api/neris/debug/incident", async (request, response) => {
@@ -2478,14 +2939,20 @@ app.get("/api/neris/debug/incident", async (request, response) => {
   const incidentEntityFromId = NERIS_INCIDENT_ID_PATTERN.test(requestedIncidentNerisId)
     ? requestedIncidentNerisId.split("|")[0]
     : "";
+  const resolvedTenantEntityId = await resolveEntityIdFromRequest(
+    {},
+    request.headers,
+    config,
+    request.tenant,
+  );
   const requestedEntityId =
-    readQueryValue(request.query.entityId) || incidentEntityFromId || config.defaultEntityId;
+    readQueryValue(request.query.entityId) || incidentEntityFromId || resolvedTenantEntityId;
 
   if (!requestedEntityId) {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?entityId=... or set NERIS_ENTITY_ID in .env.server.",
+        "Missing NERIS entity ID. Provide ?entityId=... or set this tenant's NERIS entity ID in Department Details.",
     });
     return;
   }
@@ -2549,7 +3016,8 @@ app.get("/api/neris/debug/incident", async (request, response) => {
       troubleshooting = {
         message: entityIsAccessible
           ? "Token can list this entity, but read permission is denied for incident retrieval."
-          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+          : "Token may not be authorized for submittedEntityId. Compare submittedEntityId against entityNerisIds returned by GET /entity (directory list; not a canonical authorization endpoint).",
+        entityNerisIdsFromEntityList: entitiesResult.entityIds,
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
         entityIsAccessible,
@@ -2576,7 +3044,7 @@ app.get("/api/neris/debug/incident", async (request, response) => {
   }
 });
 
-function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
+async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, tenant) {
   const integration =
     requestBody?.integration && typeof requestBody.integration === "object"
       ? requestBody.integration
@@ -2585,7 +3053,25 @@ function resolveEntityIdFromRequest(requestBody, requestHeaders, config) {
     trimValue(requestHeaders["x-neris-entity-id"]) ||
     trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  return bodyEntityId || headerEntityId || config.defaultEntityId;
+  if (bodyEntityId) {
+    return bodyEntityId;
+  }
+  if (headerEntityId) {
+    return headerEntityId;
+  }
+
+  const tenantId = trimValue(tenant?.id);
+  const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
+  if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
+    return tenantEntityIdFromContext;
+  }
+  if (tenantId) {
+    const tenantEntityId = await resolveTenantEntityId(tenantId);
+    // Fail-closed for tenant traffic: never fallback to global env value.
+    return tenantEntityId;
+  }
+
+  return config.defaultEntityId;
 }
 
 function readNerisDetailString(responseBody) {
@@ -2706,13 +3192,27 @@ function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
 
 app.post("/api/neris/validate", async (request, response) => {
   const config = getProxyConfig();
-  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
+  const entityId = await resolveEntityIdFromRequest(
+    request.body,
+    request.headers,
+    config,
+    request.tenant,
+  );
 
   if (!entityId) {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set Vendor/Department code in Customization OR set NERIS_ENTITY_ID in .env.server.",
+        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid NERIS entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: entityId,
     });
     return;
   }
@@ -2745,7 +3245,8 @@ app.post("/api/neris/validate", async (request, response) => {
       troubleshooting = {
         message: entityIsAccessible
           ? "Token can list this entity, but validate permission is denied. Confirm account role/enrollment allows validate/create actions for this entity."
-          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+          : "Token may not be authorized for submittedEntityId. Compare submittedEntityId against entityNerisIds returned by GET /entity (directory list; not a canonical authorization endpoint).",
+        entityNerisIdsFromEntityList: entitiesResult.entityIds,
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
         submittedDepartmentNerisId,
@@ -2772,13 +3273,27 @@ app.post("/api/neris/validate", async (request, response) => {
 
 app.post("/api/neris/export", async (request, response) => {
   const config = getProxyConfig();
-  const entityId = resolveEntityIdFromRequest(request.body, request.headers, config);
+  const entityId = await resolveEntityIdFromRequest(
+    request.body,
+    request.headers,
+    config,
+    request.tenant,
+  );
 
   if (!entityId) {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set Vendor/Department code in Customization OR set NERIS_ENTITY_ID in .env.server.",
+        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+    });
+    return;
+  }
+  if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
+    response.status(400).json({
+      ok: false,
+      message:
+        "Invalid NERIS entity ID format. Expected FD########, VN########, FM########, or FA########.",
+      submittedEntityId: entityId,
     });
     return;
   }
@@ -2878,7 +3393,8 @@ app.post("/api/neris/export", async (request, response) => {
       troubleshooting = {
         message: entityIsAccessible
           ? "Token can list this entity, but create/update permission is denied. Confirm account role/enrollment allows incident write actions for this entity."
-          : "Token is not authorized for submittedEntityId. Compare submittedEntityId against accessibleEntityIds from this token.",
+          : "Token may not be authorized for submittedEntityId. Compare submittedEntityId against entityNerisIds returned by GET /entity (directory list; not a canonical authorization endpoint).",
+        entityNerisIdsFromEntityList: entitiesResult.entityIds,
         accessibleEntityIds: entitiesResult.entityIds,
         entitiesLookupStatus: entitiesResult.status,
         submittedDepartmentNerisId,

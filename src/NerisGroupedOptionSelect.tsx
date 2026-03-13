@@ -536,7 +536,12 @@ export function NerisGroupedOptionSelect({
                                       }${isDisabled ? " disabled" : ""}`}
                                       aria-selected={isSelected}
                                       aria-disabled={isDisabled}
-                                      onClick={() => {
+                                      onMouseDown={(event) => {
+                                        event.preventDefault();
+                                      }}
+                                      onClick={(event) => {
+                                        event.preventDefault();
+                                        event.stopPropagation();
                                         if (isDisabled) {
                                           return;
                                         }
@@ -624,7 +629,12 @@ export function NerisGroupedOptionSelect({
                                             }${isDisabled ? " disabled" : ""}`}
                                             aria-selected={isSelected}
                                             aria-disabled={isDisabled}
-                                            onClick={() => {
+                                            onMouseDown={(event) => {
+                                              event.preventDefault();
+                                            }}
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
                                               if (isDisabled) {
                                                 return;
                                               }
@@ -757,7 +767,12 @@ export function NerisGroupedOptionSelect({
                                     }${isDisabled ? " disabled" : ""}`}
                                     aria-selected={isSelected}
                                     aria-disabled={isDisabled}
-                                    onClick={() => {
+                                    onMouseDown={(event) => {
+                                      event.preventDefault();
+                                    }}
+                                    onClick={(event) => {
+                                      event.preventDefault();
+                                      event.stopPropagation();
                                       if (isDisabled) return;
                                       if (mode === "single") {
                                         onChange(option.value);
@@ -843,7 +858,12 @@ export function NerisGroupedOptionSelect({
                                           }${isDisabled ? " disabled" : ""}`}
                                           aria-selected={isSelected}
                                           aria-disabled={isDisabled}
-                                          onClick={() => {
+                                          onMouseDown={(event) => {
+                                            event.preventDefault();
+                                          }}
+                                          onClick={(event) => {
+                                            event.preventDefault();
+                                            event.stopPropagation();
                                             if (isDisabled) return;
                                             if (mode === "single") {
                                               onChange(option.value);

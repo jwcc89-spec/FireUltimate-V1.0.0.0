@@ -1,0 +1,14 @@
+---
+description: Project-level context and doc map for FireUltimate
+alwaysApply: true
+---
+
+# Project Context
+
+At session start, read **`.cursor/project-context.md`** when present. It summarizes:
+
+- What the project is (multi-tenant fire department platform)
+- Key constraints (tenant isolation, NERIS schema, no secrets in client/payloadJson, etc.)
+- Where to find details: `docs/system_architecture.md`, `docs/data_model.md`, `docs/agent-execution-contract.md`, `docs/incident-lifecycle.md`, `docs/integrations.md`
+
+When touching architecture, data, incidents, or external systems (CAD/NERIS/NEMSIS), read the relevant docs above and follow them. Give **beginner-friendly, step-by-step** directions and clear **do this now** vs **do this later** so the next agent can continue safely.

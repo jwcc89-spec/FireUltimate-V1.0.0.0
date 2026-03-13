@@ -46,6 +46,8 @@ Purpose: keep all deferred or future work in one place from this point forward, 
 
 - [Later][P2] Deploy frontend staging as a separate Render service (optional, when desired).
 - [Later][P2] Add configurable tenant policy controls for demo-style tenants when business rules are finalized.
+- [Later][P2] Add wildcard DNS `*.fireultimate.app` for faster tenant onboarding after live NERIS cutover is stable.
+- [Later][P3] Evaluate Cloudflare proxied mode (orange cloud) and enable after validating API/NERIS flows with DNS-only baseline.
 - [Later][P3] Optimize frontend bundle size and chunking strategy after acceptance gates.
 
 ---

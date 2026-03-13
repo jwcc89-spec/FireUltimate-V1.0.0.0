@@ -2,14 +2,26 @@
  * Create a trial (or other) tenant with primary domain and admin user.
  * Usage: npm run tenant:create -- --slug kankdemo --name "Kankakee Trial" --hostname kankdemo.fireultimate.app --status trial --adminUsername admin --adminPassword <temp>
  */
-import "dotenv/config";
+import fs from "node:fs";
+import path from "node:path";
 import bcrypt from "bcryptjs";
+import dotenv from "dotenv";
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient } from "@prisma/client";
 import { Pool } from "pg";
 
 const BCRYPT_SALT_ROUNDS = 12;
 const ALLOWED_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
+
+function loadEnv() {
+  const envCandidates = [".env", ".env.server"];
+  for (const envFile of envCandidates) {
+    const absolutePath = path.resolve(process.cwd(), envFile);
+    if (fs.existsSync(absolutePath)) {
+      dotenv.config({ path: absolutePath, override: false });
+    }
+  }
+}
 
 function parseArgv(): Record<string, string> {
   const out: Record<string, string> = {};
@@ -33,9 +45,12 @@ function trim(s: unknown): string {
 }
 
 async function main() {
+  loadEnv();
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) {
-    throw new Error("DATABASE_URL is missing. Add it to .env before running tenant:create.");
+    throw new Error(
+      "DATABASE_URL is missing. Add it to .env or .env.server before running tenant:create.",
+    );
   }
 
   const args = parseArgv();

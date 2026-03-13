@@ -87,11 +87,21 @@ export interface DisplayCardOption extends NavSubmenu {
 
 export interface IncidentCallSummary {
   callNumber: string;
+  incident_internal_id?: string;
+  dispatch_internal_id?: string;
+  incidentNumber?: string;
+  dispatchNumber?: string;
+  deletedAt?: string;
+  deletedBy?: string;
+  deletedReason?: string;
   incidentType: string;
   priority: string;
   address: string;
   stillDistrict: string;
   assignedUnits: string;
+  reportedBy?: string;
+  callbackNumber?: string;
+  dispatchNotes?: string | DispatchNote[];
   currentState: string;
   lastUpdated: string;
   receivedAt: string;
@@ -131,6 +141,7 @@ export interface IncidentCallFieldOption {
 export interface IncidentDisplaySettings {
   hiddenStatIds: IncidentStatId[];
   callFieldOrder: IncidentCallFieldId[];
+  callFieldWidths?: Partial<Record<IncidentCallFieldId, number>>;
 }
 
 export interface DispatchParsingPreviewRow {
