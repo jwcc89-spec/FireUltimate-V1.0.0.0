@@ -1,0 +1,98 @@
+# Incident API — Example requests (Step 3)
+
+**Base URL:** Your proxy (e.g. `http://localhost:8787` for local, or your staging host).  
+**Tenant:** The server resolves tenant from the request **Host** header. Use the same host you use in the browser (e.g. `cifpdil.localhost` or `cifpdil.staging.fireultimate.app`).
+
+---
+
+## 1. List incidents (GET)
+
+Returns incidents for the current tenant. Soft-deleted are excluded unless `?includeDeleted=true`.
+
+```bash
+curl -s -X GET "http://localhost:8787/api/incidents" \
+  -H "Host: cifpdil.localhost" \
+  -H "Content-Type: application/json"
+```
+
+**Success:** `200` and `{ "ok": true, "data": [ ... ] }`. `data` is an array of incident objects (each has `id`, `callNumber`, `incidentNumber`, `address`, etc.).
+
+---
+
+## 2. Create incident (POST)
+
+Creates an incident; server assigns `id` (incident_id).
+
+```bash
+curl -s -X POST "http://localhost:8787/api/incidents" \
+  -H "Host: cifpdil.localhost" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "incidentNumber": "CAD-12345",
+    "dispatchNumber": "D-12345",
+    "incidentType": "Structure Fire",
+    "priority": "3",
+    "address": "123 Main St",
+    "stillDistrict": "District 1",
+    "assignedUnits": "E1, L1",
+    "currentState": "Draft",
+    "receivedAt": "12:00:00",
+    "dispatchInfo": "Manual create from API test"
+  }'
+```
+
+**Success:** `201` and `{ "ok": true, "data": { "id": "...", "callNumber": "...", ... } }`. Use `data.id` as the incident id (top left / URLs).
+
+---
+
+## 3. Get one incident (GET by id)
+
+```bash
+# Replace INCIDENT_ID with the id from create or list
+curl -s -X GET "http://localhost:8787/api/incidents/INCIDENT_ID" \
+  -H "Host: cifpdil.localhost" \
+  -H "Content-Type: application/json"
+```
+
+**Success:** `200` and `{ "ok": true, "data": { ... } }`. **404** if not found or wrong tenant.
+
+---
+
+## 4. Update incident (PATCH)
+
+Partial update. Send only the fields you want to change.
+
+```bash
+curl -s -X PATCH "http://localhost:8787/api/incidents/INCIDENT_ID" \
+  -H "Host: cifpdil.localhost" \
+  -H "Content-Type: application/json" \
+  -d '{"address": "456 Oak Ave", "currentState": "Dispatched"}'
+```
+
+**Success:** `200` and `{ "ok": true, "data": { ... } }` with the updated incident.
+
+---
+
+## 5. Soft-delete (DELETE)
+
+Sets `deletedAt` (and optional `deletedBy`, `deletedReason`). Incident stays in DB but is excluded from list unless `?includeDeleted=true`.
+
+```bash
+curl -s -X DELETE "http://localhost:8787/api/incidents/INCIDENT_ID" \
+  -H "Host: cifpdil.localhost" \
+  -H "Content-Type: application/json" \
+  -d '{"deletedBy": "admin", "deletedReason": "Duplicate"}'
+```
+
+**Success:** `200` and `{ "ok": true, "data": { ... } }` with `deletedAt` set.
+
+---
+
+## Quick test order
+
+1. **List** (expect empty or existing): `GET /api/incidents`  
+2. **Create** one: `POST /api/incidents` with body above  
+3. **List** again: you should see the new incident  
+4. **Get one**: `GET /api/incidents/<id-from-create>`  
+5. **Update**: `PATCH /api/incidents/<id>` with a field change  
+6. **List** with `?includeDeleted=true` after a delete to see soft-deleted items

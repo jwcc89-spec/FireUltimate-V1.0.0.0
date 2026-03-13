@@ -1699,6 +1699,222 @@ app.get("/api/tenant/context", (request, response) => {
   });
 });
 
+// ----- /api/incidents (tenant-scoped; Incident table) -----
+function incidentRowToApi(row) {
+  if (!row) return null;
+  const deletedAt =
+    row.deletedAt instanceof Date ? row.deletedAt.toISOString() : (row.deletedAt ?? "");
+  return {
+    id: row.id,
+    callNumber: row.id,
+    incidentNumber: row.incidentNumber ?? "",
+    dispatchNumber: row.dispatchNumber ?? "",
+    incident_internal_id: row.incidentNumber ?? "",
+    dispatch_internal_id: row.dispatchNumber ?? "",
+    incidentType: row.incidentType ?? "",
+    priority: row.priority ?? "",
+    address: row.address ?? "",
+    stillDistrict: row.stillDistrict ?? "",
+    assignedUnits: row.assignedUnits ?? "",
+    reportedBy: row.reportedBy ?? "",
+    callbackNumber: row.callbackNumber ?? "",
+    dispatchNotes: row.dispatchNotes ?? "",
+    currentState: row.currentState ?? "Draft",
+    receivedAt: row.receivedAt ?? "",
+    dispatchInfo: row.dispatchInfo ?? "",
+    apparatusJson: row.apparatusJson ?? null,
+    mapReference: row.mapReference ?? "",
+    deletedAt: deletedAt || undefined,
+    deletedBy: row.deletedBy ?? undefined,
+    deletedReason: row.deletedReason ?? undefined,
+    lastUpdated: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt ?? "",
+    createdAt: row.createdAt instanceof Date ? row.createdAt.toISOString() : row.createdAt ?? "",
+    updatedAt: row.updatedAt instanceof Date ? row.updatedAt.toISOString() : row.updatedAt ?? "",
+  };
+}
+
+app.get("/api/incidents", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const includeDeleted = request.query.includeDeleted === "true";
+    const where = { tenantId };
+    if (!includeDeleted) {
+      where.deletedAt = null;
+    }
+    const rows = await prisma.incident.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+    });
+    const data = rows.map(incidentRowToApi);
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incidents list error.",
+    });
+  }
+});
+
+app.post("/api/incidents", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const incident = await prisma.incident.create({
+      data: {
+        tenantId,
+        incidentNumber: trimValue(body.incidentNumber) || null,
+        dispatchNumber: trimValue(body.dispatchNumber) || null,
+        incidentType: trimValue(body.incidentType) || "",
+        priority: trimValue(body.priority) || "",
+        address: trimValue(body.address) || "",
+        stillDistrict: trimValue(body.stillDistrict) || "",
+        assignedUnits: trimValue(body.assignedUnits) || "",
+        reportedBy: trimValue(body.reportedBy) || null,
+        callbackNumber: trimValue(body.callbackNumber) || null,
+        dispatchNotes: trimValue(body.dispatchNotes) || null,
+        currentState: trimValue(body.currentState) || "Draft",
+        receivedAt: trimValue(body.receivedAt) || "",
+        dispatchInfo: trimValue(body.dispatchInfo) || "",
+        apparatusJson:
+          body.apparatusJson != null && typeof body.apparatusJson === "object"
+            ? body.apparatusJson
+            : Array.isArray(body.apparatus)
+              ? body.apparatus
+              : null,
+        mapReference: trimValue(body.mapReference) || null,
+      },
+    });
+    response.status(201).json({ ok: true, data: incidentRowToApi(incident) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident create error.",
+    });
+  }
+});
+
+app.get("/api/incidents/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    const id = trimValue(request.params.id);
+    if (!tenantId || !id) {
+      response.status(400).json({ ok: false, message: "Missing tenant context or incident id." });
+      return;
+    }
+    const incident = await prisma.incident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!incident) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    response.json({ ok: true, data: incidentRowToApi(incident) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident get error.",
+    });
+  }
+});
+
+app.patch("/api/incidents/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    const id = trimValue(request.params.id);
+    if (!tenantId || !id) {
+      response.status(400).json({ ok: false, message: "Missing tenant context or incident id." });
+      return;
+    }
+    const existing = await prisma.incident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const update = {};
+    if (body.incidentNumber !== undefined) update.incidentNumber = trimValue(body.incidentNumber) || null;
+    if (body.dispatchNumber !== undefined) update.dispatchNumber = trimValue(body.dispatchNumber) || null;
+    if (body.incidentType !== undefined) update.incidentType = trimValue(body.incidentType) || "";
+    if (body.priority !== undefined) update.priority = trimValue(body.priority) || "";
+    if (body.address !== undefined) update.address = trimValue(body.address) || "";
+    if (body.stillDistrict !== undefined) update.stillDistrict = trimValue(body.stillDistrict) || "";
+    if (body.assignedUnits !== undefined) update.assignedUnits = trimValue(body.assignedUnits) || "";
+    if (body.reportedBy !== undefined) update.reportedBy = trimValue(body.reportedBy) || null;
+    if (body.callbackNumber !== undefined) update.callbackNumber = trimValue(body.callbackNumber) || null;
+    if (body.dispatchNotes !== undefined) update.dispatchNotes = trimValue(body.dispatchNotes) || null;
+    if (body.currentState !== undefined) update.currentState = trimValue(body.currentState) || "Draft";
+    if (body.receivedAt !== undefined) update.receivedAt = trimValue(body.receivedAt) || "";
+    if (body.dispatchInfo !== undefined) update.dispatchInfo = trimValue(body.dispatchInfo) || "";
+    if (body.mapReference !== undefined) update.mapReference = trimValue(body.mapReference) || null;
+    if (body.deletedBy !== undefined) update.deletedBy = trimValue(body.deletedBy) || null;
+    if (body.deletedReason !== undefined) update.deletedReason = trimValue(body.deletedReason) || null;
+    if (body.deletedAt !== undefined) {
+      const v = body.deletedAt;
+      update.deletedAt = v === null || v === "" ? null : v instanceof Date ? v : new Date(v);
+    }
+    if (body.apparatusJson !== undefined || body.apparatus !== undefined) {
+      const v = body.apparatusJson ?? body.apparatus;
+      update.apparatusJson = v == null ? null : (typeof v === "object" ? v : null);
+    }
+    const updated = await prisma.incident.update({
+      where: { id },
+      data: update,
+    });
+    response.json({ ok: true, data: incidentRowToApi(updated) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident update error.",
+    });
+  }
+});
+
+app.delete("/api/incidents/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    const id = trimValue(request.params.id);
+    if (!tenantId || !id) {
+      response.status(400).json({ ok: false, message: "Missing tenant context or incident id." });
+      return;
+    }
+    const existing = await prisma.incident.findFirst({
+      where: { id, tenantId },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const deletedBy = trimValue(body.deletedBy) || null;
+    const deletedReason = trimValue(body.deletedReason) || null;
+    const updated = await prisma.incident.update({
+      where: { id },
+      data: {
+        deletedAt: new Date(),
+        deletedBy,
+        deletedReason,
+      },
+    });
+    response.json({ ok: true, data: incidentRowToApi(updated) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected incident delete error.",
+    });
+  }
+});
+
+// ----- /api/department-details -----
 app.get("/api/department-details", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;

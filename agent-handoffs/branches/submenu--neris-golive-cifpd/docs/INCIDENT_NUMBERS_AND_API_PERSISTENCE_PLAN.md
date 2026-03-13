@@ -38,6 +38,8 @@ The rest of this plan uses these names. The schema and API will use **incident_i
 
 Everything is split into **what the agent (code) does** and **what you do** (approvals, running commands, testing). Do the steps in order.
 
+**Status:** Steps 1–2 done. **Step 3 (Incident API) done.** Next: Step 4 — Frontend uses API. Example API requests: see **`INCIDENT_API_EXAMPLES.md`** in this folder.
+
 ---
 
 ### Step 1: Agree on the approach and schema (you + agent)
@@ -50,13 +52,13 @@ Everything is split into **what the agent (code) does** and **what you do** (app
 
 **Agent does:**
 
-1. Propose a **Prisma schema** for an **Incident** table (or equivalent) that:
+1. Propose a **Prisma schema** for an **Incident** table (or equivalent). **Done:** see **`INCIDENT_TABLE_PROPOSAL.md`** in this folder. It proposes:
    - Belongs to a **tenant** (so data is isolated per department).
    - Has **incident_id** (server-generated primary key; e.g. `id` as cuid or a short display id).
    - Has **incident_number** (user-generated, optional; for your/CAD records and NERIS `incident_internal_id`).
    - Has fields for the rest of the data you already have: address, type, priority, state, units, notes, etc.
 2. Propose **one migration** that creates this table (no change to auth or DepartmentDetails unless you ask).
-3. Write this in a short doc (e.g. “Incident table proposal”) and **stop** until you approve.
+3. Write this in a short doc (e.g. “Incident table proposal”) and **stop** until you approve. **→ See `INCIDENT_TABLE_PROPOSAL.md`.**
 
 **You do (after you see the proposal):**
 
@@ -80,6 +82,8 @@ Everything is split into **what the agent (code) does** and **what you do** (app
 4. Confirm you see “Migration applied” or similar (no red errors).  
 5. If anything fails, copy the error and tell the agent; do not run migrations you didn’t approve.
 
+**Staging and the database:** If **cifpdil.staging.fireultimate.app** (and other staging) use the **same** Neon DB as in your `.env.server` (same `DATABASE_URL`), the migration you ran locally already applied to that DB. The Incident table is there; no extra migration step for staging. If staging ever used a **different** database, you would run the migration once against that DB (e.g. set `DATABASE_URL` for that environment and run `npx prisma migrate deploy` in deploy or manually). For this project, staging is expected to point to the same DB as local `.env.server`.
+
 ---
 
 ### Step 3: Incident API (agent codes; you test)
@@ -97,8 +101,8 @@ Everything is split into **what the agent (code) does** and **what you do** (app
 
 **You do:**
 
-1. After the agent says “API is ready,” the agent will give you 2–3 example **curl** commands (or Postman steps).  
-2. Run them (or have someone run them) and confirm you get 200 and expected JSON.  
+1. Example **curl** commands and request shapes: see **`INCIDENT_API_EXAMPLES.md`** in this folder.  
+2. Run them (e.g. list, create, get one) and confirm you get 200/201 and expected JSON. Use the same **Host** as in the browser (e.g. `cifpdil.localhost` or staging host).  
 3. If something doesn’t work, send the exact request and response (or error) to the agent.
 
 ---
