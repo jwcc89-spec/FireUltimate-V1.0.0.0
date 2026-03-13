@@ -1,7 +1,8 @@
 # Incident API — Example requests (Step 3)
 
-**Base URL:** Your proxy (e.g. `http://localhost:8787` for local, or your staging host).  
-**Tenant:** The server resolves tenant from the request **Host** header. Use the same host you use in the browser (e.g. `cifpdil.localhost` or `cifpdil.staging.fireultimate.app`).
+**Base URL (recommended):** `https://cifpdil.staging.fireultimate.app` for staging (no local proxy needed).  
+**Local:** `http://localhost:8787` if running `npm run proxy` and testing locally.  
+**Tenant:** The server resolves tenant from the request **Host** header. For staging use the same host as the base URL (e.g. `cifpdil.staging.fireultimate.app`). For local curl without custom domains, use `Host: localhost` (maps to **demo** tenant).
 
 ---
 
@@ -10,8 +11,7 @@
 Returns incidents for the current tenant. Soft-deleted are excluded unless `?includeDeleted=true`.
 
 ```bash
-curl -s -X GET "http://localhost:8787/api/incidents" \
-  -H "Host: cifpdil.localhost" \
+curl -s -X GET "https://cifpdil.staging.fireultimate.app/api/incidents" \
   -H "Content-Type: application/json"
 ```
 
@@ -24,8 +24,7 @@ curl -s -X GET "http://localhost:8787/api/incidents" \
 Creates an incident; server assigns `id` (incident_id).
 
 ```bash
-curl -s -X POST "http://localhost:8787/api/incidents" \
-  -H "Host: cifpdil.localhost" \
+curl -s -X POST "https://cifpdil.staging.fireultimate.app/api/incidents" \
   -H "Content-Type: application/json" \
   -d '{
     "incidentNumber": "CAD-12345",
@@ -49,8 +48,7 @@ curl -s -X POST "http://localhost:8787/api/incidents" \
 
 ```bash
 # Replace INCIDENT_ID with the id from create or list
-curl -s -X GET "http://localhost:8787/api/incidents/INCIDENT_ID" \
-  -H "Host: cifpdil.localhost" \
+curl -s -X GET "https://cifpdil.staging.fireultimate.app/api/incidents/INCIDENT_ID" \
   -H "Content-Type: application/json"
 ```
 
@@ -63,8 +61,7 @@ curl -s -X GET "http://localhost:8787/api/incidents/INCIDENT_ID" \
 Partial update. Send only the fields you want to change.
 
 ```bash
-curl -s -X PATCH "http://localhost:8787/api/incidents/INCIDENT_ID" \
-  -H "Host: cifpdil.localhost" \
+curl -s -X PATCH "https://cifpdil.staging.fireultimate.app/api/incidents/INCIDENT_ID" \
   -H "Content-Type: application/json" \
   -d '{"address": "456 Oak Ave", "currentState": "Dispatched"}'
 ```
@@ -78,8 +75,7 @@ curl -s -X PATCH "http://localhost:8787/api/incidents/INCIDENT_ID" \
 Sets `deletedAt` (and optional `deletedBy`, `deletedReason`). Incident stays in DB but is excluded from list unless `?includeDeleted=true`.
 
 ```bash
-curl -s -X DELETE "http://localhost:8787/api/incidents/INCIDENT_ID" \
-  -H "Host: cifpdil.localhost" \
+curl -s -X DELETE "https://cifpdil.staging.fireultimate.app/api/incidents/INCIDENT_ID" \
   -H "Content-Type: application/json" \
   -d '{"deletedBy": "admin", "deletedReason": "Duplicate"}'
 ```

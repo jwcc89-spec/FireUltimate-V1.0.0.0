@@ -31,16 +31,15 @@ Current state:
 
 ## 3) Exact next sequence (do in order)
 
-1. Confirm with user the exact editable field set and save behavior for Incident Detail page.
-2. Implement Incident Detail editable form (small batch), including save/persist behavior.
-3. Run `npm run lint`.
-4. Validate staging UX:
-   - Create Incident -> open Incident Detail -> edit fields -> save -> refresh persists.
-   - Click incident in Reporting | NERIS -> form opens and is fillable.
-5. Run staging validate/export proof for one incident.
-6. If staging passes, open PR branch -> `main`.
-7. Merge PR and deploy production.
-8. Re-run production endpoint checks and perform first controlled production export.
+**Staging browser tests (2.1–2.5):** Passed 2026-03-12. See STAGING_TEST_STEPS_BEGINNER.md.
+
+1. ~~Confirm with user the exact editable field set and save behavior for Incident Detail page.~~ (User confirmed 2.2 pass: edit & save from Incident Detail persists.)
+2. ~~Validate staging UX~~ — Done (2.1–2.5 pass).
+3. **Run staging validate/export proof** — One incident: create/open → NERIS report → validate → Export; confirm export succeeds.
+4. **If staging passes:** Open PR branch `submenu/neris-golive-cifpd` → `main`.
+5. Merge PR and deploy production.
+6. Re-run production endpoint checks (see §4 below).
+7. Perform first controlled production export when ready.
 
 ## 4) Commands for quick re-check
 
@@ -53,7 +52,13 @@ curl -sS "https://cifpdil.fireultimate.app/api/neris/health"
 curl -sS "https://cifpdil.fireultimate.app/api/neris/debug/entity-check?nerisId=FD17075450"
 ```
 
-## 5) Notes to avoid confusion
+## 5) NERIS incident_number (internal_id) format
+
+NERIS returns **422 "Invalid internal_id format for incident"** if `base.incident_number` or `dispatch.incident_number` contain spaces or other disallowed characters. The proxy now **sanitizes** these values before sending: spaces → underscore, and only `A–Z a–z 0–9 _ -` are kept. So e.g. "Test- Export" is sent as "Test-_Export". Users can still type anything in the form; the payload sent to NERIS is normalized.
+
+---
+
+## 6) Notes to avoid confusion
 
 - `cifpdil` is your tenant slug (internal app naming).
 - `NERIS_CLIENT_ID` is assigned by NERIS for OAuth; it is not your tenant slug.

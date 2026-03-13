@@ -173,6 +173,15 @@ function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
 
+/** NERIS rejects incident_number (internal_id) when it contains spaces or other invalid chars. Normalize to allowed format. */
+function sanitizeNerisIncidentNumber(value) {
+  if (value == null || typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const replaced = trimmed.replace(/\s+/g, "_").replace(/[^A-Za-z0-9_\-]/g, "");
+  return replaced || trimmed.replace(/\s+/g, "_");
+}
+
 const BCRYPT_SALT_ROUNDS = 12;
 function isBcryptHash(value) {
   return typeof value === "string" && value.length > 0 && value.startsWith("$2");
@@ -1210,7 +1219,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   const unitResponses = extractUnitResponses(formValues, incidentSnapshot, clientUtcOffsetMinutes);
 
   const dispatchPayload = {
-    incident_number: dispatchIncidentNumber,
+    incident_number: sanitizeNerisIncidentNumber(dispatchIncidentNumber),
     call_arrival: callArrival,
     call_answered: callAnswered,
     call_create: callCreate,
@@ -1315,7 +1324,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
 
   const basePayload = {
     department_neris_id: departmentNerisId,
-    incident_number: incidentNumber,
+    incident_number: sanitizeNerisIncidentNumber(incidentNumber),
     location: baseLocation,
   };
   if (typeof peoplePresent === "boolean") {
