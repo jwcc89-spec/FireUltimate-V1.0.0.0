@@ -205,7 +205,7 @@ That's enough for the next agent (or you) to know that everything is working as 
 After 2.1–2.5 all pass, the sequence is (get **incident data fully on the server** before PR to main):
 
 1. ~~**Staging validate/export proof**~~ — **Passed** (201 Created, NERIS SUBMITTED).
-2. **Step 4: Incidents on the server** — Frontend uses the Incident API: load list from API, create/update incidents via API so they persist on the server and show on any device. See INCIDENT_NUMBERS_AND_API_PERSISTENCE_PLAN.md Step 4.
+2. ~~**Step 4: Incidents on the server**~~ — **Done.** Frontend uses Incident API; list loads from server, create/update/delete persist on server.
 3. **Then open PR** — Branch `submenu/neris-golive-cifpd` → `main` → merge and deploy production.
 4. **Production checks** — Re-run tenant context and NERIS health/entity-check on production (see GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md).
 5. **First controlled production export** — One real export on production when ready.

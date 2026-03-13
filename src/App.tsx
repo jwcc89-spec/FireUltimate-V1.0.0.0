@@ -6172,6 +6172,9 @@ function DepartmentDetailsPage({
         if (!response.ok || !isMounted) return;
         const json = (await response.json()) as { ok?: boolean; data?: Record<string, unknown> };
         if (!json?.ok || !json?.data || !isMounted) return;
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(json.data));
+        }
         const d = normalizeDepartmentDraft(json.data);
         setDepartmentName(String(d.departmentName ?? ""));
         setDepartmentStreet(String(d.departmentStreet ?? ""));
@@ -11263,6 +11266,18 @@ function App() {
       .catch(() => {
         setIncidentCalls(readIncidentQueue());
       });
+  }, [session.isAuthenticated]);
+
+  useEffect(() => {
+    if (!session.isAuthenticated || typeof window === "undefined") return;
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        if (json?.ok && json.data) {
+          window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(json.data));
+        }
+      })
+      .catch(() => {});
   }, [session.isAuthenticated]);
 
   const [workflowStates, setWorkflowStates] = useState<string[]>(() =>
