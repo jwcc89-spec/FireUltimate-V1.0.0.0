@@ -38,7 +38,7 @@ The rest of this plan uses these names. The schema and API will use **incident_i
 
 Everything is split into **what the agent (code) does** and **what you do** (approvals, running commands, testing). Do the steps in order.
 
-**Status:** Steps 1–2 done. **Step 3 (Incident API) done.** Next: Step 4 — Frontend uses API. Example API requests: see **`INCIDENT_API_EXAMPLES.md`** in this folder.
+**Status:** Steps 1–3 done. **Step 4 (Frontend uses API) done.** Next: Step 5 — Cleanup and docs. Example API requests: see **`INCIDENT_API_EXAMPLES.md`** in this folder.
 
 ---
 

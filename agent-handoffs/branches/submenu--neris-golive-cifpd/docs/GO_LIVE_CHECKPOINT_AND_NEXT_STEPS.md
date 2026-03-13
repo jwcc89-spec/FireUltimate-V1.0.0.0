@@ -33,11 +33,13 @@ Current state:
 
 **Staging browser tests (2.1–2.5):** Passed 2026-03-12. See STAGING_TEST_STEPS_BEGINNER.md.
 
-1. ~~Confirm with user the exact editable field set and save behavior for Incident Detail page.~~ (User confirmed 2.2 pass: edit & save from Incident Detail persists.)
+**Order:** Get incident data fully on the server and working **before** PR to main, so the department has a complete, functional system.
+
+1. ~~Confirm with user the exact editable field set and save behavior for Incident Detail page.~~ (User confirmed 2.2 pass.)
 2. ~~Validate staging UX~~ — Done (2.1–2.5 pass).
-3. **Run staging validate/export proof** — One incident: create/open → NERIS report → validate → Export; confirm export succeeds.
-4. **If staging passes:** Open PR branch `submenu/neris-golive-cifpd` → `main`.
-5. Merge PR and deploy production.
+3. ~~**Run staging validate/export proof**~~ — **Passed 2026-03-13.** Export returned 201 Created; NERIS `neris_id`: `FD17075450|none|1771420482`, status SUBMITTED. `incident_number` sanitization (Test-_Export) accepted.
+4. ~~**Complete Step 4 (Incident API in frontend)**~~ — **Done.** App loads list from GET /api/incidents on login; create/update/delete use POST/PATCH/DELETE; localStorage used as cache after API success.
+5. **Then:** Open PR branch `submenu/neris-golive-cifpd` → `main` → merge and deploy production.
 6. Re-run production endpoint checks (see §4 below).
 7. Perform first controlled production export when ready.
 
@@ -58,7 +60,14 @@ NERIS returns **422 "Invalid internal_id format for incident"** if `base.inciden
 
 ---
 
-## 6) Notes to avoid confusion
+## 6) CAD dispatch via email (after incidents on server)
+
+**Order:** Get incidents fully on the server (Step 4) and PR to main first; then CAD email ingest.  
+**Guide:** See **CAD_EMAIL_INGEST_SETUP_GUIDE.md** in this folder — step-by-step: (1) set up email address and give to dispatch, (2) server monitors that inbox (IMAP or webhook), (3) you send test email from dispatch, (4) we parse and auto-fill incident fields.
+
+---
+
+## 7) Notes to avoid confusion
 
 - `cifpdil` is your tenant slug (internal app naming).
 - `NERIS_CLIENT_ID` is assigned by NERIS for OAuth; it is not your tenant slug.

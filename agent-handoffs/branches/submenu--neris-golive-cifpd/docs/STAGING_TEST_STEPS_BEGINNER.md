@@ -12,7 +12,8 @@ Do the steps in order. After each step, note whether it **passed** or what went 
 **Recorded:** 2026-03-12  
 **Part 1 (API):** Run by agent earlier; all curls passed on staging.  
 **Part 2 (browser):** 2.1 Pass, 2.2 Pass, 2.3 Pass, 2.4 Pass, 2.5 Pass.  
-**Next:** Staging validate/export proof → PR → main → deploy production → first controlled production export. See **GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md** and the “Next steps to complete this pass” section below.
+**Staging export:** Passed 2026-03-13 (201 Created, NERIS SUBMITTED).  
+**Next:** Step 4 (incidents on server / frontend uses API) → then PR → main → deploy. See **GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md** and the “Next steps to complete this pass” section below.
 
 ---
 
@@ -201,12 +202,10 @@ That's enough for the next agent (or you) to know that everything is working as 
 
 ## Next steps to complete this pass
 
-After 2.1–2.5 all pass, the sequence to **complete the staging/go-live pass** is:
+After 2.1–2.5 all pass, the sequence is (get **incident data fully on the server** before PR to main):
 
-1. **Staging validate/export proof** — Run one full flow on staging: create (or use) an incident → open NERIS report → fill/validate → **Export**; confirm export succeeds and NERIS receives it (or you see success in the app).
-2. **Open PR** — Branch `submenu/neris-golive-cifpd` → `main` (or your main branch name).
-3. **Merge and deploy** — Merge the PR, let production deploy (e.g. Render).
-4. **Production checks** — Re-run tenant context and NERIS health/entity-check on production (see GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md for curl commands).
-5. **First controlled production export** — One real export on production with production NERIS (when you're ready).
-
-**Optional later:** Step 4 of the Incident plan (frontend uses Incident API so incidents persist across browsers/devices) can be done after go-live if you want that next.
+1. ~~**Staging validate/export proof**~~ — **Passed** (201 Created, NERIS SUBMITTED).
+2. **Step 4: Incidents on the server** — Frontend uses the Incident API: load list from API, create/update incidents via API so they persist on the server and show on any device. See INCIDENT_NUMBERS_AND_API_PERSISTENCE_PLAN.md Step 4.
+3. **Then open PR** — Branch `submenu/neris-golive-cifpd` → `main` → merge and deploy production.
+4. **Production checks** — Re-run tenant context and NERIS health/entity-check on production (see GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md).
+5. **First controlled production export** — One real export on production when ready.

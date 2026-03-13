@@ -35,6 +35,12 @@ import {
 } from "react-router-dom";
 import "./App.css";
 import {
+  getIncidentList,
+  createIncident,
+  updateIncident,
+  deleteIncident,
+} from "./api/incidents";
+import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
   DASHBOARD_PRIORITY_LINKS,
@@ -120,7 +126,7 @@ interface RouteResolverProps {
   role: UserRole;
   username: string;
   incidentCalls: IncidentCallSummary[];
-  onCreateIncidentCall: (payload: IncidentCreatePayload) => IncidentCallSummary;
+  onCreateIncidentCall: (payload: IncidentCreatePayload) => Promise<IncidentCallSummary>;
   onUpdateIncidentCall: (
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
@@ -151,7 +157,7 @@ interface IncidentsListPageProps {
   incidentDisplaySettings: IncidentDisplaySettings;
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   incidentCalls: IncidentCallSummary[];
-  onCreateIncidentCall: (payload: IncidentCreatePayload) => IncidentCallSummary;
+  onCreateIncidentCall: (payload: IncidentCreatePayload) => Promise<IncidentCallSummary>;
 }
 
 interface IncidentCallDetailPageProps {
@@ -3349,7 +3355,7 @@ function IncidentsListPage({
     setIsCreateIncidentModalOpen(true);
   };
 
-  const handleCreateIncident = () => {
+  const handleCreateIncident = async () => {
     const required = incidentsSetup.requiredFields;
     if (
       isIncidentFieldVisible("incidentNumber") &&
@@ -3439,9 +3445,15 @@ function IncidentsListPage({
       setCreateIncidentError("Dispatch Notes is required.");
       return;
     }
-    const nextIncident = onCreateIncidentCall(createIncidentDraft);
-    setIsCreateIncidentModalOpen(false);
-    openCallDetail(nextIncident.callNumber);
+    try {
+      const nextIncident = await onCreateIncidentCall(createIncidentDraft);
+      setIsCreateIncidentModalOpen(false);
+      openCallDetail(nextIncident.callNumber);
+    } catch (err) {
+      setCreateIncidentError(
+        err instanceof Error ? err.message : "Failed to create incident.",
+      );
+    }
   };
 
   useEffect(() => {
@@ -11240,6 +11252,19 @@ function App() {
   const [incidentCalls, setIncidentCalls] = useState<IncidentCallSummary[]>(() =>
     readIncidentQueue(),
   );
+
+  useEffect(() => {
+    if (!session.isAuthenticated) return;
+    getIncidentList(false)
+      .then((list) => {
+        setIncidentCalls(list);
+        writeIncidentQueue(list);
+      })
+      .catch(() => {
+        setIncidentCalls(readIncidentQueue());
+      });
+  }, [session.isAuthenticated]);
+
   const [workflowStates, setWorkflowStates] = useState<string[]>(() =>
     readWorkflowStates(),
   );
@@ -11334,40 +11359,34 @@ function App() {
     writeNerisExportSettings(normalized);
   };
 
-  const handleCreateIncidentCall = (payload: IncidentCreatePayload): IncidentCallSummary => {
+  const handleCreateIncidentCall = async (
+    payload: IncidentCreatePayload,
+  ): Promise<IncidentCallSummary> => {
     const now = new Date();
     const hh = String(now.getHours()).padStart(2, "0");
     const mm = String(now.getMinutes()).padStart(2, "0");
     const ss = String(now.getSeconds()).padStart(2, "0");
-    const yyyy = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, "0");
-    const day = String(now.getDate()).padStart(2, "0");
-    const callNumber = `I-${yyyy}${month}${day}-${hh}${mm}${ss}`;
-    const incidentInternalId = payload.incident_internal_id.trim() || callNumber;
-    const dispatchInternalId = payload.dispatch_internal_id.trim() || incidentInternalId;
-    const nextIncident: IncidentCallSummary = {
-      callNumber,
-      incident_internal_id: incidentInternalId,
-      dispatch_internal_id: dispatchInternalId,
-      incidentNumber: incidentInternalId,
-      dispatchNumber: dispatchInternalId,
+    const receivedAt = `${hh}:${mm}:${ss}`;
+    const body = {
+      incidentNumber: payload.incident_internal_id.trim() || undefined,
+      dispatchNumber: payload.dispatch_internal_id.trim() || undefined,
       incidentType: payload.incidentType.trim() || "New Incident",
       priority: payload.priority.trim() || "3",
       address: payload.address.trim() || "Update address",
       stillDistrict: payload.stillDistrict.trim() || "Update district",
       assignedUnits: payload.assignedUnits.join(", "),
-      reportedBy: payload.reportedBy.trim(),
-      callbackNumber: payload.callbackNumber.trim(),
-      dispatchNotes: payload.dispatchNotes.trim(),
+      reportedBy: payload.reportedBy.trim() || undefined,
+      callbackNumber: payload.callbackNumber.trim() || undefined,
+      dispatchNotes: payload.dispatchNotes.trim() || undefined,
       currentState: payload.currentState.trim() || "Draft",
-      lastUpdated: "Just now",
-      receivedAt: `${hh}:${mm}:${ss}`,
+      receivedAt,
       dispatchInfo:
         payload.dispatchNotes.trim() ||
         "Manual incident created from Incidents / Mapping.",
     };
+    const nextIncident = await createIncident(body);
     setIncidentCalls((previous) => {
-      const deduped = previous.filter((entry) => entry.callNumber !== callNumber);
+      const deduped = previous.filter((entry) => entry.callNumber !== nextIncident.callNumber);
       const next = [nextIncident, ...deduped];
       writeIncidentQueue(next);
       return next;
@@ -11375,71 +11394,126 @@ function App() {
     return nextIncident;
   };
 
-  const handleUpdateIncidentCall = useCallback((
-    callNumber: string,
-    patch: Partial<IncidentCallSummary>,
-  ) => {
-    const patchEntries = Object.entries(patch) as Array<[keyof IncidentCallSummary, unknown]>;
-    setIncidentCalls((previous) => {
-      let didChange = false;
-      const next = previous.map((entry) => {
-        if (entry.callNumber !== callNumber) {
-          return entry;
-        }
-        const hasRealChange = patchEntries.some(
-          ([key, value]) => !Object.is(entry[key], value),
-        );
-        if (!hasRealChange) {
-          return entry;
-        }
-        didChange = true;
-        return {
-          ...entry,
-          ...patch,
-          callNumber: entry.callNumber,
-          lastUpdated: "Just now",
-        };
-      });
-      if (!didChange) {
-        return previous;
+  const handleUpdateIncidentCall = useCallback(
+    async (callNumber: string, patch: Partial<IncidentCallSummary>) => {
+      const apiPatch = {
+        incidentNumber: patch.incidentNumber ?? patch.incident_internal_id,
+        dispatchNumber: patch.dispatchNumber ?? patch.dispatch_internal_id,
+        incidentType: patch.incidentType,
+        priority: patch.priority,
+        address: patch.address,
+        stillDistrict: patch.stillDistrict,
+        assignedUnits: patch.assignedUnits,
+        reportedBy: patch.reportedBy,
+        callbackNumber: patch.callbackNumber,
+        dispatchNotes:
+          typeof patch.dispatchNotes === "string"
+            ? patch.dispatchNotes
+            : undefined,
+        currentState: patch.currentState,
+        dispatchInfo: patch.dispatchInfo,
+      };
+      try {
+        const updated = await updateIncident(callNumber, apiPatch);
+        setIncidentCalls((previous) => {
+          const next = previous.map((entry) =>
+            entry.callNumber === callNumber ? updated : entry,
+          );
+          writeIncidentQueue(next);
+          return next;
+        });
+      } catch {
+        const patchEntries = Object.entries(patch) as Array<[keyof IncidentCallSummary, unknown]>;
+        setIncidentCalls((previous) => {
+          let didChange = false;
+          const next = previous.map((entry) => {
+            if (entry.callNumber !== callNumber) return entry;
+            const hasRealChange = patchEntries.some(
+              ([key, value]) => value !== undefined && !Object.is(entry[key], value),
+            );
+            if (!hasRealChange) return entry;
+            didChange = true;
+            return {
+              ...entry,
+              ...patch,
+              callNumber: entry.callNumber,
+              lastUpdated: "Just now",
+            };
+          });
+          if (!didChange) return previous;
+          writeIncidentQueue(next);
+          return next;
+        });
       }
-      writeIncidentQueue(next);
-      return next;
-    });
-  }, []);
+    },
+    [],
+  );
 
-  const handleSetIncidentDeleted = (
+  const handleSetIncidentDeleted = async (
     callNumber: string,
     deleted: boolean,
     reason?: string,
   ) => {
-    const nowIso = new Date().toISOString();
     const actor = session.username.trim() || "unknown";
-    setIncidentCalls((previous) => {
-      const next = previous.map((entry) => {
-        if (entry.callNumber !== callNumber) {
-          return entry;
-        }
-        if (deleted) {
-          return {
-            ...entry,
-            deletedAt: nowIso,
-            deletedBy: actor,
-            deletedReason: reason?.trim() || "Deleted by user.",
-            lastUpdated: "Just now",
-          };
-        }
-        return {
-          ...entry,
-          deletedAt: undefined,
-          deletedBy: undefined,
-          deletedReason: undefined,
-          lastUpdated: "Just now",
-        };
-      });
-      writeIncidentQueue(next);
-      return next;
-    });
+    if (deleted) {
+      try {
+        const updated = await deleteIncident(callNumber, {
+          deletedBy: actor,
+          deletedReason: reason?.trim() || "Deleted by user.",
+        });
+        setIncidentCalls((previous) => {
+          const next = previous.map((entry) =>
+            entry.callNumber === callNumber ? updated : entry,
+          );
+          writeIncidentQueue(next);
+          return next;
+        });
+      } catch {
+        const nowIso = new Date().toISOString();
+        setIncidentCalls((previous) => {
+          const next = previous.map((entry) => {
+            if (entry.callNumber !== callNumber) return entry;
+            return {
+              ...entry,
+              deletedAt: nowIso,
+              deletedBy: actor,
+              deletedReason: reason?.trim() || "Deleted by user.",
+              lastUpdated: "Just now",
+            };
+          });
+          writeIncidentQueue(next);
+          return next;
+        });
+      }
+    } else {
+      try {
+        const updated = await updateIncident(callNumber, { deletedAt: null });
+        setIncidentCalls((previous) => {
+          const next = previous.map((entry) =>
+            entry.callNumber === callNumber
+              ? { ...updated, deletedAt: undefined, deletedBy: undefined, deletedReason: undefined }
+              : entry,
+          );
+          writeIncidentQueue(next);
+          return next;
+        });
+      } catch {
+        setIncidentCalls((previous) => {
+          const next = previous.map((entry) => {
+            if (entry.callNumber !== callNumber) return entry;
+            return {
+              ...entry,
+              deletedAt: undefined,
+              deletedBy: undefined,
+              deletedReason: undefined,
+              lastUpdated: "Just now",
+            };
+          });
+          writeIncidentQueue(next);
+          return next;
+        });
+      }
+    }
   };
 
   return (
