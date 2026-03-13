@@ -1218,9 +1218,13 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
 
   const unitResponses = extractUnitResponses(formValues, incidentSnapshot, clientUtcOffsetMinutes);
 
+  // NERIS 422: call_arrival must not be after call_create. Normalize so arrival <= create.
+  const callArrivalNormalized =
+    callArrival && callCreate && callArrival > callCreate ? callCreate : callArrival;
+
   const dispatchPayload = {
     incident_number: sanitizeNerisIncidentNumber(dispatchIncidentNumber),
-    call_arrival: callArrival,
+    call_arrival: callArrivalNormalized,
     call_answered: callAnswered,
     call_create: callCreate,
     location: dispatchLocation,
@@ -1460,8 +1464,13 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   if (actionsTactics) {
     payload.actions_tactics = actionsTactics;
   }
-  if (uniqueAidEntries.length > 0) {
-    payload.aids = uniqueAidEntries;
+  // NERIS 422: Aid department NERIS ID cannot be the same as the incident base department. Strip self-aid.
+  const baseDepartmentId = trimValue(departmentNerisId);
+  const aidsFiltered = uniqueAidEntries.filter(
+    (entry) => trimValue(entry.department_neris_id) !== baseDepartmentId,
+  );
+  if (aidsFiltered.length > 0) {
+    payload.aids = aidsFiltered;
   }
   if (nonFdAids.length > 0) {
     payload.nonfd_aids = nonFdAids;

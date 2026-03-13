@@ -2,6 +2,8 @@
 
 Use this checklist each time you onboard a new department tenant.
 
+**Related doc:** For **first-time production database setup** (new Neon project, migrations, seed, wiring Render), or for the exact steps to **add a tenant’s production domain** after seeding, see **`NEON_PRODUCTION_PROJECT_SETUP.md`** in this folder.
+
 ---
 
 ## A) Intake from Department / NERIS
@@ -36,10 +38,41 @@ Important:
   - [ ] `<tenant>.staging.fireultimate.app` (optional for staging)
   - [ ] `<tenant>.fireultimate.app` (required for live)
 
+**How to create a new tenant (choose one):**
+
+- **Option 1 – `tenant:create` (recommended for new tenants):** Creates tenant, **one** domain, DepartmentDetails shell, and admin user in one step. Run against the target DB (e.g. production). Use the **production** hostname so the live domain is set from the start:
+  ```bash
+  npm run tenant:create -- --slug <tenant-slug> --name "Department Name" --hostname <tenant>.fireultimate.app --status active --adminUsername admin --adminPassword <temp>
+  ```
+  To also allow staging, add the staging domain afterward (see “Add a domain for an existing tenant” below).
+
+- **Option 2 – Seed:** The repo seed creates `cifpdil` and `demo` with **staging** domains only. It does **not** add `<tenant>.fireultimate.app`. After running seed, you must add the production domain manually (see below). See **NEON_PRODUCTION_PROJECT_SETUP.md** Step 5 for full detail.
+
+**Add a domain for an existing tenant** (e.g. production hostname after seed, or staging after tenant:create):
+
+- **SQL (Neon SQL Editor or any Postgres client):** Replace `<tenant-slug>` and `<hostname>` with the tenant slug and full hostname (e.g. `mytenant.fireultimate.app`).
+  ```sql
+  INSERT INTO "TenantDomain" ("id", "tenantId", "hostname", "isPrimary")
+  SELECT
+    'c' || substr(md5(random()::text), 1, 24),
+    id,
+    '<hostname>',
+    false
+  FROM "Tenant"
+  WHERE slug = '<tenant-slug>';
+  ```
+  If you get “duplicate key” on `TenantDomain_hostname_key`, the domain is already added; no action needed.
+
+- **Script (cifpdil production only):** For **cifpdil.fireultimate.app** only, you can run `node --env-file=.env.production scripts/add-production-domain.mjs`. For other tenants, use the SQL above.
+
+**If this tenant has a dedicated Neon database** (separate from shared prod): Follow **NEON_PRODUCTION_PROJECT_SETUP.md** in full (new Neon project, migrations, seed or tenant:create, add domain, set Render `DATABASE_URL`), then continue this checklist from section C.
+
 ### B.2 Create tenant admin user
 - [ ] Admin user exists for tenant (role `admin`).
 - [ ] Temporary password delivered securely.
 - [ ] Force/change password process confirmed.
+
+(If you used `tenant:create` in B.1, the admin user is already created; otherwise create via seed, API, or DB.)
 
 ---
 

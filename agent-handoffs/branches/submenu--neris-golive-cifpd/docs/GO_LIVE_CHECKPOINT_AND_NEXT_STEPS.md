@@ -54,6 +54,22 @@ curl -sS "https://cifpdil.fireultimate.app/api/neris/health"
 curl -sS "https://cifpdil.fireultimate.app/api/neris/debug/entity-check?nerisId=FD17075450"
 ```
 
+## 4b) Pre-export verification (before clicking Export)
+
+To confirm the API and NERIS are working **before** you click Export on a report:
+
+1. **API and credentials**
+   - Open in browser (or use curl) for the environment you’re using:
+     - `https://cifpdil.fireultimate.app/api/tenant/context` → should return `slug: "cifpdil"`.
+     - `https://cifpdil.fireultimate.app/api/neris/health` → should return `ok: true`, `hasClientCredentials: true`, and the correct `baseUrl` (production: `api.neris.fsri.org`).
+   - **Entity check** (if the route is deployed):  
+     `https://cifpdil.fireultimate.app/api/neris/debug/entity-check?nerisId=FD17075450` → should return success for entity query/path. This confirms the API can reach NERIS and resolve your entity.
+
+2. **Validate-only in the app (recommended before first export)**
+   - In the NERIS queue, open the report and fill all required fields.
+   - Click **Validate** (not Export). The app calls `POST /api/neris/validate`, which sends the payload to NERIS for validation only (no submission).
+   - If validation succeeds, the API and payload are in good shape; you can then click **Export** for the real submission. If validation fails, fix the reported errors before exporting.
+
 ## 5) NERIS incident_number (internal_id) format
 
 NERIS returns **422 "Invalid internal_id format for incident"** if `base.incident_number` or `dispatch.incident_number` contain spaces or other disallowed characters. The proxy now **sanitizes** these values before sending: spaces → underscore, and only `A–Z a–z 0–9 _ -` are kept. So e.g. "Test- Export" is sent as "Test-_Export". Users can still type anything in the form; the payload sent to NERIS is normalized.
@@ -64,6 +80,12 @@ NERIS returns **422 "Invalid internal_id format for incident"** if `base.inciden
 
 **Order:** Get incidents fully on the server (Step 4) and PR to main first; then CAD email ingest.  
 **Guide:** See **CAD_EMAIL_INGEST_SETUP_GUIDE.md** in this folder — step-by-step: (1) set up email address and give to dispatch, (2) server monitors that inbox (IMAP or webhook), (3) you send test email from dispatch, (4) we parse and auto-fill incident fields.
+
+---
+
+## 6b) Backlog (to change later)
+
+Incidents and NERIS form UX items from production testing (Reported By, dispatch notes/callback, military time, Edit Reported By layout, Initial dispatch code, AID departments, required-if, UNIT TYPE, Populate Date/Returning) are in **`BACKLOG_INCIDENTS_NERIS_UX.md`** in this folder. Use that doc to prioritize follow-up work.
 
 ---
 
