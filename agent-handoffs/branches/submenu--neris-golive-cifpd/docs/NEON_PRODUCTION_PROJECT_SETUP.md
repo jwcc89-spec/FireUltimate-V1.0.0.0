@@ -72,24 +72,30 @@ Your app uses Prisma migrations: a set of instructions that create the right tab
 
 ### 3c. Run the migration commands
 
-You’ll run two commands in the **same** terminal, in the project folder.
+You’ll run **two commands** in the **same** terminal, in the project folder. Copy and paste each one, then press Enter.
 
-1. **Load the production URL into this terminal session.**  
-   Run this **exactly** (it reads `.env.production` and exports `DATABASE_URL` for the rest of this terminal session):
-   ```bash
-   export $(grep -v '^#' .env.production | xargs)
-   ```
-   You won’t see any output if it worked. That’s normal.
+---
 
-2. **Apply the migrations to the production database.**  
-   Run:
-   ```bash
-   npx prisma migrate deploy
-   ```
-   - **What this does:** Sends the migration instructions (from the `prisma/migrations/` folder) to the database whose URL is in `DATABASE_URL` — i.e. your new production database.
-   - **Success looks like:** A few lines of output ending with something like “X migrations applied” or listing each migration. No red error messages.
+**COMMAND 1** — Load the production URL into this terminal session (reads `.env.production`). You won’t see any output if it worked; that’s normal.
 
-3. **If you see an error:** Check that `.env.production` has the correct connection string (no extra spaces, whole URL in one line), that you ran the `export` command in the same terminal before `npx prisma migrate deploy`, and that you’re in the project root (where `prisma/` exists).
+```bash
+export $(grep -v '^#' .env.production | xargs)
+```
+
+Type or paste that line, press Enter, then run Command 2.
+
+---
+
+**COMMAND 2** — Apply the migrations to the production database.
+
+```bash
+npx prisma migrate deploy
+```
+
+- **What this does:** Sends the migration instructions (from the `prisma/migrations/` folder) to the database whose URL is in `DATABASE_URL` — i.e. your new production database.
+- **Success looks like:** A few lines of output ending with something like “X migrations applied” or listing each migration. No red error messages.
+
+**If you see an error:** Check that `.env.production` has the correct connection string (no extra spaces, whole URL in one line), that you ran Command 1 in the same terminal before Command 2, and that you’re in the project root (where `prisma/` exists).
 
 ---
 
@@ -177,6 +183,10 @@ A script in the repo adds the domain using the same production `DATABASE_URL`:
 - [ ] **TenantDomain** row added for `cifpdil.fireultimate.app` (SQL or script).
 - [ ] Render **fireultimate-prod-api** → Environment → **DATABASE_URL** set to production connection string.
 - [ ] Redeploy (if needed) and verify **cifpdil.fireultimate.app** and `/api/tenant/context` show **cifpdil**.
+
+---
+
+**When onboarding another tenant** on this production DB (or any existing DB), use **`TENANT_ONBOARDING_CHECKLIST.md`** in this folder. It covers creating a tenant (`tenant:create` or seed), adding a production domain (SQL template for any tenant, or the add-production-domain script for cifpdil), and the rest (Render env, DNS, NERIS, verification).
 
 ---
 
