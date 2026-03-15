@@ -45,6 +45,7 @@ import {
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
 import { getNerisDraft, patchNerisDraft } from "./api/nerisDrafts";
+import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
@@ -2568,6 +2569,8 @@ function getNerisQueueFieldValue(
   fieldId: IncidentCallFieldId,
 ): string {
   if (fieldId === "status") {
+    const serverStatus = call.nerisReportStatus?.trim();
+    if (serverStatus) return serverStatus;
     return getNerisReportStatus(call.callNumber);
   }
   return getCallFieldValue(call, fieldId);
@@ -11519,6 +11522,17 @@ function App() {
       .catch(() => {});
   }, [session.isAuthenticated]);
 
+  useEffect(() => {
+    if (!session.isAuthenticated) return;
+    getNerisSettings()
+      .then((data) => {
+        const merged = normalizeNerisExportSettings(data);
+        setNerisExportSettings(merged);
+        writeNerisExportSettings(merged);
+      })
+      .catch(() => {});
+  }, [session.isAuthenticated]);
+
   const [workflowStates, setWorkflowStates] = useState<string[]>(() =>
     readWorkflowStates(),
   );
@@ -11611,6 +11625,13 @@ function App() {
     const normalized = normalizeNerisExportSettings(nextSettings);
     setNerisExportSettings(normalized);
     writeNerisExportSettings(normalized);
+    patchNerisSettings(normalized)
+      .then((data) => {
+        const merged = normalizeNerisExportSettings(data);
+        setNerisExportSettings(merged);
+        writeNerisExportSettings(merged);
+      })
+      .catch(() => {});
   };
 
   const handleCreateIncidentCall = async (

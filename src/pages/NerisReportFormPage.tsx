@@ -313,7 +313,6 @@ function NerisReportFormPage({
   parseImportedLocationValues,
   toResourceSummaryTime,
   toResourceDateTimeInputValue,
-  toResourceDateOnlyInputValue,
   formatResourceDatePart,
   formatResourceTimePart,
   parseTimeInput24h,
@@ -1987,29 +1986,49 @@ function NerisReportFormPage({
   };
 
   const populateResourceTimesFromDispatch = (unitEntryId: string) => {
-    const fallbackDispatch =
-      toResourceDateOnlyInputValue(
-        formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
-        resourceFallbackDate,
-      ) || "";
+    // Prefer Incident Onset Date (Core), then dispatch/call-create date, then fallback
+    const onsetDate = (formValues.incident_onset_date ?? "").trim();
+    const populateDatePart =
+      onsetDate && /^\d{4}-\d{2}-\d{2}$/.test(onsetDate)
+        ? onsetDate
+        : formatResourceDatePart(
+            toResourceDateTimeInputValue(
+              formValues.incident_time_unit_dispatched ??
+                formValues.incident_time_call_create ??
+                "",
+              resourceFallbackDate,
+            ),
+          ) || resourceFallbackDate;
+    if (!populateDatePart || !/^\d{4}-\d{2}-\d{2}$/.test(populateDatePart)) {
+      return;
+    }
     setResourceUnits((previous) =>
       previous.map((entry) => {
         if (entry.id !== unitEntryId) {
           return entry;
         }
-        const dispatchSeed =
-          toResourceDateOnlyInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
-        if (!dispatchSeed) {
-          return entry;
-        }
+        // Update only the date part for each field; preserve existing times
+        const withDate = (
+          field:
+            | "dispatchTime"
+            | "enrouteTime"
+            | "stagedTime"
+            | "onSceneTime"
+            | "canceledTime"
+            | "clearTime",
+        ) =>
+          combineResourceDateTimeFromParts(
+            populateDatePart,
+            formatResourceTimePart(entry[field]),
+          ) || entry[field];
         return {
           ...entry,
-          dispatchTime: dispatchSeed,
-          enrouteTime: dispatchSeed,
-          stagedTime: dispatchSeed,
-          onSceneTime: dispatchSeed,
-          canceledTime: dispatchSeed,
-          clearTime: dispatchSeed,
+          dispatchTime: withDate("dispatchTime"),
+          enrouteTime: withDate("enrouteTime"),
+          stagedTime: withDate("stagedTime"),
+          onSceneTime: withDate("onSceneTime"),
+          canceledTime: withDate("canceledTime"),
+          clearTime: withDate("clearTime"),
         };
       }),
     );

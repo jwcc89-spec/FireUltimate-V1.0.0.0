@@ -1824,7 +1824,28 @@ app.get("/api/incidents", async (request, response) => {
       where,
       orderBy: { createdAt: "desc" },
     });
-    const data = rows.map(incidentRowToApi);
+    const callNumbers = rows.map((r) => r.id);
+    const drafts =
+      callNumbers.length > 0
+        ? await prisma.nerisDraft.findMany({
+            where: { tenantId, callNumber: { in: callNumbers } },
+            select: { callNumber: true, payload: true },
+          })
+        : [];
+    const reportStatusByCall = new Map();
+    for (const d of drafts) {
+      const payload = d.payload && typeof d.payload === "object" ? d.payload : {};
+      const status =
+        typeof payload.reportStatus === "string" && payload.reportStatus.trim()
+          ? payload.reportStatus.trim()
+          : "Draft";
+      reportStatusByCall.set(d.callNumber, status);
+    }
+    const data = rows.map((row) => {
+      const api = incidentRowToApi(row);
+      api.nerisReportStatus = reportStatusByCall.get(row.id) ?? "Draft";
+      return api;
+    });
     response.json({ ok: true, data });
   } catch (error) {
     response.status(500).json({
@@ -2177,6 +2198,113 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
   }
 });
 
+// ----- /api/neris/settings (tenant-scoped; stored in DepartmentDetails.payloadJson.nerisExportSettings) -----
+const NERIS_SETTINGS_KEYS = [
+  "exportUrl",
+  "vendorCode",
+  "vendorHeaderName",
+  "secretKey",
+  "authHeaderName",
+  "authScheme",
+  "contentType",
+  "apiVersionHeaderName",
+  "apiVersionHeaderValue",
+];
+
+function getDefaultNerisSettingsPayload() {
+  return {
+    exportUrl: "/api/neris/export",
+    vendorCode: "",
+    vendorHeaderName: "X-NERIS-Entity-ID",
+    secretKey: "",
+    authHeaderName: "Authorization",
+    authScheme: "Bearer",
+    contentType: "application/json",
+    apiVersionHeaderName: "",
+    apiVersionHeaderValue: "",
+  };
+}
+
+function normalizeNerisSettingsPayload(raw) {
+  const defaults = getDefaultNerisSettingsPayload();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return defaults;
+  const out = { ...defaults };
+  for (const key of NERIS_SETTINGS_KEYS) {
+    if (typeof raw[key] === "string") out[key] = raw[key];
+  }
+  return out;
+}
+
+app.get("/api/neris/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const payload =
+      details?.payloadJson && typeof details.payloadJson === "object"
+        ? details.payloadJson
+        : {};
+    const neris = payload.nerisExportSettings;
+    const data = normalizeNerisSettingsPayload(neris);
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected NERIS settings read error.",
+    });
+  }
+});
+
+app.patch("/api/neris/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const existingPayload =
+      details?.payloadJson && typeof details.payloadJson === "object"
+        ? { ...details.payloadJson }
+        : {};
+    const existingNeris =
+      existingPayload.nerisExportSettings && typeof existingPayload.nerisExportSettings === "object"
+        ? existingPayload.nerisExportSettings
+        : getDefaultNerisSettingsPayload();
+    const merged = { ...existingNeris };
+    for (const key of NERIS_SETTINGS_KEYS) {
+      if (typeof body[key] === "string") merged[key] = body[key];
+    }
+    const payloadToStore = { ...existingPayload, nerisExportSettings: merged };
+    await prisma.departmentDetails.upsert({
+      where: { tenantId },
+      update: { payloadJson: payloadToStore },
+      create: {
+        tenantId,
+        payloadJson: payloadToStore,
+      },
+    });
+    response.json({ ok: true, data: normalizeNerisSettingsPayload(merged) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected NERIS settings save error.",
+    });
+  }
+});
+
 // ----- /api/department-details -----
 app.get("/api/department-details", async (request, response) => {
   try {
@@ -2379,6 +2507,14 @@ app.post("/api/department-details", async (request, response) => {
       !Array.isArray(existingPayload.userTypeLabels)
     ) {
       payloadToStore.userTypeLabels = existingPayload.userTypeLabels;
+    }
+    if (
+      existingPayload.nerisExportSettings &&
+      payloadToStore.nerisExportSettings === undefined &&
+      typeof existingPayload.nerisExportSettings === "object" &&
+      !Array.isArray(existingPayload.nerisExportSettings)
+    ) {
+      payloadToStore.nerisExportSettings = existingPayload.nerisExportSettings;
     }
     await prisma.departmentDetails.upsert({
       where: { tenantId },
