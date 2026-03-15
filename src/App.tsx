@@ -1633,10 +1633,32 @@ function formatResourceDatePart(value: string): string {
   return "";
 }
 
-/** Time part (HH:mm, 24h) for time input. */
+/** Time part (HH:mm, 24h only) for time input. Never returns 12h AM/PM. */
 function formatResourceTimePart(value: string): string {
   const trimmed = (value ?? "").trim();
-  if (trimmed.length >= 16 && trimmed[10] === "T") return trimmed.slice(11, 16);
+  if (!trimmed) return "00:00";
+  // Datetime: YYYY-MM-DDTHH:mm or YYYY-MM-DDTHH:mm:ss or with Z
+  if (trimmed.length >= 16 && trimmed[10] === "T") {
+    const timePart = trimmed.slice(11, 16);
+    if (/^\d{2}:\d{2}$/.test(timePart)) return timePart;
+  }
+  // Time only HH:mm or HH:mm:ss
+  if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(trimmed)) {
+    const [h, m] = trimmed.split(":");
+    const hour = Math.min(23, Math.max(0, parseInt(h, 10) || 0));
+    const min = Math.min(59, Math.max(0, parseInt(m, 10) || 0));
+    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  }
+  // Legacy or locale string containing AM/PM: parse and force 24h
+  const upper = trimmed.toUpperCase();
+  if (upper.includes("AM") || upper.includes("PM")) {
+    const d = new Date(`1970-01-01 ${trimmed}`);
+    if (!Number.isNaN(d.valueOf())) {
+      const h = d.getHours();
+      const m = d.getMinutes();
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+    }
+  }
   return "00:00";
 }
 
@@ -1646,6 +1668,12 @@ function parseTimeInput24h(value: string): string {
   if (digits.length === 0) return "00:00";
   if (digits.length === 1) return `${digits.padStart(2, "0")}:00`;
   if (digits.length === 2) return `${digits}:00`;
+  // 3 digits: e.g. "904" -> 09:04 (one digit hour, two digit minute)
+  if (digits.length === 3) {
+    const hour = Math.min(23, Math.max(0, parseInt(digits.slice(0, 1), 10)));
+    const min = Math.min(59, Math.max(0, parseInt(digits.slice(1, 3), 10)));
+    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  }
   const h = digits.slice(0, 2);
   const m = digits.slice(2, 4);
   const hour = Math.min(23, Math.max(0, parseInt(h, 10)));
