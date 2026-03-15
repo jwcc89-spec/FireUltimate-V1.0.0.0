@@ -3556,6 +3556,34 @@ body.resource-personnel-modal-open {
   background-color: #15803d;
 }
 
+.neris-resource-add-unit-row {
+  margin-bottom: 0.75rem;
+}
+
+.neris-resource-add-unit-control {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.neris-resource-add-unit-control .neris-resource-add-unit-select,
+.neris-resource-add-unit-control .neris-resource-add-unit-input {
+  min-width: 0;
+  padding: 0.4rem 0.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  font-size: 0.85rem;
+}
+
+.neris-resource-add-unit-control .neris-resource-add-unit-select {
+  max-width: 14rem;
+}
+
+.neris-resource-add-unit-control .neris-resource-add-unit-input {
+  width: 8rem;
+}
+
 .neris-resource-empty-state {
   border: 1px dashed #cbd5e1;
   border-radius: 10px;

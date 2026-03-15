@@ -1640,6 +1640,19 @@ function formatResourceTimePart(value: string): string {
   return "00:00";
 }
 
+/** Parse user time input to HH:mm 24h (e.g. "1604" -> "16:04", "904" -> "09:04"). */
+function parseTimeInput24h(value: string): string {
+  const digits = (value ?? "").replace(/\D/g, "");
+  if (digits.length === 0) return "00:00";
+  if (digits.length === 1) return `${digits.padStart(2, "0")}:00`;
+  if (digits.length === 2) return `${digits}:00`;
+  const h = digits.slice(0, 2);
+  const m = digits.slice(2, 4);
+  const hour = Math.min(23, Math.max(0, parseInt(h, 10)));
+  const min = Math.min(59, Math.max(0, parseInt(m, 10)));
+  return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+}
+
 /** Combine date and time parts into YYYY-MM-DDTHH:mm:00 (24h). */
 function combineResourceDateTimeFromParts(datePart: string, timePart: string): string {
   if (!datePart || !/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return "";
@@ -5232,6 +5245,7 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       toResourceDateOnlyInputValue={toResourceDateOnlyInputValue}
       formatResourceDatePart={formatResourceDatePart}
       formatResourceTimePart={formatResourceTimePart}
+      parseTimeInput24h={parseTimeInput24h}
       combineResourceDateTimeFromParts={combineResourceDateTimeFromParts}
       toResourceDateTimeTimestamp={toResourceDateTimeTimestamp}
       addMinutesToResourceDateTime={addMinutesToResourceDateTime}
