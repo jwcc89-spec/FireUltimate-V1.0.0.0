@@ -23,4 +23,4 @@
 
 ## Next agent
 
-Read ACTIVE_CONTEXT.md, docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md, docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md, and COPY_PASTE_START_PROMPT.md (relevant docs list). Continue from user’s current step; do not redo completed work.
+Read ACTIVE_CONTEXT.md, docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md, docs/procedures/EMAIL_AND_CAD_SETUP.md, and COPY_PASTE_START_PROMPT.md (relevant docs list). Continue from user’s current step; do not redo completed work.

@@ -102,7 +102,7 @@
 ## Next agent should do this first
 1. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present).
 2. Read this file (**ACTIVE_CONTEXT.md**).
-3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
+3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
 4. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
 5. Read latest note in **agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/**.
 6. Continue from user’s current blocker only (CAD deploy/Part 4, or NERIS cross-browser, or staging tests). Do not redo completed work.

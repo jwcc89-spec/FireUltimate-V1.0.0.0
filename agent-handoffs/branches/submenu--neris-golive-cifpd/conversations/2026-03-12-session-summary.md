@@ -17,7 +17,7 @@ Summary for handoff; full transcript in Cursor chat history.
 - cad-email-ingest-worker/ (new)
 - server/neris-proxy.mjs (POST /api/cad/inbound-email, tenant skip for that route)
 - prisma/schema.prisma (CadEmailIngest), prisma/migrations/20260312200000_add_cad_email_ingest/
-- docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md
+- docs/procedures/EMAIL_AND_CAD_SETUP.md
 - docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md
 - docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md
 - docs/procedures/NERIS_SUPPORT_EMAIL_EXPORT_AND_PRODUCTION.md

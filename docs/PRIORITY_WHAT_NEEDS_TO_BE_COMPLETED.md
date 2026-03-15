@@ -10,7 +10,7 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 
 | Priority | Item | Guide / reference |
 |----------|------|-------------------|
-| **1** | **CAD email ingest** | `docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md` — get email to CAD Dispatch, run a sample import. |
+| **1** | **CAD email ingest** | `docs/procedures/EMAIL_AND_CAD_SETUP.md` — get email to CAD Dispatch, run a sample import. |
 | **2** | **NERIS not loading in another browser** | `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` — export history and report data only in localStorage; persist on server. |
 | 3 | Incident Detail editable inputs (go-live blocker) | See “Critical / mandatory” below. |
 | 4+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
@@ -88,7 +88,7 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 25 | **CAD email ingest** | GO_LIVE §6, CAD_EMAIL_INGEST_SETUP_GUIDE | Set up inbox, give address to CAD Dispatch, parsing, auto-fill. **User priority:** Do this first to get the email to CAD Dispatch and run a sample import. |
+| 25 | **CAD email ingest** | GO_LIVE §6, EMAIL_AND_CAD_SETUP | Set up inbox, give address to CAD Dispatch, parsing, auto-fill. **User priority:** Do this first to get the email to CAD Dispatch and run a sample import. |
 | 26 | **NERIS not loading between separate browsers** | User report | Export history and NERIS report data do not appear when logging in from another browser. **Top priority after CAD email.** See expanded section and `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`. |
 | 27 | **Production endpoint checks and first controlled production export** | GO_LIVE §3.6–3.7 | Re-run tenant/context, neris/health, entity-check on prod; perform first prod export when ready. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
@@ -103,7 +103,7 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 
 ## Suggested order to prioritize
 
-1. **CAD email ingest (#25)** — get the email to CAD Dispatch and run a sample import. Guide: **`docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md`**.
+1. **CAD email ingest (#25)** — get the email to CAD Dispatch and run a sample import. Guide: **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**.
 2. **NERIS cross-browser (#26)** — fix NERIS report and export history not loading in a different browser. Details: **`docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`**.
 3. **Unblock go-live:** Incident Detail editable inputs (#1) — see expanded description above.
 4. **High-impact UX:** Reported By and dispatch notes/callback save (#2, #3), Edit Reported By layout (#5), Aid Department no self-select (#8).

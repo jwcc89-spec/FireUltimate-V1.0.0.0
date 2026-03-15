@@ -93,4 +93,36 @@ Recommendation: implement **export history** server-side first (fixes “no expo
 
 ---
 
+## Implementation plan (next steps)
+
+**Goal:** Persist all NERIS-related data on the server so it’s visible in every browser/device. Do **export history** first (high impact, clear scope), then **drafts** (optional).
+
+### Phase 1: Export history (server as source of truth)
+
+1. **Database**
+   - Add a `NerisExportRecord` (or `NerisExportHistory`) table, scoped by `tenantId`.
+   - Columns: mirror the client’s `NerisExportRecord` (id, callNumber, incidentType, address, exportedAtIso, exportedAtLabel, attemptStatus, httpStatus, httpStatusText, statusLabel, reportStatusAtExport, validatorName, reportWriterName, submittedEntityId, submittedDepartmentNerisId, nerisId, responseSummary, responseDetail, submittedPayloadPreview). Use `id` as server-generated (e.g. cuid); add `tenantId` and `createdAt`.
+   - Run Prisma migration.
+
+2. **API**
+   - **GET /api/neris/export-history** — Resolve tenant from request (host/tenant middleware). Return list of export records for that tenant (newest first). Optionally support `?limit=` and `?offset=` for pagination.
+   - **POST /api/neris/export-history** — Body: same shape as client’s `NerisExportRecord` (id optional; server can generate). Resolve tenant; insert row with `tenantId`. Return 201 and the stored record (with server id). Used by the client after each export (success or failure).
+
+3. **Client**
+   - **On load (after auth):** Fetch `GET /api/neris/export-history` and hold in app state or context. Use this as the **source of truth** for NERIS Exports list and Export Details (replace `readNerisExportHistory()` for display).
+   - **After each export:** Call `POST /api/neris/export-history` with the same record object the client currently passes to `appendNerisExportRecord()`. Optionally keep calling `appendNerisExportRecord()` for a short transition (e.g. offline cache), then remove localStorage write once server is authoritative.
+   - **NerisReportFormPage** and any page that uses `readNerisExportHistory()` should read from the server-backed list (e.g. context or prop from App that holds export history from API).
+
+4. **Verification**
+   - Export in Browser A → open same tenant in Browser B → export history shows the new export. No dependency on localStorage.
+
+### Phase 2: NERIS drafts (optional)
+
+- **Option A (full cross-browser drafts):** Add table/store for “NERIS draft per incident” (tenantId + incident callNumber or incidentId, plus JSON or columns for formValues, reportStatus, lastSavedAt, additionalAidEntries, additionalNonFdAidEntries). Add GET/PATCH `api/neris/drafts/:callNumber` (or by incident id). Form load: fetch draft from API if no local draft (or always prefer server); on save, PATCH to API and optionally sync localStorage.
+- **Option B (prefill only):** Keep drafts in localStorage; when opening NERIS form with no local draft, prefill from incident API so at least incident-level data appears in another browser. No server-side draft storage.
+
+Recommendation: **ship Phase 1 first**, then decide on Phase 2 (Option A vs B) based on user need.
+
+---
+
 Update this doc when you implement the fix (e.g. new API routes, table names, and whether drafts are persisted server-side).
