@@ -4,7 +4,7 @@
 
 **Priority:** Top priority after completing CAD email ingest. See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
 
-**Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. **Phase 2 (server-side drafts) is implemented.** Drafts are stored per incident (tenant + callNumber) on the server; opening the NERIS form in any browser loads the last saved draft. You only need to **run the database migrations once** (see “Steps for you” below). **Phase 3** (validation/export locking: validated = locked to users unless subadmin+ unlocks; exported = locked, subadmin+ can unlock; only subadmin+ can export) is still required.
+**Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. **Phase 2 (server-side drafts) is implemented.** Drafts are stored per incident (tenant + callNumber) on the server; opening the NERIS form in any browser loads the last saved draft. You only need to **run the database migrations once** (see “Steps for you” below). **Phase 3** (validation/export locking) is implemented. After Validate (In Review) or Export (Exported), the report is locked for non-admin users; they see a lock banner and cannot edit. Only admin can unlock (Unlock button) or edit when locked. Export remains admin-only.
 
 ---
 
@@ -148,6 +148,13 @@ Implementation will need: report status/lock state stored (e.g. in draft or a se
 - **Database:** New table `NerisDraft` (Prisma model): `id`, `tenantId`, `callNumber`, `payload` (JSONB), `createdAt`, `updatedAt`. Unique on `(tenantId, callNumber)`. Migration: `20260314120000_add_neris_drafts`.
 - **API:** `GET /api/neris/drafts/:callNumber` — returns draft payload for tenant + callNumber, or 404 if none. `PATCH /api/neris/drafts/:callNumber` — body is the draft object (formValues, reportStatus, lastSavedAt, additionalAidEntries, additionalNonFdAidEntries); upserts the draft for that tenant + callNumber.
 - **Client:** When opening the NERIS form for a call number, the app fetches the draft from the API (shows “Loading draft…” until done). Form initializes from server draft when present, otherwise from localStorage. On each save (auto or explicit), the app PATCHes the draft to the server and continues to write to localStorage as cache. Draft API calls use `credentials: "include"` so the same tenant/session is used in every browser. Full cross-browser draft sync: start in one browser, finish in another.
+
+## Phase 3 implemented (validation and export locking)
+
+- **Lock state:** When `reportStatus` is **In Review** (after Validate) or **Exported**, the report is considered locked.
+- **Non-admin (user role):** When locked, the form shows a lock banner ("This report is locked. Only an admin can unlock it for editing."), the form panel is non-editable (pointer-events disabled), and Save and Validate are disabled.
+- **Admin (subadmin+):** When locked, admin can still edit and sees an **Unlock** button. Unlock sets status back to **Draft** and saves the draft to the server so the report can be edited by anyone again.
+- **Export:** Export button remains admin-only (hidden for non-admin). No schema or API changes; lock state is stored in the existing draft `reportStatus`.
 
 ---
 

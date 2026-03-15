@@ -410,6 +410,9 @@ function NerisReportFormPage({
   const [reportStatus, setReportStatus] = useState<string>(() =>
     persistedDraft?.reportStatus ?? "Draft",
   );
+  const isLocked =
+    reportStatus === "In Review" || reportStatus === "Exported";
+  const canEdit = !isLocked || role === "admin";
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
@@ -3618,6 +3621,13 @@ function NerisReportFormPage({
     stampSavedAt("manual");
   };
 
+  const handleUnlock = () => {
+    setSectionErrors({});
+    setErrorMessage("");
+    setSaveMessage("");
+    stampSavedAt("manual", "Draft", "Report unlocked. You can edit again.");
+  };
+
   const goToNextSection = () => {
     if (!hasNextSection) {
       return;
@@ -4495,19 +4505,30 @@ function NerisReportFormPage({
             type="button"
             className="primary-button compact-button"
             onClick={handleCheckForErrors}
-            disabled={isExporting}
+            disabled={isExporting || !canEdit}
           >
             Validate
           </button>
           {role === "admin" ? (
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={handleExportReport}
-              disabled={isExporting}
-            >
-              {isExporting ? "Exporting..." : "Export"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={handleExportReport}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export"}
+              </button>
+              {isLocked ? (
+                <button
+                  type="button"
+                  className="secondary-button compact-button"
+                  onClick={handleUnlock}
+                >
+                  Unlock
+                </button>
+              ) : null}
+            </>
           ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
             {reportStatus}
@@ -4574,6 +4595,11 @@ function NerisReportFormPage({
         </div>
       ) : null}
 
+      {!canEdit ? (
+        <div className="neris-lock-banner" role="status">
+          This report is locked. Only an admin can unlock it for editing.
+        </div>
+      ) : null}
       <section className="neris-report-layout">
         <aside className="panel neris-sidebar">
           <div className="neris-sidebar-header">
@@ -4594,7 +4620,9 @@ function NerisReportFormPage({
           </nav>
         </aside>
 
-        <article className="panel neris-form-panel">
+        <article
+          className={`panel neris-form-panel${!canEdit ? " neris-form-locked" : ""}`}
+        >
           {currentSection.id !== "core" &&
           currentSection.id !== "location" &&
           currentSection.id !== "emergingHazards" &&
@@ -6089,6 +6117,7 @@ function NerisReportFormPage({
               type="button"
               className="secondary-button compact-button"
               onClick={handleSaveDraft}
+              disabled={!canEdit}
             >
               Save
             </button>

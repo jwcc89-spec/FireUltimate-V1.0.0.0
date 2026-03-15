@@ -2740,6 +2740,21 @@ body.resource-personnel-modal-open {
   align-items: center;
 }
 
+.neris-lock-banner {
+  padding: 0.5rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: var(--color-warning-bg, #fef3cd);
+  border: 1px solid var(--color-warning-border, #e8d68a);
+  border-radius: 4px;
+  color: var(--color-warning-text, #856404);
+  font-weight: 500;
+}
+
+.neris-form-locked {
+  pointer-events: none;
+  opacity: 0.92;
+}
+
 .neris-report-layout {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
