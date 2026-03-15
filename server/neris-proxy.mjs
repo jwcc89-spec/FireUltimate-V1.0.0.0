@@ -1989,6 +1989,120 @@ app.delete("/api/incidents/:id", async (request, response) => {
   }
 });
 
+// ----- /api/neris/export-history (NERIS export history, cross-browser) -----
+function nerisExportHistoryRowToApi(row) {
+  return {
+    id: row.id,
+    callNumber: row.callNumber ?? "",
+    incidentType: row.incidentType ?? "",
+    address: row.address ?? "",
+    exportedAtIso: row.exportedAtIso ?? "",
+    exportedAtLabel: row.exportedAtLabel ?? "",
+    attemptStatus: row.attemptStatus === "failed" ? "failed" : "success",
+    httpStatus: typeof row.httpStatus === "number" ? row.httpStatus : 200,
+    httpStatusText: row.httpStatusText ?? "",
+    statusLabel: row.statusLabel ?? "",
+    reportStatusAtExport: row.reportStatusAtExport ?? "",
+    validatorName: row.validatorName ?? "",
+    reportWriterName: row.reportWriterName ?? "",
+    submittedEntityId: row.submittedEntityId ?? "",
+    submittedDepartmentNerisId: row.submittedDepartmentNerisId ?? "",
+    nerisId: row.nerisId ?? "",
+    responseSummary: row.responseSummary ?? "",
+    responseDetail: row.responseDetail ?? "",
+    submittedPayloadPreview: row.submittedPayloadPreview ?? "",
+  };
+}
+
+app.get("/api/neris/export-history", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const limit = Math.min(Math.max(0, parseInt(request.query.limit, 10) || 100), 500);
+    const offset = Math.max(0, parseInt(request.query.offset, 10) || 0);
+    const rows = await prisma.nerisExportHistory.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+    });
+    const data = rows.map(nerisExportHistoryRowToApi);
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected export history list error.",
+    });
+  }
+});
+
+app.post("/api/neris/export-history", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const callNumber = trimValue(body.callNumber) ?? "";
+    const incidentType = trimValue(body.incidentType) ?? "";
+    const address = trimValue(body.address) ?? "";
+    const exportedAtIso = trimValue(body.exportedAtIso) ?? "";
+    const exportedAtLabel = trimValue(body.exportedAtLabel) ?? "";
+    const attemptStatus = body.attemptStatus === "failed" ? "failed" : "success";
+    const httpStatus =
+      typeof body.httpStatus === "number" && Number.isFinite(body.httpStatus)
+        ? body.httpStatus
+        : attemptStatus === "failed"
+          ? 0
+          : 200;
+    const httpStatusText = trimValue(body.httpStatusText) ?? "";
+    const statusLabel = trimValue(body.statusLabel) ?? "";
+    const reportStatusAtExport = trimValue(body.reportStatusAtExport) ?? "";
+    const validatorName = trimValue(body.validatorName) ?? "";
+    const reportWriterName = trimValue(body.reportWriterName) ?? "";
+    const submittedEntityId = trimValue(body.submittedEntityId) ?? "";
+    const submittedDepartmentNerisId = trimValue(body.submittedDepartmentNerisId) ?? "";
+    const nerisId = trimValue(body.nerisId) ?? "";
+    const responseSummary = trimValue(body.responseSummary) ?? "";
+    const responseDetail = trimValue(body.responseDetail) ?? "";
+    const submittedPayloadPreview = trimValue(body.submittedPayloadPreview) ?? "";
+
+    const row = await prisma.nerisExportHistory.create({
+      data: {
+        tenantId,
+        callNumber,
+        incidentType,
+        address,
+        exportedAtIso,
+        exportedAtLabel,
+        attemptStatus,
+        httpStatus,
+        httpStatusText,
+        statusLabel,
+        reportStatusAtExport,
+        validatorName,
+        reportWriterName,
+        submittedEntityId,
+        submittedDepartmentNerisId,
+        nerisId,
+        responseSummary,
+        responseDetail,
+        submittedPayloadPreview,
+      },
+    });
+    response.status(201).json({ ok: true, data: nerisExportHistoryRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected export history create error.",
+    });
+  }
+});
+
 // ----- /api/department-details -----
 app.get("/api/department-details", async (request, response) => {
   try {

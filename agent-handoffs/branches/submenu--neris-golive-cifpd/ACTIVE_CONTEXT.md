@@ -4,8 +4,8 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus
-- **Priority 1:** CAD email ingest — user completing Part 1 (Email Routing on **fireultimate.app**, Option A; custom address **cifpdil** → **cifpdil@fireultimate.app**). Then deploy Worker, run migration, bind address to Worker (Part 4).
-- **Priority 2 (next):** NERIS not loading in another browser — persist export history (and optionally drafts) server-side; see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
+- **CAD email ingest:** Verified (test to cifpdil@cad.fireultimate.app works; DB + Render). Next: switch Worker to production (B11 in EMAIL_AND_CAD_SETUP.md) before giving address to dispatch; waiting on sample CAD email for parsing/auto-fill.
+- **NERIS cross-browser (Phase 1):** Implemented this session (2026-03-14). Export history is now stored on the server; app fetches on login and POSTs after each export. **User must run the migration once** — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Phase 2 (drafts on server) is optional and not done.
 - NERIS go-live for tenant cifpdil remains: staging verification, then production promotion when ready.
 
 ## Latest known status
@@ -51,10 +51,9 @@
   - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
 
 ## Current blocker / status
-- No code blocker in local branch.
-- NERIS support confirmed the production client/entity enrollment is active (`3f104b60-f7cf-437e-b79c-868fe6489f31` <-> `FD17075450`) and no pending vendor-side action remains.
-- Deployment gate remains: production is behind branch changes until PR to `main` is merged and deployed.
-- Product verification gate remains: staging user validation is still required for the new Incident setup/modal/detail edit flow before promotion.
+- No code blocker. **Uncommitted work (2026-03-14):** NERIS cross-browser Phase 1 (schema, migration, API routes, client wiring, findings doc). User asked not to commit/push this session.
+- User must run migration `20260314000000_add_neris_export_history` once (see NERIS_CROSS_BROWSER_FINDINGS.md).
+- NERIS support confirmed production client/entity enrollment active. Deployment gate: production behind branch until PR to `main`; staging validation still required before promotion.
 
 ## External dependency status
 - Remaining dependencies are deployment/environment readiness only (staging/prod release + migration + final live credential sanity checks).
@@ -73,13 +72,12 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (2026-03-12)
-- Branch confirmed; preflight and continuity docs read.
-- Lint and full build run: both pass.
-- Confirmed Incident Detail editable inputs + Save are already implemented in `IncidentCallDetailPage` (App.tsx). GO_LIVE_CHECKPOINT “not yet built” wording is outdated for current code.
-- User testing plan recorded: (1) Incident Setup fields, (2) Create incident in Incidents | Mapping, (3) NERIS queue crossover, (4) NERIS form navigation not locked, (5) Values from incident creation saved via API (not local cache). **Important:** Incident queue and created incidents are currently stored only in localStorage (host-scoped). Saving via API would require new backend/API work and explicit user approval for schema/API changes. See `docs/STAGING_TEST_CHECKLIST_DETAILED.md`.
-- Added `docs/STAGING_TEST_CHECKLIST_DETAILED.md`: fully detailed, beginner-friendly checklist (what you do / what agent does / what agent needs from you) and API vs localStorage clarification.
-- **Same day (later):** CAD email ingest Part 2+3 implemented: Worker **cad-email-ingest-worker/** (email→queue→API), **POST /api/cad/inbound-email**, **CadEmailIngest** table + migration. Guide updated for root domain (Option A: cifpdil@fireultimate.app) after Cloudflare rejected subdomain in Connect a domain. NERIS cross-browser findings doc added; priority doc updated (CAD #1, NERIS cross-browser #2). NERIS support email draft in docs/procedures.
+## Last session (2026-03-14)
+- **NERIS cross-browser Phase 1:** Implemented server-side export history. Added `NerisExportHistory` table (Prisma + migration `20260314000000_add_neris_export_history`), GET/POST `/api/neris/export-history`, client API and App state; NERIS Exports/Details/Report Form use server data when available. Beginner-friendly “Steps for you” added to NERIS_CROSS_BROWSER_FINDINGS.md (run migration once; no commit/push this session per user).
+- **Docs (earlier in conversation):** Consolidated three CAD/email guides into **EMAIL_AND_CAD_SETUP.md**; added B11 (Worker staging→production). GO_LIVE and PRIORITY refs updated. Two commits already pushed (docs; then GIT_WORKTREE, package files).
+
+## Previous session (2026-03-12)
+- Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
 - `894757f` updated cursavesinfo
@@ -88,16 +86,15 @@
 
 ## Next-step checklist (detailed)
 
-**Current priority:** CAD email ingest then NERIS cross-browser. See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`.
+**Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; NERIS cross-browser Phase 1 implemented (uncommitted).
 
-**CAD email ingest (you):**
-1. In **fireultimate.app** zone: Email Routing on, destination verified, custom address **cifpdil** (→ cifpdil@fireultimate.app). If UI requires a Worker now, deploy first (see below).
-2. Deploy Worker: `cd cad-email-ingest-worker` → `npm install` → `npx wrangler deploy`. Set **CAD_INGEST_API_URL** in Worker Variables and Secrets. Run `npx prisma migrate deploy`.
-3. Part 4: Bind **cifpdil** to Worker **cad-email-ingest-worker**; send test email.
+**CAD (you):** Switch Worker to production (EMAIL_AND_CAD_SETUP.md §B11); give cifpdil@cad.fireultimate.app to dispatch. Parsing/auto-fill when sample email available.
 
-**NERIS cross-browser (agent, after CAD):** Implement server-side persistence for export history (and optionally drafts) per `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
+**NERIS cross-browser (you, once):** Run migration for Phase 1 — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Use same DATABASE_URL as your API (e.g. Render); then redeploy API if needed. Test: export in Browser A, check NERIS Exports in Browser B.
 
-**Staging/incident testing (when ready):** `docs/procedures/STAGING_TEST_CHECKLIST_DETAILED.md` (A1–A5). Incident Detail editable + Save already in code; queue is localStorage until API persistence is approved.
+**When ready:** Commit and push Phase 1 changes (prisma schema + migration, server routes, src/api/nerisExportHistory.ts, App.tsx wiring, NERIS_CROSS_BROWSER_FINDINGS.md).
+
+**Staging/incident testing:** `docs/procedures/STAGING_TEST_CHECKLIST_DETAILED.md` (A1–A5). Incident Detail editable + Save already in code.
 
 ## Next agent should do this first
 1. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present).

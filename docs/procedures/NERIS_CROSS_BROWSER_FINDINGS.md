@@ -4,6 +4,8 @@
 
 **Priority:** Top priority after completing CAD email ingest. See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
 
+**Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. You only need to **run the database migration once** (see “Steps for you” below). **Phase 2** (server-side drafts so a half-finished report can be loaded in any browser/device) is **mandatory** for this build. **Phase 3** (validation/export locking: validated = locked to users unless subadmin+ unlocks; exported = locked, subadmin+ can unlock; only subadmin+ can export) is also required.
+
 ---
 
 ## Confirmed behavior
@@ -116,12 +118,86 @@ Recommendation: implement **export history** server-side first (fixes “no expo
 4. **Verification**
    - Export in Browser A → open same tenant in Browser B → export history shows the new export. No dependency on localStorage.
 
-### Phase 2: NERIS drafts (optional)
+### Phase 2: NERIS drafts on server (mandatory)
 
-- **Option A (full cross-browser drafts):** Add table/store for “NERIS draft per incident” (tenantId + incident callNumber or incidentId, plus JSON or columns for formValues, reportStatus, lastSavedAt, additionalAidEntries, additionalNonFdAidEntries). Add GET/PATCH `api/neris/drafts/:callNumber` (or by incident id). Form load: fetch draft from API if no local draft (or always prefer server); on save, PATCH to API and optionally sync localStorage.
-- **Option B (prefill only):** Keep drafts in localStorage; when opening NERIS form with no local draft, prefill from incident API so at least incident-level data appears in another browser. No server-side draft storage.
+**Requirement:** A user who gets halfway through a report must be able to load and finish it in any other browser or computer. Drafts must persist on the server.
 
-Recommendation: **ship Phase 1 first**, then decide on Phase 2 (Option A vs B) based on user need.
+- Add table/store for “NERIS draft per incident” (tenantId + incident callNumber or incidentId, plus JSON or columns for formValues, reportStatus, lastSavedAt, additionalAidEntries, additionalNonFdAidEntries). Add GET/PATCH `api/neris/drafts/:callNumber` (or by incident id). Form load: fetch draft from API (server is source of truth); on save, PATCH to API and sync localStorage as cache. Full cross-browser draft sync.
+
+### Phase 3: Validation and export locking (mandatory)
+
+Add locking and permissions around Validate and Export so that:
+
+1. **After Validate:** The report is **locked** for editing for users with **user** permission. They can no longer edit it unless it is **unlocked** by a **subadmin** or higher.
+2. **After Export:** The report is **locked** for editing. Only a **subadmin** (or higher) can **unlock** it. **Export** is allowed only for **subadmin** and higher (not for plain “user” role).
+3. **Unlock:** Subadmin (and higher) can unlock a validated or exported report so it can be edited again.
+
+Implementation will need: report status/lock state stored (e.g. in draft or a separate lock table), role checks (user vs subadmin vs admin), and UI to show locked state and unlock action for subadmin+.
+
+---
+
+## Phase 1 implemented (what was done)
+
+- **Database:** New table `NerisExportHistory` (Prisma model), migration `20260314000000_add_neris_export_history`.
+- **API:** `GET /api/neris/export-history` (list for tenant), `POST /api/neris/export-history` (save one record).
+- **Client:** On login, the app fetches export history from the API and uses it for the NERIS Exports and Export Details pages. After each export (success or failure), the app sends the record to the server and refreshes the list. Old localStorage export history is still used as a fallback if the server list is empty.
+
+---
+
+## Steps for you (run the migration once)
+
+You only need to do this **once** so the new table exists in your database. No coding—just run one command from the project folder.
+
+### 1. Open the project in Cursor
+
+- In Cursor, use **File → Open Folder** (or **Open…**) and choose your **FireUltimate** project folder (the one that contains `package.json`, `prisma`, and `server`).  
+- You should see the project name at the top of the left sidebar.
+
+### 2. Open the terminal
+
+- **Menu:** **Terminal → New Terminal** (or **View → Terminal**).  
+- A terminal panel will open at the bottom. The prompt might show something like `FireUltimate-V1.0.0.0` or your machine name and the folder name.
+
+### 3. Make sure you’re in the project root
+
+- Look at the **last part** of the line in the terminal (the **prompt**). It often ends with the folder name, e.g. `FireUltimate-V1.0.0.0`.
+- If you see **`cad-email-ingest-worker`** or any other subfolder name, type:
+  ```text
+  cd ..
+  ```
+  and press **Enter**. Repeat until the prompt shows the main project folder (e.g. **FireUltimate-V1.0.0.0**).
+
+### 4. Make sure `.env.server` has your database URL
+
+- In the **left file tree**, click the **project root** (top folder).
+- Find the file **`.env.server`** (it may be under a “dot” or “hidden” section). If you don’t see it, look for **`.env.server.example`** and copy it, then rename the copy to **`.env.server`**.
+- Open **`.env.server`** and find the line that says **`DATABASE_URL=`**.
+- After the `=`, there must be your **PostgreSQL connection string** (starts with `postgresql://...`). You can copy this from your database provider (e.g. **Neon**: Neon dashboard → your project → **Connection string**).  
+- If **DATABASE_URL** is empty, the migration will fail. Paste the connection string there, **save the file** (Ctrl+S or Cmd+S), then continue.
+
+### 5. Run the migration
+
+- In the **terminal**, **copy this entire line** (one line, no line break in the middle):
+  ```text
+  node --env-file=.env.server -e "require('child_process').execSync('npx prisma migrate deploy', {stdio:'inherit', env: process.env})"
+  ```
+- **Paste** it into the terminal (right‑click → Paste, or Cmd+V / Ctrl+V).
+- Press **Enter**.
+- **Success:** You should see something like:  
+  `Applying migration \`20260314000000_add_neris_export_history\``  
+  and then **“All migrations have been successfully applied.”**
+- **If you see an error:**  
+  - **“Cannot find module 'dotenv/config'”** or similar → In the project root, run `npm install dotenv` and try the migration command again.  
+  - **“datasource.url property is required”** → **.env.server** is missing or **DATABASE_URL** is empty; repeat step 4.  
+  - **“Can’t reach database server”** or **connection refused** → Check that **DATABASE_URL** in **.env.server** is correct and that you have internet access.
+
+### 6. Deploy and test (staging or production)
+
+- **If you run the API locally:** Restart the server (e.g. stop and run `npm run proxy` again) so it picks up the new table.
+- **If the API runs on Render (or similar):** Redeploy the service that runs the API (e.g. push to the branch that Render builds, or use “Manual deploy” in the Render dashboard). Render uses its **own** environment variables (e.g. **DATABASE_URL**); you must run the migration **against the same database** that Render uses. So either:
+  - Run the migration from your computer with **DATABASE_URL** in **.env.server** set to the **same** connection string that Render uses (so the new table is created in that database), then redeploy the API on Render; or  
+  - Run the migration in a one-off shell or build step on Render if your setup supports it.
+- **Test:** In **Browser A**, log in to your app (e.g. **cifpdil.staging.fireultimate.app**), go to **Reporting → NERIS**, open an incident, and run a NERIS export. Then open **Browser B** (or an incognito window), log in to the same tenant, go to **Reporting → NERIS → Exports**. You should see the export you did in Browser A. Test on **\*.staging.fireultimate.app** (or your staging host) before production.
 
 ---
 

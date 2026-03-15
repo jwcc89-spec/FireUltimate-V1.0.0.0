@@ -41,6 +41,10 @@ import {
   deleteIncident,
 } from "./api/incidents";
 import {
+  getNerisExportHistory,
+  postNerisExportRecord,
+} from "./api/nerisExportHistory";
+import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
   DASHBOARD_PRIORITY_LINKS,
@@ -145,6 +149,8 @@ interface RouteResolverProps {
   nerisExportSettings: NerisExportSettings;
   onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
   apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
+  nerisExportHistory: NerisExportRecord[];
+  setNerisExportHistory: React.Dispatch<React.SetStateAction<NerisExportRecord[]>>;
 }
 
 interface MainMenuLandingPageProps {
@@ -4711,9 +4717,14 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
 interface NerisExportDetailsPageProps {
   callNumber: string;
   incidentCalls: IncidentCallSummary[];
+  exportHistory?: NerisExportRecord[];
 }
 
-function NerisExportsPage({ incidentCalls }: NerisQueuePageProps) {
+interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
+  exportHistory?: NerisExportRecord[];
+}
+
+function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPagePropsWithHistory) {
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
   const queueCalls = useMemo(
@@ -4725,13 +4736,14 @@ function NerisExportsPage({ incidentCalls }: NerisQueuePageProps) {
   );
   const latestExportByCall = useMemo(() => {
     const map = new Map<string, NerisExportRecord>();
-    readNerisExportHistory().forEach((entry) => {
+    const history = exportHistory.length > 0 ? exportHistory : readNerisExportHistory();
+    history.forEach((entry) => {
       if (!map.has(entry.callNumber)) {
         map.set(entry.callNumber, entry);
       }
     });
     return map;
-  }, []);
+  }, [exportHistory]);
 
   const openExportDetails = (callNumber: string) => {
     navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
@@ -4831,7 +4843,7 @@ function NerisExportsPage({ incidentCalls }: NerisQueuePageProps) {
   );
 }
 
-function NerisExportDetailsPage({ callNumber, incidentCalls }: NerisExportDetailsPageProps) {
+function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
   const incident =
     getIncidentCallDetail(callNumber) ??
@@ -4852,8 +4864,11 @@ function NerisExportDetailsPage({ callNumber, incidentCalls }: NerisExportDetail
       };
     })();
   const exportHistory = useMemo(
-    () => readNerisExportHistory().filter((entry) => entry.callNumber === callNumber),
-    [callNumber],
+    () => {
+      const history = serverExportHistory.length > 0 ? serverExportHistory : readNerisExportHistory();
+      return history.filter((entry) => entry.callNumber === callNumber);
+    },
+    [callNumber, serverExportHistory],
   );
 
   if (!incident) {
@@ -5033,15 +5048,25 @@ interface NerisReportFormRouteProps {
   ) => void;
   nerisExportSettings: NerisExportSettings;
   apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
+  exportHistory?: NerisExportRecord[];
+  onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
 }
 
 function NerisReportFormPage(props: NerisReportFormRouteProps) {
+  const getExportHistory = () =>
+    props.exportHistory && props.exportHistory.length > 0
+      ? props.exportHistory
+      : readNerisExportHistory();
+  const appendAndSync = (record: NerisExportRecord) => {
+    appendNerisExportRecord(record);
+    props.onExportRecordAdded?.(record);
+  };
   return (
     <NerisReportFormPageView
       {...props}
       readNerisDraft={readNerisDraft}
       writeNerisDraft={writeNerisDraft}
-      appendNerisExportRecord={appendNerisExportRecord}
+      appendNerisExportRecord={appendAndSync}
       parseAssignedUnits={parseAssignedUnits}
       inferResourceUnitTypeValue={inferResourceUnitTypeValue}
       getStaffingValueForUnit={getStaffingValueForUnit}
@@ -5056,7 +5081,7 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       addMinutesToResourceDateTime={addMinutesToResourceDateTime}
       resourceUnitValidationErrorKey={resourceUnitValidationErrorKey}
       countSelectedPersonnel={countSelectedPersonnel}
-      readNerisExportHistory={readNerisExportHistory}
+      readNerisExportHistory={getExportHistory}
       toToneClass={toToneClass}
       toneFromNerisStatus={toneFromNerisStatus}
       togglePillValue={togglePillValue}
@@ -11118,6 +11143,8 @@ function RouteResolver({
   nerisExportSettings,
   onSaveNerisExportSettings,
   apparatusFromDepartmentDetails,
+  nerisExportHistory,
+  setNerisExportHistory,
 }: RouteResolverProps) {
   const location = useLocation();
   const path = normalizePath(location.pathname);
@@ -11174,10 +11201,10 @@ function RouteResolver({
   } else if (path === "/reporting/neris") {
     content = <NerisReportingPage incidentCalls={incidentCalls} />;
   } else if (path === "/reporting/neris/exports") {
-    content = <NerisExportsPage incidentCalls={incidentCalls} />;
+    content = <NerisExportsPage incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
   } else if (path.startsWith("/reporting/neris/exports/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
-    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} />;
+    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
   } else if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
     content = (
@@ -11190,6 +11217,12 @@ function RouteResolver({
         onUpdateIncidentCall={onUpdateIncidentCall}
         nerisExportSettings={nerisExportSettings}
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
+        exportHistory={nerisExportHistory}
+        onExportRecordAdded={async (record) => {
+          await postNerisExportRecord(record);
+          const list = await getNerisExportHistory();
+          setNerisExportHistory(list);
+        }}
       />
     );
   } else if (path === "/admin-functions/department-details") {
@@ -11266,6 +11299,14 @@ function App() {
       .catch(() => {
         setIncidentCalls(readIncidentQueue());
       });
+  }, [session.isAuthenticated]);
+
+  const [nerisExportHistory, setNerisExportHistory] = useState<NerisExportRecord[]>([]);
+  useEffect(() => {
+    if (!session.isAuthenticated) return;
+    getNerisExportHistory()
+      .then((list) => setNerisExportHistory(list))
+      .catch(() => setNerisExportHistory([]));
   }, [session.isAuthenticated]);
 
   useEffect(() => {
@@ -11574,6 +11615,8 @@ function App() {
                 nerisExportSettings={nerisExportSettings}
                 onSaveNerisExportSettings={handleSaveNerisExportSettings}
                 apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
+                nerisExportHistory={nerisExportHistory}
+                setNerisExportHistory={setNerisExportHistory}
               />
             }
           />
