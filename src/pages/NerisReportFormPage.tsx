@@ -74,6 +74,10 @@ export interface NerisReportFormPageProps {
   ) => ParsedImportedLocationValues;
   toResourceSummaryTime: (value: string) => string;
   toResourceDateTimeInputValue: (value: string, fallbackDate: string) => string;
+  toResourceDateOnlyInputValue: (value: string, fallbackDate: string) => string;
+  formatResourceDatePart: (value: string) => string;
+  formatResourceTimePart: (value: string) => string;
+  combineResourceDateTimeFromParts: (datePart: string, timePart: string) => string;
   toResourceDateTimeTimestamp: (value: string, fallbackDate: string) => number | null;
   addMinutesToResourceDateTime: (value: string, minutesToAdd: number) => string;
   resourceUnitValidationErrorKey: (
@@ -258,6 +262,10 @@ function NerisReportFormPage({
   parseImportedLocationValues,
   toResourceSummaryTime,
   toResourceDateTimeInputValue,
+  toResourceDateOnlyInputValue,
+  formatResourceDatePart,
+  formatResourceTimePart,
+  combineResourceDateTimeFromParts,
   toResourceDateTimeTimestamp,
   addMinutesToResourceDateTime,
   resourceUnitValidationErrorKey,
@@ -1869,7 +1877,7 @@ function NerisReportFormPage({
 
   const populateResourceTimesFromDispatch = (unitEntryId: string) => {
     const fallbackDispatch =
-      toResourceDateTimeInputValue(
+      toResourceDateOnlyInputValue(
         formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
         resourceFallbackDate,
       ) || "";
@@ -1879,7 +1887,7 @@ function NerisReportFormPage({
           return entry;
         }
         const dispatchSeed =
-          toResourceDateTimeInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
+          toResourceDateOnlyInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
         if (!dispatchSeed) {
           return entry;
         }
@@ -5401,110 +5409,224 @@ function NerisReportFormPage({
                             {unitEntry.showTimesEditor ? (
                               <div className="neris-resource-times-editor">
                                 <div className="neris-resource-times-editor-grid">
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Dispatch
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.dispatchTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "dispatchTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.dispatchTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.dispatchTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="time"
+                                        value={formatResourceTimePart(unitEntry.dispatchTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.dispatchTime) ||
+                                                resourceFallbackDate,
+                                              e.target.value,
+                                            ) || unitEntry.dispatchTime,
+                                          )
+                                        }
+                                      />
+                                    </span>
                                     {dispatchTimeError ? (
                                       <small className="field-error">{dispatchTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Enroute
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.enrouteTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "enrouteTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.enrouteTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.enrouteTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="time"
+                                        value={formatResourceTimePart(unitEntry.enrouteTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.enrouteTime) ||
+                                                resourceFallbackDate,
+                                              e.target.value,
+                                            ) || unitEntry.enrouteTime,
+                                          )
+                                        }
+                                      />
+                                    </span>
                                     {enrouteTimeError ? (
                                       <small className="field-error">{enrouteTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Staged
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.stagedTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "stagedTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.stagedTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.stagedTime),
+                                            ) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                          }
+                                      />
+                                      <input
+                                        type="time"
+                                        value={formatResourceTimePart(unitEntry.stagedTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.stagedTime) ||
+                                                resourceFallbackDate,
+                                              e.target.value,
+                                            ) || unitEntry.stagedTime,
+                                          )
+                                        }
+                                      />
+                                    </span>
                                     {stagedTimeError ? (
                                       <small className="field-error">{stagedTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     On Scene
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.onSceneTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "onSceneTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.onSceneTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.onSceneTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="time"
+                                        value={formatResourceTimePart(unitEntry.onSceneTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.onSceneTime) ||
+                                                resourceFallbackDate,
+                                              e.target.value,
+                                            ) || unitEntry.onSceneTime,
+                                          )
+                                        }
+                                      />
+                                    </span>
                                     {onSceneTimeError ? (
                                       <small className="field-error">{onSceneTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Canceled
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.canceledTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "canceledTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.canceledTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.canceledTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="time"
+                                        value={formatResourceTimePart(unitEntry.canceledTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.canceledTime) ||
+                                                resourceFallbackDate,
+                                              e.target.value,
+                                            ) || unitEntry.canceledTime,
+                                          )
+                                        }
+                                      />
+                                    </span>
                                     {canceledTimeError ? (
                                       <small className="field-error">{canceledTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Clear
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.clearTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "clearTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.clearTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.clearTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="time"
+                                        value={formatResourceTimePart(unitEntry.clearTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.clearTime) ||
+                                                resourceFallbackDate,
+                                              e.target.value,
+                                            ) || unitEntry.clearTime,
+                                          )
+                                        }
+                                      />
+                                    </span>
                                     {clearTimeError ? (
                                       <small className="field-error">{clearTimeError}</small>
                                     ) : null}

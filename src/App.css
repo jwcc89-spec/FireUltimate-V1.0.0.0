@@ -3270,6 +3270,31 @@ body.resource-personnel-modal-open {
   gap: 0.5rem;
 }
 
+.neris-resource-datetime-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  min-width: 0;
+}
+
+.neris-resource-datetime-label .field-error {
+  margin-top: 0.15rem;
+  min-height: 1.2em;
+  flex-shrink: 0;
+}
+
+.neris-resource-datetime-inputs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+}
+
+.neris-resource-datetime-inputs input {
+  max-width: 100%;
+  min-width: 0;
+}
+
 .neris-resource-times-editor-grid label {
   display: grid;
   gap: 0.2rem;
@@ -3277,6 +3302,11 @@ body.resource-personnel-modal-open {
   color: #334155;
   font-size: 0.74rem;
   font-weight: 700;
+}
+
+.neris-resource-times-editor-grid .neris-resource-datetime-label {
+  display: flex;
+  flex-direction: column;
 }
 
 .neris-resource-times-editor-grid input {

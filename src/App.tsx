@@ -1617,6 +1617,37 @@ function toResourceDateTimeInputValue(value: string, fallbackDate: string): stri
   return `${year}-${month}-${day}T${hours}:${minutes}:${seconds}`;
 }
 
+/** Return datetime string with date only (time 00:00:00) for "Populate Date" behavior. */
+function toResourceDateOnlyInputValue(value: string, fallbackDate: string): string {
+  const full = toResourceDateTimeInputValue(value, fallbackDate);
+  if (!full) return "";
+  const datePart = full.slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return "";
+  return `${datePart}T00:00:00`;
+}
+
+/** Date part (YYYY-MM-DD) for date input; stored value is YYYY-MM-DDTHH:mm:ss. */
+function formatResourceDatePart(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (trimmed.length >= 10 && /^\d{4}-\d{2}-\d{2}/.test(trimmed)) return trimmed.slice(0, 10);
+  return "";
+}
+
+/** Time part (HH:mm, 24h) for time input. */
+function formatResourceTimePart(value: string): string {
+  const trimmed = (value ?? "").trim();
+  if (trimmed.length >= 16 && trimmed[10] === "T") return trimmed.slice(11, 16);
+  return "00:00";
+}
+
+/** Combine date and time parts into YYYY-MM-DDTHH:mm:00 (24h). */
+function combineResourceDateTimeFromParts(datePart: string, timePart: string): string {
+  if (!datePart || !/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return "";
+  const t = (timePart ?? "").trim();
+  const time = /^\d{2}:\d{2}$/.test(t) ? t : "00:00";
+  return `${datePart}T${time}:00`;
+}
+
 function toResourceDateTimeTimestamp(value: string, fallbackDate: string): number | null {
   const normalized = toResourceDateTimeInputValue(value, fallbackDate);
   if (!normalized) {
@@ -5198,6 +5229,10 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       parseImportedLocationValues={parseImportedLocationValues}
       toResourceSummaryTime={toResourceSummaryTime}
       toResourceDateTimeInputValue={toResourceDateTimeInputValue}
+      toResourceDateOnlyInputValue={toResourceDateOnlyInputValue}
+      formatResourceDatePart={formatResourceDatePart}
+      formatResourceTimePart={formatResourceTimePart}
+      combineResourceDateTimeFromParts={combineResourceDateTimeFromParts}
       toResourceDateTimeTimestamp={toResourceDateTimeTimestamp}
       addMinutesToResourceDateTime={addMinutesToResourceDateTime}
       resourceUnitValidationErrorKey={resourceUnitValidationErrorKey}

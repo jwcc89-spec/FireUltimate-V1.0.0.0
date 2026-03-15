@@ -207,6 +207,7 @@ You only need to do this **once** so the new tables exist in your database. No c
   - Run the migration from your computer with **DATABASE_URL** in **.env.server** set to the **same** connection string that Render uses (so the new table is created in that database), then redeploy the API on Render; or  
   - Run the migration in a one-off shell or build step on Render if your setup supports it.
 - **Test:** In **Browser A**, log in to your app (e.g. **cifpdil.staging.fireultimate.app**), go to **Reporting → NERIS**, open an incident, and run a NERIS export. Then open **Browser B** (or an incognito window), log in to the same tenant, go to **Reporting → NERIS → Exports**. You should see the export you did in Browser A. For **Phase 2:** In Browser A, open an incident’s NERIS report, fill in some fields, and save the draft. In Browser B, open the same incident’s NERIS report; the draft should load from the server. Test on **\*.staging.fireultimate.app** (or your staging host) before production.
+- **Assigned Units column:** The NERIS queue and incident list Assigned Units column now wraps so multiple units are visible. Incidents created or updated *before* this change may have been saved when the field was truncated or when only one unit was entered; for those, the stored value is unchanged. New or re-saved incidents will show all units in the column.
 
 ---
 
