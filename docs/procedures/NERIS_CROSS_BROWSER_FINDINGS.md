@@ -4,7 +4,7 @@
 
 **Priority:** Top priority after completing CAD email ingest. See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
 
-**Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. You only need to **run the database migration once** (see “Steps for you” below). **Phase 2** (server-side drafts so a half-finished report can be loaded in any browser/device) is **mandatory** for this build. **Phase 3** (validation/export locking: validated = locked to users unless subadmin+ unlocks; exported = locked, subadmin+ can unlock; only subadmin+ can export) is also required.
+**Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. **Phase 2 (server-side drafts) is implemented.** Drafts are stored per incident (tenant + callNumber) on the server; opening the NERIS form in any browser loads the last saved draft. You only need to **run the database migrations once** (see “Steps for you” below). **Phase 3** (validation/export locking: validated = locked to users unless subadmin+ unlocks; exported = locked, subadmin+ can unlock; only subadmin+ can export) is still required.
 
 ---
 
@@ -39,16 +39,17 @@ The **incident list** is loaded from the API and appears in all browsers; no cha
 
 After a successful (or failed) export, the client calls `appendNerisExportRecord(record)` and the record is stored only in localStorage. There is no API that persists or returns export history.
 
-### NERIS drafts (localStorage only)
+### NERIS drafts (server + localStorage cache)
 
 | What | Location | Key / behavior |
 |------|----------|----------------|
-| Storage key | `src/App.tsx` | `NERIS_DRAFT_STORAGE_KEY = "fire-ultimate-neris-drafts"` |
-| Read | `src/App.tsx` | `readNerisDraftStore()`, `readNerisDraft(callNumber)` |
-| Write | `src/App.tsx` | `writeNerisDraftStore(store)`, `writeNerisDraft(callNumber, draft)` |
-| Used by | `NerisReportFormPage` | Form state is initialized from `readNerisDraft(callNumber)`; no server fetch |
+| Server table | `prisma/schema.prisma` | `NerisDraft` (tenantId, callNumber, payload JSON) |
+| API | `server/neris-proxy.mjs` | `GET /api/neris/drafts/:callNumber`, `PATCH /api/neris/drafts/:callNumber` (tenant-scoped) |
+| Client API | `src/api/nerisDrafts.ts` | `getNerisDraft(callNumber)`, `patchNerisDraft(callNumber, draft)` |
+| LocalStorage cache | `src/App.tsx` | `NERIS_DRAFT_STORAGE_KEY`; still read/written for fallback and cache |
+| Used by | `NerisReportFormPage` | Form load: fetch draft from API (server as source of truth); on save: PATCH to API and write to localStorage |
 
-Drafts are keyed by incident call number. Structure includes `formValues`, `reportStatus`, `lastSavedAt`, `additionalAidEntries`, `additionalNonFdAidEntries` (see `NerisStoredDraft` in `App.tsx`).
+Drafts are keyed by tenant + incident call number. Payload includes `formValues`, `reportStatus`, `lastSavedAt`, `additionalAidEntries`, `additionalNonFdAidEntries` (see `NerisStoredDraft` in `App.tsx`).
 
 ### Incident list (API + localStorage cache)
 
@@ -142,11 +143,17 @@ Implementation will need: report status/lock state stored (e.g. in draft or a se
 - **API:** `GET /api/neris/export-history` (list for tenant), `POST /api/neris/export-history` (save one record).
 - **Client:** On login, the app fetches export history from the API and uses it for the NERIS Exports and Export Details pages. After each export (success or failure), the app sends the record to the server and refreshes the list. Old localStorage export history is still used as a fallback if the server list is empty.
 
+## Phase 2 implemented (server-side drafts)
+
+- **Database:** New table `NerisDraft` (Prisma model): `id`, `tenantId`, `callNumber`, `payload` (JSONB), `createdAt`, `updatedAt`. Unique on `(tenantId, callNumber)`. Migration: `20260314120000_add_neris_drafts`.
+- **API:** `GET /api/neris/drafts/:callNumber` — returns draft payload for tenant + callNumber, or 404 if none. `PATCH /api/neris/drafts/:callNumber` — body is the draft object (formValues, reportStatus, lastSavedAt, additionalAidEntries, additionalNonFdAidEntries); upserts the draft for that tenant + callNumber.
+- **Client:** When opening the NERIS form for a call number, the app fetches the draft from the API (shows “Loading draft…” until done). Form initializes from server draft when present, otherwise from localStorage. On each save (auto or explicit), the app PATCHes the draft to the server and continues to write to localStorage as cache. Draft API calls use `credentials: "include"` so the same tenant/session is used in every browser. Full cross-browser draft sync: start in one browser, finish in another.
+
 ---
 
-## Steps for you (run the migration once)
+## Steps for you (run the migrations once)
 
-You only need to do this **once** so the new table exists in your database. No coding—just run one command from the project folder.
+You only need to do this **once** so the new tables exist in your database. No coding—just run one command from the project folder. This applies both the Phase 1 migration (if not already applied) and the Phase 2 migration (`NerisDraft`).
 
 ### 1. Open the project in Cursor
 
@@ -185,6 +192,8 @@ You only need to do this **once** so the new table exists in your database. No c
 - Press **Enter**.
 - **Success:** You should see something like:  
   `Applying migration \`20260314000000_add_neris_export_history\``  
+  and (if not already applied)  
+  `Applying migration \`20260314120000_add_neris_drafts\``  
   and then **“All migrations have been successfully applied.”**
 - **If you see an error:**  
   - **“Cannot find module 'dotenv/config'”** or similar → In the project root, run `npm install dotenv` and try the migration command again.  
@@ -197,8 +206,8 @@ You only need to do this **once** so the new table exists in your database. No c
 - **If the API runs on Render (or similar):** Redeploy the service that runs the API (e.g. push to the branch that Render builds, or use “Manual deploy” in the Render dashboard). Render uses its **own** environment variables (e.g. **DATABASE_URL**); you must run the migration **against the same database** that Render uses. So either:
   - Run the migration from your computer with **DATABASE_URL** in **.env.server** set to the **same** connection string that Render uses (so the new table is created in that database), then redeploy the API on Render; or  
   - Run the migration in a one-off shell or build step on Render if your setup supports it.
-- **Test:** In **Browser A**, log in to your app (e.g. **cifpdil.staging.fireultimate.app**), go to **Reporting → NERIS**, open an incident, and run a NERIS export. Then open **Browser B** (or an incognito window), log in to the same tenant, go to **Reporting → NERIS → Exports**. You should see the export you did in Browser A. Test on **\*.staging.fireultimate.app** (or your staging host) before production.
+- **Test:** In **Browser A**, log in to your app (e.g. **cifpdil.staging.fireultimate.app**), go to **Reporting → NERIS**, open an incident, and run a NERIS export. Then open **Browser B** (or an incognito window), log in to the same tenant, go to **Reporting → NERIS → Exports**. You should see the export you did in Browser A. For **Phase 2:** In Browser A, open an incident’s NERIS report, fill in some fields, and save the draft. In Browser B, open the same incident’s NERIS report; the draft should load from the server. Test on **\*.staging.fireultimate.app** (or your staging host) before production.
 
 ---
 
-Update this doc when you implement the fix (e.g. new API routes, table names, and whether drafts are persisted server-side).
+Update this doc when you implement further changes (e.g. Phase 3 locking, new API routes).

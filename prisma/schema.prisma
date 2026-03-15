@@ -20,6 +20,7 @@ model Tenant {
   incidents          Incident[]
   cadEmails          CadEmailIngest[]
   nerisExportHistory NerisExportHistory[]
+  nerisDrafts        NerisDraft[]
 }
 
 model TenantDomain {
@@ -148,4 +149,18 @@ model NerisExportHistory {
 
   @@index([tenantId])
   @@index([tenantId, createdAt])
+}
+
+model NerisDraft {
+  id         String   @id @default(cuid())
+  tenantId   String
+  callNumber String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, callNumber])
+  @@index([tenantId])
 }

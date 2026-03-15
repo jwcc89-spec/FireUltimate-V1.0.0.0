@@ -2103,6 +2103,80 @@ app.post("/api/neris/export-history", async (request, response) => {
   }
 });
 
+// ----- /api/neris/drafts/:callNumber (NERIS report drafts, cross-browser) -----
+app.get("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const row = await prisma.nerisDraft.findUnique({
+      where: {
+        tenantId_callNumber: { tenantId, callNumber },
+      },
+    });
+    if (!row) {
+      response.status(404).json({ ok: false, message: "No draft found for this incident." });
+      return;
+    }
+    const payload =
+      row.payload && typeof row.payload === "object" ? row.payload : {};
+    response.json({ ok: true, data: payload });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected draft get error.",
+    });
+  }
+});
+
+app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const payload =
+      body.payload && typeof body.payload === "object"
+        ? body.payload
+        : body && typeof body === "object"
+          ? body
+          : {};
+    const row = await prisma.nerisDraft.upsert({
+      where: {
+        tenantId_callNumber: { tenantId, callNumber },
+      },
+      create: {
+        tenantId,
+        callNumber,
+        payload,
+      },
+      update: { payload },
+    });
+    const out =
+      row.payload && typeof row.payload === "object" ? row.payload : {};
+    response.json({ ok: true, data: out });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected draft save error.",
+    });
+  }
+});
+
 // ----- /api/department-details -----
 app.get("/api/department-details", async (request, response) => {
   try {

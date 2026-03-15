@@ -560,6 +560,11 @@ body.resizing-shell-sidebar {
   background-color: #f8fafc;
 }
 
+.route-resolver-root {
+  min-height: 0;
+  overflow: visible;
+}
+
 .page-content {
   min-width: 0;
   min-height: 0;
@@ -2260,6 +2265,15 @@ tbody tr:last-of-type td {
   white-space: nowrap;
 }
 
+/* Assigned Units column: allow wrap so all units are visible */
+.dispatch-field-assignedUnits {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  word-break: break-word;
+  min-width: 0;
+}
+
 .dispatch-header-field {
   position: relative;
   display: inline-flex;
@@ -3259,6 +3273,7 @@ body.resource-personnel-modal-open {
 .neris-resource-times-editor-grid label {
   display: grid;
   gap: 0.2rem;
+  min-width: 0;
   color: #334155;
   font-size: 0.74rem;
   font-weight: 700;
@@ -4437,6 +4452,10 @@ body.resource-personnel-modal-open {
 
   .neris-resource-times-editor-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .neris-resource-times-editor {
+    min-width: 0;
   }
 
   .neris-resource-inline-links {

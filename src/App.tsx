@@ -44,6 +44,7 @@ import {
   getNerisExportHistory,
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
+import { getNerisDraft, patchNerisDraft } from "./api/nerisDrafts";
 import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
@@ -2288,6 +2289,61 @@ function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
   const store = readNerisDraftStore();
   store[callNumber] = draft;
   writeNerisDraftStore(store);
+}
+
+/** Normalize API draft payload to NerisStoredDraft for form consumption. */
+function normalizeApiDraftPayload(
+  payload: unknown,
+  callNumber: string,
+): NerisStoredDraft | null {
+  if (!payload || typeof payload !== "object") return null;
+  const candidate = payload as Record<string, unknown>;
+  const formValuesCandidate = candidate.formValues;
+  const formValues: NerisFormValues = {};
+  if (formValuesCandidate && typeof formValuesCandidate === "object") {
+    for (const [fieldId, fieldValue] of Object.entries(
+      formValuesCandidate as Record<string, unknown>,
+    )) {
+      if (typeof fieldValue === "string") formValues[fieldId] = fieldValue;
+    }
+  }
+  const additionalAidEntries: NerisDraftAidEntry[] = Array.isArray(
+    candidate.additionalAidEntries,
+  )
+    ? (candidate.additionalAidEntries as Record<string, unknown>[]).reduce<
+        NerisDraftAidEntry[]
+      >((acc, entry) => {
+        if (!entry || typeof entry !== "object") return acc;
+        acc.push({
+          aidDirection: typeof entry.aidDirection === "string" ? entry.aidDirection : "",
+          aidType: typeof entry.aidType === "string" ? entry.aidType : "",
+          aidDepartment: typeof entry.aidDepartment === "string" ? entry.aidDepartment : "",
+        });
+        return acc;
+      }, [])
+    : [];
+  const additionalNonFdAidEntries: NerisDraftNonFdAidEntry[] = Array.isArray(
+    candidate.additionalNonFdAidEntries,
+  )
+    ? (candidate.additionalNonFdAidEntries as Record<string, unknown>[]).reduce<
+        NerisDraftNonFdAidEntry[]
+      >((acc, entry) => {
+        if (!entry || typeof entry !== "object") return acc;
+        acc.push({ aidType: typeof entry.aidType === "string" ? entry.aidType : "" });
+        return acc;
+      }, [])
+    : [];
+  return {
+    formValues,
+    reportStatus:
+      typeof candidate.reportStatus === "string"
+        ? candidate.reportStatus
+        : NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft",
+    lastSavedAt:
+      typeof candidate.lastSavedAt === "string" ? candidate.lastSavedAt : "Not saved",
+    additionalAidEntries,
+    additionalNonFdAidEntries,
+  };
 }
 
 function readNerisExportHistory(): NerisExportRecord[] {
@@ -5053,6 +5109,61 @@ interface NerisReportFormRouteProps {
 }
 
 function NerisReportFormPage(props: NerisReportFormRouteProps) {
+  const { callNumber } = props;
+  const [serverDraft, setServerDraft] = useState<NerisStoredDraft | null | undefined>(
+    undefined,
+  );
+  const [draftLoadStatus, setDraftLoadStatus] = useState<"loading" | "done">("loading");
+
+  useEffect(() => {
+    if (!callNumber) {
+      queueMicrotask(() => {
+        setDraftLoadStatus("done");
+        setServerDraft(null);
+      });
+      return;
+    }
+    let cancelled = false;
+    queueMicrotask(() => {
+      if (!cancelled) setDraftLoadStatus("loading");
+    });
+    getNerisDraft(callNumber)
+      .then((payload) => {
+        if (cancelled) return;
+        const normalized = payload ? normalizeApiDraftPayload(payload, callNumber) : null;
+        setServerDraft(normalized ?? null);
+        setDraftLoadStatus("done");
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setServerDraft(null);
+          setDraftLoadStatus("done");
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [callNumber]);
+
+  const readNerisDraftForForm = useCallback(
+    (cn: string): NerisStoredDraft | null => {
+      if (cn === callNumber && draftLoadStatus === "done" && serverDraft != null) {
+        return serverDraft;
+      }
+      return readNerisDraft(cn);
+    },
+    [callNumber, draftLoadStatus, serverDraft],
+  );
+
+  const writeNerisDraftForForm = useCallback(
+    (cn: string, draft: NerisStoredDraft) => {
+      writeNerisDraft(cn, draft);
+      if (cn === callNumber) setServerDraft(draft);
+      patchNerisDraft(cn, draft).catch(() => {});
+    },
+    [callNumber],
+  );
+
   const getExportHistory = () =>
     props.exportHistory && props.exportHistory.length > 0
       ? props.exportHistory
@@ -5061,11 +5172,21 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
     appendNerisExportRecord(record);
     props.onExportRecordAdded?.(record);
   };
+
+  if (draftLoadStatus === "loading") {
+    return (
+      <div className="neris-draft-loading" style={{ padding: "1rem" }}>
+        Loading draft…
+      </div>
+    );
+  }
+
   return (
     <NerisReportFormPageView
+      key={`neris-form-${callNumber}-ready`}
       {...props}
-      readNerisDraft={readNerisDraft}
-      writeNerisDraft={writeNerisDraft}
+      readNerisDraft={readNerisDraftForForm}
+      writeNerisDraft={writeNerisDraftForForm}
       appendNerisExportRecord={appendAndSync}
       parseAssignedUnits={parseAssignedUnits}
       inferResourceUnitTypeValue={inferResourceUnitTypeValue}

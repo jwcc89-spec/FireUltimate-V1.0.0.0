@@ -84,6 +84,22 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 
 ---
 
+## Future changes (general UI)
+
+| # | Item | Notes |
+|---|------|--------|
+| L1 | **Login screen:** Remove "Fire Department (optional)" field | Main login form today has department, username, password; remove the department field. |
+| L2 | **Login screen:** Remove helper text | Remove or simplify helper text on the main login screen (e.g. "Credentials are validated against saved Users", brand-panel text). |
+| L3 | **Login screen:** Show tenant picture | Tenant picture is (or will be) uploadable in Admin Functions / Settings; display that image on the login page (e.g. in brand panel or header). |
+| L4 | **"Scaffolded" → "Beta":** Replace all "Scaffolded" wording with *Beta* (italicized blue text) | Applies to submenu cards and any other places that show build status. |
+| L5 | **Beta sections – super admin only (clickable):** For super admin only, beta submenus (e.g. Certifications) remain viewable and clickable for buildouts. | No change for super admin. |
+| L6 | **Beta sections – admin and lower (not clickable):** For admin and lower roles: show the submenu label (e.g. "Certifications") with "beta" to the right; do not allow the submenu item to be clicked; do not open that submenu. | In the sidebar, the item is visible but not clickable. |
+| L7 | **Beta cards on main menu (e.g. Personnel):** Same rule for the Certifications *card* when the main menu Personnel is clicked: card is visible but not clickable for admin and lower; only super admin can open it. | Same visibility/click logic as L6 for the Personnel → Certifications card. |
+
+**Reference:** See also `docs/later-changes-backlog.md` (Login / Auth, UI Conventions) for the same items in backlog form.
+
+---
+
 ## Optional / when ready
 
 | # | Item | Source | Notes |
@@ -92,6 +108,7 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 | 26 | **NERIS not loading between separate browsers** | User report | Export history and NERIS report data do not appear when logging in from another browser. **Top priority after CAD email.** See expanded section and `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`. |
 | 27 | **Production endpoint checks and first controlled production export** | GO_LIVE §3.6–3.7 | Re-run tenant/context, neris/health, entity-check on prod; perform first prod export when ready. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
+| 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings (submenu) → Parsing Data; per-tenant parsing rules (A→C→B); auto-create draft incident; apparatus from Dept Details; dedupe (multiple emails → one incident); optional call sequencing. **After NERIS Phase 2/3.** |
 
 ### Expanded: NERIS cross-browser issue (#26)
 
