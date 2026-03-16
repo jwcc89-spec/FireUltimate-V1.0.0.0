@@ -27,6 +27,7 @@ export interface IncidentApiResponse {
   deletedAt?: string;
   deletedBy?: string;
   deletedReason?: string;
+  nerisReportStatus?: string;
 }
 
 function mapApiToSummary(data: IncidentApiResponse): IncidentCallSummary {
@@ -53,6 +54,7 @@ function mapApiToSummary(data: IncidentApiResponse): IncidentCallSummary {
     lastUpdated: lastUpdated || "Just now",
     receivedAt: data.receivedAt ?? "",
     dispatchInfo: data.dispatchInfo ?? "",
+    nerisReportStatus: data.nerisReportStatus ?? undefined,
   };
 }
 

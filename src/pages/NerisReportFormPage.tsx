@@ -74,6 +74,11 @@ export interface NerisReportFormPageProps {
   ) => ParsedImportedLocationValues;
   toResourceSummaryTime: (value: string) => string;
   toResourceDateTimeInputValue: (value: string, fallbackDate: string) => string;
+  toResourceDateOnlyInputValue: (value: string, fallbackDate: string) => string;
+  formatResourceDatePart: (value: string) => string;
+  formatResourceTimePart: (value: string) => string;
+  parseTimeInput24h: (value: string) => string;
+  combineResourceDateTimeFromParts: (datePart: string, timePart: string) => string;
   toResourceDateTimeTimestamp: (value: string, fallbackDate: string) => number | null;
   addMinutesToResourceDateTime: (value: string, minutesToAdd: number) => string;
   resourceUnitValidationErrorKey: (
@@ -238,6 +243,56 @@ const EMPTY_NONFD_AID_ENTRY: NonFdAidEntry = {
   aidType: "",
 };
 
+function AddUnitControl({
+  apparatusFromDept,
+  resourceUnits,
+  onAdd,
+}: {
+  apparatusFromDept: { unit: string; unitType: string }[];
+  resourceUnits: ResourceUnitEntry[];
+  onAdd: (unitId: string) => void;
+}) {
+  const existing = new Set(resourceUnits.map((r) => r.unitId.trim()).filter(Boolean));
+  const available = apparatusFromDept.filter((a) => a.unit.trim() && !existing.has(a.unit.trim()));
+  const [selectedUnit, setSelectedUnit] = useState("");
+  const [customUnit, setCustomUnit] = useState("");
+  const handleAdd = () => {
+    const toAdd = (selectedUnit || customUnit.trim()).trim();
+    if (!toAdd) return;
+    onAdd(toAdd);
+    setSelectedUnit("");
+    setCustomUnit("");
+  };
+  return (
+    <div className="neris-resource-add-unit-control">
+      <select
+        id="neris-add-unit-select"
+        value={selectedUnit}
+        onChange={(e) => setSelectedUnit(e.target.value)}
+        className="neris-resource-add-unit-select"
+      >
+        <option value="">Select unit…</option>
+        {available.map((a) => (
+          <option key={a.unit} value={a.unit}>
+            {a.unit} {a.unitType ? `(${a.unitType})` : ""}
+          </option>
+        ))}
+      </select>
+      <input
+        type="text"
+        placeholder="Or type unit ID"
+        value={customUnit}
+        onChange={(e) => setCustomUnit(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAdd())}
+        className="neris-resource-add-unit-input"
+      />
+      <button type="button" className="primary-button compact-button" onClick={handleAdd}>
+        Add
+      </button>
+    </div>
+  );
+}
+
 function NerisReportFormPage({
   callNumber,
   role,
@@ -258,6 +313,10 @@ function NerisReportFormPage({
   parseImportedLocationValues,
   toResourceSummaryTime,
   toResourceDateTimeInputValue,
+  formatResourceDatePart,
+  formatResourceTimePart,
+  parseTimeInput24h,
+  combineResourceDateTimeFromParts,
   toResourceDateTimeTimestamp,
   addMinutesToResourceDateTime,
   resourceUnitValidationErrorKey,
@@ -290,12 +349,22 @@ function NerisReportFormPage({
       if (!summary) {
         return null;
       }
+      const assignedList = summary.assignedUnits
+        ? parseAssignedUnits(summary.assignedUnits)
+        : [];
+      const apparatusFromAssigned = assignedList.map((unit) => ({
+        unit,
+        unitType: "",
+        status: "",
+        crew: "",
+        eta: "",
+      }));
       return {
         ...summary,
         mapReference: "Pending GIS sync",
         reportedBy: "Manual entry",
         callbackNumber: "",
-        apparatus: [],
+        apparatus: apparatusFromAssigned,
         dispatchNotes: [],
       };
     })();
@@ -340,6 +409,9 @@ function NerisReportFormPage({
   const [reportStatus, setReportStatus] = useState<string>(() =>
     persistedDraft?.reportStatus ?? "Draft",
   );
+  const isLocked =
+    reportStatus === "In Review" || reportStatus === "Exported";
+  const canEdit = !isLocked || role === "admin";
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
@@ -1658,10 +1730,56 @@ function NerisReportFormPage({
     markNerisFormDirty();
   };
 
+  const syncResourceUnitsToIncident = (unitIds: string[]) => {
+    const next = dedupeAndCleanStrings(unitIds).filter((id) => id.length > 0);
+    onUpdateIncidentCall(callNumber, { assignedUnits: next.join(", ") });
+  };
+
+  const addResourceUnitAndSyncToIncident = (unitId: string) => {
+    const trimmed = unitId.trim();
+    if (!trimmed) return;
+    const existingIds = resourceUnits.map((r) => r.unitId.trim()).filter(Boolean);
+    if (existingIds.includes(trimmed)) return;
+    const source = apparatusByResourceUnitId.get(trimmed);
+    const newEntry: ResourceUnitEntry = {
+      id: `resource-add-${Date.now()}-${trimmed.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+      unitId: trimmed,
+      unitType: inferResourceUnitTypeValue(trimmed, source?.unitType, unitTypeOptions),
+      staffing: getStaffingValueForUnit(trimmed, ""),
+      responseMode: "",
+      transportMode: "",
+      dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
+      enrouteTime: "",
+      stagedTime: "",
+      onSceneTime: "",
+      canceledTime: "",
+      clearTime: "",
+      isCanceledEnroute: false,
+      isComplete: false,
+      isExpanded: true,
+      showTimesEditor: false,
+      personnel: "",
+      showPersonnelSelector: false,
+      reportWriter: "",
+      unitNarrative: "",
+    };
+    setResourceUnits((prev) => [...prev, newEntry]);
+    syncResourceUnitsToIncident([...existingIds, trimmed]);
+    markNerisFormDirty();
+  };
+
   const deleteResourceUnit = (unitEntryId: string) => {
+    const removed = resourceUnits.find((e) => e.id === unitEntryId);
     setResourceUnits((previous) =>
       previous.filter((entry) => entry.id !== unitEntryId),
     );
+    if (removed?.unitId) {
+      const remaining = resourceUnits
+        .filter((e) => e.id !== unitEntryId)
+        .map((r) => r.unitId.trim())
+        .filter(Boolean);
+      syncResourceUnitsToIncident(remaining);
+    }
     clearResourceUnitValidationErrors(unitEntryId);
     if (activeResourcePersonnelUnitId === unitEntryId) {
       setActiveResourcePersonnelUnitId(null);
@@ -1868,29 +1986,49 @@ function NerisReportFormPage({
   };
 
   const populateResourceTimesFromDispatch = (unitEntryId: string) => {
-    const fallbackDispatch =
-      toResourceDateTimeInputValue(
-        formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
-        resourceFallbackDate,
-      ) || "";
+    // Prefer Incident Onset Date (Core), then dispatch/call-create date, then fallback
+    const onsetDate = (formValues.incident_onset_date ?? "").trim();
+    const populateDatePart =
+      onsetDate && /^\d{4}-\d{2}-\d{2}$/.test(onsetDate)
+        ? onsetDate
+        : formatResourceDatePart(
+            toResourceDateTimeInputValue(
+              formValues.incident_time_unit_dispatched ??
+                formValues.incident_time_call_create ??
+                "",
+              resourceFallbackDate,
+            ),
+          ) || resourceFallbackDate;
+    if (!populateDatePart || !/^\d{4}-\d{2}-\d{2}$/.test(populateDatePart)) {
+      return;
+    }
     setResourceUnits((previous) =>
       previous.map((entry) => {
         if (entry.id !== unitEntryId) {
           return entry;
         }
-        const dispatchSeed =
-          toResourceDateTimeInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
-        if (!dispatchSeed) {
-          return entry;
-        }
+        // Update only the date part for each field; preserve existing times
+        const withDate = (
+          field:
+            | "dispatchTime"
+            | "enrouteTime"
+            | "stagedTime"
+            | "onSceneTime"
+            | "canceledTime"
+            | "clearTime",
+        ) =>
+          combineResourceDateTimeFromParts(
+            populateDatePart,
+            formatResourceTimePart(entry[field]),
+          ) || entry[field];
         return {
           ...entry,
-          dispatchTime: dispatchSeed,
-          enrouteTime: dispatchSeed,
-          stagedTime: dispatchSeed,
-          onSceneTime: dispatchSeed,
-          canceledTime: dispatchSeed,
-          clearTime: dispatchSeed,
+          dispatchTime: withDate("dispatchTime"),
+          enrouteTime: withDate("enrouteTime"),
+          stagedTime: withDate("stagedTime"),
+          onSceneTime: withDate("onSceneTime"),
+          canceledTime: withDate("canceledTime"),
+          clearTime: withDate("clearTime"),
         };
       }),
     );
@@ -3502,6 +3640,13 @@ function NerisReportFormPage({
     stampSavedAt("manual");
   };
 
+  const handleUnlock = () => {
+    setSectionErrors({});
+    setErrorMessage("");
+    setSaveMessage("");
+    stampSavedAt("manual", "Draft", "Report unlocked. You can edit again.");
+  };
+
   const goToNextSection = () => {
     if (!hasNextSection) {
       return;
@@ -4354,40 +4499,55 @@ function NerisReportFormPage({
           ) : null}
         </div>
         <div className="header-actions">
-          <button type="button" className="secondary-button compact-button">
-            Import
-          </button>
-          <button
-            type="button"
-            className="secondary-button compact-button"
-            onClick={handleGetIncidentTest}
-            disabled={isExporting || isFetchingIncidentTest}
-          >
-            {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
-          </button>
-          <button type="button" className="secondary-button compact-button">
-            CAD notes
-          </button>
-          <button type="button" className="secondary-button compact-button">
-            Print
-          </button>
+          {role === "admin" ? (
+            <>
+              <button type="button" className="secondary-button compact-button">
+                Import
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={handleGetIncidentTest}
+                disabled={isExporting || isFetchingIncidentTest}
+              >
+                {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
+              </button>
+              <button type="button" className="secondary-button compact-button">
+                CAD notes
+              </button>
+              <button type="button" className="secondary-button compact-button">
+                Print
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className="primary-button compact-button"
             onClick={handleCheckForErrors}
-            disabled={isExporting}
+            disabled={isExporting || !canEdit}
           >
             Validate
           </button>
           {role === "admin" ? (
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={handleExportReport}
-              disabled={isExporting}
-            >
-              {isExporting ? "Exporting..." : "Export"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={handleExportReport}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export"}
+              </button>
+              {isLocked ? (
+                <button
+                  type="button"
+                  className="secondary-button compact-button"
+                  onClick={handleUnlock}
+                >
+                  Unlock
+                </button>
+              ) : null}
+            </>
           ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
             {reportStatus}
@@ -4454,6 +4614,11 @@ function NerisReportFormPage({
         </div>
       ) : null}
 
+      {!canEdit ? (
+        <div className="neris-lock-banner" role="status">
+          This report is locked. Only an admin can unlock it for editing.
+        </div>
+      ) : null}
       <section className="neris-report-layout">
         <aside className="panel neris-sidebar">
           <div className="neris-sidebar-header">
@@ -4474,7 +4639,9 @@ function NerisReportFormPage({
           </nav>
         </aside>
 
-        <article className="panel neris-form-panel">
+        <article
+          className={`panel neris-form-panel${!canEdit ? " neris-form-locked" : ""}`}
+        >
           {currentSection.id !== "core" &&
           currentSection.id !== "location" &&
           currentSection.id !== "emergingHazards" &&
@@ -5172,6 +5339,13 @@ function NerisReportFormPage({
             ) : null}
             {currentSection.id === "resources" ? (
               <section className="field-span-two neris-resource-unit-list">
+                <div className="neris-resource-add-unit-row">
+                  <AddUnitControl
+                    apparatusFromDept={apparatusFromDept}
+                    resourceUnits={resourceUnits}
+                    onAdd={addResourceUnitAndSyncToIncident}
+                  />
+                </div>
                 {resourceUnits.length ? (
                   resourceUnits.map((unitEntry) => {
                     const selectedPersonnelValues = unitEntry.personnel
@@ -5401,110 +5575,242 @@ function NerisReportFormPage({
                             {unitEntry.showTimesEditor ? (
                               <div className="neris-resource-times-editor">
                                 <div className="neris-resource-times-editor-grid">
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Dispatch
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.dispatchTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "dispatchTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.dispatchTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.dispatchTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm (24h)"
+                                        value={formatResourceTimePart(unitEntry.dispatchTime)}
+                                        onChange={(e) => {
+                                          const v = parseTimeInput24h(e.target.value);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.dispatchTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.dispatchTime,
+                                          );
+                                        }}
+                                      />
+                                    </span>
                                     {dispatchTimeError ? (
                                       <small className="field-error">{dispatchTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Enroute
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.enrouteTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "enrouteTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.enrouteTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.enrouteTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm (24h)"
+                                        value={formatResourceTimePart(unitEntry.enrouteTime)}
+                                        onChange={(e) => {
+                                          const v = parseTimeInput24h(e.target.value);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.enrouteTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.enrouteTime,
+                                          );
+                                        }}
+                                      />
+                                    </span>
                                     {enrouteTimeError ? (
                                       <small className="field-error">{enrouteTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Staged
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.stagedTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "stagedTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.stagedTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.stagedTime),
+                                            ) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                          }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm (24h)"
+                                        value={formatResourceTimePart(unitEntry.stagedTime)}
+                                        onChange={(e) => {
+                                          const v = parseTimeInput24h(e.target.value);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.stagedTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.stagedTime,
+                                          );
+                                        }}
+                                      />
+                                    </span>
                                     {stagedTimeError ? (
                                       <small className="field-error">{stagedTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     On Scene
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.onSceneTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "onSceneTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.onSceneTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.onSceneTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm (24h)"
+                                        value={formatResourceTimePart(unitEntry.onSceneTime)}
+                                        onChange={(e) => {
+                                          const v = parseTimeInput24h(e.target.value);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.onSceneTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.onSceneTime,
+                                          );
+                                        }}
+                                      />
+                                    </span>
                                     {onSceneTimeError ? (
                                       <small className="field-error">{onSceneTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Canceled
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.canceledTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "canceledTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.canceledTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.canceledTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm (24h)"
+                                        value={formatResourceTimePart(unitEntry.canceledTime)}
+                                        onChange={(e) => {
+                                          const v = parseTimeInput24h(e.target.value);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.canceledTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.canceledTime,
+                                          );
+                                        }}
+                                      />
+                                    </span>
                                     {canceledTimeError ? (
                                       <small className="field-error">{canceledTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
+                                  <label className="neris-resource-datetime-label">
                                     Clear
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.clearTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "clearTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.clearTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.clearTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm (24h)"
+                                        value={formatResourceTimePart(unitEntry.clearTime)}
+                                        onChange={(e) => {
+                                          const v = parseTimeInput24h(e.target.value);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.clearTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.clearTime,
+                                          );
+                                        }}
+                                      />
+                                    </span>
                                     {clearTimeError ? (
                                       <small className="field-error">{clearTimeError}</small>
                                     ) : null}
@@ -5830,6 +6136,7 @@ function NerisReportFormPage({
               type="button"
               className="secondary-button compact-button"
               onClick={handleSaveDraft}
+              disabled={!canEdit}
             >
               Save
             </button>

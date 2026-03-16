@@ -6,7 +6,7 @@ The agent will state at the end of each response **which agent/model was used** 
 - `.cursor/project-context.md` (or `cursoragent-context.md` if present)
 - `agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md`
 - `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`
-- `docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md`
+- `docs/procedures/EMAIL_AND_CAD_SETUP.md`
 - `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`
 - `docs/agent-execution-contract.md`
 - `docs/task-2-multitenant-domain-plan.md`
@@ -25,7 +25,7 @@ Before doing any feature work, understand the Branch Rules:
    - .cursor/project-context.md (or cursoragent-context.md)
    - agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md
    - docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md
-   - docs/procedures/CAD_EMAIL_INGEST_SETUP_GUIDE.md (if working on CAD ingest)
+   - docs/procedures/EMAIL_AND_CAD_SETUP.md (if working on email or CAD ingest)
    - docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md (if working on NERIS cross-browser)
    - latest note(s) in agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/
    - all conversations in agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/

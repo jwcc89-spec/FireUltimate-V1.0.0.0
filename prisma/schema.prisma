@@ -7,18 +7,20 @@ datasource db {
 }
 
 model Tenant {
-  id            String           @id @default(cuid())
-  slug          String           @unique
-  name          String
-  status        String           @default("active")
-  nerisEntityId String?
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  domains       TenantDomain[]
-  users         User[]
-  departments   DepartmentDetails[]
-  incidents     Incident[]
-  cadEmails     CadEmailIngest[]
+  id                 String               @id @default(cuid())
+  slug               String               @unique
+  name               String
+  status             String               @default("active")
+  nerisEntityId      String?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  domains            TenantDomain[]
+  users              User[]
+  departments        DepartmentDetails[]
+  incidents          Incident[]
+  cadEmails          CadEmailIngest[]
+  nerisExportHistory NerisExportHistory[]
+  nerisDrafts        NerisDraft[]
 }
 
 model TenantDomain {
@@ -118,4 +120,47 @@ model CadEmailIngest {
 
   @@index([tenantId])
   @@index([createdAt])
+}
+
+model NerisExportHistory {
+  id                       String   @id @default(cuid())
+  tenantId                 String
+  callNumber               String   @default("")
+  incidentType             String   @default("")
+  address                  String   @default("")
+  exportedAtIso            String   @default("")
+  exportedAtLabel          String   @default("")
+  attemptStatus            String   @default("success")
+  httpStatus               Int      @default(200)
+  httpStatusText           String   @default("")
+  statusLabel              String   @default("")
+  reportStatusAtExport     String   @default("")
+  validatorName            String   @default("")
+  reportWriterName         String   @default("")
+  submittedEntityId        String   @default("")
+  submittedDepartmentNerisId String @default("")
+  nerisId                  String   @default("")
+  responseSummary          String   @default("")
+  responseDetail           String   @default("")
+  submittedPayloadPreview  String   @default("")
+  createdAt                DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, createdAt])
+}
+
+model NerisDraft {
+  id         String   @id @default(cuid())
+  tenantId   String
+  callNumber String
+  payload    Json
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, callNumber])
+  @@index([tenantId])
 }
