@@ -13,7 +13,7 @@
 - Menu and submenu UI updates (branch handoff created; scope to be defined by user).
 
 ## Latest known status
-- Latest commit: `9098265` - Bootstrap handoff for menu-submenu/ui-updates (QUICK_PROMPTS flow)
+- Latest commit: `fe6f0ec` - Handoff: record commit 9098265 and push to origin
 - Handoff folder created and committed; no feature work logged yet.
 
 ## Current blocker / status
@@ -23,6 +23,7 @@
 - 
 
 ## Recent key commits (latest first)
+- `fe6f0ec` Handoff: record commit 9098265 and push to origin
 - `9098265` Bootstrap handoff for menu-submenu/ui-updates (QUICK_PROMPTS flow)
 
 ## Next agent should do this first
