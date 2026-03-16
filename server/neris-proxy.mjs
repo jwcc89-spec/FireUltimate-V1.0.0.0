@@ -1656,6 +1656,12 @@ app.post("/api/admin/tenants/:tenantId/domains", async (request, response) => {
 
 app.use(async (request, response, next) => {
   try {
+    // CAD inbound email is called by the Cloudflare Worker; tenant is derived from body.to (e.g. cifpdil@cad.fireultimate.app).
+    if (request.method === "POST" && request.path === "/api/cad/inbound-email") {
+      next();
+      return;
+    }
+
     const host =
       normalizeHostname(request.headers["x-forwarded-host"]) ||
       normalizeHostname(request.headers.host) ||
@@ -1717,6 +1723,98 @@ app.get("/api/tenant/context", (request, response) => {
   });
 });
 
+// ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
+const CAD_INGEST_SECRET = trimValue(process.env.CAD_INGEST_SECRET);
+
+app.post("/api/cad/inbound-email", async (request, response) => {
+  try {
+    if (CAD_INGEST_SECRET) {
+      const secret = trimValue(request.headers["x-cad-ingest-secret"]);
+      if (secret !== CAD_INGEST_SECRET) {
+        response.status(401).json({ ok: false, message: "Unauthorized." });
+        return;
+      }
+    }
+
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const fromAddress = typeof body.from === "string" ? body.from.trim() : "";
+    const toAddress = typeof body.to === "string" ? body.to.trim() : "";
+    const rawBody = typeof body.raw === "string" ? body.raw : "";
+    const headersJson =
+      body.headers && typeof body.headers === "object" ? body.headers : null;
+
+    let tenantId = null;
+    const atIndex = toAddress.indexOf("@");
+    if (atIndex > 0) {
+      const localPart = toAddress.slice(0, atIndex).trim().toLowerCase();
+      if (localPart) {
+        const tenant = await prisma.tenant.findUnique({
+          where: { slug: localPart },
+        });
+        if (tenant) tenantId = tenant.id;
+      }
+    }
+
+    await prisma.cadEmailIngest.create({
+      data: {
+        tenantId,
+        fromAddress,
+        toAddress,
+        rawBody,
+        headersJson,
+      },
+    });
+
+    response.status(200).json({ ok: true });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "CAD inbound email store failed.",
+    });
+  }
+});
+
+// ----- GET /api/cad/emails (tenant-scoped list for Dispatch Parsing Settings UI) -----
+app.get("/api/cad/emails", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(401).json({ ok: false, message: "Tenant required." });
+      return;
+    }
+    const limit = Math.min(parseInt(request.query.limit, 10) || 50, 200);
+    const offset = Math.max(0, parseInt(request.query.offset, 10) || 0);
+    const rows = await prisma.cadEmailIngest.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+      select: {
+        id: true,
+        fromAddress: true,
+        toAddress: true,
+        rawBody: true,
+        headersJson: true,
+        createdAt: true,
+      },
+    });
+    const list = rows.map((r) => ({
+      id: r.id,
+      fromAddress: r.fromAddress ?? "",
+      toAddress: r.toAddress ?? "",
+      rawBody: r.rawBody ?? "",
+      headersJson: r.headersJson ?? null,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
+    }));
+    response.json({ ok: true, data: list });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to list CAD emails.",
+    });
+  }
+});
+
 // ----- /api/incidents (tenant-scoped; Incident table) -----
 function incidentRowToApi(row) {
   if (!row) return null;
@@ -1767,7 +1865,28 @@ app.get("/api/incidents", async (request, response) => {
       where,
       orderBy: { createdAt: "desc" },
     });
-    const data = rows.map(incidentRowToApi);
+    const callNumbers = rows.map((r) => r.id);
+    const drafts =
+      callNumbers.length > 0
+        ? await prisma.nerisDraft.findMany({
+            where: { tenantId, callNumber: { in: callNumbers } },
+            select: { callNumber: true, payload: true },
+          })
+        : [];
+    const reportStatusByCall = new Map();
+    for (const d of drafts) {
+      const payload = d.payload && typeof d.payload === "object" ? d.payload : {};
+      const status =
+        typeof payload.reportStatus === "string" && payload.reportStatus.trim()
+          ? payload.reportStatus.trim()
+          : "Draft";
+      reportStatusByCall.set(d.callNumber, status);
+    }
+    const data = rows.map((row) => {
+      const api = incidentRowToApi(row);
+      api.nerisReportStatus = reportStatusByCall.get(row.id) ?? "Draft";
+      return api;
+    });
     response.json({ ok: true, data });
   } catch (error) {
     response.status(500).json({
@@ -1928,6 +2047,301 @@ app.delete("/api/incidents/:id", async (request, response) => {
     response.status(500).json({
       ok: false,
       message: error instanceof Error ? error.message : "Unexpected incident delete error.",
+    });
+  }
+});
+
+// ----- /api/neris/export-history (NERIS export history, cross-browser) -----
+function nerisExportHistoryRowToApi(row) {
+  return {
+    id: row.id,
+    callNumber: row.callNumber ?? "",
+    incidentType: row.incidentType ?? "",
+    address: row.address ?? "",
+    exportedAtIso: row.exportedAtIso ?? "",
+    exportedAtLabel: row.exportedAtLabel ?? "",
+    attemptStatus: row.attemptStatus === "failed" ? "failed" : "success",
+    httpStatus: typeof row.httpStatus === "number" ? row.httpStatus : 200,
+    httpStatusText: row.httpStatusText ?? "",
+    statusLabel: row.statusLabel ?? "",
+    reportStatusAtExport: row.reportStatusAtExport ?? "",
+    validatorName: row.validatorName ?? "",
+    reportWriterName: row.reportWriterName ?? "",
+    submittedEntityId: row.submittedEntityId ?? "",
+    submittedDepartmentNerisId: row.submittedDepartmentNerisId ?? "",
+    nerisId: row.nerisId ?? "",
+    responseSummary: row.responseSummary ?? "",
+    responseDetail: row.responseDetail ?? "",
+    submittedPayloadPreview: row.submittedPayloadPreview ?? "",
+  };
+}
+
+app.get("/api/neris/export-history", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const limit = Math.min(Math.max(0, parseInt(request.query.limit, 10) || 100), 500);
+    const offset = Math.max(0, parseInt(request.query.offset, 10) || 0);
+    const rows = await prisma.nerisExportHistory.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+    });
+    const data = rows.map(nerisExportHistoryRowToApi);
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected export history list error.",
+    });
+  }
+});
+
+app.post("/api/neris/export-history", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const callNumber = trimValue(body.callNumber) ?? "";
+    const incidentType = trimValue(body.incidentType) ?? "";
+    const address = trimValue(body.address) ?? "";
+    const exportedAtIso = trimValue(body.exportedAtIso) ?? "";
+    const exportedAtLabel = trimValue(body.exportedAtLabel) ?? "";
+    const attemptStatus = body.attemptStatus === "failed" ? "failed" : "success";
+    const httpStatus =
+      typeof body.httpStatus === "number" && Number.isFinite(body.httpStatus)
+        ? body.httpStatus
+        : attemptStatus === "failed"
+          ? 0
+          : 200;
+    const httpStatusText = trimValue(body.httpStatusText) ?? "";
+    const statusLabel = trimValue(body.statusLabel) ?? "";
+    const reportStatusAtExport = trimValue(body.reportStatusAtExport) ?? "";
+    const validatorName = trimValue(body.validatorName) ?? "";
+    const reportWriterName = trimValue(body.reportWriterName) ?? "";
+    const submittedEntityId = trimValue(body.submittedEntityId) ?? "";
+    const submittedDepartmentNerisId = trimValue(body.submittedDepartmentNerisId) ?? "";
+    const nerisId = trimValue(body.nerisId) ?? "";
+    const responseSummary = trimValue(body.responseSummary) ?? "";
+    const responseDetail = trimValue(body.responseDetail) ?? "";
+    const submittedPayloadPreview = trimValue(body.submittedPayloadPreview) ?? "";
+
+    const row = await prisma.nerisExportHistory.create({
+      data: {
+        tenantId,
+        callNumber,
+        incidentType,
+        address,
+        exportedAtIso,
+        exportedAtLabel,
+        attemptStatus,
+        httpStatus,
+        httpStatusText,
+        statusLabel,
+        reportStatusAtExport,
+        validatorName,
+        reportWriterName,
+        submittedEntityId,
+        submittedDepartmentNerisId,
+        nerisId,
+        responseSummary,
+        responseDetail,
+        submittedPayloadPreview,
+      },
+    });
+    response.status(201).json({ ok: true, data: nerisExportHistoryRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected export history create error.",
+    });
+  }
+});
+
+// ----- /api/neris/drafts/:callNumber (NERIS report drafts, cross-browser) -----
+app.get("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const row = await prisma.nerisDraft.findUnique({
+      where: {
+        tenantId_callNumber: { tenantId, callNumber },
+      },
+    });
+    if (!row) {
+      response.status(404).json({ ok: false, message: "No draft found for this incident." });
+      return;
+    }
+    const payload =
+      row.payload && typeof row.payload === "object" ? row.payload : {};
+    response.json({ ok: true, data: payload });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected draft get error.",
+    });
+  }
+});
+
+app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const payload =
+      body.payload && typeof body.payload === "object"
+        ? body.payload
+        : body && typeof body === "object"
+          ? body
+          : {};
+    const row = await prisma.nerisDraft.upsert({
+      where: {
+        tenantId_callNumber: { tenantId, callNumber },
+      },
+      create: {
+        tenantId,
+        callNumber,
+        payload,
+      },
+      update: { payload },
+    });
+    const out =
+      row.payload && typeof row.payload === "object" ? row.payload : {};
+    response.json({ ok: true, data: out });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected draft save error.",
+    });
+  }
+});
+
+// ----- /api/neris/settings (tenant-scoped; stored in DepartmentDetails.payloadJson.nerisExportSettings) -----
+const NERIS_SETTINGS_KEYS = [
+  "exportUrl",
+  "vendorCode",
+  "vendorHeaderName",
+  "secretKey",
+  "authHeaderName",
+  "authScheme",
+  "contentType",
+  "apiVersionHeaderName",
+  "apiVersionHeaderValue",
+];
+
+function getDefaultNerisSettingsPayload() {
+  return {
+    exportUrl: "/api/neris/export",
+    vendorCode: "",
+    vendorHeaderName: "X-NERIS-Entity-ID",
+    secretKey: "",
+    authHeaderName: "Authorization",
+    authScheme: "Bearer",
+    contentType: "application/json",
+    apiVersionHeaderName: "",
+    apiVersionHeaderValue: "",
+  };
+}
+
+function normalizeNerisSettingsPayload(raw) {
+  const defaults = getDefaultNerisSettingsPayload();
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return defaults;
+  const out = { ...defaults };
+  for (const key of NERIS_SETTINGS_KEYS) {
+    if (typeof raw[key] === "string") out[key] = raw[key];
+  }
+  return out;
+}
+
+app.get("/api/neris/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const payload =
+      details?.payloadJson && typeof details.payloadJson === "object"
+        ? details.payloadJson
+        : {};
+    const neris = payload.nerisExportSettings;
+    const data = normalizeNerisSettingsPayload(neris);
+    response.json({ ok: true, data });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected NERIS settings read error.",
+    });
+  }
+});
+
+app.patch("/api/neris/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const existingPayload =
+      details?.payloadJson && typeof details.payloadJson === "object"
+        ? { ...details.payloadJson }
+        : {};
+    const existingNeris =
+      existingPayload.nerisExportSettings && typeof existingPayload.nerisExportSettings === "object"
+        ? existingPayload.nerisExportSettings
+        : getDefaultNerisSettingsPayload();
+    const merged = { ...existingNeris };
+    for (const key of NERIS_SETTINGS_KEYS) {
+      if (typeof body[key] === "string") merged[key] = body[key];
+    }
+    const payloadToStore = { ...existingPayload, nerisExportSettings: merged };
+    await prisma.departmentDetails.upsert({
+      where: { tenantId },
+      update: { payloadJson: payloadToStore },
+      create: {
+        tenantId,
+        payloadJson: payloadToStore,
+      },
+    });
+    response.json({ ok: true, data: normalizeNerisSettingsPayload(merged) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected NERIS settings save error.",
     });
   }
 });
@@ -2134,6 +2548,14 @@ app.post("/api/department-details", async (request, response) => {
       !Array.isArray(existingPayload.userTypeLabels)
     ) {
       payloadToStore.userTypeLabels = existingPayload.userTypeLabels;
+    }
+    if (
+      existingPayload.nerisExportSettings &&
+      payloadToStore.nerisExportSettings === undefined &&
+      typeof existingPayload.nerisExportSettings === "object" &&
+      !Array.isArray(existingPayload.nerisExportSettings)
+    ) {
+      payloadToStore.nerisExportSettings = existingPayload.nerisExportSettings;
     }
     await prisma.departmentDetails.upsert({
       where: { tenantId },

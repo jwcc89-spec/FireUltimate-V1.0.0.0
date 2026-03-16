@@ -106,6 +106,8 @@ export interface IncidentCallSummary {
   lastUpdated: string;
   receivedAt: string;
   dispatchInfo: string;
+  /** NERIS report status from server (Draft, In Review, Exported). */
+  nerisReportStatus?: string;
 }
 
 export interface DispatchNote {
@@ -493,6 +495,14 @@ export const MAIN_MENUS: MainMenu[] = [
         path: "/admin-functions/customization",
         summary:
           "Upload logo, choose colors, and define dispatch workflow states.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
+        label: "Dispatch Parsing Settings",
+        path: "/admin-functions/dispatch-parsing-settings",
+        summary:
+          "View incoming CAD dispatch emails and configure parsing (future).",
         isBuilt: true,
         adminOnly: true,
       },

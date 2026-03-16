@@ -74,6 +74,11 @@ export interface NerisReportFormPageProps {
   ) => ParsedImportedLocationValues;
   toResourceSummaryTime: (value: string) => string;
   toResourceDateTimeInputValue: (value: string, fallbackDate: string) => string;
+  toResourceDateOnlyInputValue: (value: string, fallbackDate: string) => string;
+  formatResourceDatePart: (value: string) => string;
+  formatResourceTimePart: (value: string) => string;
+  parseTimeInput24h: (value: string) => string;
+  combineResourceDateTimeFromParts: (datePart: string, timePart: string) => string;
   toResourceDateTimeTimestamp: (value: string, fallbackDate: string) => number | null;
   addMinutesToResourceDateTime: (value: string, minutesToAdd: number) => string;
   resourceUnitValidationErrorKey: (
@@ -238,6 +243,56 @@ const EMPTY_NONFD_AID_ENTRY: NonFdAidEntry = {
   aidType: "",
 };
 
+function AddUnitControl({
+  apparatusFromDept,
+  resourceUnits,
+  onAdd,
+}: {
+  apparatusFromDept: { unit: string; unitType: string }[];
+  resourceUnits: ResourceUnitEntry[];
+  onAdd: (unitId: string) => void;
+}) {
+  const existing = new Set(resourceUnits.map((r) => r.unitId.trim()).filter(Boolean));
+  const available = apparatusFromDept.filter((a) => a.unit.trim() && !existing.has(a.unit.trim()));
+  const [selectedUnit, setSelectedUnit] = useState("");
+  const [customUnit, setCustomUnit] = useState("");
+  const handleAdd = () => {
+    const toAdd = (selectedUnit || customUnit.trim()).trim();
+    if (!toAdd) return;
+    onAdd(toAdd);
+    setSelectedUnit("");
+    setCustomUnit("");
+  };
+  return (
+    <div className="neris-resource-add-unit-control">
+      <select
+        id="neris-add-unit-select"
+        value={selectedUnit}
+        onChange={(e) => setSelectedUnit(e.target.value)}
+        className="neris-resource-add-unit-select"
+      >
+        <option value="">Select unit…</option>
+        {available.map((a) => (
+          <option key={a.unit} value={a.unit}>
+            {a.unit} {a.unitType ? `(${a.unitType})` : ""}
+          </option>
+        ))}
+      </select>
+      <input
+        type="text"
+        placeholder="Or type unit ID"
+        value={customUnit}
+        onChange={(e) => setCustomUnit(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), handleAdd())}
+        className="neris-resource-add-unit-input"
+      />
+      <button type="button" className="primary-button compact-button" onClick={handleAdd}>
+        Add
+      </button>
+    </div>
+  );
+}
+
 function NerisReportFormPage({
   callNumber,
   role,
@@ -258,6 +313,10 @@ function NerisReportFormPage({
   parseImportedLocationValues,
   toResourceSummaryTime,
   toResourceDateTimeInputValue,
+  formatResourceDatePart,
+  formatResourceTimePart,
+  parseTimeInput24h,
+  combineResourceDateTimeFromParts,
   toResourceDateTimeTimestamp,
   addMinutesToResourceDateTime,
   resourceUnitValidationErrorKey,
@@ -290,12 +349,22 @@ function NerisReportFormPage({
       if (!summary) {
         return null;
       }
+      const assignedList = summary.assignedUnits
+        ? parseAssignedUnits(summary.assignedUnits)
+        : [];
+      const apparatusFromAssigned = assignedList.map((unit) => ({
+        unit,
+        unitType: "",
+        status: "",
+        crew: "",
+        eta: "",
+      }));
       return {
         ...summary,
         mapReference: "Pending GIS sync",
         reportedBy: "Manual entry",
         callbackNumber: "",
-        apparatus: [],
+        apparatus: apparatusFromAssigned,
         dispatchNotes: [],
       };
     })();
@@ -340,6 +409,9 @@ function NerisReportFormPage({
   const [reportStatus, setReportStatus] = useState<string>(() =>
     persistedDraft?.reportStatus ?? "Draft",
   );
+  const isLocked =
+    reportStatus === "In Review" || reportStatus === "Exported";
+  const canEdit = !isLocked || role === "admin";
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
@@ -757,6 +829,10 @@ function NerisReportFormPage({
     formValues.risk_reduction_cooking_suppression_present ?? ""
   ).trim();
   const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
+    null,
+  );
+  /** While user is typing a resource time, hold raw value so cursor doesn't jump (parse on blur). */
+  const [resourceTimeDraft, setResourceTimeDraft] = useState<{ key: string; value: string } | null>(
     null,
   );
   const activeResourcePersonnelUnit = useMemo(
@@ -1478,6 +1554,40 @@ function NerisReportFormPage({
           "On Scene time is required unless dispatched and canceled en route.",
         );
       }
+    } else {
+      if (!unitEntry.canceledTime.trim()) {
+        addResourceError(
+          "canceledTime",
+          "Canceled time",
+          "Canceled time is required when dispatched and canceled en route.",
+        );
+      }
+      if (unitEntry.canceledTime.trim() && unitEntry.clearTime.trim()) {
+        const canceledTs = toResourceDateTimeTimestamp(
+          unitEntry.canceledTime,
+          resourceFallbackDate,
+        );
+        const clearTs = toResourceDateTimeTimestamp(
+          unitEntry.clearTime,
+          resourceFallbackDate,
+        );
+        if (
+          canceledTs !== null &&
+          clearTs !== null &&
+          canceledTs !== clearTs
+        ) {
+          addResourceError(
+            "canceledTime",
+            "Canceled time",
+            "When dispatched and canceled en route, Canceled and Clear times must be the same.",
+          );
+          addResourceError(
+            "clearTime",
+            "Clear time",
+            "When dispatched and canceled en route, Canceled and Clear times must be the same.",
+          );
+        }
+      }
     }
 
     const timelineEntries = [
@@ -1658,10 +1768,56 @@ function NerisReportFormPage({
     markNerisFormDirty();
   };
 
+  const syncResourceUnitsToIncident = (unitIds: string[]) => {
+    const next = dedupeAndCleanStrings(unitIds).filter((id) => id.length > 0);
+    onUpdateIncidentCall(callNumber, { assignedUnits: next.join(", ") });
+  };
+
+  const addResourceUnitAndSyncToIncident = (unitId: string) => {
+    const trimmed = unitId.trim();
+    if (!trimmed) return;
+    const existingIds = resourceUnits.map((r) => r.unitId.trim()).filter(Boolean);
+    if (existingIds.includes(trimmed)) return;
+    const source = apparatusByResourceUnitId.get(trimmed);
+    const newEntry: ResourceUnitEntry = {
+      id: `resource-add-${Date.now()}-${trimmed.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
+      unitId: trimmed,
+      unitType: inferResourceUnitTypeValue(trimmed, source?.unitType, unitTypeOptions),
+      staffing: getStaffingValueForUnit(trimmed, ""),
+      responseMode: "",
+      transportMode: "",
+      dispatchTime: toResourceDateTimeInputValue(detail?.receivedAt ?? "", resourceFallbackDate),
+      enrouteTime: "",
+      stagedTime: "",
+      onSceneTime: "",
+      canceledTime: "",
+      clearTime: "",
+      isCanceledEnroute: false,
+      isComplete: false,
+      isExpanded: true,
+      showTimesEditor: false,
+      personnel: "",
+      showPersonnelSelector: false,
+      reportWriter: "",
+      unitNarrative: "",
+    };
+    setResourceUnits((prev) => [...prev, newEntry]);
+    syncResourceUnitsToIncident([...existingIds, trimmed]);
+    markNerisFormDirty();
+  };
+
   const deleteResourceUnit = (unitEntryId: string) => {
+    const removed = resourceUnits.find((e) => e.id === unitEntryId);
     setResourceUnits((previous) =>
       previous.filter((entry) => entry.id !== unitEntryId),
     );
+    if (removed?.unitId) {
+      const remaining = resourceUnits
+        .filter((e) => e.id !== unitEntryId)
+        .map((r) => r.unitId.trim())
+        .filter(Boolean);
+      syncResourceUnitsToIncident(remaining);
+    }
     clearResourceUnitValidationErrors(unitEntryId);
     if (activeResourcePersonnelUnitId === unitEntryId) {
       setActiveResourcePersonnelUnitId(null);
@@ -1710,17 +1866,18 @@ function NerisReportFormPage({
                   entry.canceledTime,
                   resourceFallbackDate,
                 );
+                const sameTime = entry.isCanceledEnroute && normalizedDispatch
+                  ? normalizedCanceled || normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 1)
+                  : undefined;
                 return {
                   ...entry,
                   dispatchTime: normalizedDispatch,
-                  canceledTime:
-                    entry.isCanceledEnroute && !normalizedCanceled && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 1)
-                      : normalizedCanceled,
-                  clearTime:
-                    entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 2)
-                      : normalizedClear,
+                  ...(sameTime !== undefined
+                    ? { canceledTime: sameTime, clearTime: sameTime }
+                    : {
+                        canceledTime: normalizedCanceled,
+                        clearTime: normalizedClear,
+                      }),
                 };
               }
               if (
@@ -1730,9 +1887,17 @@ function NerisReportFormPage({
                 field === "canceledTime" ||
                 field === "clearTime"
               ) {
+                const normalized = toResourceDateTimeInputValue(value, resourceFallbackDate);
+                if (entry.isCanceledEnroute && (field === "canceledTime" || field === "clearTime")) {
+                  return {
+                    ...entry,
+                    canceledTime: normalized,
+                    clearTime: normalized,
+                  };
+                }
                 return {
                   ...entry,
-                  [field]: toResourceDateTimeInputValue(value, resourceFallbackDate),
+                  [field]: normalized,
                 };
               }
               return {
@@ -1846,18 +2011,18 @@ function NerisReportFormPage({
                 entry.canceledTime,
                 resourceFallbackDate,
               );
+              const sameTime =
+                normalizedClear ||
+                normalizedCanceled ||
+                (normalizedDispatch
+                  ? addMinutesToResourceDateTime(normalizedDispatch, 1)
+                  : "");
               return {
                 ...entry,
                 isCanceledEnroute: true,
                 dispatchTime: normalizedDispatch,
-                canceledTime:
-                  normalizedCanceled || normalizedDispatch
-                    ? normalizedCanceled || addMinutesToResourceDateTime(normalizedDispatch, 1)
-                    : "",
-                clearTime:
-                  normalizedClear || normalizedDispatch
-                    ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
-                    : "",
+                canceledTime: sameTime,
+                clearTime: sameTime,
               };
             })()
           : entry,
@@ -1868,29 +2033,49 @@ function NerisReportFormPage({
   };
 
   const populateResourceTimesFromDispatch = (unitEntryId: string) => {
-    const fallbackDispatch =
-      toResourceDateTimeInputValue(
-        formValues.incident_time_unit_dispatched ?? formValues.incident_time_call_create ?? "",
-        resourceFallbackDate,
-      ) || "";
+    // Prefer Incident Onset Date (Core), then dispatch/call-create date, then fallback
+    const onsetDate = (formValues.incident_onset_date ?? "").trim();
+    const populateDatePart =
+      onsetDate && /^\d{4}-\d{2}-\d{2}$/.test(onsetDate)
+        ? onsetDate
+        : formatResourceDatePart(
+            toResourceDateTimeInputValue(
+              formValues.incident_time_unit_dispatched ??
+                formValues.incident_time_call_create ??
+                "",
+              resourceFallbackDate,
+            ),
+          ) || resourceFallbackDate;
+    if (!populateDatePart || !/^\d{4}-\d{2}-\d{2}$/.test(populateDatePart)) {
+      return;
+    }
     setResourceUnits((previous) =>
       previous.map((entry) => {
         if (entry.id !== unitEntryId) {
           return entry;
         }
-        const dispatchSeed =
-          toResourceDateTimeInputValue(entry.dispatchTime, resourceFallbackDate) || fallbackDispatch;
-        if (!dispatchSeed) {
-          return entry;
-        }
+        // Update only the date part for each field; preserve existing times
+        const withDate = (
+          field:
+            | "dispatchTime"
+            | "enrouteTime"
+            | "stagedTime"
+            | "onSceneTime"
+            | "canceledTime"
+            | "clearTime",
+        ) =>
+          combineResourceDateTimeFromParts(
+            populateDatePart,
+            formatResourceTimePart(entry[field]),
+          ) || entry[field];
         return {
           ...entry,
-          dispatchTime: dispatchSeed,
-          enrouteTime: dispatchSeed,
-          stagedTime: dispatchSeed,
-          onSceneTime: dispatchSeed,
-          canceledTime: dispatchSeed,
-          clearTime: dispatchSeed,
+          dispatchTime: withDate("dispatchTime"),
+          enrouteTime: withDate("enrouteTime"),
+          stagedTime: withDate("stagedTime"),
+          onSceneTime: withDate("onSceneTime"),
+          canceledTime: withDate("canceledTime"),
+          clearTime: withDate("clearTime"),
         };
       }),
     );
@@ -3502,6 +3687,13 @@ function NerisReportFormPage({
     stampSavedAt("manual");
   };
 
+  const handleUnlock = () => {
+    setSectionErrors({});
+    setErrorMessage("");
+    setSaveMessage("");
+    stampSavedAt("manual", "Draft", "Report unlocked. You can edit again.");
+  };
+
   const goToNextSection = () => {
     if (!hasNextSection) {
       return;
@@ -4354,40 +4546,55 @@ function NerisReportFormPage({
           ) : null}
         </div>
         <div className="header-actions">
-          <button type="button" className="secondary-button compact-button">
-            Import
-          </button>
-          <button
-            type="button"
-            className="secondary-button compact-button"
-            onClick={handleGetIncidentTest}
-            disabled={isExporting || isFetchingIncidentTest}
-          >
-            {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
-          </button>
-          <button type="button" className="secondary-button compact-button">
-            CAD notes
-          </button>
-          <button type="button" className="secondary-button compact-button">
-            Print
-          </button>
+          {role === "admin" ? (
+            <>
+              <button type="button" className="secondary-button compact-button">
+                Import
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={handleGetIncidentTest}
+                disabled={isExporting || isFetchingIncidentTest}
+              >
+                {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
+              </button>
+              <button type="button" className="secondary-button compact-button">
+                CAD notes
+              </button>
+              <button type="button" className="secondary-button compact-button">
+                Print
+              </button>
+            </>
+          ) : null}
           <button
             type="button"
             className="primary-button compact-button"
             onClick={handleCheckForErrors}
-            disabled={isExporting}
+            disabled={isExporting || !canEdit}
           >
             Validate
           </button>
           {role === "admin" ? (
-            <button
-              type="button"
-              className="primary-button compact-button"
-              onClick={handleExportReport}
-              disabled={isExporting}
-            >
-              {isExporting ? "Exporting..." : "Export"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={handleExportReport}
+                disabled={isExporting}
+              >
+                {isExporting ? "Exporting..." : "Export"}
+              </button>
+              {isLocked ? (
+                <button
+                  type="button"
+                  className="secondary-button compact-button"
+                  onClick={handleUnlock}
+                >
+                  Unlock
+                </button>
+              ) : null}
+            </>
           ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
             {reportStatus}
@@ -4454,6 +4661,11 @@ function NerisReportFormPage({
         </div>
       ) : null}
 
+      {!canEdit ? (
+        <div className="neris-lock-banner" role="status">
+          This report is locked. Only an admin can unlock it for editing.
+        </div>
+      ) : null}
       <section className="neris-report-layout">
         <aside className="panel neris-sidebar">
           <div className="neris-sidebar-header">
@@ -4474,7 +4686,9 @@ function NerisReportFormPage({
           </nav>
         </aside>
 
-        <article className="panel neris-form-panel">
+        <article
+          className={`panel neris-form-panel${!canEdit ? " neris-form-locked" : ""}`}
+        >
           {currentSection.id !== "core" &&
           currentSection.id !== "location" &&
           currentSection.id !== "emergingHazards" &&
@@ -5172,6 +5386,13 @@ function NerisReportFormPage({
             ) : null}
             {currentSection.id === "resources" ? (
               <section className="field-span-two neris-resource-unit-list">
+                <div className="neris-resource-add-unit-row">
+                  <AddUnitControl
+                    apparatusFromDept={apparatusFromDept}
+                    resourceUnits={resourceUnits}
+                    onAdd={addResourceUnitAndSyncToIncident}
+                  />
+                </div>
                 {resourceUnits.length ? (
                   resourceUnits.map((unitEntry) => {
                     const selectedPersonnelValues = unitEntry.personnel
@@ -5401,110 +5622,458 @@ function NerisReportFormPage({
                             {unitEntry.showTimesEditor ? (
                               <div className="neris-resource-times-editor">
                                 <div className="neris-resource-times-editor-grid">
-                                  <label>
-                                    Dispatch
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.dispatchTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "dispatchTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
+                                      Dispatch
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "dispatchTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.dispatchTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.dispatchTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:dispatchTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.dispatchTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:dispatchTime`,
+                                            value: formatResourceTimePart(unitEntry.dispatchTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:dispatchTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:dispatchTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:dispatchTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.dispatchTime);
+                                          const v = parseTimeInput24h(raw);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.dispatchTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.dispatchTime,
+                                          );
+                                          setResourceTimeDraft(null);
+                                        }}
+                                      />
+                                    </span>
                                     {dispatchTimeError ? (
                                       <small className="field-error">{dispatchTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
-                                    Enroute
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.enrouteTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "enrouteTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
+                                      Enroute
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "enrouteTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.enrouteTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.enrouteTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:enrouteTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.enrouteTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:enrouteTime`,
+                                            value: formatResourceTimePart(unitEntry.enrouteTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:enrouteTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:enrouteTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:enrouteTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.enrouteTime);
+                                          const v = parseTimeInput24h(raw);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.enrouteTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.enrouteTime,
+                                          );
+                                          setResourceTimeDraft(null);
+                                        }}
+                                      />
+                                    </span>
                                     {enrouteTimeError ? (
                                       <small className="field-error">{enrouteTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
-                                    Staged
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.stagedTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "stagedTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
+                                      Staged
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "stagedTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.stagedTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.stagedTime),
+                                            ) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                          }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:stagedTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.stagedTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:stagedTime`,
+                                            value: formatResourceTimePart(unitEntry.stagedTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:stagedTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:stagedTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:stagedTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.stagedTime);
+                                          const v = parseTimeInput24h(raw);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.stagedTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.stagedTime,
+                                          );
+                                          setResourceTimeDraft(null);
+                                        }}
+                                      />
+                                    </span>
                                     {stagedTimeError ? (
                                       <small className="field-error">{stagedTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
-                                    On Scene
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.onSceneTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "onSceneTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
+                                      On Scene
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "onSceneTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.onSceneTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.onSceneTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:onSceneTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.onSceneTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:onSceneTime`,
+                                            value: formatResourceTimePart(unitEntry.onSceneTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:onSceneTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:onSceneTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:onSceneTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.onSceneTime);
+                                          const v = parseTimeInput24h(raw);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.onSceneTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.onSceneTime,
+                                          );
+                                          setResourceTimeDraft(null);
+                                        }}
+                                      />
+                                    </span>
                                     {onSceneTimeError ? (
                                       <small className="field-error">{onSceneTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
-                                    Canceled
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.canceledTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "canceledTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
+                                      Canceled
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "canceledTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.canceledTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.canceledTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:canceledTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.canceledTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:canceledTime`,
+                                            value: formatResourceTimePart(unitEntry.canceledTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:canceledTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:canceledTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:canceledTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.canceledTime);
+                                          const v = parseTimeInput24h(raw);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.canceledTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.canceledTime,
+                                          );
+                                          setResourceTimeDraft(null);
+                                        }}
+                                      />
+                                    </span>
                                     {canceledTimeError ? (
                                       <small className="field-error">{canceledTimeError}</small>
                                     ) : null}
                                   </label>
-                                  <label>
-                                    Clear
-                                    <input
-                                      type="datetime-local"
-                                      step={1}
-                                      value={unitEntry.clearTime}
-                                      onChange={(event) =>
-                                        updateResourceUnitField(
-                                          unitEntry.id,
-                                          "clearTime",
-                                          event.target.value,
-                                        )
-                                      }
-                                    />
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
+                                      Clear
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "clearTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
+                                    <span className="neris-resource-datetime-inputs">
+                                      <input
+                                        type="date"
+                                        value={formatResourceDatePart(unitEntry.clearTime)}
+                                        onChange={(e) =>
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            combineResourceDateTimeFromParts(
+                                              e.target.value,
+                                              formatResourceTimePart(unitEntry.clearTime),
+) || (e.target.value ? e.target.value + "T00:00:00" : "")
+                                            )
+                                        }
+                                      />
+                                      <input
+                                        type="text"
+                                        inputMode="numeric"
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:clearTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.clearTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:clearTime`,
+                                            value: formatResourceTimePart(unitEntry.clearTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:clearTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:clearTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:clearTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.clearTime);
+                                          const v = parseTimeInput24h(raw);
+                                          updateResourceUnitField(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            combineResourceDateTimeFromParts(
+                                              formatResourceDatePart(unitEntry.clearTime) ||
+                                                resourceFallbackDate,
+                                              v,
+                                            ) || unitEntry.clearTime,
+                                          );
+                                          setResourceTimeDraft(null);
+                                        }}
+                                      />
+                                    </span>
                                     {clearTimeError ? (
                                       <small className="field-error">{clearTimeError}</small>
                                     ) : null}
@@ -5830,6 +6399,7 @@ function NerisReportFormPage({
               type="button"
               className="secondary-button compact-button"
               onClick={handleSaveDraft}
+              disabled={!canEdit}
             >
               Save
             </button>
