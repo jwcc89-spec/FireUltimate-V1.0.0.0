@@ -1,9 +1,11 @@
 # Go-Live Checkpoint and Next Steps (Pick Up Here)
 
-Last updated: 2026-03-11
+Last updated: 2026-03-15
 Branch: `submenu/neris-golive-cifpd`
 
 Use this file as the single resume point if session ends.
+
+**Staging and deployment:** Staging is **\*.staging.fireultimate.app** (e.g. **cifpdil.staging.fireultimate.app**). It uses branch **`submenu/neris-golive-cifpd`** and is deployed via **Render**. When Render shows the latest commit (e.g. **462f6e2**) as deployed, that is what is running. For “commit before push” and “push” vs “redeploy on Render,” see **STAGING_AND_DEPLOYMENT.md**.
 
 ## 1) Current verified status
 
