@@ -51,8 +51,8 @@
   - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
 
 ## Current blocker / status
-- No code blocker. **Uncommitted work (2026-03-14):** NERIS cross-browser Phase 1 (schema, migration, API routes, client wiring, findings doc). User asked not to commit/push this session.
-- User must run migration `20260314000000_add_neris_export_history` once (see NERIS_CROSS_BROWSER_FINDINGS.md).
+- No code blocker. Latest work (this session): Dispatch Parsing Settings (submenu, GET /api/cad/emails, page to view incoming CAD emails); NERIS Edit Times Clear button order fix (Enroute); doc updates (EMAIL_AND_CAD_SETUP, CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN, task-2 plan). All committed and pushed.
+- User must run migration `20260314000000_add_neris_export_history` once if not yet run (see NERIS_CROSS_BROWSER_FINDINGS.md).
 - NERIS support confirmed production client/entity enrollment active. Deployment gate: production behind branch until PR to `main`; staging validation still required before promotion.
 
 ## External dependency status
@@ -80,15 +80,17 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
-- `894757f` updated cursavesinfo
-- `f731957` docs: add architecture, data model, lifecycle, integrations; agent guardrails and project context
-- `27a795b` remaining files not commit from auto cursor, go live plan etc
+- *(See session 2026-03-14-dispatch-parsing-settings-and-session-end.md; commit below.)*
+- `f3ac5ad` Edit Times: place Clear button to the right of each time header
+- `eb4c21a` Edit Times: HH:mm:ss format + Clear buttons
+- `527b292` NERIS Edit Times: validation rules + doc note
+- `2911eca` Edit Times: fix cursor jumping; doc: where to view CAD emails
 
 ## Next-step checklist (detailed)
 
-**Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; NERIS cross-browser Phase 1 implemented (uncommitted).
+**Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; in-app email viewing (Dispatch Parsing Settings) implemented. NERIS cross-browser Phase 1 in branch (run migration if not done).
 
-**CAD (you):** Switch Worker to production (EMAIL_AND_CAD_SETUP.md §B11); give cifpdil@cad.fireultimate.app to dispatch. Parsing/auto-fill when sample email available.
+**CAD (you):** Switch Worker to production (EMAIL_AND_CAD_SETUP.md §B11); give cifpdil@cad.fireultimate.app to dispatch. View incoming emails in **Admin Functions → Dispatch Parsing Settings**. Parsing/auto-fill module to be built next (CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md).
 
 **NERIS cross-browser (you, once):** Run migration for Phase 1 — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Use same DATABASE_URL as your API (e.g. Render); then redeploy API if needed. Test: export in Browser A, check NERIS Exports in Browser B.
 

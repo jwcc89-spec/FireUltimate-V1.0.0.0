@@ -1,0 +1,117 @@
+import { useEffect, useState } from "react";
+import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
+
+function formatDate(iso: string): string {
+  if (!iso) return "—";
+  try {
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, {
+      dateStyle: "short",
+      timeStyle: "medium",
+    });
+  } catch {
+    return iso;
+  }
+}
+
+export function DispatchParsingSettingsPage() {
+  const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getCadEmails(100, 0)
+      .then((list) => {
+        if (!cancelled) setEmails(list);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : "Failed to load emails.");
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>Admin Functions | Dispatch Parsing Settings</h1>
+          <p>
+            View incoming CAD dispatch emails sent to your department address (e.g.
+            cifpdil@cad.fireultimate.app). Parsing rules and auto-create incidents
+            will be added in a later update.
+          </p>
+        </div>
+      </header>
+
+      <section className="panel-grid">
+        <article className="panel">
+          <div className="panel-header">
+            <h2>Incoming emails</h2>
+          </div>
+          {error ? (
+            <p className="field-error">{error}</p>
+          ) : loading ? (
+            <p>Loading…</p>
+          ) : emails.length === 0 ? (
+            <p className="panel-description">
+              No CAD emails have been received yet. Once you give your CAD address
+              (e.g. <strong>cifpdil@cad.fireultimate.app</strong>) to dispatch and
+              they send test emails, they will appear here.
+            </p>
+          ) : (
+            <div className="cad-email-list">
+              {emails.map((row) => (
+                <div
+                  key={row.id}
+                  className="cad-email-item"
+                  data-expanded={expandedId === row.id || undefined}
+                >
+                  <button
+                    type="button"
+                    className="cad-email-summary"
+                    onClick={() =>
+                      setExpandedId((id) => (id === row.id ? null : row.id))
+                    }
+                    aria-expanded={expandedId === row.id}
+                  >
+                    <span className="cad-email-from">{row.fromAddress || "—"}</span>
+                    <span className="cad-email-to">{row.toAddress || "—"}</span>
+                    <span className="cad-email-date">
+                      {formatDate(row.createdAt)}
+                    </span>
+                  </button>
+                  {expandedId === row.id ? (
+                    <div className="cad-email-body-panel">
+                      <div className="cad-email-meta">
+                        <div>
+                          <strong>From:</strong> {row.fromAddress || "—"}
+                        </div>
+                        <div>
+                          <strong>To:</strong> {row.toAddress || "—"}
+                        </div>
+                        <div>
+                          <strong>Received:</strong> {formatDate(row.createdAt)}
+                        </div>
+                      </div>
+                      <label className="cad-email-raw-label">Raw body (for parsing)</label>
+                      <pre className="cad-email-raw-body">
+                        {row.rawBody || "(empty)"}
+                      </pre>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          )}
+        </article>
+      </section>
+    </section>
+  );
+}

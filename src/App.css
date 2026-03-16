@@ -1031,6 +1031,89 @@ tbody tr:last-of-type td {
   line-height: 1.45;
 }
 
+/* Dispatch Parsing Settings — incoming CAD email list */
+.cad-email-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.cad-email-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cad-email-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  background: #f8fafc;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.cad-email-summary:hover {
+  background: #f1f5f9;
+}
+
+.cad-email-from,
+.cad-email-to {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cad-email-date {
+  color: #64748b;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.cad-email-body-panel {
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+
+.cad-email-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.cad-email-raw-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.cad-email-raw-body {
+  margin: 0;
+  padding: 0.75rem;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 20rem;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+}
+
 .dashboard-shortcut-list,
 .unit-status-list {
   margin: 0;

@@ -1774,6 +1774,47 @@ app.post("/api/cad/inbound-email", async (request, response) => {
   }
 });
 
+// ----- GET /api/cad/emails (tenant-scoped list for Dispatch Parsing Settings UI) -----
+app.get("/api/cad/emails", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(401).json({ ok: false, message: "Tenant required." });
+      return;
+    }
+    const limit = Math.min(parseInt(request.query.limit, 10) || 50, 200);
+    const offset = Math.max(0, parseInt(request.query.offset, 10) || 0);
+    const rows = await prisma.cadEmailIngest.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: limit,
+      skip: offset,
+      select: {
+        id: true,
+        fromAddress: true,
+        toAddress: true,
+        rawBody: true,
+        headersJson: true,
+        createdAt: true,
+      },
+    });
+    const list = rows.map((r) => ({
+      id: r.id,
+      fromAddress: r.fromAddress ?? "",
+      toAddress: r.toAddress ?? "",
+      rawBody: r.rawBody ?? "",
+      headersJson: r.headersJson ?? null,
+      createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
+    }));
+    response.json({ ok: true, data: list });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to list CAD emails.",
+    });
+  }
+});
+
 // ----- /api/incidents (tenant-scoped; Incident table) -----
 function incidentRowToApi(row) {
   if (!row) return null;

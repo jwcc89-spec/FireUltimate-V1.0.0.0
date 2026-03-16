@@ -5700,6 +5700,7 @@ function NerisReportFormPage({
                                   </label>
                                   <label className="neris-resource-datetime-label">
                                     <span className="neris-resource-datetime-header">
+                                      Enroute
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
@@ -5712,7 +5713,6 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
-                                      Enroute
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input

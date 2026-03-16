@@ -79,6 +79,7 @@ import {
 } from "./appData";
 import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
 import { HydrantsAdminPage } from "./HydrantsAdminPage";
+import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
 import {
   getNerisValueOptions,
   type NerisFormValues,
@@ -11473,6 +11474,8 @@ function RouteResolver({
         onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
+  } else if (path === "/admin-functions/dispatch-parsing-settings") {
+    content = <DispatchParsingSettingsPage />;
   } else {
     const menu = getMainMenuByPath(path);
     if (menu && path === menu.path) {

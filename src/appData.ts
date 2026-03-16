@@ -498,6 +498,14 @@ export const MAIN_MENUS: MainMenu[] = [
         isBuilt: true,
         adminOnly: true,
       },
+      {
+        label: "Dispatch Parsing Settings",
+        path: "/admin-functions/dispatch-parsing-settings",
+        summary:
+          "View incoming CAD dispatch emails and configure parsing (future).",
+        isBuilt: true,
+        adminOnly: true,
+      },
     ],
   },
   {
