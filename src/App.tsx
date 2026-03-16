@@ -11503,6 +11503,9 @@ function App() {
   }, [session.isAuthenticated]);
 
   const [nerisExportHistory, setNerisExportHistory] = useState<NerisExportRecord[]>([]);
+  const [nerisExportSettings, setNerisExportSettings] =
+    useState<NerisExportSettings>(() => readNerisExportSettings());
+
   useEffect(() => {
     if (!session.isAuthenticated) return;
     getNerisExportHistory()
@@ -11541,8 +11544,6 @@ function App() {
   const [submenuVisibility, setSubmenuVisibility] = useState<SubmenuVisibilityMap>(
     () => readSubmenuVisibility(),
   );
-  const [nerisExportSettings, setNerisExportSettings] =
-    useState<NerisExportSettings>(() => readNerisExportSettings());
 
   const apparatusFromDepartmentDetails = useMemo(
     () => readApparatusFromDepartmentDetails(),
