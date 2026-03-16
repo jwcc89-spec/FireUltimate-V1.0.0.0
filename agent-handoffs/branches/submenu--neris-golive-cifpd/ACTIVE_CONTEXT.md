@@ -80,7 +80,7 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
-- *(See session 2026-03-14-dispatch-parsing-settings-and-session-end.md; commit below.)*
+- `63e66a3` Dispatch Parsing Settings + doc/handoff updates (session end)
 - `f3ac5ad` Edit Times: place Clear button to the right of each time header
 - `eb4c21a` Edit Times: HH:mm:ss format + Clear buttons
 - `527b292` NERIS Edit Times: validation rules + doc note
