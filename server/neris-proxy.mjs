@@ -2386,11 +2386,15 @@ app.post("/api/auth/login", (request, response) => {
           }).catch(() => {});
         });
       }
+      const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
+      const userType =
+        userTypeLabelMap[submittedUsername] ||
+        (dbUser.role.toLowerCase() === "admin" ? "Admin" : "User");
       response.status(200).json({
         ok: true,
         user: {
           name: dbUser.username,
-          userType: dbUser.role.toLowerCase() === "admin" ? "Admin" : "User",
+          userType,
           username: dbUser.username,
         },
       });

@@ -13,10 +13,12 @@
    - Export: **admin only**; hide the Export button for non-admin users.
 
 2. **Super admin**  
-   - Super admin is **not visible** as a selectable user type in the UI.  
+   - **Purpose:** You (platform owner) can go in and control certain aspects/functions of the tenant’s account.  
+   - **Staging only:** The “Super Admin” user type is **visible** in the user type dropdown **only in staging environments** (e.g. `import.meta.env.DEV` or hostname contains `staging`), so you can assign super admins.  
+   - **Production:** In production, “Super Admin” is **not visible** in the dropdown and must not be assignable by tenant admins.  
    - Each account has **1–2 super admins**, assigned by you only.  
    - Certain fields/buttons are **only for super admins**; hidden for other users.  
-   - Used in **sandbox** environments for testing.
+   - Used in **sandbox/staging** for testing and tenant control.
 
 3. **Admin show/hide mode**  
    - A button to enter **“admin show/hide mode”**.  
@@ -91,9 +93,10 @@
      - A dedicated “Platform” or “Super Admin” UI that only you can access (e.g. protected by platform admin key or separate auth).  
    - Do **not** expose “Super Admin” as a selectable role in the normal user type dropdown.
 
-3. **Hide “Super Admin” from user type list**
-   - Wherever user types/roles are listed (e.g. Department Users, Create User, Edit User), **remove** or **filter out** “Super Admin” from the dropdown/options.  
-   - So regular admins cannot assign “Super Admin” to anyone.
+3. **Hide “Super Admin” from user type list in production**
+   - Wherever user types/roles are listed (e.g. Department Users, Create User, Edit User), **filter out** “Super Admin” from the dropdown/options **in production only**.  
+   - In **staging** (e.g. dev server or hostname containing `staging`), show “Super Admin” so you can assign super admins.  
+   - So in production, tenant admins cannot assign “Super Admin”; in staging, you can.
 
 4. **Use super admin for visibility rules**
    - For any feature that should be “super admin only” (e.g. a button or field):  

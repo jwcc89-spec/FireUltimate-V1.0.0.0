@@ -10,14 +10,13 @@
 - `menu-submenu/ui-updates`
 
 ## Current focus
-- Menu and submenu UI updates (branch handoff created; scope to be defined by user).
+- General UI future changes (L1–L4 done; L5–L7 deferred until after test).
 
 ## Latest known status
-- Latest commit: `3489f77` - ACTIVE_CONTEXT: latest commit fe6f0ec
-- Handoff folder created and committed; no feature work logged yet.
+- L1–L4 implemented (login cleanup, tenant logo on login, Scaffolded→Beta, super admin staging-only). Changes not yet committed; ready for test then commit.
 
 ## Current blocker / status
-- None. Await user direction for first implementation step.
+- None. User to test L1–L4, then commit + push; then proceed with L5–L7 (beta sections clickable only for super admin).
 
 ## External dependency status
 - 
