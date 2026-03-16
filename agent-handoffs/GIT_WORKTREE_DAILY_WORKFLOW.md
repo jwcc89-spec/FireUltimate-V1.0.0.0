@@ -85,6 +85,8 @@ If you’re on the wrong branch, run `git checkout <correct-branch>` (and stash 
 
 ## 4. Before Work: Sync from GitHub
 
+**Option A — You're already on the branch you'll work on** (e.g. `submenu/neris-golive-cifpd`):
+
 From your project folder:
 
 ```bash
@@ -94,16 +96,28 @@ git fetch origin
 git pull --rebase
 ```
 
+- **`git status`** — Shows uncommitted changes.
+- **`git fetch origin`** — Downloads latest from GitHub.
+- **`git pull --rebase`** — Updates **the branch you're currently on** with the remote (replays your local commits on top of the remote). This does *not* rebase onto `main`.
+
+**Option B — You want to update main and your work branch, then switch to your work branch:**
+
+```bash
+git fetch origin
+git checkout main
+git pull origin main
+git checkout submenu/neris-golive-cifpd   # or your branch name
+git pull origin submenu/neris-golive-cifpd
+```
+
+No rebase needed; both branches are updated with the remote.
+
 If you use cursaves:
 
 ```bash
 cursaves pull
 cd /path/to/FireUltimate-V1.0.0.0   # cursaves pull changes cwd; cd back to repo
 ```
-
-- **`git status`** — Shows uncommitted changes.
-- **`git fetch origin`** — Downloads latest from GitHub.
-- **`git pull --rebase`** — Updates your current branch with remote changes.
 
 > **Note:** `cursaves pull` changes the terminal's working directory to `~/.cursaves`. The final `cd` brings you back to the project folder so you're ready to work.
 

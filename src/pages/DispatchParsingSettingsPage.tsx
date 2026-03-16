@@ -14,6 +14,22 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Try to decode base64 raw body from the ingest worker; returns decoded string or null if not base64. */
+function tryDecodeRawBody(rawBody: string): string | null {
+  if (!rawBody || typeof rawBody !== "string") return null;
+  const trimmed = rawBody.trim();
+  const withoutSuffix = trimmed.endsWith("[TRUNCATED]")
+    ? trimmed.slice(0, -"[TRUNCATED]".length).trim()
+    : trimmed;
+  if (!withoutSuffix.length) return null;
+  try {
+    const decoded = atob(withoutSuffix);
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
 export function DispatchParsingSettingsPage() {
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,10 +116,35 @@ export function DispatchParsingSettingsPage() {
                           <strong>Received:</strong> {formatDate(row.createdAt)}
                         </div>
                       </div>
-                      <label className="cad-email-raw-label">Raw body (for parsing)</label>
-                      <pre className="cad-email-raw-body">
-                        {row.rawBody || "(empty)"}
-                      </pre>
+                      {(() => {
+                        const decoded = tryDecodeRawBody(row.rawBody ?? "");
+                        if (decoded !== null) {
+                          return (
+                            <>
+                              <label className="cad-email-raw-label">
+                                Decoded body (for parsing)
+                              </label>
+                              <pre className="cad-email-raw-body cad-email-decoded">
+                                {decoded}
+                              </pre>
+                              <details className="cad-email-raw-details">
+                                <summary>Show raw base64</summary>
+                                <pre className="cad-email-raw-body">
+                                  {row.rawBody || "(empty)"}
+                                </pre>
+                              </details>
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            <label className="cad-email-raw-label">Raw body (for parsing)</label>
+                            <pre className="cad-email-raw-body">
+                              {row.rawBody || "(empty)"}
+                            </pre>
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : null}
                 </div>
