@@ -52,5 +52,12 @@ After acknowledging the rules above:
 2) Sync latest code for submenu/neris-golive-cifpd (e.g. git pull).
 3) Validate changes (build/test/lint as appropriate), then report clearly.
 4) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
-5) Before ending: update session note + ACTIVE_CONTEXT.md; add conversation summary to conversations/ if needed; commit + push; report branch, commit hash, changed files, next-step checklist; include **Now vs Later** callouts.
+
+When the user says "this session is coming to and end":
+Before ending: 
+1) Update session note + ACTIVE_CONTEXT.md
+2) Add conversation summary to conversations/ 
+3) Review all docs and suggest any updates based on completed work this session; move docs to /completed if needed.
+After user acknowledges then:
+1) Commit + push; report branch, commit hash, changed files, next-step checklist; include **Now vs Later** callouts.
 ```

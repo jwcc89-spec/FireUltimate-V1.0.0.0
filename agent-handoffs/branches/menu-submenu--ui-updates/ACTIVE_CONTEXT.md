@@ -10,21 +10,22 @@
 - `menu-submenu/ui-updates`
 
 ## Current focus
-- General UI future changes (L1–L4 done; L5–L7 deferred until after test).
+- General UI (L1–L7) and login/brand work completed this session. Branch ready for PR or merge.
 
 ## Latest known status
-- L1–L4 implemented (login cleanup, tenant logo on login, Scaffolded→Beta, super admin staging-only). Changes not yet committed; ready for test then commit.
+- **Latest commit:** `b98f695` — General UI (L1–L7): login cleanup, brand assets, superadmin + beta behavior.
+- L1–L7 done: login cleanup (no department field, minimal text), tenant logo on login and in form header, composite brand image (left), Sign In To {tenantName}, Scaffolded→Beta, super admin role + staging-only visibility in dropdown, beta sidebar/cards clickable only for super admin. Server login returns userType from Department Details so "Super Admin" maps to superadmin.
 
 ## Current blocker / status
-- None. User to test L1–L4, then commit + push; then proceed with L5–L7 (beta sections clickable only for super admin).
+- None.
 
 ## External dependency status
-- 
+- Brand assets in `public/`: `fire-ultimate-icon-wordmark-featureLine.png` (left panel); tenant logo from Department Details (right header when set).
 
 ## Recent key commits (latest first)
-- `3489f77` ACTIVE_CONTEXT: latest commit fe6f0ec
-- `fe6f0ec` Handoff: record commit 9098265 and push to origin
-- `9098265` Bootstrap handoff for menu-submenu/ui-updates (QUICK_PROMPTS flow)
+- `b98f695` General UI (L1–L7): login cleanup, brand assets, superadmin + beta behavior
+- `9da9b0c` Merge pull request #18 from jwcc89-spec/submenu/neris-golive-cifpd
+- (earlier bootstrap/handoff commits)
 
 ## Next agent should do this first
 1. **Do now:** Read `cursoragent-context.md` and `.cursor/project-context.md` (if present).
