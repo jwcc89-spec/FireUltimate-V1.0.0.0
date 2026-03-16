@@ -54,20 +54,20 @@ Purpose: keep all deferred or future work in one place from this point forward, 
 
 ## Login / Auth (general UI)
 
-- [Later][P2] **Login screen:** Remove "Fire Department (optional)" field from main login form.
-- [Later][P2] **Login screen:** Remove or simplify helper text on main login screen (e.g. "Credentials are validated against saved Users", brand-panel copy).
-- [Later][P2] **Login screen:** Display tenant picture on login page; picture is uploaded in Admin Functions or Settings (ensure upload/store exists and is used on login).
+- [Done][P2] **Login screen:** Remove "Fire Department (optional)" field from main login form. (2026-03-16, menu-submenu/ui-updates)
+- [Done][P2] **Login screen:** Remove or simplify helper text on main login screen. (2026-03-16)
+- [Done][P2] **Login screen:** Display tenant picture on login page (and in form header when set). (2026-03-16)
 
 ---
 
 ## UI Conventions
 
 - [Done][P3] Demo-only helper text pattern: gate by tenant context (`/api/tenant/context`, demo-like slug) and style helper text in blue using `.demo-helper-text`.
-- [Later][P2] **"Scaffolded" → "Beta":** Change all "Scaffolded" wording to *Beta* (italicized blue text) app-wide (e.g. submenu cards, build-status labels).
-- [Later][P2] **Beta sections – super admin only:** Beta submenus (e.g. Certifications) stay viewable and clickable only for **super admin** (for buildouts). For **admin and lower:** show label with "beta" to the right; do not allow click; do not open submenu. Same for the Certifications **card** on Personnel main menu: visible but not clickable for non–super-admin.
+- [Done][P2] **"Scaffolded" → "Beta":** Change all "Scaffolded" wording to *Beta* (italicized blue text) app-wide. (2026-03-16)
+- [Done][P2] **Beta sections – super admin only:** Beta submenus/cards clickable only for super admin; admin and lower see label + "Beta", non-clickable. (2026-03-16)
 
 ---
 
 ## Done (history)
 
-- (Move completed backlog items here with date/commit when finished.)
+- Login L1–L2–L3, Beta (L4), Super admin staging-only visibility, L5–L6–L7 beta clickability, login/brand composite image, server login userType from Department Details — 2026-03-16, branch menu-submenu/ui-updates, commit b98f695.

@@ -86,17 +86,17 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 
 ## Future changes (general UI)
 
-| # | Item | Notes |
-|---|------|--------|
-| L1 | **Login screen:** Remove "Fire Department (optional)" field | Main login form today has department, username, password; remove the department field. |
-| L2 | **Login screen:** Remove helper text | Remove or simplify helper text on the main login screen (e.g. "Credentials are validated against saved Users", brand-panel text). |
-| L3 | **Login screen:** Show tenant picture | Tenant picture is (or will be) uploadable in Admin Functions / Settings; display that image on the login page (e.g. in brand panel or header). |
-| L4 | **"Scaffolded" → "Beta":** Replace all "Scaffolded" wording with *Beta* (italicized blue text) | Applies to submenu cards and any other places that show build status. |
-| L5 | **Beta sections – super admin only (clickable):** For super admin only, beta submenus (e.g. Certifications) remain viewable and clickable for buildouts. | No change for super admin. |
-| L6 | **Beta sections – admin and lower (not clickable):** For admin and lower roles: show the submenu label (e.g. "Certifications") with "beta" to the right; do not allow the submenu item to be clicked; do not open that submenu. | In the sidebar, the item is visible but not clickable. |
-| L7 | **Beta cards on main menu (e.g. Personnel):** Same rule for the Certifications *card* when the main menu Personnel is clicked: card is visible but not clickable for admin and lower; only super admin can open it. | Same visibility/click logic as L6 for the Personnel → Certifications card. |
+| # | Item | Status | Notes |
+|---|------|--------|--------|
+| L1 | **Login screen:** Remove "Fire Department (optional)" field | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
+| L2 | **Login screen:** Remove helper text | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
+| L3 | **Login screen:** Show tenant picture | **Done** 2026-03-16 | Tenant logo on login and in form header (right). |
+| L4 | **"Scaffolded" → "Beta":** Replace all "Scaffolded" wording with *Beta* (italicized blue text) | **Done** 2026-03-16 | Applies to submenu cards. |
+| L5 | **Beta sections – super admin only (clickable):** For super admin only, beta submenus remain viewable and clickable. | **Done** 2026-03-16 | UserRole superadmin; sidebar/cards clickable only for super admin. |
+| L6 | **Beta sections – admin and lower (not clickable):** Show label with "beta"; do not allow click. | **Done** 2026-03-16 | Sidebar: span + Beta for non–super-admin. |
+| L7 | **Beta cards on main menu:** Card visible but not clickable for admin and lower; only super admin can open. | **Done** 2026-03-16 | submenu-card-beta for non–super-admin. |
 
-**Reference:** See also `docs/later-changes-backlog.md` (Login / Auth, UI Conventions) for the same items in backlog form.
+**Reference:** See also `docs/later-changes-backlog.md` (Login / Auth, UI Conventions).
 
 ---
 
