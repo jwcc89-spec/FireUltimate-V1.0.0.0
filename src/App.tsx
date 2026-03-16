@@ -781,6 +781,15 @@ const SHIFT_RECURRENCE_PRESET_OPTIONS: ShiftRecurrencePreset[] = [
   "Custom",
 ];
 const DEFAULT_USER_TYPE_VALUES = ["Super Admin", "Admin", "Sub Admin", "Secretary", "User"];
+
+/** Super Admin is only visible in staging (so you can assign super admins); hidden in production. */
+function getVisibleUserTypeOptions(options: string[]): string[] {
+  if (typeof window === "undefined") return options.filter((t) => t !== "Super Admin");
+  const isStaging =
+    import.meta.env.DEV || window.location.hostname.includes("staging");
+  return isStaging ? options : options.filter((t) => t !== "Super Admin");
+}
+
 const GMT_TIMEZONE_OPTIONS = [
   "GMT-05:00 Eastern",
   "GMT-06:00 Central",
@@ -1934,7 +1943,7 @@ function readSession(): SessionState {
       typeof parsed.isAuthenticated === "boolean" &&
       typeof parsed.username === "string" &&
       typeof parsed.unit === "string" &&
-      (parsed.role === "admin" || parsed.role === "user")
+      (parsed.role === "admin" || parsed.role === "user" || parsed.role === "superadmin")
     ) {
       return parsed;
     }
@@ -2594,7 +2603,11 @@ function getNerisQueueFieldValue(
 }
 
 function mapUserTypeToRole(userType: string): UserRole {
-  return userType.trim().toLowerCase().includes("admin") ? "admin" : "user";
+  const normalized = userType.trim().toLowerCase();
+  if (normalized === "super admin") {
+    return "superadmin";
+  }
+  return normalized.includes("admin") ? "admin" : "user";
 }
 
 function validatePasswordPolicyClient(password: string): string | null {
@@ -2661,7 +2674,6 @@ function applyNameTemplate(template: string, firstName: string, lastName: string
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
-  const [department, setDepartment] = useState("");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -2677,52 +2689,65 @@ function AuthPage({ onLogin }: AuthPageProps) {
 
     setErrorMessage("");
     setIsSubmitting(true);
-    const loginError = await onLogin(department.trim(), username.trim(), password);
+    const loginError = await onLogin("", username.trim(), password);
     if (loginError) {
       setErrorMessage(loginError);
     }
     setIsSubmitting(false);
   };
 
+  const [tenantLogo] = useState<string>(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "";
+  });
+  const [tenantName, setTenantName] = useState<string>("");
+
+  useEffect(() => {
+    let mounted = true;
+    fetch("/api/tenant/context")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((payload: { ok?: boolean; tenant?: { name?: string } } | null) => {
+        if (!mounted || !payload?.tenant) return;
+        const name = String(payload.tenant.name ?? "").trim();
+        if (name) setTenantName(name);
+      })
+      .catch(() => {});
+    return () => { mounted = false; };
+  }, []);
+
+  const signInHeading = tenantName
+    ? `Sign In To ${tenantName}`
+    : "Sign In To Fire Ultimate";
+
   return (
     <div className="auth-page">
       <section className="auth-brand-panel">
-        <div className="brand-pill">
-          <Shield size={16} />
-          <span>Fire Ultimate Prototype</span>
-        </div>
-        <h1>Incident-focused workspace with mapping and admin controls</h1>
-        <p>
-          Sign in with credentials configured in Admin Functions -&gt; Department
-          Details -&gt; Users.
-        </p>
-        <ul className="brand-feature-list">
-          <li>Only saved users can sign in</li>
-          <li>Access level is assigned from each user type</li>
-          <li>Settings menu includes profile, display, and logout actions</li>
-        </ul>
+        <img
+          src="/fire-ultimate-icon-wordmark-featureLine.png"
+          alt="Fire Ultimate"
+          className="auth-brand-composite-img"
+        />
       </section>
 
       <section className="auth-form-panel">
         <form className="auth-form" onSubmit={handleSubmit}>
           <div className="auth-form-header">
-            <ShieldCheck size={24} />
-            <div>
-              <h2>Sign in to Fire Ultimate</h2>
-              <p>Credentials are validated against saved Users.</p>
-            </div>
+            {tenantLogo ? (
+              <img
+                src={tenantLogo}
+                alt=""
+                className="auth-form-header-tenant-logo"
+                aria-hidden
+              />
+            ) : (
+              <>
+                <ShieldCheck size={24} />
+                <div>
+                  <h2>{signInHeading}</h2>
+                </div>
+              </>
+            )}
           </div>
-
-          <label htmlFor="department">Fire Department (optional)</label>
-          <input
-            id="department"
-            name="department"
-            type="text"
-            autoComplete="organization"
-            placeholder="CIFPD"
-            value={department}
-            onChange={(event) => setDepartment(event.target.value)}
-          />
 
           <label htmlFor="username">Username</label>
           <input
@@ -2945,7 +2970,10 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               location.pathname === menu.path ||
               location.pathname.startsWith(`${menu.path}/`);
             const visibleSubmenus = menu.submenus.filter(
-              (submenu) => session.role === "admin" || !submenu.adminOnly,
+              (submenu) =>
+                session.role === "admin" ||
+                session.role === "superadmin" ||
+                !submenu.adminOnly,
             );
             const hasSubmenus = visibleSubmenus.length > 0;
             const isExpanded = hasSubmenus && menu.id === expandedMenuForRender;
@@ -2990,21 +3018,37 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
 
                 {hasSubmenus ? (
                   <div className={`submenu-links ${isExpanded ? "open" : ""}`}>
-                    {visibleSubmenus.map((submenu) => (
-                      <NavLink
-                        key={submenu.path}
-                        to={submenu.path}
-                        className={({ isActive }) =>
-                          `submenu-link ${isActive ? "active" : ""}`
-                        }
-                        onClick={() => {
-                          setExpandedMenuId(menu.id);
-                          handleNavClick();
-                        }}
-                      >
-                        {submenu.label}
-                      </NavLink>
-                    ))}
+                    {visibleSubmenus.map((submenu) => {
+                      const isBeta = !submenu.isBuilt;
+                      const canClickBeta = session.role === "superadmin";
+                      if (isBeta && !canClickBeta) {
+                        return (
+                          <span
+                            key={submenu.path}
+                            className="submenu-link submenu-link-beta"
+                            title="Beta — super admin only"
+                          >
+                            {submenu.label}
+                            <span className="beta-label-inline"> Beta</span>
+                          </span>
+                        );
+                      }
+                      return (
+                        <NavLink
+                          key={submenu.path}
+                          to={submenu.path}
+                          className={({ isActive }) =>
+                            `submenu-link ${isActive ? "active" : ""}`
+                          }
+                          onClick={() => {
+                            setExpandedMenuId(menu.id);
+                            handleNavClick();
+                          }}
+                        >
+                          {submenu.label}
+                        </NavLink>
+                      );
+                    })}
                   </div>
                 ) : null}
               </section>
@@ -3060,7 +3104,11 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             </button>
 
             <span className={`role-badge role-${session.role}`}>
-              {session.role === "admin" ? "Admin" : "User"}
+              {session.role === "superadmin"
+                ? "Super Admin"
+                : session.role === "admin"
+                  ? "Admin"
+                  : "User"}
             </span>
 
             <div className="user-pill">
@@ -3137,7 +3185,7 @@ function MenuDisplayCards({
     () =>
       menu.submenus.filter(
         (submenu) =>
-          (role === "admin" || !submenu.adminOnly) &&
+          (role === "admin" || role === "superadmin" || !submenu.adminOnly) &&
           submenuVisibility[submenu.path] !== false,
       ),
     [menu, role, submenuVisibility],
@@ -3261,26 +3309,48 @@ function MenuDisplayCards({
 
       {cards.length > 0 ? (
         <section className="submenu-card-grid">
-          {cards.map((card) => (
-            <NavLink
-              key={`${menu.id}-${card.path}`}
-              to={card.path}
-              className="submenu-card submenu-card-link"
-            >
-              <div className="submenu-card-header">
-                <h2>{card.label}</h2>
-                <span
-                  className={`build-status ${
-                    card.isBuilt ? "build-ready" : "build-planned"
-                  }`}
+          {cards.map((card) => {
+            const isBeta = !card.isBuilt;
+            const canClickBeta = role === "superadmin";
+            if (isBeta && !canClickBeta) {
+              return (
+                <div
+                  key={`${menu.id}-${card.path}`}
+                  className="submenu-card submenu-card-beta"
+                  title="Beta — super admin only"
                 >
-                  {card.isBuilt ? "Built" : "Scaffolded"}
-                </span>
-              </div>
-              <p>{card.summary}</p>
-              <span className="submenu-card-origin">{card.parentMenuTitle}</span>
-            </NavLink>
-          ))}
+                  <div className="submenu-card-header">
+                    <h2>{card.label}</h2>
+                    <span className="build-status build-planned beta-label">
+                      Beta
+                    </span>
+                  </div>
+                  <p>{card.summary}</p>
+                  <span className="submenu-card-origin">{card.parentMenuTitle}</span>
+                </div>
+              );
+            }
+            return (
+              <NavLink
+                key={`${menu.id}-${card.path}`}
+                to={card.path}
+                className="submenu-card submenu-card-link"
+              >
+                <div className="submenu-card-header">
+                  <h2>{card.label}</h2>
+                  <span
+                    className={`build-status ${
+                      card.isBuilt ? "build-ready" : "build-planned beta-label"
+                    }`}
+                  >
+                    {card.isBuilt ? "Built" : "Beta"}
+                  </span>
+                </div>
+                <p>{card.summary}</p>
+                <span className="submenu-card-origin">{card.parentMenuTitle}</span>
+              </NavLink>
+            );
+          })}
         </section>
       ) : (
         <p className="panel-description">
@@ -3330,7 +3400,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
           <div className="panel-header">
             <h2>Priority Shortcuts</h2>
             <span className="panel-caption">
-              {role === "admin"
+              {role === "admin" || role === "superadmin"
                 ? "Admin-level links included"
                 : "Admin-only links will route to access denied"}
             </span>
@@ -8247,7 +8317,7 @@ function DepartmentDetailsPage({
                               value={multiAddDefaultUserType}
                               onChange={(event) => setMultiAddDefaultUserType(event.target.value)}
                             >
-                              {userTypeValues.map((option) => (
+                              {getVisibleUserTypeOptions(userTypeValues).map((option) => (
                                 <option key={`multi-add-type-${option}`} value={option}>
                                   {option}
                                 </option>
@@ -8298,7 +8368,7 @@ function DepartmentDetailsPage({
                                         }
                                       >
                                         <option value="">Use default</option>
-                                        {userTypeValues.map((option) => (
+                                        {getVisibleUserTypeOptions(userTypeValues).map((option) => (
                                           <option key={`multi-add-row-type-${rowIndex}-${option}`} value={option}>
                                             {option}
                                           </option>
@@ -9580,20 +9650,22 @@ function DepartmentDetailsPage({
                             </td>
                           </tr>
                         ) : (
-                          userTypeValues.map((userType, index) => (
+                          getVisibleUserTypeOptions(userTypeValues).map((userType) => {
+                            const realIndex = userTypeValues.indexOf(userType);
+                            return (
                             <tr
-                              key={`user-type-${userType}-${index}`}
-                              className={`clickable-row ${editingIndex === index ? "clickable-row-selected" : ""}`}
+                              key={`user-type-${userType}-${realIndex}`}
+                              className={`clickable-row ${editingIndex === realIndex ? "clickable-row-selected" : ""}`}
                               role="button"
                               tabIndex={0}
                               onClick={() => {
-                                setEditingIndex(index);
+                                setEditingIndex(realIndex);
                                 setUserTypeDraft(userType);
                               }}
                               onKeyDown={(event) => {
                                 if (event.key === "Enter" || event.key === " ") {
                                   event.preventDefault();
-                                  setEditingIndex(index);
+                                  setEditingIndex(realIndex);
                                   setUserTypeDraft(userType);
                                 }
                               }}
@@ -9602,11 +9674,11 @@ function DepartmentDetailsPage({
                                 className="department-qualification-drag-cell"
                                 onClick={(e) => e.stopPropagation()}
                                 draggable
-                                onDragStart={() => setDragUserTypeIndex(index)}
+                                onDragStart={() => setDragUserTypeIndex(realIndex)}
                                 onDragEnd={() => setDragUserTypeIndex(null)}
                                 onDragOver={(event) => event.preventDefault()}
                                 onDrop={() => {
-                                  if (dragUserTypeIndex === null || dragUserTypeIndex === index) {
+                                  if (dragUserTypeIndex === null || dragUserTypeIndex === realIndex) {
                                     return;
                                   }
                                   setUserTypeValues((previous) => {
@@ -9615,7 +9687,7 @@ function DepartmentDetailsPage({
                                     if (!moved) {
                                       return previous;
                                     }
-                                    next.splice(index, 0, moved);
+                                    next.splice(realIndex, 0, moved);
                                     return next;
                                   });
                                   setDragUserTypeIndex(null);
@@ -9633,10 +9705,11 @@ function DepartmentDetailsPage({
                                 <strong className="call-number-text">{userType || "—"}</strong>
                               </td>
                               <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
-                                {index + 1}
+                                {realIndex + 1}
                               </td>
                             </tr>
-                          ))
+                            );
+                          })
                         )}
                       </tbody>
                     </table>
@@ -10217,7 +10290,7 @@ function DepartmentDetailsPage({
                     }
                   >
                     <option value="">Select user type</option>
-                    {userTypeValues.map((option) => (
+                    {getVisibleUserTypeOptions(userTypeValues).map((option) => (
                       <option key={`user-user-type-${option}`} value={option}>
                         {option}
                       </option>
