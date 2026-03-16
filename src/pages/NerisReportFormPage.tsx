@@ -1554,6 +1554,40 @@ function NerisReportFormPage({
           "On Scene time is required unless dispatched and canceled en route.",
         );
       }
+    } else {
+      if (!unitEntry.canceledTime.trim()) {
+        addResourceError(
+          "canceledTime",
+          "Canceled time",
+          "Canceled time is required when dispatched and canceled en route.",
+        );
+      }
+      if (unitEntry.canceledTime.trim() && unitEntry.clearTime.trim()) {
+        const canceledTs = toResourceDateTimeTimestamp(
+          unitEntry.canceledTime,
+          resourceFallbackDate,
+        );
+        const clearTs = toResourceDateTimeTimestamp(
+          unitEntry.clearTime,
+          resourceFallbackDate,
+        );
+        if (
+          canceledTs !== null &&
+          clearTs !== null &&
+          canceledTs !== clearTs
+        ) {
+          addResourceError(
+            "canceledTime",
+            "Canceled time",
+            "When dispatched and canceled en route, Canceled and Clear times must be the same.",
+          );
+          addResourceError(
+            "clearTime",
+            "Clear time",
+            "When dispatched and canceled en route, Canceled and Clear times must be the same.",
+          );
+        }
+      }
     }
 
     const timelineEntries = [
@@ -1832,17 +1866,18 @@ function NerisReportFormPage({
                   entry.canceledTime,
                   resourceFallbackDate,
                 );
+                const sameTime = entry.isCanceledEnroute && normalizedDispatch
+                  ? normalizedCanceled || normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 1)
+                  : undefined;
                 return {
                   ...entry,
                   dispatchTime: normalizedDispatch,
-                  canceledTime:
-                    entry.isCanceledEnroute && !normalizedCanceled && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 1)
-                      : normalizedCanceled,
-                  clearTime:
-                    entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 2)
-                      : normalizedClear,
+                  ...(sameTime !== undefined
+                    ? { canceledTime: sameTime, clearTime: sameTime }
+                    : {
+                        canceledTime: normalizedCanceled,
+                        clearTime: normalizedClear,
+                      }),
                 };
               }
               if (
@@ -1852,9 +1887,17 @@ function NerisReportFormPage({
                 field === "canceledTime" ||
                 field === "clearTime"
               ) {
+                const normalized = toResourceDateTimeInputValue(value, resourceFallbackDate);
+                if (entry.isCanceledEnroute && (field === "canceledTime" || field === "clearTime")) {
+                  return {
+                    ...entry,
+                    canceledTime: normalized,
+                    clearTime: normalized,
+                  };
+                }
                 return {
                   ...entry,
-                  [field]: toResourceDateTimeInputValue(value, resourceFallbackDate),
+                  [field]: normalized,
                 };
               }
               return {
@@ -1968,18 +2011,18 @@ function NerisReportFormPage({
                 entry.canceledTime,
                 resourceFallbackDate,
               );
+              const sameTime =
+                normalizedClear ||
+                normalizedCanceled ||
+                (normalizedDispatch
+                  ? addMinutesToResourceDateTime(normalizedDispatch, 1)
+                  : "");
               return {
                 ...entry,
                 isCanceledEnroute: true,
                 dispatchTime: normalizedDispatch,
-                canceledTime:
-                  normalizedCanceled || normalizedDispatch
-                    ? normalizedCanceled || addMinutesToResourceDateTime(normalizedDispatch, 1)
-                    : "",
-                clearTime:
-                  normalizedClear || normalizedDispatch
-                    ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
-                    : "",
+                canceledTime: sameTime,
+                clearTime: sameTime,
               };
             })()
           : entry,
