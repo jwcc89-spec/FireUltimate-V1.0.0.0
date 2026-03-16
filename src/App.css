@@ -3310,6 +3310,12 @@ body.resource-personnel-modal-open {
   min-width: 0;
 }
 
+.neris-resource-time-clear {
+  white-space: nowrap;
+  font-size: 0.72rem;
+  margin-left: 0.15rem;
+}
+
 .neris-resource-times-editor-grid label {
   display: grid;
   gap: 0.2rem;

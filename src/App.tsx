@@ -1634,21 +1634,24 @@ function formatResourceDatePart(value: string): string {
   return "";
 }
 
-/** Time part (HH:mm, 24h only) for time input. Never returns 12h AM/PM. */
+/** Time part (HH:mm:ss, 24h only) for time input. Never returns 12h AM/PM. */
 function formatResourceTimePart(value: string): string {
   const trimmed = (value ?? "").trim();
-  if (!trimmed) return "00:00";
+  if (!trimmed) return "00:00:00";
   // Datetime: YYYY-MM-DDTHH:mm or YYYY-MM-DDTHH:mm:ss or with Z
   if (trimmed.length >= 16 && trimmed[10] === "T") {
-    const timePart = trimmed.slice(11, 16);
-    if (/^\d{2}:\d{2}$/.test(timePart)) return timePart;
+    const timePart = trimmed.slice(11, 19);
+    if (/^\d{2}:\d{2}:\d{2}$/.test(timePart)) return timePart;
+    const short = trimmed.slice(11, 16);
+    if (/^\d{2}:\d{2}$/.test(short)) return `${short}:00`;
   }
   // Time only HH:mm or HH:mm:ss
   if (/^\d{1,2}:\d{2}(?::\d{2})?$/.test(trimmed)) {
-    const [h, m] = trimmed.split(":");
-    const hour = Math.min(23, Math.max(0, parseInt(h, 10) || 0));
-    const min = Math.min(59, Math.max(0, parseInt(m, 10) || 0));
-    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+    const parts = trimmed.split(":");
+    const hour = Math.min(23, Math.max(0, parseInt(parts[0], 10) || 0));
+    const min = Math.min(59, Math.max(0, parseInt(parts[1], 10) || 0));
+    const sec = parts[2] != null ? Math.min(59, Math.max(0, parseInt(parts[2], 10) || 0)) : 0;
+    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
   // Legacy or locale string containing AM/PM: parse and force 24h
   const upper = trimmed.toUpperCase();
@@ -1657,37 +1660,50 @@ function formatResourceTimePart(value: string): string {
     if (!Number.isNaN(d.valueOf())) {
       const h = d.getHours();
       const m = d.getMinutes();
-      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}`;
+      const s = d.getSeconds();
+      return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
     }
   }
-  return "00:00";
+  return "00:00:00";
 }
 
-/** Parse user time input to HH:mm 24h (e.g. "1604" -> "16:04", "904" -> "09:04"). */
+/** Parse user time input to HH:mm:ss 24h (e.g. "160445" -> "16:04:45", "1604" -> "16:04:00"). */
 function parseTimeInput24h(value: string): string {
   const digits = (value ?? "").replace(/\D/g, "");
-  if (digits.length === 0) return "00:00";
-  if (digits.length === 1) return `${digits.padStart(2, "0")}:00`;
-  if (digits.length === 2) return `${digits}:00`;
-  // 3 digits: e.g. "904" -> 09:04 (one digit hour, two digit minute)
+  if (digits.length === 0) return "00:00:00";
+  if (digits.length === 1) return `${digits.padStart(2, "0")}:00:00`;
+  if (digits.length === 2) return `${digits}:00:00`;
   if (digits.length === 3) {
     const hour = Math.min(23, Math.max(0, parseInt(digits.slice(0, 1), 10)));
     const min = Math.min(59, Math.max(0, parseInt(digits.slice(1, 3), 10)));
-    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`;
+  }
+  if (digits.length === 4) {
+    const hour = Math.min(23, Math.max(0, parseInt(digits.slice(0, 2), 10)));
+    const min = Math.min(59, Math.max(0, parseInt(digits.slice(2, 4), 10)));
+    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:00`;
+  }
+  if (digits.length === 5) {
+    const hour = Math.min(23, Math.max(0, parseInt(digits.slice(0, 2), 10)));
+    const min = Math.min(59, Math.max(0, parseInt(digits.slice(2, 4), 10)));
+    const sec = Math.min(59, Math.max(0, parseInt(digits.slice(4, 5).padEnd(2, "0"), 10)));
+    return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
   }
   const h = digits.slice(0, 2);
   const m = digits.slice(2, 4);
+  const s = digits.slice(4, 6);
   const hour = Math.min(23, Math.max(0, parseInt(h, 10)));
   const min = Math.min(59, Math.max(0, parseInt(m, 10)));
-  return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}`;
+  const sec = Math.min(59, Math.max(0, parseInt(s, 10)));
+  return `${String(hour).padStart(2, "0")}:${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
-/** Combine date and time parts into YYYY-MM-DDTHH:mm:00 (24h). */
+/** Combine date and time parts into YYYY-MM-DDTHH:mm:ss (24h). */
 function combineResourceDateTimeFromParts(datePart: string, timePart: string): string {
   if (!datePart || !/^\d{4}-\d{2}-\d{2}$/.test(datePart)) return "";
   const t = (timePart ?? "").trim();
-  const time = /^\d{2}:\d{2}$/.test(t) ? t : "00:00";
-  return `${datePart}T${time}:00`;
+  const time = /^\d{2}:\d{2}:\d{2}$/.test(t) ? t : /^\d{2}:\d{2}$/.test(t) ? `${t}:00` : "00:00:00";
+  return `${datePart}T${time}`;
 }
 
 function toResourceDateTimeTimestamp(value: string, fallbackDate: string): number | null {
