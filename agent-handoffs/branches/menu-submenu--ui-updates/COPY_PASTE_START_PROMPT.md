@@ -44,10 +44,13 @@ After acknowledging the rules above:
 2) Sync latest code for menu-submenu/ui-updates
 3) Validate changes (build/test/lint as appropriate), then report clearly.
 4) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
-5) Before ending:
-   - update session note + branch ACTIVE_CONTEXT.md
-   - create a copy of entire full-conversation in agent-handoffs/branches/menu-submenu--ui-updates/conversations
-   - commit + push on menu-submenu/ui-updates
-   - report branch, commit hash, changed files, and next-step checklist
-   - include **Now vs Later** callouts in the final report and handoff note
+
+When the user says "this session is coming to an end":
+Before ending:
+1) Update session note + ACTIVE_CONTEXT.md
+2) Add conversation summary to agent-handoffs/branches/menu-submenu--ui-updates/conversations/
+3) Review all docs and suggest any updates based on completed work this session; move docs to /completed if needed.
+4) Include **Now vs Later** callouts in the final report and handoff note and next-step checklist.
+After user acknowledges then:
+1) Commit + push on menu-submenu/ui-updates; report branch, commit hash, changed files, next-step checklist; include **Now vs Later** callouts.
 ```
