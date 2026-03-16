@@ -5624,6 +5624,7 @@ function NerisReportFormPage({
                                 <div className="neris-resource-times-editor-grid">
                                   <label className="neris-resource-datetime-label">
                                     <span className="neris-resource-datetime-header">
+                                      Dispatch
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
@@ -5636,7 +5637,6 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
-                                      Dispatch
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -5776,6 +5776,7 @@ function NerisReportFormPage({
                                   </label>
                                   <label className="neris-resource-datetime-label">
                                     <span className="neris-resource-datetime-header">
+                                      Staged
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
@@ -5788,7 +5789,6 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
-                                      Staged
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -5852,6 +5852,7 @@ function NerisReportFormPage({
                                   </label>
                                   <label className="neris-resource-datetime-label">
                                     <span className="neris-resource-datetime-header">
+                                      On Scene
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
@@ -5864,7 +5865,6 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
-                                      On Scene
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -5927,7 +5927,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    Canceled
+                                    <span className="neris-resource-datetime-header">
+                                      Canceled
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "canceledTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5989,7 +6003,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    Clear
+                                    <span className="neris-resource-datetime-header">
+                                      Clear
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "clearTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
