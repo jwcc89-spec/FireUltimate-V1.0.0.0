@@ -3310,10 +3310,17 @@ body.resource-personnel-modal-open {
   min-width: 0;
 }
 
+.neris-resource-datetime-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
 .neris-resource-time-clear {
   white-space: nowrap;
   font-size: 0.72rem;
-  margin-left: 0.15rem;
+  order: -1;
 }
 
 .neris-resource-times-editor-grid label {

@@ -5623,7 +5623,21 @@ function NerisReportFormPage({
                               <div className="neris-resource-times-editor">
                                 <div className="neris-resource-times-editor-grid">
                                   <label className="neris-resource-datetime-label">
-                                    Dispatch
+                                    <span className="neris-resource-datetime-header">
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "dispatchTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                      Dispatch
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5679,11 +5693,18 @@ function NerisReportFormPage({
                                           setResourceTimeDraft(null);
                                         }}
                                       />
+                                    </span>
+                                    {dispatchTimeError ? (
+                                      <small className="field-error">{dispatchTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
                                         onClick={() => {
-                                          updateResourceUnitField(unitEntry.id, "dispatchTime", "");
+                                          updateResourceUnitField(unitEntry.id, "enrouteTime", "");
                                           clearResourceUnitValidationErrors(unitEntry.id);
                                           setResourceTimeDraft(null);
                                           markNerisFormDirty();
@@ -5691,13 +5712,8 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      Enroute
                                     </span>
-                                    {dispatchTimeError ? (
-                                      <small className="field-error">{dispatchTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label className="neris-resource-datetime-label">
-                                    Enroute
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5753,11 +5769,18 @@ function NerisReportFormPage({
                                           setResourceTimeDraft(null);
                                         }}
                                       />
+                                    </span>
+                                    {enrouteTimeError ? (
+                                      <small className="field-error">{enrouteTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
                                         onClick={() => {
-                                          updateResourceUnitField(unitEntry.id, "enrouteTime", "");
+                                          updateResourceUnitField(unitEntry.id, "stagedTime", "");
                                           clearResourceUnitValidationErrors(unitEntry.id);
                                           setResourceTimeDraft(null);
                                           markNerisFormDirty();
@@ -5765,13 +5788,8 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      Staged
                                     </span>
-                                    {enrouteTimeError ? (
-                                      <small className="field-error">{enrouteTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label className="neris-resource-datetime-label">
-                                    Staged
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5827,11 +5845,18 @@ function NerisReportFormPage({
                                           setResourceTimeDraft(null);
                                         }}
                                       />
+                                    </span>
+                                    {stagedTimeError ? (
+                                      <small className="field-error">{stagedTimeError}</small>
+                                    ) : null}
+                                  </label>
+                                  <label className="neris-resource-datetime-label">
+                                    <span className="neris-resource-datetime-header">
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
                                         onClick={() => {
-                                          updateResourceUnitField(unitEntry.id, "stagedTime", "");
+                                          updateResourceUnitField(unitEntry.id, "onSceneTime", "");
                                           clearResourceUnitValidationErrors(unitEntry.id);
                                           setResourceTimeDraft(null);
                                           markNerisFormDirty();
@@ -5839,13 +5864,8 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      On Scene
                                     </span>
-                                    {stagedTimeError ? (
-                                      <small className="field-error">{stagedTimeError}</small>
-                                    ) : null}
-                                  </label>
-                                  <label className="neris-resource-datetime-label">
-                                    On Scene
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5901,18 +5921,6 @@ function NerisReportFormPage({
                                           setResourceTimeDraft(null);
                                         }}
                                       />
-                                      <button
-                                        type="button"
-                                        className="link-button neris-resource-time-clear"
-                                        onClick={() => {
-                                          updateResourceUnitField(unitEntry.id, "onSceneTime", "");
-                                          clearResourceUnitValidationErrors(unitEntry.id);
-                                          setResourceTimeDraft(null);
-                                          markNerisFormDirty();
-                                        }}
-                                      >
-                                        Clear
-                                      </button>
                                     </span>
                                     {onSceneTimeError ? (
                                       <small className="field-error">{onSceneTimeError}</small>
@@ -5975,18 +5983,6 @@ function NerisReportFormPage({
                                           setResourceTimeDraft(null);
                                         }}
                                       />
-                                      <button
-                                        type="button"
-                                        className="link-button neris-resource-time-clear"
-                                        onClick={() => {
-                                          updateResourceUnitField(unitEntry.id, "canceledTime", "");
-                                          clearResourceUnitValidationErrors(unitEntry.id);
-                                          setResourceTimeDraft(null);
-                                          markNerisFormDirty();
-                                        }}
-                                      >
-                                        Clear
-                                      </button>
                                     </span>
                                     {canceledTimeError ? (
                                       <small className="field-error">{canceledTimeError}</small>
@@ -6049,18 +6045,6 @@ function NerisReportFormPage({
                                           setResourceTimeDraft(null);
                                         }}
                                       />
-                                      <button
-                                        type="button"
-                                        className="link-button neris-resource-time-clear"
-                                        onClick={() => {
-                                          updateResourceUnitField(unitEntry.id, "clearTime", "");
-                                          clearResourceUnitValidationErrors(unitEntry.id);
-                                          setResourceTimeDraft(null);
-                                          markNerisFormDirty();
-                                        }}
-                                      >
-                                        Clear
-                                      </button>
                                     </span>
                                     {clearTimeError ? (
                                       <small className="field-error">{clearTimeError}</small>
