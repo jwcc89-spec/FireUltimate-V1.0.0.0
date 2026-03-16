@@ -26,8 +26,8 @@
 - Results: Directories created successfully.
 
 ## Git status
-- Commit(s) created: (pending — user may commit on menu-submenu/ui-updates after switching)
-- Pushed to: —
+- Commit(s) created: 9098265 — Bootstrap handoff for menu-submenu/ui-updates (QUICK_PROMPTS flow)
+- Pushed to: origin/menu-submenu/ui-updates
 
 ## Open issues / blockers
 - None. User to confirm branch and first implementation step.

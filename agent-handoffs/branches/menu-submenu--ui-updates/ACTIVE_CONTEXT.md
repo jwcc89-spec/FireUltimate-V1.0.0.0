@@ -13,8 +13,8 @@
 - Menu and submenu UI updates (branch handoff created; scope to be defined by user).
 
 ## Latest known status
-- Latest commit: _(branch may not exist yet or be newly created)_
-- Handoff folder created; no feature work logged yet.
+- Latest commit: `9098265` - Bootstrap handoff for menu-submenu/ui-updates (QUICK_PROMPTS flow)
+- Handoff folder created and committed; no feature work logged yet.
 
 ## Current blocker / status
 - None. Await user direction for first implementation step.
@@ -23,7 +23,7 @@
 - 
 
 ## Recent key commits (latest first)
-- _(none on this branch yet)_
+- `9098265` Bootstrap handoff for menu-submenu/ui-updates (QUICK_PROMPTS flow)
 
 ## Next agent should do this first
 1. **Do now:** Read `cursoragent-context.md` and `.cursor/project-context.md` (if present).
