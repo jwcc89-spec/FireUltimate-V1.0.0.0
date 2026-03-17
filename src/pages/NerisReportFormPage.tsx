@@ -12,6 +12,7 @@ import {
   type IncidentCallSummary,
   type UserRole,
 } from "../appData";
+import { isAdminOrHigher } from "../roleHierarchy";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
@@ -411,7 +412,7 @@ function NerisReportFormPage({
   );
   const isLocked =
     reportStatus === "In Review" || reportStatus === "Exported";
-  const canEdit = !isLocked || role === "admin";
+  const canEdit = !isLocked || isAdminOrHigher(role);
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
@@ -4546,7 +4547,7 @@ function NerisReportFormPage({
           ) : null}
         </div>
         <div className="header-actions">
-          {role === "admin" ? (
+          {isAdminOrHigher(role) ? (
             <>
               <button type="button" className="secondary-button compact-button">
                 Import
@@ -4575,7 +4576,7 @@ function NerisReportFormPage({
           >
             Validate
           </button>
-          {role === "admin" ? (
+          {isAdminOrHigher(role) ? (
             <>
               <button
                 type="button"

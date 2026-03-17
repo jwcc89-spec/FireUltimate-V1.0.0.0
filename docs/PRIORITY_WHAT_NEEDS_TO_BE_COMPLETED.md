@@ -64,6 +64,7 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 | 12 | **Validate for all users; Export admin-only** (hide Export for non-admin) | LATER_TASKS Part 1 | Validate visible to all; Export button only for admin; optional API guard for export. |
 | 13 | **Super admin** – hidden user type, 1–2 per account, special visibility | LATER_TASKS Part 2 | Not in UI dropdown; assign via DB or platform tool; super-admin–only fields/buttons. |
 | 14 | **Admin show/hide mode** – toggle field and menu visibility per user type | LATER_TASKS Part 3 | Button to enter mode; click fields/menus to set show/hide by user type; persist and apply. |
+| 14.1 | **Role hierarchy inheritance + tenant-configurable capabilities (plan + implementation)** | 2026-03-17 | Ensure “admin-and-up” includes superadmin globally, and implement extensible role hierarchy + named permissions (capabilities) so future roles (e.g. secretary, subadmin) follow tenant ordering. Plan: `docs/plans/TENANT_ROLES_AND_PERMISSIONS_PLAN.md`. |
 
 ---
 
