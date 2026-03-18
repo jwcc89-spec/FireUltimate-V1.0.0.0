@@ -5058,7 +5058,7 @@ function NerisReportFormPage({
 
       {!canEdit ? (
         <div className="neris-lock-banner" role="status">
-          This report is locked. Only an admin can unlock it for editing.
+          This report is locked. Only an admin or super admin can unlock it for editing.
         </div>
       ) : null}
       <section className="neris-report-layout">

@@ -5,6 +5,7 @@ const DEFAULT_ROLE_LEVELS: Record<string, number> = {
   subadmin: 30,
   admin: 40,
   superadmin: 50,
+  super_admin: 50,
 };
 
 export function getRoleLevel(role: RoleKey | null | undefined): number {

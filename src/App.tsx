@@ -2730,7 +2730,7 @@ function getNerisQueueFieldValue(
 
 function mapUserTypeToRole(userType: string): UserRole {
   const normalized = userType.trim().toLowerCase();
-  if (normalized === "super admin") {
+  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
     return "superadmin";
   }
   return normalized.includes("admin") ? "admin" : "user";

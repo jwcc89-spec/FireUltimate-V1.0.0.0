@@ -217,6 +217,9 @@ function validatePasswordPolicy(password) {
 
 function mapUserTypeToRole(userType) {
   const normalized = trimValue(userType).toLowerCase();
+  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
+    return "superadmin";
+  }
   return normalized.includes("admin") ? "admin" : "user";
 }
 
@@ -2526,7 +2529,7 @@ app.post("/api/auth/login", (request, response) => {
       const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
       const userType =
         userTypeLabelMap[submittedUsername] ||
-        (dbUser.role.toLowerCase() === "admin" ? "Admin" : "User");
+        roleToUserTypeLabel(dbUser.role);
       response.status(200).json({
         ok: true,
         user: {
@@ -3036,14 +3039,20 @@ async function removeTenantUserTypeLabel(tenantId, username) {
   });
 }
 
+function roleToUserTypeLabel(role) {
+  const r = trimValue(role || "").toLowerCase();
+  if (r === "superadmin" || r === "super_admin") return "Super Admin";
+  if (r === "admin") return "Admin";
+  return "User";
+}
+
 function toUserResponse(user, fullNameMap = {}, userTypeLabelMap = {}) {
   const normalizedUsername = trimValue(user.username).toLowerCase();
   return {
     id: user.id,
     username: user.username,
     userType:
-      userTypeLabelMap[normalizedUsername] ||
-      (user.role?.toLowerCase() === "admin" ? "Admin" : "User"),
+      userTypeLabelMap[normalizedUsername] || roleToUserTypeLabel(user.role),
     name: fullNameMap[normalizedUsername] || user.username,
   };
 }
@@ -3156,7 +3165,7 @@ app.patch("/api/users/:id", async (request, response) => {
       body.name !== undefined ? trimValue(String(body.name ?? "")) : existingFullName;
     const existingUserTypeLabel =
       trimValue(userTypeLabelMap[trimValue(existing.username).toLowerCase()]) ||
-      (existing.role?.toLowerCase() === "admin" ? "Admin" : "User");
+      roleToUserTypeLabel(existing.role);
     const nextUserTypeLabel =
       body.userType !== undefined ? trimValue(String(body.userType ?? "")) : existingUserTypeLabel;
     const updates = {};
@@ -3193,7 +3202,7 @@ app.patch("/api/users/:id", async (request, response) => {
     await setTenantUserTypeLabel(
       tenantId,
       nextUsername,
-      nextUserTypeLabel || (user.role?.toLowerCase() === "admin" ? "Admin" : "User"),
+      nextUserTypeLabel || roleToUserTypeLabel(user.role),
       trimValue(existing.username).toLowerCase(),
     );
     response.json({
@@ -3203,7 +3212,7 @@ app.patch("/api/users/:id", async (request, response) => {
         { [nextUsername]: nextFullName || nextUsername },
         {
           [nextUsername]:
-            nextUserTypeLabel || (user.role?.toLowerCase() === "admin" ? "Admin" : "User"),
+            nextUserTypeLabel || roleToUserTypeLabel(user.role),
         },
       ),
     });
