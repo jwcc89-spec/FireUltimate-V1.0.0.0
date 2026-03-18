@@ -413,6 +413,7 @@ function NerisReportFormPage({
     ],
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
+  const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const [reportStatus, setReportStatus] = useState<string>(() =>
     persistedDraft?.reportStatus ?? "Draft",
   );
@@ -989,28 +990,38 @@ function NerisReportFormPage({
         .filter((segment) => segment.length > 0)[0] ?? ""
     );
   }, [formValues.primary_incident_type, normalizeNerisEnumValue]);
-  const visibleNerisSections = useMemo(
-    () =>
-      NERIS_FORM_SECTIONS.filter((section) => {
-        if (section.id === "fire") {
-          return primaryIncidentCategory === "FIRE";
-        }
-        if (section.id === "medical") {
-          return primaryIncidentCategory === "MEDICAL";
-        }
-        if (section.id === "hazards") {
-          return (
-            primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
-          );
-        }
-        return true;
-      }),
-    [primaryIncidentCategory],
-  );
+  const visibleNerisSections = useMemo(() => {
+    let sections = NERIS_FORM_SECTIONS.filter((section) => {
+      if (section.id === "fire") {
+        return primaryIncidentCategory === "FIRE";
+      }
+      if (section.id === "medical") {
+        return primaryIncidentCategory === "MEDICAL";
+      }
+      if (section.id === "hazards") {
+        return (
+          primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
+        );
+      }
+      return true;
+    });
+    if (showRequiredOnly) {
+      sections = sections.filter((section) => {
+        const fields = getNerisFieldsForSection(section.id);
+        return fields.some((field) => isNerisFieldRequired(field, formValues));
+      });
+    }
+    return sections;
+  }, [primaryIncidentCategory, showRequiredOnly, formValues]);
   const activeVisibleSectionId =
     visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
     visibleNerisSections[0]?.id ??
     "core";
+  useEffect(() => {
+    if (!visibleNerisSections.some((s) => s.id === activeSectionId)) {
+      setActiveSectionId((visibleNerisSections[0]?.id ?? "core") as NerisSectionId);
+    }
+  }, [visibleNerisSections, activeSectionId]);
   const currentSection =
     visibleNerisSections.find((section) => section.id === activeVisibleSectionId) ??
     visibleNerisSections[0] ??
@@ -1047,6 +1058,12 @@ function NerisReportFormPage({
       return leftOrder - rightOrder;
     });
   }, [currentSection.id, sectionFields]);
+  const displayedSectionFieldsFiltered = useMemo(() => {
+    if (!showRequiredOnly) return displayedSectionFields;
+    return displayedSectionFields.filter((field) =>
+      isNerisFieldRequired(field, formValues),
+    );
+  }, [showRequiredOnly, displayedSectionFields, formValues]);
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
@@ -5018,6 +5035,15 @@ function NerisReportFormPage({
           <div className="neris-sidebar-header">
             <h2>Fire Incidents</h2>
             <p>NERIS sections</p>
+            <label className="neris-show-required-only">
+              <input
+                type="checkbox"
+                checked={showRequiredOnly}
+                onChange={(e) => setShowRequiredOnly(e.target.checked)}
+                aria-label="Show required fields only"
+              />
+              Show Required Fields Only
+            </label>
           </div>
           <nav className="neris-section-nav" aria-label="NERIS section navigation">
             {visibleNerisSections.map((section) => (
@@ -6615,7 +6641,7 @@ function NerisReportFormPage({
                 </section>
               </div>
             ) : null}
-            {displayedSectionFields.flatMap((field) => {
+            {displayedSectionFieldsFiltered.flatMap((field) => {
               const nodes: ReactNode[] = [];
               const headingLabel =
                 currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
