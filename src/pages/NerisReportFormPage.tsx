@@ -26,7 +26,7 @@ import {
   type NerisSectionId,
   type NerisValueOption,
 } from "../nerisMetadata";
-import { readMutualAidNerisAllowlistFromStorage } from "../mutualAidAllowlist";
+import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowlist";
 import {
   NerisFlatMultiOptionSelect,
   NerisFlatSingleOptionSelect,
@@ -1129,11 +1129,11 @@ function NerisReportFormPage({
     }
 
     const loadAidDepartmentOptions = async () => {
-      const allowlist = readMutualAidNerisAllowlistFromStorage();
+      const configuredAid = readConfiguredMutualAidAidDepartmentOptions();
       const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
 
-      if (allowlist && allowlist.length > 0) {
-        const opts = [...allowlist];
+      if (configuredAid && configuredAid.length > 0) {
+        const opts = [...configuredAid];
         if (
           NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
           !opts.some((option) => option.value === requestedEntityId)
@@ -1501,11 +1501,11 @@ function NerisReportFormPage({
 
   /** Tenant allowlist: clear aid department if no longer permitted (does not change report lock). */
   useEffect(() => {
-    const allowlist = readMutualAidNerisAllowlistFromStorage();
-    if (!allowlist?.length) {
+    const configuredAid = readConfiguredMutualAidAidDepartmentOptions();
+    if (!configuredAid?.length) {
       return;
     }
-    const allowed = new Set(allowlist.map((o) => o.value));
+    const allowed = new Set(configuredAid.map((o) => o.value));
     const v = (formValues.incident_aid_department_name ?? "").trim();
     if (v && !allowed.has(v)) {
       setFormValues((previous) => ({

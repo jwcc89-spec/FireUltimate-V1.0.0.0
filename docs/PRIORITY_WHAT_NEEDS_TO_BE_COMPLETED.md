@@ -46,17 +46,21 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 |---|------|--------|--------|
 | 2 | **Reported By** shows "manual entry" in Edit instead of typed value | BACKLOG #1 | Edit Incident should show the value the user entered. |
 | 3 | **Dispatch notes and Callback Number** do not save in Edit | BACKLOG #2 | Persist and display when editing incident. |
-| 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | NERIS, Incidents, etc. — all time fields 24-hour. |
+| 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | **Partial (2026-03-18):** NERIS Core onset + Incident Times use 24h `HH:MM:SS`. Incidents / rest of app still open. |
 | 5 | **Incidents Setup – Edit Reported By** layout spills into Assigned Units | BACKLOG #4 | Fix layout so controls are visible and don’t overlap. |
 | 6 | **Initial dispatch code** – define source (NERIS / CAD / blank) | BACKLOG #5 | Document and implement mapping. |
-| 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | List from Department Resources; ensure mutual-aid departments appear. |
+| 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | **Largely done (11.3):** NERIS entity directory + DD-M + CORE. **Open:** exclude/grey-out tenant’s own FD (#8). |
 | 8 | **Aid Department:** do not allow selecting tenant’s own department (exclude or grey out) | BACKLOG #10 | UI: exclude or disable self in list. Server already strips. |
-| 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | Confirm NERIS rules; adjust client validation. |
+| 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
 | 10 | **Resources UNIT TYPE** – show Apparatus value, not placeholder | BACKLOG #8 | Pull from Department Details Apparatus. |
 | 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | Fix button behavior; add Returning field(s). |
 | 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-17 | Add a Narrative Builder to help users create detailed narratives by pre-populating structured information based on narrative type. |
 | 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
-| 11.3 | **Mutual aid directory + tenant allowlist** | 2026-03-18 | **Done:** `GET /api/neris/entities` + Admin Department Details → Mutual Aid (DD-M, state-grouped, local-only adds). NERIS form restricts FD aid to allowlist when configured; else full directory. Refresh from NERIS uses platform admin key in modal. |
+| 11.3 | **Mutual aid directory + tenant allowlist** | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
+| 11.3a | **CORE “Aid department name(s)” — friendly name in UI** | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
+| 11.3b | **Local-only mutual aid rows in CORE aid dropdown** | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
+| 11.3c | **FIRE requiredness when mutual aid given** | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
+| 11.3d | **NERIS Core + Incident Times — 24h `HH:MM:SS`** | 2026-03-18 | **Done** for those fields (Core onset + Incident Times module). **Open:** app-wide 24h (#4) elsewhere. |
 
 ---
 
@@ -129,7 +133,7 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 3. **Unblock go-live:** Incident Detail editable inputs (#1) — see expanded description above.
 4. **High-impact UX:** Reported By and dispatch notes/callback save (#2, #3), Edit Reported By layout (#5), Aid Department no self-select (#8).
 5. **App-wide consistency:** Military time (#4).
-6. **NERIS correctness:** Initial dispatch code (#6), Aid departments from NERIS (#7), Required-if FIRE (#9), UNIT TYPE from Apparatus (#10), Populate Date + Returning (#11).
+6. **NERIS correctness:** Initial dispatch code (#6); Aid self-select UI (#8); UNIT TYPE (#10); Populate Date + Returning (#11). *(Aid directory + FIRE aid-given rule largely done — 11.3 / 11.3c.)*
 7. **Roles and security:** Validate for all / Export admin-only (#12), auth rate-limiting (#16).
 8. **Later:** Super admin (#13), admin show/hide mode (#14), remaining P2/P3 from later-changes-backlog (#15–#24), per-tenant NERIS (#28).
 
@@ -142,5 +146,15 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 - `docs/procedures/LATER_TASKS_VALIDATE_EXPORT_ROLES_AND_ADMIN_VISIBILITY.md`  
 - `docs/later-changes-backlog.md`  
 - `docs/procedures/TENANT_ONBOARDING_CHECKLIST.md` (§H)
+
+---
+
+## Session 2026-03-18 — completed vs still open
+
+**Completed (this session / branch work):** 11.3 mutual aid pipeline; 11.3a–d (name-only CORE labels, local-only in CORE, FIRE exception for aid given, 24h times on NERIS Core + Incident Times); commit/push on `submenu/neris-golive-cifpd`; NERIS entity `page_size` max 100 fix.
+
+**Still open (from earlier chat + master list):** CAD email ingest (#25); NERIS cross-browser persist (#26); Incident Detail editable + server save (#1); Reported By / dispatch notes / callback (#2–3); app-wide 24h (#4); Edit Reported By layout (#5); initial dispatch code (#6); **Aid: no self-select (#8)**; UNIT TYPE / Populate Date+Returning (#10–11); Narrative Builder (#11.1); occupant contact fields (#11.2); Validate/Export roles (#12–14); optional export allowlist server check; tenant refresh without platform admin key; backlog #15–#29 per tables above.
+
+---
 
 Update this file as items are completed (e.g. move to a “Done” section with date).

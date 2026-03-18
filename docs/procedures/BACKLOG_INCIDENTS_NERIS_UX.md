@@ -20,6 +20,7 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 - **Scope:** Times entered in any fields across the program (NERIS, Incidents, etc.) should use **military time (24-hour)**, not AM/PM.
 - **Desired:** All time inputs/outputs use 24-hour format consistently.
+- **Status (2026-03-18):** **Partial.** NERIS form **Core** (Incident Onset Time) and **Incident Times** module use separate date + **HH:MM:SS** (24h). Incidents UI and other screens still open.
 
 ---
 
@@ -46,6 +47,7 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 - **Issue:** **Aid Department name(s)** should be populated from **Mutual Aid Departments | Department Resources | Department Details | Admin Functions**. Currently the list is only grouped with "alabama" and a few departments; it should come from NERIS and list all departments **grouped by state**.
 - **Example:** For a live entry where CIFPD is assisting Gilman, NERIS_ID **FD29081313** (Gilman) is not listed.
 - **Desired:** Map this list to NERIS; show all departments grouped by state; ensure Gilman (FD29081313) and other mutual-aid departments appear when configured.
+- **Status (2026-03-18):** **Largely done.** `GET /api/neris/entities` + Department Details **Mutual Aid** (state-grouped DD-M, NERIS + **local-only** adds). CORE **Aid department name(s)** uses configured list (NERIS + local) or full directory; UI shows **name only**; export still uses FD/FM ID for NERIS rows. Local-only choices are CORE-only (not `department_neris_id`). **Still open:** self-select exclusion below.
 
 ### Do not allow selecting the current tenant’s department (self-aid)
 
@@ -59,6 +61,7 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 - **Issue:** Need to verify **required-if** rules: if call type is **fire** and **auto aid** is given, the **FIRE** module may not be required.
 - **Desired:** Confirm with NERIS rules and adjust client-side required validation so FIRE module is not incorrectly required in that case.
+- **Status (2026-03-18):** **Implemented (client).** When **Was aid given or received?** = Yes and **Aid direction** = **Given** (mutual aid given), FIRE-module fields are **not** required (`src/nerisMetadata.ts` — `isNerisFieldRequired`). Re-validate against NERIS spec if business rules change.
 
 ---
 
@@ -88,8 +91,8 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 | 3 | App-wide | Times: military (24h) not AM/PM |
 | 4 | Incidents Setup | Edit Reported By layout spills into Assigned Units |
 | 5 | NERIS | Initial dispatch code – define source (NERIS / CAD / blank) |
-| 6 | NERIS | AID GIVEN/RECEIVED – Aid departments from NERIS, grouped by state (e.g. FD29081313) |
-| 7 | NERIS | Required-if: FIRE module when fire + auto aid |
+| 6 | NERIS | AID GIVEN/RECEIVED – Aid departments (mostly done 2026-03-18; self-select #10 still open) |
+| 7 | NERIS | Required-if: FIRE + aid given (done 2026-03-18 for direction Given) |
 | 8 | NERIS | Resources UNIT TYPE – show Apparatus value, not placeholder |
 | 9 | NERIS | Resources Populate Date: dates only for dispatch/en route/on scene/clear; add Returning |
 | 10 | NERIS | Aid Department: do not allow selecting tenant’s own department (exclude from list or show greyed out) |

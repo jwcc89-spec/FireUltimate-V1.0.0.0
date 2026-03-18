@@ -61,19 +61,25 @@
 
 ## Now vs Later
 - **Now**:
+  - Commit + push 2026-03-18 work (local-only CORE + docs) on `submenu/neris-golive-cifpd`,
   - confirm/save tenant entity source so staging `hasTenantEntityId=true`,
-  - validate staging UX (Incidents Setup, Create Incident, Incident Detail, incident number linkage),
+  - validate staging UX (Incidents Setup, Create Incident, Incident Detail, NERIS aid list with locals),
   - run staging validate/export proof,
-  - dial in CAD email parsing (Dispatch Parsing Settings now shows extracted dispatch content).
+  - dial in CAD email parsing (Dispatch Parsing Settings shows extracted dispatch content).
 - **Later**:
-  - switch Worker **CAD_INGEST_API_URL** to production API when parsing is ready (per user choice),
+  - Aid: exclude/grey tenant’s own FD in CORE list (#8); optional server allowlist check on export,
+  - switch Worker **CAD_INGEST_API_URL** to production when parsing ready (per user choice),
   - move incident table preferences to backend per-user persistence,
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (2026-03-16)
+## Last session (2026-03-18)
+- **NERIS CORE Aid department:** (1) Confirmed name-only labels in UI; export still uses FD/FM ID (commit `f757f52`). (2) **Local-only mutual aid** in CORE: Department Details local-only rows now appear in "Aid department name(s)" dropdown; `readConfiguredMutualAidAidDepartmentOptions()` in `mutualAidAllowlist.ts`; synthetic `LOCAL_AID_OPT:*` value (not sent as `department_neris_id`). (3) Docs: PRIORITY (11.3a–d, session summary), BACKLOG (status on aid/FIRE/24h), task-2 pointer, session handoff; conversation summary in `conversations/2026-03-18-session-summary.md`.
+- **Uncommitted (before end-of-session commit):** `src/mutualAidAllowlist.ts`, `src/pages/NerisReportFormPage.tsx` (local-only); PRIORITY, BACKLOG, task-2, sessions/2026-03-18-mutual-aid-department-details.md.
+
+## Previous session (2026-03-16)
 - **CAD email UI:** Decode base64; extract plain-text dispatch content from MIME so Dispatch Parsing Settings shows usable CAD text first.
-- **Docs/scripts:** CREATE_SUPERADMIN_PRODUCTION.md + create-superadmin.ts; STAGING_VS_PRODUCTION_DATA.md; GIT_WORKTREE Option A/B; removed empty CAD_EMAIL_INGEST_SETUP_GUIDE.md. User chose Option B (Worker on staging until parsing ready).
+- **Docs/scripts:** CREATE_SUPERADMIN_PRODUCTION.md + create-superadmin.ts; STAGING_VS_PROD; GIT_WORKTREE Option A/B. User chose Option B (Worker on staging until parsing ready).
 
 ## Previous session (2026-03-14)
 - **NERIS cross-browser Phase 1:** Implemented server-side export history. Added `NerisExportHistory` table (Prisma + migration `20260314000000_add_neris_export_history`), GET/POST `/api/neris/export-history`, client API and App state; NERIS Exports/Details/Report Form use server data when available. Beginner-friendly “Steps for you” added to NERIS_CROSS_BROWSER_FINDINGS.md (run migration once; no commit/push this session per user).
@@ -83,6 +89,7 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
+- `f757f52` NERIS CORE: aid department dropdown shows name only (export still uses FD ID)
 - `4f65b55` feat(ui): extract plain-text dispatch content from MIME base64 in CAD emails
 - `162b38c` feat(docs+ui): CAD email decode, superadmin script, staging vs prod notes
 - `f6f9bfc` Handoff: ACTIVE_CONTEXT recent commit hash
@@ -107,7 +114,7 @@
 ## Next agent should do this first
 1. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present).
 2. Read this file (**ACTIVE_CONTEXT.md**).
-3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
+3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** (incl. Session 2026-03-18 section) and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
 4. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
-5. Read latest note in **agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/**.
-6. Continue from user’s current blocker only (CAD deploy/Part 4, or NERIS cross-browser, or staging tests). Do not redo completed work.
+5. Read **sessions/2026-03-18-mutual-aid-department-details.md** and **conversations/2026-03-18-session-summary.md**.
+6. Continue from user’s current blocker only (CAD, NERIS cross-browser, staging tests, or next PRIORITY item). Do not redo completed work.
