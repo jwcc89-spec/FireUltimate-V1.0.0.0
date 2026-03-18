@@ -385,6 +385,69 @@ interface DepartmentNerisEntityOption {
   state?: string;
 }
 
+type MutualAidDepartmentSelection =
+  | { kind: "neris"; nerisId: string; name: string; state: string }
+  | { kind: "local"; name: string; state: string };
+
+function parseMutualAidSelectionsFromDraft(d: Record<string, unknown>): MutualAidDepartmentSelection[] {
+  const raw = d.mutualAidDepartmentSelections;
+  if (Array.isArray(raw) && raw.length > 0) {
+    const out: MutualAidDepartmentSelection[] = [];
+    for (const e of raw) {
+      if (!e || typeof e !== "object") {
+        continue;
+      }
+      const o = e as Record<string, unknown>;
+      if (o.localOnly === true) {
+        const name = String(o.name ?? "").trim();
+        if (name) {
+          const st = String(o.state ?? "")
+            .trim()
+            .toUpperCase()
+            .slice(0, 2);
+          out.push({ kind: "local", name, state: st || "—" });
+        }
+        continue;
+      }
+      const nerisId = String(o.nerisId ?? "").trim();
+      if (!/^(FD|FM)\d{8}$/.test(nerisId)) {
+        continue;
+      }
+      const name = String(o.name ?? "").trim() || nerisId;
+      const state =
+        String(o.state ?? "")
+          .trim()
+          .toUpperCase()
+          .slice(0, 2) || "Unknown";
+      out.push({ kind: "neris", nerisId, name, state });
+    }
+    return out;
+  }
+  const ids = Array.isArray(d.selectedMutualAidIds)
+    ? (d.selectedMutualAidIds as unknown[]).map((x) => String(x ?? "").trim())
+    : [];
+  return ids
+    .filter((id) => /^(FD|FM)\d{8}$/.test(id))
+    .map((nerisId) => ({
+      kind: "neris" as const,
+      nerisId,
+      name: nerisId,
+      state: "Unknown",
+    }));
+}
+
+function mutualAidSelectionsToPayload(selections: MutualAidDepartmentSelection[]): unknown[] {
+  return selections.map((s) =>
+    s.kind === "local"
+      ? {
+          localOnly: true,
+          name: s.name,
+          state: s.state === "—" ? "" : s.state,
+        }
+      : { nerisId: s.nerisId, name: s.name, state: s.state },
+  );
+}
+
 interface DepartmentCollectionDefinition {
   key: DepartmentCollectionKey;
   label: string;
@@ -5509,8 +5572,20 @@ function DepartmentDetailsPage({
       : [...DEFAULT_USER_TYPE_VALUES],
   );
   const [mutualAidOptions, setMutualAidOptions] = useState<DepartmentNerisEntityOption[]>(DEPARTMENT_ENTITY_FALLBACK_OPTIONS);
-  const [selectedMutualAidIds, setSelectedMutualAidIds] = useState<string[]>(
-    Array.isArray(initialDepartmentDraft.selectedMutualAidIds) ? (initialDepartmentDraft.selectedMutualAidIds as string[]) : [],
+  const [mutualAidDepartmentSelections, setMutualAidDepartmentSelections] = useState<
+    MutualAidDepartmentSelection[]
+  >(() => parseMutualAidSelectionsFromDraft(initialDepartmentDraft));
+  const [mutualAidNerisStatus, setMutualAidNerisStatus] = useState("");
+  const [mutualAidAdminKeyOpen, setMutualAidAdminKeyOpen] = useState(false);
+  const [mutualAidAdminKeyDraft, setMutualAidAdminKeyDraft] = useState("");
+  const [localMutualAidName, setLocalMutualAidName] = useState("");
+  const [localMutualAidState, setLocalMutualAidState] = useState("");
+  const selectedMutualAidIds = useMemo(
+    () =>
+      mutualAidDepartmentSelections
+        .filter((s): s is Extract<MutualAidDepartmentSelection, { kind: "neris" }> => s.kind === "neris")
+        .map((s) => s.nerisId),
+    [mutualAidDepartmentSelections],
   );
   const [incidentsSetup, setIncidentsSetup] = useState<IncidentsSetupConfig>(() =>
     normalizeIncidentsSetupConfig(initialDepartmentDraft.incidentsSetup),
@@ -6445,43 +6520,48 @@ function DepartmentDetailsPage({
     userRecords,
   ]);
 
-  useEffect(() => {
-    let isMounted = true;
-    const fetchEntityOptions = async () => {
-      try {
-        const response = await fetch("/api/neris/debug/entities");
-        if (!response.ok) {
-          return;
-        }
-        const payload = (await response.json()) as {
-          neris?: { entities?: Array<Record<string, unknown>> };
-        };
-        const rawEntities = Array.isArray(payload.neris?.entities) ? payload.neris.entities : [];
-        const options: DepartmentNerisEntityOption[] = rawEntities
-          .map((entry): DepartmentNerisEntityOption | null => {
-            const id = String(entry.neris_id ?? "").trim();
-            const name = String(entry.name ?? entry.entity_name ?? entry.department_name ?? "").trim();
-            const state = String(
-              entry.fd_state ?? entry.state ?? entry.state_code ?? entry.state_abbreviation ?? "",
-            ).trim().toUpperCase().slice(0, 2) || "Unknown";
-            if (!/^FD\d{8}$/.test(id)) {
-              return null;
-            }
-            return { id, name: name.length > 0 ? name : `Department ${id}`, state };
-          })
-          .filter((entry): entry is DepartmentNerisEntityOption => entry !== null);
-        if (isMounted && options.length > 0) {
-          setMutualAidOptions(options);
-        }
-      } catch {
-        // Keep fallback list.
+  const loadMutualAidDirectoryOptions = useCallback(async (statusLabel: string) => {
+    setMutualAidNerisStatus(statusLabel);
+    try {
+      const response = await fetch("/api/neris/entities");
+      const json = (await response.json()) as {
+        ok?: boolean;
+        neris?: { entities?: Array<{ nerisId?: string; name?: string; state?: string }> };
+      };
+      if (!response.ok || !json.ok) {
+        setMutualAidNerisStatus("Could not load NERIS directory. Using fallback list.");
+        return;
       }
-    };
-    void fetchEntityOptions();
-    return () => {
-      isMounted = false;
-    };
+      const raw = Array.isArray(json.neris?.entities) ? json.neris!.entities! : [];
+      const options: DepartmentNerisEntityOption[] = raw
+        .map((entry): DepartmentNerisEntityOption | null => {
+          const id = String(entry.nerisId ?? "").trim();
+          const name = String(entry.name ?? "").trim();
+          const state =
+            String(entry.state ?? "")
+              .trim()
+              .toUpperCase()
+              .slice(0, 2) || "Unknown";
+          if (!/^(FD|FM)\d{8}$/.test(id)) {
+            return null;
+          }
+          return { id, name: name.length > 0 ? name : id, state };
+        })
+        .filter((entry): entry is DepartmentNerisEntityOption => entry !== null);
+      if (options.length > 0) {
+        setMutualAidOptions(options);
+        setMutualAidNerisStatus(`Loaded ${options.length} departments from NERIS.`);
+      } else {
+        setMutualAidNerisStatus("Directory empty; using fallback list.");
+      }
+    } catch {
+      setMutualAidNerisStatus("Network error loading directory.");
+    }
   }, []);
+
+  useEffect(() => {
+    void loadMutualAidDirectoryOptions("Loading NERIS directory…");
+  }, [loadMutualAidDirectoryOptions]);
 
   useEffect(() => {
     let isMounted = true;
@@ -6616,9 +6696,7 @@ function DepartmentDetailsPage({
             ? (d.userTypeValues as string[])
             : [...DEFAULT_USER_TYPE_VALUES],
         );
-        setSelectedMutualAidIds(
-          Array.isArray(d.selectedMutualAidIds) ? (d.selectedMutualAidIds as string[]) : [],
-        );
+        setMutualAidDepartmentSelections(parseMutualAidSelectionsFromDraft(d));
         setIncidentsSetup(normalizeIncidentsSetupConfig(d.incidentsSetup));
         setKellyRotations(
           Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
@@ -7728,6 +7806,7 @@ function DepartmentDetailsPage({
       personnelQualifications,
       userTypeValues,
       selectedMutualAidIds,
+      mutualAidDepartmentSelections: mutualAidSelectionsToPayload(mutualAidDepartmentSelections),
       incidentsSetup,
       kellyRotations,
       schedulerEnabled,
@@ -7777,6 +7856,7 @@ function DepartmentDetailsPage({
     secondaryContactName,
     secondaryContactPhone,
     selectedMutualAidIds,
+    mutualAidDepartmentSelections,
     incidentsSetup,
     shiftInformationEntries,
     stationRecords,
@@ -8183,7 +8263,11 @@ function DepartmentDetailsPage({
                     {definition.editButtonLabel}
                   </button>
                 </div>
-                <p className="field-hint">Total Mutual Aid Departments: {selectedMutualAidIds.length}</p>
+                <p className="field-hint">
+                  Total Mutual Aid Departments: {mutualAidDepartmentSelections.length} (NERIS ID:{" "}
+                  {selectedMutualAidIds.length}, local-only:{" "}
+                  {mutualAidDepartmentSelections.filter((s) => s.kind === "local").length})
+                </p>
               </div>
             ))}
           </div>
@@ -9594,37 +9678,232 @@ function DepartmentDetailsPage({
             ) : null}
 
             {isMutualAidEditor ? (
-              <NerisGroupedOptionSelect
-                inputId="mutual-aid-departments"
-                value={selectedMutualAidIds
-                  .map((id) => {
-                    const opt = mutualAidOptions.find((o) => o.id === id);
-                    return opt ? `${opt.state ?? "Unknown"}||${opt.id}` : "";
-                  })
-                  .filter(Boolean)
-                  .join(",")}
-                options={mutualAidOptions.map((o) => ({
-                  value: `${o.state ?? "Unknown"}||${o.id}`,
-                  label: `${o.name} (${o.id})`,
-                }))}
-                onChange={(nextValue) =>
-                  setSelectedMutualAidIds(
-                    nextValue
-                      .split(",")
-                      .map((s) => {
-                        const parts = s.trim().split("||");
-                        return parts.length >= 2 ? parts[1]!.trim() : parts[0]?.trim() ?? "";
-                      })
-                      .filter(Boolean),
-                  )
-                }
-                mode="multi"
-                variant="entityByState"
-                placeholder="Select mutual aid department(s)"
-                searchPlaceholder="Search departments..."
-                showCheckboxes
-                usePortal
-              />
+              <>
+                <p className="field-hint" style={{ marginBottom: "0.75rem" }}>
+                  Choose NERIS fire departments that may appear as mutual aid on NERIS reports. Local-only
+                  entries (no NERIS ID) are for internal reference—they are{" "}
+                  <strong>not</strong> sent to NERIS as fire-department aid.
+                </p>
+                <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap", marginBottom: "0.75rem" }}>
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={() => void loadMutualAidDirectoryOptions("Reloading…")}
+                  >
+                    Reload directory (cached)
+                  </button>
+                  <button
+                    type="button"
+                    className="secondary-button compact-button"
+                    onClick={() => {
+                      setMutualAidAdminKeyDraft("");
+                      setMutualAidAdminKeyOpen(true);
+                    }}
+                  >
+                    Refresh from NERIS…
+                  </button>
+                </div>
+                {mutualAidNerisStatus ? (
+                  <p className="field-hint" style={{ marginBottom: "0.75rem" }}>
+                    {mutualAidNerisStatus}
+                  </p>
+                ) : null}
+                <label className="field-hint" style={{ display: "block", marginBottom: "0.35rem" }}>
+                  Mutual aid departments (NERIS ID) — grouped by state
+                </label>
+                <NerisGroupedOptionSelect
+                  inputId="mutual-aid-departments"
+                  value={mutualAidDepartmentSelections
+                    .filter((s): s is Extract<MutualAidDepartmentSelection, { kind: "neris" }> => s.kind === "neris")
+                    .map((s) => `${s.state}||${s.nerisId}`)
+                    .join(",")}
+                  options={mutualAidOptions.map((o) => ({
+                    value: `${o.state ?? "Unknown"}||${o.id}`,
+                    label: `${o.name} (${o.id})`,
+                  }))}
+                  onChange={(nextValue) => {
+                    const idSet = new Set(
+                      nextValue
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                        .map((seg) => {
+                          const parts = seg.split("||");
+                          return parts.length >= 2 ? parts[1]!.trim() : (parts[0]?.trim() ?? "");
+                        })
+                        .filter(Boolean),
+                    );
+                    const localEntries = mutualAidDepartmentSelections.filter((s) => s.kind === "local");
+                    const nerisEntries: MutualAidDepartmentSelection[] = Array.from(idSet).map((nerisId) => {
+                      const opt = mutualAidOptions.find((o) => o.id === nerisId);
+                      return {
+                        kind: "neris",
+                        nerisId,
+                        name: opt?.name ?? nerisId,
+                        state: opt?.state ?? "Unknown",
+                      };
+                    });
+                    setMutualAidDepartmentSelections([...nerisEntries, ...localEntries]);
+                    setAutoSaveTick((previous) => previous + 1);
+                    setStatusMessage("Auto-saved.");
+                  }}
+                  mode="multi"
+                  variant="entityByState"
+                  placeholder="Select mutual aid department(s)"
+                  searchPlaceholder="Search departments..."
+                  showCheckboxes
+                  usePortal
+                />
+                <div className="department-editor-add-row" style={{ marginTop: "1rem" }}>
+                  <input
+                    type="text"
+                    value={localMutualAidName}
+                    onChange={(e) => setLocalMutualAidName(e.target.value)}
+                    placeholder="Local department name (no NERIS ID yet)"
+                    style={{ flex: 1, minWidth: "200px" }}
+                  />
+                  <input
+                    type="text"
+                    value={localMutualAidState}
+                    onChange={(e) => setLocalMutualAidState(e.target.value.toUpperCase().slice(0, 2))}
+                    placeholder="ST"
+                    maxLength={2}
+                    style={{ width: "4rem" }}
+                  />
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={() => {
+                      const name = localMutualAidName.trim();
+                      if (!name) {
+                        setStatusMessage("Enter a name for the local department.");
+                        return;
+                      }
+                      const st = localMutualAidState.trim().toUpperCase().slice(0, 2);
+                      setMutualAidDepartmentSelections((prev) => [
+                        ...prev,
+                        { kind: "local", name, state: st || "—" },
+                      ]);
+                      setLocalMutualAidName("");
+                      setLocalMutualAidState("");
+                      setAutoSaveTick((previous) => previous + 1);
+                      setStatusMessage("Auto-saved.");
+                    }}
+                  >
+                    Add local
+                  </button>
+                </div>
+                {mutualAidDepartmentSelections.some((s) => s.kind === "local") ? (
+                  <div style={{ marginTop: "0.75rem" }}>
+                    <p className="field-hint" style={{ marginBottom: "0.35rem" }}>
+                      Local-only (not exported as NERIS FD aid)
+                    </p>
+                    <ul className="field-hint" style={{ listStyle: "disc", paddingLeft: "1.25rem" }}>
+                      {mutualAidDepartmentSelections.map((s, idx) =>
+                        s.kind !== "local" ? null : (
+                          <li key={`local-aid-row-${idx}`}>
+                            {s.name}
+                            {s.state && s.state !== "—" ? ` (${s.state})` : ""}
+                            <button
+                              type="button"
+                              className="link-button"
+                              style={{ marginLeft: "0.5rem" }}
+                              onClick={() => {
+                                setMutualAidDepartmentSelections((prev) =>
+                                  prev.filter((_, i) => i !== idx),
+                                );
+                                setAutoSaveTick((previous) => previous + 1);
+                                setStatusMessage("Auto-saved.");
+                              }}
+                            >
+                              Remove
+                            </button>
+                          </li>
+                        ),
+                      )}
+                    </ul>
+                  </div>
+                ) : null}
+                {mutualAidAdminKeyOpen ? (
+                  <div
+                    className="modal-overlay"
+                    style={{
+                      position: "fixed",
+                      inset: 0,
+                      background: "rgba(0,0,0,0.45)",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      zIndex: 10000,
+                    }}
+                    role="presentation"
+                    onClick={() => setMutualAidAdminKeyOpen(false)}
+                  >
+                    <div
+                      className="panel"
+                      style={{ maxWidth: "420px", margin: "1rem", padding: "1.25rem" }}
+                      role="dialog"
+                      aria-labelledby="mutual-aid-admin-key-title"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <h3 id="mutual-aid-admin-key-title">Refresh NERIS entity directory</h3>
+                      <p className="field-hint" style={{ marginBottom: "0.75rem" }}>
+                        Platform admin key (not stored). This re-downloads the full nationwide list from
+                        NERIS.
+                      </p>
+                      <input
+                        type="password"
+                        autoComplete="off"
+                        value={mutualAidAdminKeyDraft}
+                        onChange={(e) => setMutualAidAdminKeyDraft(e.target.value)}
+                        placeholder="X-Platform-Admin-Key"
+                        className="full-width"
+                        style={{ width: "100%", marginBottom: "0.75rem" }}
+                      />
+                      <div style={{ display: "flex", gap: "0.5rem", justifyContent: "flex-end" }}>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => setMutualAidAdminKeyOpen(false)}
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          type="button"
+                          className="primary-button compact-button"
+                          onClick={() => {
+                            const key = mutualAidAdminKeyDraft.trim();
+                            if (!key) {
+                              return;
+                            }
+                            void (async () => {
+                              try {
+                                const res = await fetch("/api/admin/neris/entities/refresh", {
+                                  method: "POST",
+                                  headers: { "X-Platform-Admin-Key": key },
+                                });
+                                setMutualAidAdminKeyDraft("");
+                                setMutualAidAdminKeyOpen(false);
+                                if (res.ok) {
+                                  await loadMutualAidDirectoryOptions("Refreshing…");
+                                } else {
+                                  const j = (await res.json().catch(() => ({}))) as { message?: string };
+                                  setMutualAidNerisStatus(j.message ?? "Refresh failed (check admin key).");
+                                }
+                              } catch {
+                                setMutualAidNerisStatus("Refresh request failed.");
+                                setMutualAidAdminKeyOpen(false);
+                              }
+                            })();
+                          }}
+                        >
+                          Refresh now
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
+              </>
             ) : null}
 
             {isUserTypeEditor ? (

@@ -26,6 +26,7 @@ import {
   type NerisSectionId,
   type NerisValueOption,
 } from "../nerisMetadata";
+import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowlist";
 import {
   NerisFlatMultiOptionSelect,
   NerisFlatSingleOptionSelect,
@@ -843,6 +844,10 @@ function NerisReportFormPage({
   const [resourceTimeDraft, setResourceTimeDraft] = useState<{ key: string; value: string } | null>(
     null,
   );
+  /** While user is typing an Incident Times/Core time, hold raw value so cursor doesn't jump (parse on blur). */
+  const [incidentTimeDraft, setIncidentTimeDraft] = useState<{ key: string; value: string } | null>(
+    null,
+  );
   const activeResourcePersonnelUnit = useMemo(
     () =>
       activeResourcePersonnelUnitId
@@ -1124,8 +1129,28 @@ function NerisReportFormPage({
     }
 
     const loadAidDepartmentOptions = async () => {
+      const configuredAid = readConfiguredMutualAidAidDepartmentOptions();
+      const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
+
+      if (configuredAid && configuredAid.length > 0) {
+        const opts = [...configuredAid];
+        if (
+          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
+          !opts.some((option) => option.value === requestedEntityId)
+        ) {
+          opts.unshift({
+            value: requestedEntityId,
+            label: "Current export department",
+          });
+        }
+        if (!isCancelled) {
+          setAidDepartmentOptions(opts);
+        }
+        return;
+      }
+
       try {
-        const response = await fetch("/api/neris/debug/entities");
+        const response = await fetch("/api/neris/entities");
         const responseText = await response.text();
         if (!response.ok) {
           if (!isCancelled) {
@@ -1148,7 +1173,7 @@ function NerisReportFormPage({
           parsed?.neris && typeof parsed.neris === "object"
             ? (parsed.neris as Record<string, unknown>)
             : null;
-        const entities = Array.isArray(neris?.entities) ? (neris?.entities as unknown[]) : [];
+        const entities = Array.isArray(neris?.entities) ? (neris.entities as unknown[]) : [];
         const apiOptions = entities
           .map((entry) => {
             if (!entry || typeof entry !== "object") {
@@ -1156,7 +1181,11 @@ function NerisReportFormPage({
             }
             const candidate = entry as Record<string, unknown>;
             const departmentId =
-              typeof candidate.neris_id === "string" ? candidate.neris_id.trim() : "";
+              typeof candidate.nerisId === "string"
+                ? candidate.nerisId.trim()
+                : typeof candidate.neris_id === "string"
+                  ? candidate.neris_id.trim()
+                  : "";
             if (!NERIS_AID_DEPARTMENT_ID_PATTERN.test(departmentId)) {
               return null;
             }
@@ -1166,19 +1195,18 @@ function NerisReportFormPage({
                 : departmentId;
             return {
               value: departmentId,
-              label: `${departmentId} - ${departmentName}`,
+              label: departmentName,
             } as NerisValueOption;
           })
           .filter((option): option is NerisValueOption => Boolean(option));
 
-        const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
         if (
           NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
           !apiOptions.some((option) => option.value === requestedEntityId)
         ) {
           apiOptions.unshift({
             value: requestedEntityId,
-            label: `${requestedEntityId} - Current export department`,
+            label: "Current export department",
           });
         }
 
@@ -1188,7 +1216,7 @@ function NerisReportFormPage({
           ).values(),
         );
         if (!isCancelled) {
-          setAidDepartmentOptions(dedupedOptions);
+          setAidDepartmentOptions(dedupedOptions.length > 0 ? dedupedOptions : fallbackOptions);
         }
       } catch {
         if (!isCancelled) {
@@ -1470,6 +1498,22 @@ function NerisReportFormPage({
       setReportStatus("Draft");
     }
   };
+
+  /** Tenant allowlist: clear aid department if no longer permitted (does not change report lock). */
+  useEffect(() => {
+    const configuredAid = readConfiguredMutualAidAidDepartmentOptions();
+    if (!configuredAid?.length) {
+      return;
+    }
+    const allowed = new Set(configuredAid.map((o) => o.value));
+    const v = (formValues.incident_aid_department_name ?? "").trim();
+    if (v && !allowed.has(v)) {
+      setFormValues((previous) => ({
+        ...previous,
+        incident_aid_department_name: "",
+      }));
+    }
+  }, [callNumber, formValues.incident_aid_department_name]);
 
   const clearResourceUnitValidationErrors = (unitEntryId: string) => {
     const keyPrefix = `resource_unit_validation_${unitEntryId}_`;
@@ -4108,6 +4152,104 @@ function NerisReportFormPage({
             const allowAdminEditReadonly =
               field.id === "incident_neris_id" && isAdminOrHigher(role);
             const isReadonlyField = field.inputKind === "readonly" && !allowAdminEditReadonly;
+            const isIncidentTimesField =
+              currentSection.id === "incidentTimes" && field.inputKind === "datetime";
+            const isIncidentOnsetTimeField =
+              currentSection.id === "core" && field.id === "incident_onset_time";
+
+            if (isIncidentTimesField) {
+              const timeDraftKey = `incidentTimes:${field.id}`;
+              const currentDatePart = formatResourceDatePart(value);
+              const currentTimePart =
+                incidentTimeDraft?.key === timeDraftKey
+                  ? incidentTimeDraft.value
+                  : formatResourceTimePart(value);
+
+              return (
+                <span className="neris-resource-datetime-inputs">
+                  <input
+                    id={inputId}
+                    type="date"
+                    value={currentDatePart}
+                    onChange={(e) =>
+                      updateFieldValue(
+                        field.id,
+                        combineResourceDateTimeFromParts(
+                          e.target.value,
+                          formatResourceTimePart(value),
+                        ) || (e.target.value ? `${e.target.value}T00:00:00` : ""),
+                      )
+                    }
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="HH:mm:ss (24h)"
+                    value={currentTimePart}
+                    onFocus={() =>
+                      setIncidentTimeDraft({
+                        key: timeDraftKey,
+                        value: formatResourceTimePart(value),
+                      })
+                    }
+                    onChange={(e) =>
+                      setIncidentTimeDraft((prev) =>
+                        prev?.key === timeDraftKey
+                          ? { ...prev, value: e.target.value }
+                          : { key: timeDraftKey, value: e.target.value },
+                      )
+                    }
+                    onBlur={() => {
+                      const raw =
+                        incidentTimeDraft?.key === timeDraftKey
+                          ? incidentTimeDraft.value
+                          : formatResourceTimePart(value);
+                      const normalized = parseTimeInput24h(raw);
+                      updateFieldValue(
+                        field.id,
+                        combineResourceDateTimeFromParts(currentDatePart, normalized) || value,
+                      );
+                      setIncidentTimeDraft(null);
+                    }}
+                  />
+                </span>
+              );
+            }
+
+            if (isIncidentOnsetTimeField) {
+              const timeDraftKey = `core:${field.id}`;
+              const shown =
+                incidentTimeDraft?.key === timeDraftKey ? incidentTimeDraft.value : value;
+              return (
+                <input
+                  id={inputId}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="HH:mm:ss (24h)"
+                  readOnly={isReadonlyField}
+                  value={shown}
+                  onFocus={() =>
+                    setIncidentTimeDraft({
+                      key: timeDraftKey,
+                      value,
+                    })
+                  }
+                  onChange={(event) =>
+                    setIncidentTimeDraft((prev) =>
+                      prev?.key === timeDraftKey
+                        ? { ...prev, value: event.target.value }
+                        : { key: timeDraftKey, value: event.target.value },
+                    )
+                  }
+                  onBlur={() => {
+                    const raw = incidentTimeDraft?.key === timeDraftKey ? incidentTimeDraft.value : value;
+                    const normalized = parseTimeInput24h(raw);
+                    updateFieldValue(field.id, normalized);
+                    setIncidentTimeDraft(null);
+                  }}
+                />
+              );
+            }
             return (
           <input
             id={inputId}

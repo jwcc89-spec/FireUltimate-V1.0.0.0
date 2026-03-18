@@ -2331,7 +2331,23 @@ export function isNerisFieldRequired(
   if (!field.requiredIf) {
     return false;
   }
-  return evaluateNerisRule(field.requiredIf, values);
+  const requiredByRule = evaluateNerisRule(field.requiredIf, values);
+  if (!requiredByRule) {
+    return false;
+  }
+
+  // Mutual aid exception: if the incident is FIRE but we are giving mutual aid,
+  // do not require FIRE-module fields (the FIRE module may not be applicable for the aiding dept).
+  if (field.sectionId === "fire") {
+    const hasAid = toApiEnumValue(values.incident_has_aid ?? "") === "YES";
+    const aidDirection = toApiEnumValue(values.incident_aid_direction ?? "");
+    const isAidGiven = hasAid && aidDirection === "GIVEN";
+    if (isAidGiven) {
+      return false;
+    }
+  }
+
+  return true;
 }
 
 export function validateNerisSection(
