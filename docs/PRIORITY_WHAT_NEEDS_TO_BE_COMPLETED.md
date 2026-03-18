@@ -11,7 +11,8 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 | Item | Notes |
 |------|--------|
 | **CAD email receiving** | Ingest path live; emails stored; **parsing / auto-create incident** is next (`#29`). |
-| **NERIS cross-browser (export history + drafts)** | Server-backed history and drafts; migration run. **View Exports:** “Report Status” on **Reporting \| NERIS \| Exports** now uses the **latest successful server export** for that call (not local draft only), so Browser B matches Browser A after export (`src/App.tsx` — `getExportsListReportStatus`). |
+| **NERIS cross-browser (export history + drafts)** | Server-backed history and drafts; migration run. |
+| **View Exports — Report Status** | **Done (2026-03, staging verified).** Successful export shows **Exported** on **Reporting \| NERIS \| Exports** (matches NERIS queue); fixes second-browser **Draft** and post-validate **In Review** mismatch. `getExportsListReportStatus` + append stores **Exported** on success (`App.tsx`, `NerisReportFormPage.tsx`). |
 | **Incident Detail cross-browser** | Edits in Browser A visible in Browser B via API — go-live Item #1 treated **done** for current workflow. |
 | **Merge / deploy** | Branch merged/deployed per tenant (staging/prod as applicable). |
 
@@ -112,10 +113,10 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
 | 25 | **CAD email ingest (receive + store)** | GO_LIVE §6, EMAIL_AND_CAD_SETUP | **Receiving path done.** **Open:** parsing / auto-create (`#29`); then Worker → production API URL. |
-| 26 | **NERIS cross-browser** | User report | **Phase 1–3 done** (server export history, drafts, lock). **2026-03-20:** View Exports list **Report Status** uses server export success row so second browser shows Exported, not Draft. See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** NERIS form drafts edge cases only if reported. |
+| 26 | **NERIS cross-browser** | User report | **Done** for export history, drafts, lock, and **View Exports Report Status** (Exported after success, cross-browser). See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** draft edge cases only if reported. |
 | 27 | **Production endpoint checks and first controlled production export** | GO_LIVE §3.6–3.7 | Re-run tenant/context, neris/health, entity-check on prod; perform first prod export when ready. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
-| 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings (submenu) → Parsing Data; per-tenant parsing rules (A→C→B); auto-create draft incident; apparatus from Dept Details; dedupe (multiple emails → one incident); optional call sequencing. **After NERIS Phase 2/3.** |
+| 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings → Parsing Data; per-tenant rules; auto-create draft incident; dedupe; optional sequencing. **Next major platform item** (NERIS cross-browser phases complete). |
 
 ### Expanded: NERIS cross-browser (#26) — resolved + follow-up
 
@@ -147,11 +148,25 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 ---
 
-## Session 2026-03-20 — doc refresh (after tenant testing)
+## Session notes
 
-**Completed / verified:** CAD emails receiving; NERIS export history + drafts cross-browser; Incident Detail API cross-browser; View Exports **Report Status** aligned with server export (`getExportsListReportStatus` in `App.tsx`).
+**2026-03-20:** Doc refresh; View Exports uses server export row (cross-browser Draft fix).  
+**2026-03:** Staging verified — View Exports **Report Status** shows **Exported** after successful NERIS submit (queue and list aligned; In Review mismatch fixed).
 
-**Next:** CAD parsing (#29) → Worker prod URL. **Still open:** BACKLOG #2–#11 (except items marked Done in tables), #8 aid self-select, #12–#14 roles, platform backlog #15–#24, #27 prod checks.
+---
+
+## Still pending (at a glance)
+
+Use **Suggested order** below for sequencing. This is a single checklist of what remains.
+
+| Area | Pending |
+|------|---------|
+| **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
+| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h times app-wide (partial done); **#5** Edit Reported By layout; **#6** initial dispatch code; **#8** aid self-select exclude; **#10** UNIT TYPE; **#11** Populate Date + Returning; **#11.1** Narrative Builder; **#11.2** occupant contact fields. |
+| **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
+| **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
+| **Go-live / ops** | **#27** Production entity-check + controlled first prod export. |
+| **Architecture** | **#28** Per-tenant NERIS config scale-out (when ready). |
 
 ---
 

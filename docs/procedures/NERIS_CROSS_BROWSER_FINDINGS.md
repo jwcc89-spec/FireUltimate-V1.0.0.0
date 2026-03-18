@@ -2,7 +2,7 @@
 
 **Issue:** In cifpdil.fireultimate.app, exports complete successfully in one browser. When the same user logs in from another browser (or device), the NERIS report does not show the same information and no export history is shown.
 
-**Priority:** Core cross-browser issues are addressed. Next platform priority is **CAD parsing / auto-create** (#29). See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
+**Status (2026-03):** Cross-browser export history, drafts, locking, and **View Exports → Report Status** (shows **Exported** after successful submit, matches queue) are **complete** (staging verified). Next platform priority: **CAD parsing / auto-create** (#29). See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
 
 **Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. **Phase 2 (server-side drafts) is implemented.** Drafts are stored per incident (tenant + callNumber) on the server; opening the NERIS form in any browser loads the last saved draft. You only need to **run the database migrations once** (see “Steps for you” below). **Phase 3** (validation/export locking) is implemented. After Validate (In Review) or Export (Exported), the report is locked for non-admin users; they see a lock banner and cannot edit. Only admin can unlock (Unlock button) or edit when locked. Export remains admin-only.
 
