@@ -32,6 +32,9 @@ import {
 } from "../NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "../NerisGroupedOptionSelect";
 
+type PrintSummaryRow = { label: string; value: string };
+type PrintSummarySection = { id: string; title: string; rows: PrintSummaryRow[] };
+
 export interface NerisExportSettings {
   exportUrl: string;
   vendorCode: string;
@@ -476,6 +479,7 @@ function NerisReportFormPage({
     null,
   );
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [printSummaryOpen, setPrintSummaryOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -3686,6 +3690,118 @@ function NerisReportFormPage({
     }
   };
 
+  const printSummarySections = useMemo((): PrintSummarySection[] => {
+    const normalizeForOptionLookup = (value: string) =>
+      value.trim().replace(/\s+/g, "_").replace(/\//g, "_").toUpperCase();
+
+    const formatFieldValueForPrint = (field: NerisFieldMetadata, raw: string): string => {
+      const value = raw.trim();
+      if (!value) return "";
+      if (!field.optionsKey) return value;
+      const options = getNerisValueOptions(field.optionsKey);
+      const byValue = new Map(
+        options.map((option) => [normalizeForOptionLookup(option.value), option.label] as const),
+      );
+      const parts =
+        field.inputKind === "multiselect"
+          ? value
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean)
+          : [value];
+      const mapped = parts.map((part) => byValue.get(normalizeForOptionLookup(part)) ?? part);
+      return mapped.join(", ");
+    };
+
+    const sections: PrintSummarySection[] = [];
+    for (const section of NERIS_FORM_SECTIONS) {
+      const fields = getNerisFieldsForSection(section.id);
+      const rows: PrintSummaryRow[] = [];
+      for (const field of fields) {
+        const raw = String(formValues[field.id] ?? "");
+        const formatted = formatFieldValueForPrint(field, raw);
+        if (!formatted) continue;
+        rows.push({ label: field.label, value: formatted });
+      }
+      if (rows.length > 0) {
+        sections.push({ id: section.id, title: section.label, rows });
+      }
+    }
+
+    const aidRows: PrintSummaryRow[] = [];
+    additionalAidEntries.forEach((entry, index) => {
+      const bits = [entry.aidDirection, entry.aidType, entry.aidDepartment]
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (bits.length > 0) {
+        aidRows.push({ label: `Aid (FD) #${index + 1}`, value: bits.join(" • ") });
+      }
+    });
+    additionalNonFdAidEntries.forEach((entry, index) => {
+      const value = entry.aidType.trim();
+      if (value) {
+        aidRows.push({ label: `Aid (Non-FD) #${index + 1}`, value });
+      }
+    });
+    if (aidRows.length > 0) {
+      sections.push({ id: "aidSummary", title: "Aid Given / Received", rows: aidRows });
+    }
+
+    const resourceRows: PrintSummaryRow[] = [];
+    resourceUnits.forEach((unit, index) => {
+      const unitBits: string[] = [];
+      const unitIdLabel = unit.unitId.trim() || `Unit ${index + 1}`;
+      if (unit.unitType.trim()) unitBits.push(`Type: ${unit.unitType.trim()}`);
+      if (unit.staffing.trim()) unitBits.push(`Staffing: ${unit.staffing.trim()}`);
+      if (unit.responseMode.trim()) unitBits.push(`Response: ${unit.responseMode.trim()}`);
+      if (unit.transportMode.trim()) unitBits.push(`Transport: ${unit.transportMode.trim()}`);
+      if (unit.dispatchTime.trim()) unitBits.push(`Dispatched: ${unit.dispatchTime.trim()}`);
+      if (unit.enrouteTime.trim()) unitBits.push(`Enroute: ${unit.enrouteTime.trim()}`);
+      if (unit.stagedTime.trim()) unitBits.push(`Staged: ${unit.stagedTime.trim()}`);
+      if (unit.onSceneTime.trim()) unitBits.push(`On Scene: ${unit.onSceneTime.trim()}`);
+      if (unit.canceledTime.trim()) unitBits.push(`Canceled: ${unit.canceledTime.trim()}`);
+      if (unit.clearTime.trim()) unitBits.push(`Clear: ${unit.clearTime.trim()}`);
+      if (unit.personnel.trim()) unitBits.push(`Personnel: ${unit.personnel.trim()}`);
+      if (unit.reportWriter.trim()) unitBits.push(`Writer: ${unit.reportWriter.trim()}`);
+      if (unit.unitNarrative.trim()) unitBits.push(`Narrative: ${unit.unitNarrative.trim()}`);
+      if (unitBits.length > 0) {
+        resourceRows.push({ label: unitIdLabel, value: unitBits.join(" | ") });
+      }
+    });
+    if (resourceRows.length > 0) {
+      sections.push({ id: "resourceSummary", title: "Resources", rows: resourceRows });
+    }
+
+    return sections;
+  }, [additionalAidEntries, additionalNonFdAidEntries, formValues, resourceUnits]);
+
+  const handlePrintSummary = () => {
+    if (typeof window === "undefined") return;
+    setPrintSummaryOpen(true);
+    document.body.classList.add("printing-neris");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  };
+
+  useEffect(() => {
+    if (!printSummaryOpen || typeof window === "undefined") {
+      return;
+    }
+    const cleanup = () => {
+      document.body.classList.remove("printing-neris");
+      setPrintSummaryOpen(false);
+    };
+    window.addEventListener("afterprint", cleanup);
+    const fallback = window.setTimeout(cleanup, 8_000);
+    return () => {
+      window.removeEventListener("afterprint", cleanup);
+      window.clearTimeout(fallback);
+    };
+  }, [printSummaryOpen]);
+
   const handleValidationModalReturn = () => {
     setValidationModal(null);
     navigate("/reporting/neris");
@@ -4579,7 +4695,7 @@ function NerisReportFormPage({
               <button
                 type="button"
                 className="secondary-button compact-button"
-                onClick={() => window.print()}
+                onClick={handlePrintSummary}
               >
                 Print
               </button>
@@ -4721,6 +4837,38 @@ function NerisReportFormPage({
               </button>
             </div>
           </div>
+        </div>
+      ) : null}
+
+      {printSummaryOpen ? (
+        <div className="neris-print-root" aria-hidden>
+          <div className="neris-print-header">
+            <h1>NERIS Report Summary</h1>
+            <p>
+              {detailForSideEffects.callNumber}
+              {detailForSideEffects.address ? ` • ${detailForSideEffects.address}` : ""}
+            </p>
+          </div>
+
+          {printSummarySections.length > 0 ? (
+            <div className="neris-print-sections">
+              {printSummarySections.map((section) => (
+                <section key={`print-${section.id}`} className="neris-print-section">
+                  <h2>{section.title}</h2>
+                  <dl>
+                    {section.rows.map((row) => (
+                      <div key={`${section.id}-${row.label}`} className="neris-print-row">
+                        <dt>{row.label}</dt>
+                        <dd>{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <p>No report fields have values yet.</p>
+          )}
         </div>
       ) : null}
 

@@ -4029,6 +4029,22 @@ body.resource-personnel-modal-open {
     background: #ffffff !important;
   }
 
+  body.printing-neris * {
+    visibility: hidden !important;
+  }
+
+  body.printing-neris .neris-print-root,
+  body.printing-neris .neris-print-root * {
+    visibility: visible !important;
+  }
+
+  body.printing-neris .neris-print-root {
+    position: absolute;
+    inset: 0;
+    padding: 1rem 1.25rem;
+    background: #ffffff;
+  }
+
   .sidebar,
   .sidebar-resizer,
   .topbar,
@@ -4068,6 +4084,65 @@ body.resource-personnel-modal-open {
   .neris-sidebar {
     display: none !important;
   }
+}
+
+.neris-print-root {
+  display: none;
+}
+
+body.printing-neris .neris-print-root {
+  display: block;
+}
+
+.neris-print-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.neris-print-header p {
+  margin: 0.25rem 0 0.75rem;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.neris-print-section {
+  margin-top: 0.9rem;
+  page-break-inside: avoid;
+}
+
+.neris-print-section h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.2rem;
+}
+
+.neris-print-section dl {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.neris-print-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 0.75rem;
+}
+
+.neris-print-row dt {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.neris-print-row dd {
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.86rem;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .submenu-settings-group {
