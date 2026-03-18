@@ -2370,7 +2370,12 @@ export function validateNerisSection(
       continue;
     }
 
-    if (field.optionsKey && value) {
+    // Primary aid department: options are admin-approved NERIS IDs from the UI, not the legacy static aid_department scaffold.
+    if (
+      field.optionsKey &&
+      value &&
+      field.id !== "incident_aid_department_name"
+    ) {
       const allowedValues = new Set<string>(
         NERIS_VALUE_SETS[field.optionsKey].map((option) => option.value),
       );
