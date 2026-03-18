@@ -2659,6 +2659,18 @@ function getNerisReportStatus(callNumber: string): string {
   return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
 }
 
+/** Exports list: use server export record so Browser B matches Browser A after a successful export. */
+function getExportsListReportStatus(
+  callNumber: string,
+  latestExport: NerisExportRecord | undefined,
+): string {
+  if (latestExport?.attemptStatus === "success") {
+    const atExport = latestExport.reportStatusAtExport?.trim();
+    return atExport || "Exported";
+  }
+  return getNerisReportStatus(callNumber);
+}
+
 function getNerisQueueFieldValue(
   call: IncidentCallSummary,
   fieldId: IncidentCallFieldId,
@@ -5095,8 +5107,14 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                       </td>
                       <td>{call.incidentType}</td>
                       <td>
-                        <span className={toToneClass(toneFromNerisStatus(getNerisReportStatus(call.callNumber)))}>
-                          {getNerisReportStatus(call.callNumber)}
+                        <span
+                          className={toToneClass(
+                            toneFromNerisStatus(
+                              getExportsListReportStatus(call.callNumber, latestExport),
+                            ),
+                          )}
+                        >
+                          {getExportsListReportStatus(call.callNumber, latestExport)}
                         </span>
                       </td>
                       <td>
