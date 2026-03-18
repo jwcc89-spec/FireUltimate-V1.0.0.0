@@ -102,6 +102,7 @@
 36. Continue UI buildout in parallel with API integration.
 37. Use server-side proxy/security best practices (avoid exposing secrets in frontend).
 38. If a proposed task is likely unrelated to the current error, state that clearly and recommend best route.
+38a. **Time format:** All time inputs and displays use **24-hour (military)** format app-wide (no AM/PM). See `.cursor/project-context.md` § Time format. When adding or changing time fields, follow this convention.
 
 ## 9) User environment constraints
 39. Prefer instructions compatible with locked-down/work environments (no admin rights assumed).

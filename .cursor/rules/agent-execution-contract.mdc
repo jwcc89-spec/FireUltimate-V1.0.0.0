@@ -17,6 +17,7 @@ alwaysApply: true
 - Do not store auth secrets in `DepartmentDetails.payloadJson`.
 - Keep `demo` tenant persistent (no automatic reset unless explicitly requested).
 - **Data integrity:** Do not modify the Prisma schema, migration files, or authentication/authorization logic unless the user explicitly approves.
+- **Time format:** All time inputs and displays are 24-hour (military) app-wide; see `.cursor/project-context.md` § Time format.
 
 ## Verification Rules
 - After each batch run: `npm run lint`.

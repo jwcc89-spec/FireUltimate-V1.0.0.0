@@ -20,6 +20,12 @@ FireUltimate is a **multi-tenant fire department operations platform**. Multiple
 
 ---
 
+## UI convention: time format (app-wide)
+
+**All time inputs and displays use military (24-hour) format**, not AM/PM. This applies everywhere: NERIS form (Core onset, Incident Times, Resources, etc.), Incidents (create/edit, onset, any time fields), and any other screens. Use 24h (e.g. `HH:MM` or `HH:MM:SS`) consistently. When adding or changing time fields, follow this convention.
+
+---
+
 ## Where to go next
 
 - **Architecture and data:** `docs/system_architecture.md`, `docs/data_model.md`

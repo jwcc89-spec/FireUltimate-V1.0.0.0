@@ -1834,6 +1834,7 @@ function resourceUnitValidationErrorKey(
     | "enrouteTime"
     | "stagedTime"
     | "onSceneTime"
+    | "returningTime"
     | "canceledTime"
     | "clearTime",
 ): string {
@@ -12427,6 +12428,22 @@ function App() {
   ) => {
     const actor = session.username.trim() || "unknown";
     if (deleted) {
+      try {
+        const draft = await getNerisDraft(callNumber);
+        const status = draft?.reportStatus?.trim();
+        if (status === "In Review" || status === "Exported") {
+          alert(
+            "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance.",
+          );
+          return;
+        }
+      } catch {
+        // If we cannot fetch the draft, block delete to be safe (fail closed).
+        alert(
+          "Could not verify NERIS report status. Incident was not deleted. Try again or delete from the NERIS report form.",
+        );
+        return;
+      }
       try {
         const updated = await deleteIncident(callNumber, {
           deletedBy: actor,

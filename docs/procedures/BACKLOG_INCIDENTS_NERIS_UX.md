@@ -16,26 +16,25 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 ---
 
-## Time display: military (24h) not AM/PM
+## Time display: military (24h) not AM/PM — **Done (2026-03)**
 
 - **Scope:** Times entered in any fields across the program (NERIS, Incidents, etc.) should use **military time (24-hour)**, not AM/PM.
 - **Desired:** All time inputs/outputs use 24-hour format consistently.
-- **Status (2026-03-18):** **Partial.** NERIS form **Core** (Incident Onset Time) and **Incident Times** module use separate date + **HH:MM:SS** (24h). Incidents UI and other screens still open.
+- **Status:** **Done.** App-wide 24h time (NERIS, Incidents, and all other screens). Convention for future work: see `.cursor/project-context.md` § Time format.
 
 ---
 
-## Incidents Setup – Edit Reported By layout (#5 in PRIORITY)
+## Incidents Setup – Edit Reported By layout (#5 in PRIORITY) — **Done (2026-03)**
 
 - **What it refers to:** **Admin Functions → Department Details → Incidents Setup.** There is an **Edit Reported By** control that lets admins configure the **Reported By** options list (e.g. "911 Caller", "Dispatch", etc.) and the mode (fill-in vs dropdown). The **layout** of that editor (the input boxes / list of options) can spill or overlap the **Assigned Units** configuration area below it.
-- **Desired:** Fix CSS/layout so the Reported By editor is fully visible and does not overlap Assigned Units. No change to behavior of Create Incident or Incident Detail — only the **admin** Incidents Setup layout.
+- **Status:** **Done.** Layout fixed so the Reported By editor is fully visible and does not overlap Assigned Units.
 
 ---
 
 ## NERIS Form – Initial dispatch code source (#6 in PRIORITY)
 
-- **Where it is:** **`src/nerisMetadata.ts`** — `createDefaultNerisFormValues()`. The default for **`initial_dispatch_code`** was hardcoded as **`"AMB.UNRESP-BREATHING"`**, so every new incident/NERIS form got that value.
-- **Change (2026-03):** Default is now **empty string** so new reports do not auto-populate a specific code. User selects or leaves blank per NERIS rules.
-- **Desired behavior (future):** If NERIS requires a value for export → align; if CAD supplies a code → map from CAD; otherwise leave blank. Document the source of truth when CAD parsing or NERIS rules are finalized.
+- **Where it is:** **`src/nerisMetadata.ts`** — `createDefaultNerisFormValues()`. The default for **`initial_dispatch_code`** is **empty string** (changed from hardcoded value).
+- **Desired behavior:** Add **Initial Dispatch Code** to **Create Incident**. If that field has a value when creating an incident, populate NERIS **Initial dispatch code** from it. Otherwise leave blank (dispatch/CAD can populate later).
 
 ---
 
@@ -46,12 +45,10 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 - **Desired:** Map this list to NERIS; show all departments grouped by state; ensure Gilman (FD29081313) and other mutual-aid departments appear when configured.
 - **Status (2026-03-18):** **Largely done.** `GET /api/neris/entities` + Department Details **Mutual Aid** (state-grouped DD-M, NERIS + **local-only** adds). CORE **Aid department name(s)** uses configured list (NERIS + local) or full directory; UI shows **name only**; export still uses FD/FM ID for NERIS rows. Local-only choices are CORE-only (not `department_neris_id`). **Still open:** self-select exclusion below.
 
-### Do not allow selecting the current tenant’s department (self-aid)
+### Do not allow selecting the current tenant’s department (self-aid) — **Done (2026-03)**
 
 - **Requirement:** The Aid Department list must **not** allow the user to select the **current tenant’s** department (the incident base department NERIS ID). NERIS returns 422: "Aid department NERIS ID cannot be the same as the incident base department NERIS ID."
-- **Options:** Either (1) **exclude** the tenant’s own department from the selectable list, or (2) **show it but greyed out / disabled** so it cannot be selected. Display-only (greyed out) is acceptable if needed for context.
-- **Note:** The server already strips any aid entry that matches the base department before sending to NERIS (defense in depth); the UI change prevents the mistake in the first place.
-- **2026-03:** The synthetic **"Current export department"** option (tenant’s own FD pre-pended to the Aid department dropdown) was **removed** so it is no longer the first selectable value. Full self-select exclusion (hide or grey out tenant’s own FD in the list) is still open.
+- **Status:** **Done.** Tenant’s own department is excluded or greyed out in the UI; server already strips. (Earlier: "Current export department" synthetic option removed.)
 
 ---
 
@@ -63,28 +60,25 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 ---
 
-## NERIS Form – Resources: UNIT TYPE value (#10 in PRIORITY)
+## NERIS Form – Resources: UNIT TYPE value (#10 in PRIORITY) — **Done (2026-03)**
 
-- **What it refers to:** In the NERIS form **Resources** section, each resource row has a **UNIT TYPE** field. Today it may show placeholder text like "auto-populates from unit setup" instead of the **actual apparatus type** (e.g. Engine, Ladder) from **Admin Functions → Department Details → Apparatus** (or Scheduler apparatus).
-- **Desired:** When a unit is assigned from department apparatus, **UNIT TYPE** should show that apparatus’s **unit type** value from Department Details, not a generic placeholder. Implementation: pull from the same apparatus source used for the queue (e.g. `apparatusFromDepartmentDetails` / Department Details payload) and map unit → unitType for the Resources grid.
-
----
-
-## NERIS Form – Resources: Populate Date button and Returning
-
-- **Issue 1 – Populate Date behavior:** When **Populate Date** is clicked, it should:
-  - **Only populate dates** (not times) for: **dispatch**, **en route**, **on scene**, **clear**.
-  - **Not** populate anything for **staged** or **canceled**.
-- **Issue 2 – Returning:** There should be fields for **Returning** (presumably date/time for unit returning).
-- **Desired:** Implement the above Populate Date logic and add Returning field(s).
+- **What it refers to:** In the NERIS form **Resources** section, each resource row has a **UNIT TYPE** field. It was showing placeholder "Auto-populates from unit setup" instead of the value from Department Details → Department Apparatus.
+- **Status:** **Done.** Unit Type now shows the corresponding **Unit Type** value from Department Details → Department Apparatus for the selected responding unit. Empty when unit is not in apparatus (placeholder "—").
 
 ---
 
-## Delete Incident – do not delete NERIS report when In Review or Exported
+## NERIS Form – Resources: Populate Date button and Returning — **Done (2026-03)**
 
-- **Issue:** When an incident is deleted, the respective NERIS report (draft) is also removed. If the NERIS report is **In Review** or **Exported**, it must **not** be deleted (regulatory/audit retention).
-- **Desired:** Before deleting an incident (or when performing the delete), check the NERIS report status for that incident. If status is **In Review** or **Exported**, either (1) **block** incident deletion and show a message, or (2) **soft-delete** the incident but **retain** the NERIS draft/export record. Prefer blocking deletion with a clear message so the user understands the report is protected.
-- **Scope:** Incident delete flow (UI + any server logic that removes NERIS draft or export history for the incident).
+- **Issue 1 – Populate Date behavior:** When **Populate Date** is clicked, it should only populate **dates** (preserve times) for **dispatch**, **en route**, **on scene**, **clear**; **not** staged or canceled.
+- **Issue 2 – Returning:** **Returning** field (date + time) in **Edit Times**, between On Scene and Canceled, same styling as other times (Clear button, date, time).
+- **Status:** **Done.** Populate Date only updates those four fields; Returning added to Edit Times and to resource unit data/header summary.
+
+---
+
+## Delete Incident – do not delete NERIS report when In Review or Exported — **Done (2026-03)**
+
+- **Issue:** When an incident is deleted, the NERIS report (draft) was also removed. If the report is **In Review** or **Exported**, it must not be deleted (regulatory/audit retention).
+- **Status:** **Done.** Before delete, we check NERIS report status. If **In Review** or **Exported**, incident deletion is **blocked** with message: "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance." Applied in **both** places: (1) Delete from NERIS report form, (2) Delete from incident list/detail (report status fetched via `getNerisDraft` before calling delete).
 
 ---
 
@@ -94,15 +88,15 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 |---|------|-------------------|
 | 1 | Incidents | Reported By in Edit — **Done 2026-03** (no overwrite; dropdown shows saved value) |
 | 2 | Incidents | Dispatch notes and Callback save — **Done 2026-03** (same fix; PATCH already sent them) |
-| 3 | App-wide | Times: military (24h) not AM/PM |
-| 4 | Incidents Setup | Edit Reported By layout spills into Assigned Units (admin Department Details only) |
-| 5 | NERIS | Initial dispatch code – default now blank; source mapping doc when CAD/NERIS finalized |
-| 6 | NERIS | AID GIVEN/RECEIVED – Aid departments (mostly done; "Current export department" removed 2026-03; self-select #10 still open) |
+| 3 | App-wide | Times: military (24h) not AM/PM — **Done 2026-03** (see project-context.md) |
+| 4 | Incidents Setup | Edit Reported By layout — **Done 2026-03** |
+| 5 | NERIS | Initial dispatch code – add field to Create Incident; when set, populate NERIS; else blank |
+| 6 | NERIS | AID GIVEN/RECEIVED – Aid departments; self-select (#10) **Done 2026-03** |
 | 7 | NERIS | Required-if: FIRE + aid given (done 2026-03-18 for direction Given) |
-| 8 | NERIS | Resources UNIT TYPE – show Apparatus value from Department Details, not placeholder |
-| 9 | NERIS | Resources Populate Date: dates only for dispatch/en route/on scene/clear; add Returning |
-| 10 | NERIS | Aid Department: do not allow selecting tenant's own department (exclude or grey out) |
-| 11 | Incidents + NERIS | **Delete Incident:** Do not delete NERIS report when status is In Review or Exported (block delete or retain report) |
+| 8 | NERIS | Resources UNIT TYPE – **Done 2026-03** (show Dept Apparatus Unit Type) |
+| 9 | NERIS | Resources Populate Date + Returning – **Done 2026-03** (dates only for dispatch/en route/on scene/clear; Returning in Edit Times) |
+| 10 | NERIS | Aid Department: do not allow selecting tenant's own department — **Done 2026-03** |
+| 11 | Incidents + NERIS | **Delete Incident:** block when NERIS In Review/Exported — **Done 2026-03** (both form and list/detail) |
 | — | Admin NERIS | **Admin NERIS required fields — Done (2026-03).** Admin Functions → Reports \| NERIS: configure required fields; effective-required (NERIS + admin overrides) used in form and validation. |
 
 ---

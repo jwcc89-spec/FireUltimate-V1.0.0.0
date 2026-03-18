@@ -52,21 +52,21 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 |---|------|--------|--------|
 | 2 | **Reported By** in Edit | BACKLOG #1 | **Done (2026-03).** No overwrite; dropdown shows saved value. |
 | 3 | **Dispatch notes and Callback** save in Edit | BACKLOG #2 | **Done (2026-03).** Persist and display; timeline supports string or array. |
-| 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | **Partial (2026-03-18):** NERIS Core onset + Incident Times use 24h `HH:MM:SS`. Incidents / rest of app still open. |
-| 5 | **Incidents Setup – Edit Reported By** layout spills into Assigned Units | BACKLOG #4 | Fix layout so controls are visible and don’t overlap. |
-| 6 | **Initial dispatch code** – source (NERIS / CAD / blank) | BACKLOG #5 | Default now empty (`nerisMetadata.ts`). Document mapping when CAD/NERIS finalized. |
-| 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | **Largely done (11.3):** NERIS entity directory + DD-M + CORE. **Open:** exclude/grey-out tenant’s own FD (#8). |
-| 8 | **Aid Department:** do not allow selecting tenant’s own department (exclude or grey out) | BACKLOG #10 | UI: exclude or disable self in list. Server already strips. |
+| 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | **Done (2026-03).** All time inputs/displays use 24-hour format app-wide (NERIS, Incidents, etc.). See `.cursor/project-context.md` § Time format. |
+| 5 | **Incidents Setup – Edit Reported By** layout spills into Assigned Units | BACKLOG #4 | **Done (2026-03).** Layout fixed so controls don’t overlap Assigned Units. |
+| 6 | **Initial dispatch code** – from Create Incident when set | BACKLOG #5 | Add **Initial Dispatch Code** field to Create Incident; when set, populate NERIS `initial_dispatch_code`. Otherwise leave blank (dispatch/CAD can populate later). |
+| 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | **Largely done (11.3):** NERIS entity directory + DD-M + CORE. **Done:** #8 self-select excluded. |
+| 8 | **Aid Department:** do not allow selecting tenant’s own department (exclude or grey out) | BACKLOG #10 | **Done (2026-03).** UI excludes or disables tenant’s own department; server already strips. |
 | 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
-| 10 | **Resources UNIT TYPE** – show Apparatus value, not placeholder | BACKLOG #8 | Pull from Department Details Apparatus. |
-| 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | Fix button behavior; add Returning field(s). |
+| 10 | **Resources UNIT TYPE** – show Apparatus value, not placeholder | BACKLOG #8 | **Done (2026-03).** Shows Department Details → Apparatus Unit Type for selected unit. |
+| 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | **Done (2026-03).** Populate Date only those four; Returning in Edit Times (between On Scene and Canceled). |
 | 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-17 | Add a Narrative Builder to help users create detailed narratives by pre-populating structured information based on narrative type. |
 | 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
 | 11.3 | **Mutual aid directory + tenant allowlist** | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
 | 11.3a | **CORE “Aid department name(s)” — friendly name in UI** | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
 | 11.3b | **Local-only mutual aid rows in CORE aid dropdown** | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
 | 11.3c | **FIRE requiredness when mutual aid given** | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
-| 11.3d | **NERIS Core + Incident Times — 24h `HH:MM:SS`** | 2026-03-18 | **Done** for those fields (Core onset + Incident Times module). **Open:** app-wide 24h (#4) elsewhere. |
+| 11.3d | **NERIS Core + Incident Times — 24h `HH:MM:SS`** | 2026-03-18 | **Done.** Core onset + Incident Times use 24h; app-wide 24h completed (#4). |
 | 11.4 | **Admin NERIS required fields** | 2026-03 | **Done.** Admin Functions → Reports \| NERIS: checkboxes for admin-selected required fields; NERIS-required fields locked; requiredIf fields show "Conditionally required by NERIS" + optional "also require always." Effective-required used in NERIS form (Show Required Fields Only + validation). |
 
 ---
@@ -137,7 +137,7 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 1. **CAD parsing + auto-create incident (#29)** — then Worker **`CAD_INGEST_API_URL`** → production.
 2. **High-impact UX:** Reported By and dispatch notes/callback save (#2, #3), Edit Reported By layout (#5), Aid Department no self-select (#8).
-3. **App-wide consistency:** Military time (#4).
+3. **App-wide consistency:** Military time (#4) — **Done.**
 4. **NERIS correctness:** Initial dispatch code (#6); Aid self-select UI (#8); UNIT TYPE (#10); Populate Date + Returning (#11).
 5. **Production checks (#27)** — entity-check, controlled export.
 6. **Roles and security:** Validate for all / Export admin-only (#12), auth rate-limiting (#16).
@@ -169,7 +169,7 @@ Use **Suggested order** below for sequencing. This is a single checklist of what
 | Area | Pending |
 |------|---------|
 | **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
-| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h times app-wide (partial done); **#5** Edit Reported By layout; **#6** initial dispatch code; **#8** aid self-select exclude; **#10** UNIT TYPE; **#11** Populate Date + Returning; **#11.1** Narrative Builder; **#11.2** occupant contact fields. **Next:** Delete Incident must not delete NERIS report when In Review or Exported (BACKLOG #11). |
+| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h (**done**); **#5** Edit Reported By layout (**done**); **#6** Initial Dispatch Code in Create Incident → NERIS; **#8** aid self-select (**done**); **#10** UNIT TYPE (**done**); **#11** Populate Date + Returning (**done**); **#11 (incident)** Delete block when NERIS In Review/Exported (**done**); **#11.1** Narrative Builder; **#11.2** occupant contact fields. |
 | **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
 | **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
 | **Go-live / ops** | **#27** Production entity-check + controlled first prod export. |
