@@ -1140,7 +1140,7 @@ function NerisReportFormPage({
         ) {
           opts.unshift({
             value: requestedEntityId,
-            label: `${requestedEntityId} - Current export department`,
+            label: "Current export department",
           });
         }
         if (!isCancelled) {
@@ -1195,7 +1195,7 @@ function NerisReportFormPage({
                 : departmentId;
             return {
               value: departmentId,
-              label: `${departmentName} (${departmentId})`,
+              label: departmentName,
             } as NerisValueOption;
           })
           .filter((option): option is NerisValueOption => Boolean(option));
@@ -1206,7 +1206,7 @@ function NerisReportFormPage({
         ) {
           apiOptions.unshift({
             value: requestedEntityId,
-            label: `${requestedEntityId} - Current export department`,
+            label: "Current export department",
           });
         }
 

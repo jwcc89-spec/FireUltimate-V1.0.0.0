@@ -48,7 +48,7 @@ export function readMutualAidNerisAllowlistFromStorage(): NerisValueOption[] | n
         continue;
       }
       const name = String(o.name ?? "").trim() || nerisId;
-      opts.push({ value: nerisId, label: `${name} (${nerisId})` });
+      opts.push({ value: nerisId, label: name });
     }
     return opts.length > 0 ? opts : null;
   } catch {
