@@ -4576,7 +4576,11 @@ function NerisReportFormPage({
               >
                 {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
               </button>
-              <button type="button" className="secondary-button compact-button">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => window.print()}
+              >
                 Print
               </button>
               <button

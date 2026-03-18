@@ -4024,6 +4024,52 @@ body.resource-personnel-modal-open {
   justify-content: flex-end;
 }
 
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+
+  .sidebar,
+  .sidebar-resizer,
+  .topbar,
+  .settings-dropdown,
+  .mobile-backdrop,
+  .module-toggle,
+  .edit-display-wrap,
+  .validation-modal-backdrop,
+  .neris-resource-personnel-modal-backdrop {
+    display: none !important;
+  }
+
+  .shell-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .main-shell {
+    grid-template-rows: 1fr !important;
+  }
+
+  .page-content {
+    overflow: visible !important;
+  }
+
+  .page-header .header-actions {
+    display: none !important;
+  }
+
+  .panel {
+    box-shadow: none !important;
+  }
+
+  .neris-report-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .neris-sidebar {
+    display: none !important;
+  }
+}
+
 .submenu-settings-group {
   border: 1px solid #e2e8f0;
   border-radius: 10px;
