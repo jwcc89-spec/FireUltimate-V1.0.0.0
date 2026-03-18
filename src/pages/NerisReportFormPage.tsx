@@ -4104,6 +4104,11 @@ function NerisReportFormPage({
           field.inputKind === "time" ||
           field.inputKind === "datetime" ||
           field.inputKind === "readonly") ? (
+          (() => {
+            const allowAdminEditReadonly =
+              field.id === "incident_neris_id" && isAdminOrHigher(role);
+            const isReadonlyField = field.inputKind === "readonly" && !allowAdminEditReadonly;
+            return (
           <input
             id={inputId}
             type={
@@ -4114,11 +4119,13 @@ function NerisReportFormPage({
                   : field.inputKind
             }
             step={field.inputKind === "time" ? 1 : undefined}
-            readOnly={field.inputKind === "readonly"}
+            readOnly={isReadonlyField}
             value={value}
             placeholder={field.placeholder}
             onChange={(event) => updateFieldValue(field.id, event.target.value)}
           />
+            );
+          })()
         ) : null}
 
         {isAidGivenQuestionField ? (
