@@ -2350,16 +2350,37 @@ export function isNerisFieldRequired(
   return true;
 }
 
+/** Required by NERIS (always or when requiredIf condition applies). Used for admin UI to show "Required by NERIS" / "Conditionally required by NERIS". */
+export function isFieldRequiredByNeris(field: NerisFieldMetadata): boolean {
+  return Boolean(field.required);
+}
+
+/** True if field has requiredIf (conditionally required by NERIS). */
+export function isFieldConditionallyRequiredByNeris(field: NerisFieldMetadata): boolean {
+  return Boolean(field.requiredIf);
+}
+
+/** Effective required = NERIS required (or requiredIf when condition applies) OR admin-selected required. */
+export function isFieldEffectivelyRequired(
+  field: NerisFieldMetadata,
+  values: NerisFormValues,
+  adminRequiredFieldIds: Set<string>,
+): boolean {
+  return isNerisFieldRequired(field, values) || adminRequiredFieldIds.has(field.id);
+}
+
 export function validateNerisSection(
   sectionId: NerisSectionId,
   values: NerisFormValues,
+  adminRequiredFieldIds?: Set<string>,
 ): NerisValidationResult {
   const sectionFields = getNerisFieldsForSection(sectionId);
   const errors: Record<string, string> = {};
+  const adminSet = adminRequiredFieldIds ?? new Set<string>();
 
   for (const field of sectionFields) {
     const value = (values[field.id] ?? "").trim();
-    const isRequired = isNerisFieldRequired(field, values);
+    const isRequired = isFieldEffectivelyRequired(field, values, adminSet);
     if (isRequired && !value) {
       errors[field.id] = `${field.label} is required.`;
       continue;

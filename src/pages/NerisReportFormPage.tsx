@@ -19,7 +19,7 @@ import {
   createDefaultNerisFormValues,
   getNerisFieldsForSection,
   getNerisValueOptions,
-  isNerisFieldRequired,
+  isFieldEffectivelyRequired,
   validateNerisSection,
   type NerisFieldMetadata,
   type NerisFormValues,
@@ -78,6 +78,8 @@ export interface NerisReportFormPageProps {
     stateOptionValues: Set<string>,
     countryOptionValues: Set<string>,
   ) => ParsedImportedLocationValues;
+  /** Admin-selected NERIS field IDs to treat as required (default [] for new tenants). */
+  nerisRequiredFieldOverrides: string[];
   toResourceSummaryTime: (value: string) => string;
   toResourceDateTimeInputValue: (value: string, fallbackDate: string) => string;
   toResourceDateOnlyInputValue: (value: string, fallbackDate: string) => string;
@@ -345,7 +347,12 @@ function NerisReportFormPage({
   nerisProxyMappedFormFieldIds: NERIS_PROXY_MAPPED_FORM_FIELD_IDS,
   getDefaultNerisExportSettings,
   apparatusFromDepartmentDetails,
+  nerisRequiredFieldOverrides,
 }: NerisReportFormPageProps) {
+  const adminRequiredFieldIds = useMemo(
+    () => new Set(nerisRequiredFieldOverrides),
+    [nerisRequiredFieldOverrides],
+  );
   const navigate = useNavigate();
   const detail =
     getIncidentCallDetail(callNumber) ??
@@ -1008,11 +1015,13 @@ function NerisReportFormPage({
     if (showRequiredOnly) {
       sections = sections.filter((section) => {
         const fields = getNerisFieldsForSection(section.id);
-        return fields.some((field) => isNerisFieldRequired(field, formValues));
+        return fields.some((field) =>
+          isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
+        );
       });
     }
     return sections;
-  }, [primaryIncidentCategory, showRequiredOnly, formValues]);
+  }, [primaryIncidentCategory, showRequiredOnly, formValues, adminRequiredFieldIds]);
   const activeVisibleSectionId =
     visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
     visibleNerisSections[0]?.id ??
@@ -1061,9 +1070,9 @@ function NerisReportFormPage({
   const displayedSectionFieldsFiltered = useMemo(() => {
     if (!showRequiredOnly) return displayedSectionFields;
     return displayedSectionFields.filter((field) =>
-      isNerisFieldRequired(field, formValues),
+      isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
     );
-  }, [showRequiredOnly, displayedSectionFields, formValues]);
+  }, [showRequiredOnly, displayedSectionFields, formValues, adminRequiredFieldIds]);
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
@@ -2373,7 +2382,11 @@ function NerisReportFormPage({
     const mergedErrors: Record<string, string> = {};
     const customIssueLabelsByFieldId: Record<string, string> = {};
     for (const section of NERIS_FORM_SECTIONS) {
-      const validation = validateNerisSection(section.id, formValues);
+      const validation = validateNerisSection(
+        section.id,
+        formValues,
+        adminRequiredFieldIds,
+      );
       Object.assign(mergedErrors, validation.errors);
     }
 
@@ -3963,7 +3976,11 @@ function NerisReportFormPage({
   const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
     const inputId = `neris-field-${field.id}`;
     const value = formValues[field.id] ?? "";
-    const isRequired = isNerisFieldRequired(field, formValues);
+    const isRequired = isFieldEffectivelyRequired(
+      field,
+      formValues,
+      adminRequiredFieldIds,
+    );
     const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
     const error = sectionErrors[field.id];
     const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;

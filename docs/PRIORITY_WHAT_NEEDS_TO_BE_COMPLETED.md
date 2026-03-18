@@ -20,6 +20,7 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 | **Create Incident onset date/time (#4)** | Create Incident modal has **Incident onset date** (YYYY-MM-DD) and **Incident onset time** (24h HH:MM:SS); stored in `receivedAt` and mapped to NERIS **Incident Onset Date & Time**. |
 | **Initial dispatch code (#6)** | Default in `createDefaultNerisFormValues` changed from `AMB.UNRESP-BREATHING` to empty; location: `src/nerisMetadata.ts`. |
 | **Aid department – remove "Current export department" (#8)** | Synthetic option removed from CORE Aid department name(s) dropdown in `NerisReportFormPage.tsx`. |
+| **Admin NERIS required fields (Reports \| NERIS)** | **Done (2026-03).** Admin Functions → Reports \| NERIS: configure which NERIS fields are required. `nerisRequiredFieldOverrides` in DepartmentDetails payload (default `[]` for new tenants). requiredIf fields use option (a): when condition applies, treat as required by NERIS; admin can add "also require always" for requiredIf fields. NERIS form uses effective-required (NERIS required + admin overrides) for "Show Required Fields Only" and for validation. |
 
 ---
 
@@ -66,6 +67,7 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 | 11.3b | **Local-only mutual aid rows in CORE aid dropdown** | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
 | 11.3c | **FIRE requiredness when mutual aid given** | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
 | 11.3d | **NERIS Core + Incident Times — 24h `HH:MM:SS`** | 2026-03-18 | **Done** for those fields (Core onset + Incident Times module). **Open:** app-wide 24h (#4) elsewhere. |
+| 11.4 | **Admin NERIS required fields** | 2026-03 | **Done.** Admin Functions → Reports \| NERIS: checkboxes for admin-selected required fields; NERIS-required fields locked; requiredIf fields show "Conditionally required by NERIS" + optional "also require always." Effective-required used in NERIS form (Show Required Fields Only + validation). |
 
 ---
 

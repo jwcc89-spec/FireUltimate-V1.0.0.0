@@ -103,6 +103,7 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 | 9 | NERIS | Resources Populate Date: dates only for dispatch/en route/on scene/clear; add Returning |
 | 10 | NERIS | Aid Department: do not allow selecting tenant's own department (exclude or grey out) |
 | 11 | Incidents + NERIS | **Delete Incident:** Do not delete NERIS report when status is In Review or Exported (block delete or retain report) |
+| — | Admin NERIS | **Admin NERIS required fields — Done (2026-03).** Admin Functions → Reports \| NERIS: configure required fields; effective-required (NERIS + admin overrides) used in form and validation. |
 
 ---
 

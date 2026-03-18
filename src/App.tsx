@@ -84,6 +84,10 @@ import { HydrantsAdminPage } from "./HydrantsAdminPage";
 import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
 import {
   getNerisValueOptions,
+  getNerisFieldsForSection,
+  isFieldRequiredByNeris,
+  isFieldConditionallyRequiredByNeris,
+  NERIS_FORM_SECTIONS,
   type NerisFormValues,
   type NerisValueOption,
 } from "./nerisMetadata";
@@ -1093,6 +1097,16 @@ function normalizeIncidentsSetupConfig(raw: unknown): IncidentsSetupConfig {
 function readIncidentsSetupConfigFromDraft(): IncidentsSetupConfig {
   const draft = readDepartmentDetailsDraft();
   return normalizeIncidentsSetupConfig(draft.incidentsSetup);
+}
+
+/** Admin-selected NERIS field IDs to treat as required (default [] for new tenants). */
+function readNerisRequiredFieldOverridesFromDraft(): string[] {
+  const draft = readDepartmentDetailsDraft();
+  const raw = draft.nerisRequiredFieldOverrides;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((id) => String(id ?? "").trim())
+    .filter((id) => id.length > 0);
 }
 
 function readApparatusOptionsFromDraft(): NerisValueOption[] {
@@ -5452,6 +5466,7 @@ interface NerisReportFormRouteProps {
   apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
   onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
+  nerisRequiredFieldOverrides: string[];
 }
 
 function NerisReportFormPage(props: NerisReportFormRouteProps) {
@@ -5585,6 +5600,140 @@ type PersonnelSortColumn =
   | "apparatusAssignment"
   | "station"
   | "qualifications";
+
+function NerisRequiredFieldsAdminPage() {
+  const [overrideIds, setOverrideIds] = useState<Set<string>>(new Set());
+  const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "done" | "error">("loading");
+  const [saveStatus, setSaveStatus] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        const data = json?.data ?? {};
+        const raw = data.nerisRequiredFieldOverrides;
+        const list = Array.isArray(raw)
+          ? (raw as string[]).map((id) => String(id ?? "").trim()).filter(Boolean)
+          : [];
+        setOverrideIds(new Set(list));
+        setLoadStatus("done");
+      })
+      .catch(() => setLoadStatus("error"));
+  }, []);
+
+  const toggleOverride = useCallback((fieldId: string) => {
+    setOverrideIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fieldId)) next.delete(fieldId);
+      else next.add(fieldId);
+      return next;
+    });
+  }, []);
+
+  const save = useCallback(() => {
+    setSaveStatus("Saving…");
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        const data = json?.data ?? {};
+        const payload = { ...data, nerisRequiredFieldOverrides: Array.from(overrideIds) };
+        return fetch("/api/department-details", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      })
+      .then((res) => {
+        if (res.ok) {
+          setSaveStatus("Saved.");
+          return fetch("/api/department-details").then((r) => (r.ok ? r.json() : null));
+        }
+        setSaveStatus("Save failed.");
+        return null;
+      })
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        if (json?.data) {
+          window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(json.data));
+        }
+      })
+      .catch(() => setSaveStatus("Save failed."));
+  }, [overrideIds]);
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>NERIS required fields</h1>
+          <p>Choose which NERIS report fields to treat as required (for &quot;Show Required Fields Only&quot; and validation). Fields required by NERIS are fixed.</p>
+        </div>
+        <div>
+          {loadStatus === "loading" && <span>Loading…</span>}
+          {loadStatus === "done" && (
+            <button type="button" className="primary" onClick={save}>
+              Save
+            </button>
+          )}
+          {saveStatus && <span>{saveStatus}</span>}
+        </div>
+      </header>
+      {loadStatus === "error" && <p className="error">Could not load department details.</p>}
+      {loadStatus === "done" && (
+        <div className="panel-grid">
+          {NERIS_FORM_SECTIONS.map((section) => {
+            const fields = getNerisFieldsForSection(section.id);
+            if (fields.length === 0) return null;
+            return (
+              <section key={section.id} className="panel">
+                <h2>{section.label}</h2>
+                <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+                  {fields.map((field) => {
+                    const requiredByNeris = isFieldRequiredByNeris(field);
+                    const conditionallyRequired = isFieldConditionallyRequiredByNeris(field);
+                    const checked = overrideIds.has(field.id);
+                    if (requiredByNeris) {
+                      return (
+                        <li key={field.id} style={{ marginBottom: "0.5rem" }}>
+                          <input type="checkbox" checked disabled aria-label={field.label} />
+                          <label style={{ marginLeft: "0.5rem" }}>Required by NERIS — {field.label}</label>
+                        </li>
+                      );
+                    }
+                    if (conditionallyRequired) {
+                      return (
+                        <li key={field.id} style={{ marginBottom: "0.5rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleOverride(field.id)}
+                            aria-label={`Also require always: ${field.label}`}
+                          />
+                          <label style={{ marginLeft: "0.5rem" }}>
+                            Conditionally required by NERIS — {field.label} — also require always
+                          </label>
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key={field.id} style={{ marginBottom: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOverride(field.id)}
+                          aria-label={field.label}
+                        />
+                        <label style={{ marginLeft: "0.5rem" }}>{field.label}</label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
 
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
@@ -11962,8 +12111,11 @@ function RouteResolver({
           const list = await getNerisExportHistory();
           setNerisExportHistory(list);
         }}
+        nerisRequiredFieldOverrides={readNerisRequiredFieldOverridesFromDraft()}
       />
     );
+  } else if (path === "/admin-functions/reports/neris") {
+    content = <NerisRequiredFieldsAdminPage />;
   } else if (path === "/admin-functions/department-details") {
     content = (
       <DepartmentDetailsPage
