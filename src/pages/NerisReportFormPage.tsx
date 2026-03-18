@@ -843,6 +843,10 @@ function NerisReportFormPage({
   const [resourceTimeDraft, setResourceTimeDraft] = useState<{ key: string; value: string } | null>(
     null,
   );
+  /** While user is typing an Incident Times/Core time, hold raw value so cursor doesn't jump (parse on blur). */
+  const [incidentTimeDraft, setIncidentTimeDraft] = useState<{ key: string; value: string } | null>(
+    null,
+  );
   const activeResourcePersonnelUnit = useMemo(
     () =>
       activeResourcePersonnelUnitId
@@ -4108,6 +4112,104 @@ function NerisReportFormPage({
             const allowAdminEditReadonly =
               field.id === "incident_neris_id" && isAdminOrHigher(role);
             const isReadonlyField = field.inputKind === "readonly" && !allowAdminEditReadonly;
+            const isIncidentTimesField =
+              currentSection.id === "incidentTimes" && field.inputKind === "datetime";
+            const isIncidentOnsetTimeField =
+              currentSection.id === "core" && field.id === "incident_onset_time";
+
+            if (isIncidentTimesField) {
+              const timeDraftKey = `incidentTimes:${field.id}`;
+              const currentDatePart = formatResourceDatePart(value);
+              const currentTimePart =
+                incidentTimeDraft?.key === timeDraftKey
+                  ? incidentTimeDraft.value
+                  : formatResourceTimePart(value);
+
+              return (
+                <span className="neris-resource-datetime-inputs">
+                  <input
+                    id={inputId}
+                    type="date"
+                    value={currentDatePart}
+                    onChange={(e) =>
+                      updateFieldValue(
+                        field.id,
+                        combineResourceDateTimeFromParts(
+                          e.target.value,
+                          formatResourceTimePart(value),
+                        ) || (e.target.value ? `${e.target.value}T00:00:00` : ""),
+                      )
+                    }
+                  />
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="HH:mm:ss (24h)"
+                    value={currentTimePart}
+                    onFocus={() =>
+                      setIncidentTimeDraft({
+                        key: timeDraftKey,
+                        value: formatResourceTimePart(value),
+                      })
+                    }
+                    onChange={(e) =>
+                      setIncidentTimeDraft((prev) =>
+                        prev?.key === timeDraftKey
+                          ? { ...prev, value: e.target.value }
+                          : { key: timeDraftKey, value: e.target.value },
+                      )
+                    }
+                    onBlur={() => {
+                      const raw =
+                        incidentTimeDraft?.key === timeDraftKey
+                          ? incidentTimeDraft.value
+                          : formatResourceTimePart(value);
+                      const normalized = parseTimeInput24h(raw);
+                      updateFieldValue(
+                        field.id,
+                        combineResourceDateTimeFromParts(currentDatePart, normalized) || value,
+                      );
+                      setIncidentTimeDraft(null);
+                    }}
+                  />
+                </span>
+              );
+            }
+
+            if (isIncidentOnsetTimeField) {
+              const timeDraftKey = `core:${field.id}`;
+              const shown =
+                incidentTimeDraft?.key === timeDraftKey ? incidentTimeDraft.value : value;
+              return (
+                <input
+                  id={inputId}
+                  type="text"
+                  inputMode="numeric"
+                  placeholder="HH:mm:ss (24h)"
+                  readOnly={isReadonlyField}
+                  value={shown}
+                  onFocus={() =>
+                    setIncidentTimeDraft({
+                      key: timeDraftKey,
+                      value,
+                    })
+                  }
+                  onChange={(event) =>
+                    setIncidentTimeDraft((prev) =>
+                      prev?.key === timeDraftKey
+                        ? { ...prev, value: event.target.value }
+                        : { key: timeDraftKey, value: event.target.value },
+                    )
+                  }
+                  onBlur={() => {
+                    const raw = incidentTimeDraft?.key === timeDraftKey ? incidentTimeDraft.value : value;
+                    const normalized = parseTimeInput24h(raw);
+                    updateFieldValue(field.id, normalized);
+                    setIncidentTimeDraft(null);
+                  }}
+                />
+              );
+            }
             return (
           <input
             id={inputId}

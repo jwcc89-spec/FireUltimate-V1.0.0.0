@@ -54,6 +54,8 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 | 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | Confirm NERIS rules; adjust client validation. |
 | 10 | **Resources UNIT TYPE** – show Apparatus value, not placeholder | BACKLOG #8 | Pull from Department Details Apparatus. |
 | 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | Fix button behavior; add Returning field(s). |
+| 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-17 | Add a Narrative Builder to help users create detailed narratives by pre-populating structured information based on narrative type. |
+| 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
 
 ---
 
