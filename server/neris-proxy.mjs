@@ -943,6 +943,102 @@ async function fetchAccessibleEntities(config, accessToken) {
   };
 }
 
+const NERIS_ENTITY_DIRECTORY_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
+let cachedNerisEntityDirectory = null;
+
+async function fetchEntityDirectoryPage(config, accessToken, pageNumber, pageSize) {
+  const url = new URL(`${config.baseUrl}/entity`);
+  url.searchParams.set("page_number", String(pageNumber));
+  url.searchParams.set("page_size", String(pageSize));
+  const apiResponse = await fetch(url.toString(), {
+    method: "GET",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+    },
+  });
+  const body = await parseResponseBody(apiResponse);
+  return {
+    ok: apiResponse.ok,
+    status: apiResponse.status,
+    statusText: apiResponse.statusText,
+    url: url.toString(),
+    body,
+  };
+}
+
+async function refreshNerisEntityDirectoryCache(config) {
+  const accessToken = await getAccessToken(config);
+  // NERIS GET /entity rejects page_size > 100 (422 validation).
+  const pageSize = 100;
+  const firstPage = await fetchEntityDirectoryPage(config, accessToken, 1, pageSize);
+  if (!firstPage.ok) {
+    return {
+      ok: false,
+      status: firstPage.status,
+      statusText: firstPage.statusText,
+      body: firstPage.body,
+    };
+  }
+
+  const firstBody = firstPage.body && typeof firstPage.body === "object" ? firstPage.body : {};
+  const pageCount = Number.parseInt(String(firstBody.page_count ?? "1"), 10);
+  const totalCount = Number.parseInt(String(firstBody.total_count ?? "0"), 10);
+  const entities = Array.isArray(firstBody.entities) ? firstBody.entities : [];
+
+  const pages = [];
+  for (let pageNumber = 2; pageNumber <= Math.max(pageCount, 1); pageNumber += 1) {
+    pages.push(fetchEntityDirectoryPage(config, accessToken, pageNumber, pageSize));
+  }
+  const remainingPages = pages.length ? await Promise.all(pages) : [];
+  for (const page of remainingPages) {
+    if (!page.ok) {
+      // Keep existing cache if present; report error to caller.
+      return {
+        ok: false,
+        status: page.status,
+        statusText: page.statusText,
+        body: page.body,
+      };
+    }
+    const body = page.body && typeof page.body === "object" ? page.body : {};
+    const pageEntities = Array.isArray(body.entities) ? body.entities : [];
+    entities.push(...pageEntities);
+  }
+
+  const normalized = entities
+    .map((entry) => {
+      if (!entry || typeof entry !== "object") {
+        return null;
+      }
+      const candidate = entry;
+      const nerisId = trimValue(candidate.neris_id);
+      const name = trimValue(candidate.name);
+      if (!nerisId || !name) {
+        return null;
+      }
+      return {
+        nerisId,
+        name,
+        state: trimValue(candidate.state),
+        city: trimValue(candidate.city),
+        addressLine1: trimValue(candidate.address_line_1),
+        zipCode: trimValue(candidate.zip_code),
+        lastModified: trimValue(candidate.last_modified),
+      };
+    })
+    .filter(Boolean);
+
+  cachedNerisEntityDirectory = {
+    fetchedAtIso: new Date().toISOString(),
+    baseUrl: config.baseUrl,
+    totalCount,
+    pageCount: Math.max(pageCount, 1),
+    entities: normalized,
+  };
+
+  return { ok: true, status: 200, statusText: "OK", body: cachedNerisEntityDirectory };
+}
+
 async function fetchEntityByNerisIdQuery(config, accessToken, nerisId) {
   const url = `${config.baseUrl}/entity?neris_id=${encodeURIComponent(nerisId)}`;
   const apiResponse = await fetch(url, {
@@ -3227,6 +3323,65 @@ app.get("/api/neris/debug/entities", async (request, response) => {
     response.status(500).json({
       ok: false,
       message: error instanceof Error ? error.message : "Unexpected proxy debug error.",
+    });
+  }
+});
+
+app.get("/api/neris/entities", async (request, response) => {
+  const config = getProxyConfig();
+  try {
+    const now = Date.now();
+    const cachedAtMs = cachedNerisEntityDirectory?.fetchedAtIso
+      ? Date.parse(cachedNerisEntityDirectory.fetchedAtIso)
+      : 0;
+    const isFresh = cachedAtMs && now - cachedAtMs < NERIS_ENTITY_DIRECTORY_CACHE_TTL_MS;
+
+    if (!cachedNerisEntityDirectory) {
+      const refreshed = await refreshNerisEntityDirectoryCache(config);
+      response.status(refreshed.ok ? 200 : refreshed.status).json({
+        ok: refreshed.ok,
+        status: refreshed.status,
+        statusText: refreshed.statusText,
+        cached: Boolean(cachedNerisEntityDirectory),
+        refreshed: refreshed.ok,
+        neris: refreshed.ok ? cachedNerisEntityDirectory : refreshed.body,
+      });
+      return;
+    }
+
+    response.status(200).json({
+      ok: true,
+      status: 200,
+      statusText: "OK",
+      cached: true,
+      cacheFresh: Boolean(isFresh),
+      cacheTtlMs: NERIS_ENTITY_DIRECTORY_CACHE_TTL_MS,
+      neris: cachedNerisEntityDirectory,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected NERIS entities error.",
+    });
+  }
+});
+
+app.post("/api/admin/neris/entities/refresh", async (request, response) => {
+  const config = getProxyConfig();
+  try {
+    const refreshed = await refreshNerisEntityDirectoryCache(config);
+    response.status(refreshed.ok ? 200 : refreshed.status).json({
+      ok: refreshed.ok,
+      status: refreshed.status,
+      statusText: refreshed.statusText,
+      neris: refreshed.ok ? cachedNerisEntityDirectory : refreshed.body,
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected NERIS entities refresh error.",
     });
   }
 });

@@ -56,6 +56,7 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 | 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | Fix button behavior; add Returning field(s). |
 | 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-17 | Add a Narrative Builder to help users create detailed narratives by pre-populating structured information based on narrative type. |
 | 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
+| 11.3 | **Mutual aid directory + tenant allowlist** | 2026-03-18 | **Done:** `GET /api/neris/entities` + Admin Department Details → Mutual Aid (DD-M, state-grouped, local-only adds). NERIS form restricts FD aid to allowlist when configured; else full directory. Refresh from NERIS uses platform admin key in modal. |
 
 ---
 

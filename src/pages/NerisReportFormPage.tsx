@@ -26,6 +26,7 @@ import {
   type NerisSectionId,
   type NerisValueOption,
 } from "../nerisMetadata";
+import { readMutualAidNerisAllowlistFromStorage } from "../mutualAidAllowlist";
 import {
   NerisFlatMultiOptionSelect,
   NerisFlatSingleOptionSelect,
@@ -1128,8 +1129,28 @@ function NerisReportFormPage({
     }
 
     const loadAidDepartmentOptions = async () => {
+      const allowlist = readMutualAidNerisAllowlistFromStorage();
+      const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
+
+      if (allowlist && allowlist.length > 0) {
+        const opts = [...allowlist];
+        if (
+          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
+          !opts.some((option) => option.value === requestedEntityId)
+        ) {
+          opts.unshift({
+            value: requestedEntityId,
+            label: `${requestedEntityId} - Current export department`,
+          });
+        }
+        if (!isCancelled) {
+          setAidDepartmentOptions(opts);
+        }
+        return;
+      }
+
       try {
-        const response = await fetch("/api/neris/debug/entities");
+        const response = await fetch("/api/neris/entities");
         const responseText = await response.text();
         if (!response.ok) {
           if (!isCancelled) {
@@ -1152,7 +1173,7 @@ function NerisReportFormPage({
           parsed?.neris && typeof parsed.neris === "object"
             ? (parsed.neris as Record<string, unknown>)
             : null;
-        const entities = Array.isArray(neris?.entities) ? (neris?.entities as unknown[]) : [];
+        const entities = Array.isArray(neris?.entities) ? (neris.entities as unknown[]) : [];
         const apiOptions = entities
           .map((entry) => {
             if (!entry || typeof entry !== "object") {
@@ -1160,7 +1181,11 @@ function NerisReportFormPage({
             }
             const candidate = entry as Record<string, unknown>;
             const departmentId =
-              typeof candidate.neris_id === "string" ? candidate.neris_id.trim() : "";
+              typeof candidate.nerisId === "string"
+                ? candidate.nerisId.trim()
+                : typeof candidate.neris_id === "string"
+                  ? candidate.neris_id.trim()
+                  : "";
             if (!NERIS_AID_DEPARTMENT_ID_PATTERN.test(departmentId)) {
               return null;
             }
@@ -1170,12 +1195,11 @@ function NerisReportFormPage({
                 : departmentId;
             return {
               value: departmentId,
-              label: `${departmentId} - ${departmentName}`,
+              label: `${departmentName} (${departmentId})`,
             } as NerisValueOption;
           })
           .filter((option): option is NerisValueOption => Boolean(option));
 
-        const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
         if (
           NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
           !apiOptions.some((option) => option.value === requestedEntityId)
@@ -1192,7 +1216,7 @@ function NerisReportFormPage({
           ).values(),
         );
         if (!isCancelled) {
-          setAidDepartmentOptions(dedupedOptions);
+          setAidDepartmentOptions(dedupedOptions.length > 0 ? dedupedOptions : fallbackOptions);
         }
       } catch {
         if (!isCancelled) {
@@ -1474,6 +1498,22 @@ function NerisReportFormPage({
       setReportStatus("Draft");
     }
   };
+
+  /** Tenant allowlist: clear aid department if no longer permitted (does not change report lock). */
+  useEffect(() => {
+    const allowlist = readMutualAidNerisAllowlistFromStorage();
+    if (!allowlist?.length) {
+      return;
+    }
+    const allowed = new Set(allowlist.map((o) => o.value));
+    const v = (formValues.incident_aid_department_name ?? "").trim();
+    if (v && !allowed.has(v)) {
+      setFormValues((previous) => ({
+        ...previous,
+        incident_aid_department_name: "",
+      }));
+    }
+  }, [callNumber, formValues.incident_aid_department_name]);
 
   const clearResourceUnitValidationErrors = (unitEntryId: string) => {
     const keyPrefix = `resource_unit_validation_${unitEntryId}_`;
