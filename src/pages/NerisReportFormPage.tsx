@@ -53,6 +53,7 @@ export interface NerisReportFormPageProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
+  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
   writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void;
@@ -300,6 +301,7 @@ function NerisReportFormPage({
   username,
   incidentCalls,
   onUpdateIncidentCall,
+  onDeleteIncidentCall,
   nerisExportSettings,
   readNerisDraft,
   writeNerisDraft,
@@ -473,6 +475,7 @@ function NerisReportFormPage({
   const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
     null,
   );
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -3670,6 +3673,19 @@ function NerisReportFormPage({
     setValidationModal(null);
   };
 
+  const handleDeleteConfirmClose = () => {
+    setDeleteConfirmOpen(false);
+  };
+
+  const handleDeleteIncident = async () => {
+    try {
+      await onDeleteIncidentCall(callNumber, "Deleted from NERIS report form.");
+    } finally {
+      setDeleteConfirmOpen(false);
+      navigate("/reporting/neris");
+    }
+  };
+
   const handleValidationModalReturn = () => {
     setValidationModal(null);
     navigate("/reporting/neris");
@@ -4561,10 +4577,15 @@ function NerisReportFormPage({
                 {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
               </button>
               <button type="button" className="secondary-button compact-button">
-                CAD notes
-              </button>
-              <button type="button" className="secondary-button compact-button">
                 Print
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={isExporting || isFetchingIncidentTest}
+              >
+                Delete
               </button>
             </>
           ) : null}
@@ -4658,6 +4679,43 @@ function NerisReportFormPage({
                 </div>
               </>
             ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {deleteConfirmOpen ? (
+        <div
+          className="validation-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              handleDeleteConfirmClose();
+            }
+          }}
+        >
+          <div className="validation-modal panel">
+            <h2>Delete incident?</h2>
+            <p>
+              This will remove the incident from Fire Ultimate for this tenant (including the NERIS
+              workflow entry). This cannot be undone.
+            </p>
+            <div className="validation-modal-actions">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={handleDeleteConfirmClose}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={handleDeleteIncident}
+              >
+                Confirm Delete
+              </button>
+            </div>
           </div>
         </div>
       ) : null}

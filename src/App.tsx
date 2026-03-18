@@ -5269,6 +5269,7 @@ interface NerisReportFormRouteProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
+  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
@@ -11556,6 +11557,9 @@ function RouteResolver({
         username={username}
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
+        onDeleteIncidentCall={(targetCallNumber: string, reason?: string) =>
+          onSetIncidentDeleted(targetCallNumber, true, reason ?? "Deleted from NERIS report form.")
+        }
         nerisExportSettings={nerisExportSettings}
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
         exportHistory={nerisExportHistory}
