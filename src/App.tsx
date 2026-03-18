@@ -2659,14 +2659,13 @@ function getNerisReportStatus(callNumber: string): string {
   return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
 }
 
-/** Exports list: use server export record so Browser B matches Browser A after a successful export. */
+/** Exports list: successful NERIS submit ⇒ show Exported (matches NERIS queue), not pre-submit workflow e.g. In Review. */
 function getExportsListReportStatus(
   callNumber: string,
   latestExport: NerisExportRecord | undefined,
 ): string {
   if (latestExport?.attemptStatus === "success") {
-    const atExport = latestExport.reportStatusAtExport?.trim();
-    return atExport || "Exported";
+    return "Exported";
   }
   return getNerisReportStatus(callNumber);
 }
@@ -5269,7 +5268,11 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
                 </div>
                 <div>
                   <dt>Status at Export</dt>
-                  <dd>{latestExport.reportStatusAtExport || "--"}</dd>
+                  <dd>
+                    {latestExport.attemptStatus === "success"
+                      ? "Exported"
+                      : latestExport.reportStatusAtExport || "--"}
+                  </dd>
                 </div>
               </dl>
 

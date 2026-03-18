@@ -120,7 +120,7 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 ### Expanded: NERIS cross-browser (#26) — resolved + follow-up
 
 - **Was:** Export history / drafts only in localStorage; second browser saw empty history and Draft on exports list.
-- **Now:** Server-backed export history and drafts; migrations applied. **View Exports** table: **Report Status** column uses **`getExportsListReportStatus`** — if latest export for that call is **success**, show **Exported** / `reportStatusAtExport` (not local draft), so Browser B matches Browser A.
+- **Now:** Server-backed export history and drafts; migrations applied. **View Exports** **Report Status:** if latest export is **success**, show **Exported** (matches queue; not pre-submit “In Review”). **`getExportsListReportStatus`** in `App.tsx`; successful append stores **Exported** in `NerisReportFormPage`.
 - **Details:** `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
 
 ---

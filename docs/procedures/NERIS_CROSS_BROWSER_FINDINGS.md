@@ -13,7 +13,7 @@
 - **Incident list:** Loads correctly in the second browser. The list comes from `GET /api/incidents` after login.
 - **Export history:** Server-backed; second browser sees the same export rows after login + fetch.
 - **NERIS drafts:** Server-backed; second browser loads the same draft for a call number.
-- **Reporting → NERIS → Exports — “Report Status” column (2026-03-20):** Previously Browser B could show **Draft** while Browser A showed **Exported** because the column used **local** `getNerisReportStatus(callNumber)` only. **Fix:** `getExportsListReportStatus(callNumber, latestExport)` in `src/App.tsx` — when the **latest server export** for that call has `attemptStatus === "success"`, the column shows **Exported** / `reportStatusAtExport`; otherwise it falls back to local draft status. Verify: export in A → refresh Exports in B → Report Status matches.
+- **Reporting → NERIS → Exports — “Report Status” column:** Uses server export row. When `attemptStatus === "success"`, the column shows **Exported** (same as NERIS queue). *Reason:* history used to store `reportStatusAtExport` **before** the client set status to Exported, so validated reports showed **In Review** on the list even after a successful submit — fixed by treating success as **Exported** and recording **Exported** on append (`NerisReportFormPage`).
 
 ---
 
@@ -153,7 +153,7 @@ Implementation will need: report status/lock state stored (e.g. in draft or a se
 
 ## View Exports list — Report Status vs server export (2026-03-20)
 
-- **NerisExportsPage** table column **Report Status** now prefers **server export history** per call: if there is a successful export row for that `callNumber`, display matches export reality across browsers. Implementation: `getExportsListReportStatus` in `App.tsx`.
+- **NerisExportsPage** **Report Status:** successful export ⇒ **Exported** (`getExportsListReportStatus` in `App.tsx`). New export records store `reportStatusAtExport: "Exported"` on success (`NerisReportFormPage`).
 
 ## Phase 3 implemented (validation and export locking)
 

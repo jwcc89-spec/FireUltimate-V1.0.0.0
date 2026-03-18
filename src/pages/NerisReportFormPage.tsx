@@ -3614,7 +3614,9 @@ function NerisReportFormPage({
     try {
       const requestConfig = buildExportRequestConfig();
       const exportResult = await executeExport(requestConfig);
-      appendExportHistoryRecord(exportResult, "", reportStatus);
+      const statusForHistory =
+        exportResult.attemptStatus === "success" ? "Exported" : reportStatus;
+      appendExportHistoryRecord(exportResult, "", statusForHistory);
       const successMessage =
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
