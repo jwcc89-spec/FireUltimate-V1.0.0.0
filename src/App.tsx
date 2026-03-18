@@ -77,6 +77,7 @@ import {
   type Tone,
   type UserRole,
 } from "./appData";
+import { isAdminOrHigher, isSuperadmin } from "./roleHierarchy";
 import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
 import { HydrantsAdminPage } from "./HydrantsAdminPage";
 import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
@@ -1943,9 +1944,13 @@ function readSession(): SessionState {
       typeof parsed.isAuthenticated === "boolean" &&
       typeof parsed.username === "string" &&
       typeof parsed.unit === "string" &&
-      (parsed.role === "admin" || parsed.role === "user" || parsed.role === "superadmin")
+      typeof parsed.role === "string" &&
+      parsed.role.trim().length > 0
     ) {
-      return parsed;
+      return {
+        ...parsed,
+        role: parsed.role as UserRole,
+      };
     }
   } catch {
     return EMPTY_SESSION;
@@ -2971,8 +2976,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               location.pathname.startsWith(`${menu.path}/`);
             const visibleSubmenus = menu.submenus.filter(
               (submenu) =>
-                session.role === "admin" ||
-                session.role === "superadmin" ||
+                isAdminOrHigher(session.role) ||
                 !submenu.adminOnly,
             );
             const hasSubmenus = visibleSubmenus.length > 0;
@@ -3020,7 +3024,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                   <div className={`submenu-links ${isExpanded ? "open" : ""}`}>
                     {visibleSubmenus.map((submenu) => {
                       const isBeta = !submenu.isBuilt;
-                      const canClickBeta = session.role === "superadmin";
+                      const canClickBeta = isSuperadmin(session.role);
                       if (isBeta && !canClickBeta) {
                         return (
                           <span
@@ -3104,9 +3108,9 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             </button>
 
             <span className={`role-badge role-${session.role}`}>
-              {session.role === "superadmin"
+              {isSuperadmin(session.role)
                 ? "Super Admin"
-                : session.role === "admin"
+                : isAdminOrHigher(session.role)
                   ? "Admin"
                   : "User"}
             </span>
@@ -3185,7 +3189,7 @@ function MenuDisplayCards({
     () =>
       menu.submenus.filter(
         (submenu) =>
-          (role === "admin" || role === "superadmin" || !submenu.adminOnly) &&
+          (isAdminOrHigher(role) || !submenu.adminOnly) &&
           submenuVisibility[submenu.path] !== false,
       ),
     [menu, role, submenuVisibility],
@@ -3311,7 +3315,7 @@ function MenuDisplayCards({
         <section className="submenu-card-grid">
           {cards.map((card) => {
             const isBeta = !card.isBuilt;
-            const canClickBeta = role === "superadmin";
+            const canClickBeta = isSuperadmin(role);
             if (isBeta && !canClickBeta) {
               return (
                 <div
@@ -3400,7 +3404,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
           <div className="panel-header">
             <h2>Priority Shortcuts</h2>
             <span className="panel-caption">
-              {role === "admin" || role === "superadmin"
+              {isAdminOrHigher(role)
                 ? "Admin-level links included"
                 : "Admin-only links will route to access denied"}
             </span>
@@ -11891,7 +11895,7 @@ function App() {
           path="/auth"
           element={
             session.isAuthenticated ? (
-              <Navigate to={getDefaultPathForRole(session.role)} replace />
+              <Navigate to={getDefaultPathForRole()} replace />
             ) : (
               <AuthPage onLogin={handleLogin} />
             )

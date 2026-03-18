@@ -1,6 +1,4 @@
-import type { UserRole } from "./appData";
-
-export type RoleKey = UserRole | (string & {});
+export type RoleKey = string;
 
 const DEFAULT_ROLE_LEVELS: Record<string, number> = {
   user: 10,
