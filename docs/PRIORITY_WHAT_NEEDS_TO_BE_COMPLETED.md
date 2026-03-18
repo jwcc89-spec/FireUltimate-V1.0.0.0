@@ -6,14 +6,24 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 
 ---
 
+## Recently completed (tenant verification + code, 2026-03)
+
+| Item | Notes |
+|------|--------|
+| **CAD email receiving** | Ingest path live; emails stored; **parsing / auto-create incident** is next (`#29`). |
+| **NERIS cross-browser (export history + drafts)** | Server-backed history and drafts; migration run. **View Exports:** “Report Status” on **Reporting \| NERIS \| Exports** now uses the **latest successful server export** for that call (not local draft only), so Browser B matches Browser A after export (`src/App.tsx` — `getExportsListReportStatus`). |
+| **Incident Detail cross-browser** | Edits in Browser A visible in Browser B via API — go-live Item #1 treated **done** for current workflow. |
+| **Merge / deploy** | Branch merged/deployed per tenant (staging/prod as applicable). |
+
+---
+
 ## Priority order (what to do first)
 
 | Priority | Item | Guide / reference |
 |----------|------|-------------------|
-| **1** | **CAD email ingest** | `docs/procedures/EMAIL_AND_CAD_SETUP.md` — get email to CAD Dispatch, run a sample import. |
-| **2** | **NERIS not loading in another browser** | `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` — export history and report data only in localStorage; persist on server. |
-| 3 | Incident Detail editable inputs (go-live blocker) | See “Critical / mandatory” below. |
-| 4+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
+| **1** | **CAD email parsing + auto-create incident** | `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md` (see also `EMAIL_AND_CAD_SETUP.md`). After this: point Worker `CAD_INGEST_API_URL` to production. |
+| **2** | **NERIS / go-live backlog** | BACKLOG items #2–#11, #8 aid self-select, etc. |
+| 3+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
 
 ---
 
@@ -21,22 +31,11 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 1 | **Incident Detail page: editable incident input boxes** | GO_LIVE_CHECKPOINT §2 | See expanded description below. |
+| 1 | **Incident Detail page: editable + API save** | GO_LIVE_CHECKPOINT §2 | **Done (2026-03, tenant testing).** Edits persist via API; verified across browsers. Re-open if a field regresses. |
 
-### Expanded: What Item 1 (Incident Detail editable inputs) means
+### Expanded: Item 1 (closed out)
 
-- **Which page:** The **Incident Detail** page is the screen you get when you open **Incidents → Mapping → Incidents**, then **click a row** in the incident list. The URL is like `/incidents-mapping/incidents/{callNumber}`. It shows one incident’s details (address, type, priority, reported by, callback number, dispatch notes, assigned units, etc.).
-
-- **What’s wrong today:** The checkpoint doc says this page is “mostly display-only and needs editable inputs.” So either:
-  - Not all of the agreed incident fields are editable (some are still read-only or missing), and/or
-  - Saving doesn’t persist to the **API** (e.g. PATCH `/api/incidents/...`), so changes stay only in the browser and don’t sync across devices or survive a different browser.
-
-- **What “done” looks like:**  
-  End users can **edit** the agreed incident fields on this page (e.g. incident number, dispatch number, type, priority, address, reported by, callback number, dispatch notes, assigned units, state) in **input boxes** (or equivalent controls). When they click **Save**, the app calls the **server** (e.g. PATCH to the incident API) so the change is stored in the database and is visible everywhere (other browsers, NERIS queue, etc.). No need for a separate “Edit Incident” flow; the Incident Detail page itself is the place to view and edit that incident.
-
-- **Why it was called a blocker:** So the department has a single, consistent place to correct or update an incident after creation, with changes persisted to the server. Until that’s in place, edits on Incident Detail don’t fully “stick” or don’t sync.
-
-You can still **prioritize CAD email ingest first** (see below); Item 1 remains the main go-live **mandatory** item when you’re ready to close it out.
+Originally: Incident Detail needed editable fields and **PATCH /api/incidents** so changes sync across browsers. **Tenant testing (2026-03):** satisfied — Browser B sees edits from Browser A. If new gaps appear, track under BACKLOG #2–#3.
 
 ---
 
@@ -112,30 +111,29 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 25 | **CAD email ingest** | GO_LIVE §6, EMAIL_AND_CAD_SETUP | Set up inbox, give address to CAD Dispatch, parsing, auto-fill. **User priority:** Do this first to get the email to CAD Dispatch and run a sample import. |
-| 26 | **NERIS not loading between separate browsers** | User report | Export history and NERIS report data do not appear when logging in from another browser. **Top priority after CAD email.** See expanded section and `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`. |
+| 25 | **CAD email ingest (receive + store)** | GO_LIVE §6, EMAIL_AND_CAD_SETUP | **Receiving path done.** **Open:** parsing / auto-create (`#29`); then Worker → production API URL. |
+| 26 | **NERIS cross-browser** | User report | **Phase 1–3 done** (server export history, drafts, lock). **2026-03-20:** View Exports list **Report Status** uses server export success row so second browser shows Exported, not Draft. See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** NERIS form drafts edge cases only if reported. |
 | 27 | **Production endpoint checks and first controlled production export** | GO_LIVE §3.6–3.7 | Re-run tenant/context, neris/health, entity-check on prod; perform first prod export when ready. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
 | 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings (submenu) → Parsing Data; per-tenant parsing rules (A→C→B); auto-create draft incident; apparatus from Dept Details; dedupe (multiple emails → one incident); optional call sequencing. **After NERIS Phase 2/3.** |
 
-### Expanded: NERIS cross-browser issue (#26)
+### Expanded: NERIS cross-browser (#26) — resolved + follow-up
 
-- **Symptom:** In cifpdil.fireultimate.app, exports succeed in one browser. In another browser (same user, same tenant), the NERIS report does not show the same information, and no export history is shown.
-- **Root cause:** NERIS export history and NERIS form drafts are stored only in **localStorage** (keys `fire-ultimate-neris-export-history` and `fire-ultimate-neris-drafts`). Each browser has its own localStorage, so a different browser has no access to that data.
-- **Fix direction:** Persist NERIS export history (and optionally NERIS drafts) on the server, keyed by tenant (and user if desired). On load, fetch from API and use that as the source of truth (or merge with localStorage during migration). See **`docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`** for code locations and implementation notes.
+- **Was:** Export history / drafts only in localStorage; second browser saw empty history and Draft on exports list.
+- **Now:** Server-backed export history and drafts; migrations applied. **View Exports** table: **Report Status** column uses **`getExportsListReportStatus`** — if latest export for that call is **success**, show **Exported** / `reportStatusAtExport` (not local draft), so Browser B matches Browser A.
+- **Details:** `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
 
 ---
 
 ## Suggested order to prioritize
 
-1. **CAD email ingest (#25)** — get the email to CAD Dispatch and run a sample import. Guide: **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**.
-2. **NERIS cross-browser (#26)** — fix NERIS report and export history not loading in a different browser. Details: **`docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`**.
-3. **Unblock go-live:** Incident Detail editable inputs (#1) — see expanded description above.
-4. **High-impact UX:** Reported By and dispatch notes/callback save (#2, #3), Edit Reported By layout (#5), Aid Department no self-select (#8).
-5. **App-wide consistency:** Military time (#4).
-6. **NERIS correctness:** Initial dispatch code (#6); Aid self-select UI (#8); UNIT TYPE (#10); Populate Date + Returning (#11). *(Aid directory + FIRE aid-given rule largely done — 11.3 / 11.3c.)*
-7. **Roles and security:** Validate for all / Export admin-only (#12), auth rate-limiting (#16).
-8. **Later:** Super admin (#13), admin show/hide mode (#14), remaining P2/P3 from later-changes-backlog (#15–#24), per-tenant NERIS (#28).
+1. **CAD parsing + auto-create incident (#29)** — then Worker **`CAD_INGEST_API_URL`** → production.
+2. **High-impact UX:** Reported By and dispatch notes/callback save (#2, #3), Edit Reported By layout (#5), Aid Department no self-select (#8).
+3. **App-wide consistency:** Military time (#4).
+4. **NERIS correctness:** Initial dispatch code (#6); Aid self-select UI (#8); UNIT TYPE (#10); Populate Date + Returning (#11).
+5. **Production checks (#27)** — entity-check, controlled export.
+6. **Roles and security:** Validate for all / Export admin-only (#12), auth rate-limiting (#16).
+7. **Later:** Super admin (#13), admin show/hide mode (#14), backlog #15–#24, per-tenant NERIS (#28).
 
 ---
 
@@ -149,11 +147,11 @@ You can still **prioritize CAD email ingest first** (see below); Item 1 remains 
 
 ---
 
-## Session 2026-03-18 — completed vs still open
+## Session 2026-03-20 — doc refresh (after tenant testing)
 
-**Completed (this session / branch work):** 11.3 mutual aid pipeline; 11.3a–d (name-only CORE labels, local-only in CORE, FIRE exception for aid given, 24h times on NERIS Core + Incident Times); commit/push on `submenu/neris-golive-cifpd`; NERIS entity `page_size` max 100 fix.
+**Completed / verified:** CAD emails receiving; NERIS export history + drafts cross-browser; Incident Detail API cross-browser; View Exports **Report Status** aligned with server export (`getExportsListReportStatus` in `App.tsx`).
 
-**Still open (from earlier chat + master list):** CAD email ingest (#25); NERIS cross-browser persist (#26); Incident Detail editable + server save (#1); Reported By / dispatch notes / callback (#2–3); app-wide 24h (#4); Edit Reported By layout (#5); initial dispatch code (#6); **Aid: no self-select (#8)**; UNIT TYPE / Populate Date+Returning (#10–11); Narrative Builder (#11.1); occupant contact fields (#11.2); Validate/Export roles (#12–14); optional export allowlist server check; tenant refresh without platform admin key; backlog #15–#29 per tables above.
+**Next:** CAD parsing (#29) → Worker prod URL. **Still open:** BACKLOG #2–#11 (except items marked Done in tables), #8 aid self-select, #12–#14 roles, platform backlog #15–#24, #27 prod checks.
 
 ---
 

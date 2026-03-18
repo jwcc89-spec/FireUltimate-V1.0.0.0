@@ -3,10 +3,11 @@
 ## Current branch
 - `submenu/neris-golive-cifpd`
 
-## Current focus
-- **CAD email ingest:** Verified (test to cifpdil@cad.fireultimate.app works; DB + Render). Next: switch Worker to production (B11 in EMAIL_AND_CAD_SETUP.md) before giving address to dispatch; waiting on sample CAD email for parsing/auto-fill.
-- **NERIS cross-browser (Phase 1):** Implemented this session (2026-03-14). Export history is now stored on the server; app fetches on login and POSTs after each export. **User must run the migration once** — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Phase 2 (drafts on server) is optional and not done.
-- NERIS go-live for tenant cifpdil remains: staging verification, then production promotion when ready.
+## Current focus (2026-03-20)
+- **CAD:** **Receiving** path verified (emails stored). **Next:** parsing / auto-create incident (`#29`, `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`). **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`).
+- **NERIS cross-browser:** Phases 1–3 done (export history, server drafts, lock). **View Exports** “Report Status” column uses server export success (`getExportsListReportStatus` in `App.tsx`) so Browser B shows **Exported** when Browser A exported. See `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
+- **Incident Detail:** Go-live item #1 verified — edits persist via API across browsers.
+- NERIS go-live for tenant cifpdil: continue staging/prod promotion as planned.
 
 ## Latest known status
 - Implemented incident queue fix for live tenants:
@@ -51,8 +52,8 @@
   - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
 
 ## Current blocker / status
-- No code blocker. Latest work (2026-03-16): CAD email UI — base64 decode + **extract plain-text dispatch content** from MIME (Dispatch Parsing Settings shows usable CAD text first); CREATE_SUPERADMIN_PRODUCTION.md + create-superadmin.ts; STAGING_VS_PRODUCTION_DATA.md (incidents/export + CAD emails); GIT_WORKTREE Option A/B; removed empty CAD_EMAIL_INGEST_SETUP_GUIDE.md. All committed and pushed.
-- User chose Option B: Worker stays on staging until parsing is dialed in; then switch CAD_INGEST_API_URL to production.
+- No code blocker. **2026-03-20:** Docs + `App.tsx` View Exports Report Status fix committed on this branch; verify in two browsers after deploy.
+- User chose Option B: Worker stays on staging until parsing is dialed in; then switch `CAD_INGEST_API_URL` to production.
 - User must run migration `20260314000000_add_neris_export_history` once if not yet run (see NERIS_CROSS_BROWSER_FINDINGS.md).
 - NERIS support confirmed production client/entity enrollment active. Deployment gate: production behind branch until PR to `main`; staging validation still required before promotion.
 
