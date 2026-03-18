@@ -161,7 +161,7 @@ interface RouteResolverProps {
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
   nerisExportSettings: NerisExportSettings;
   onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
-  apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
+  apparatusFromDepartmentDetails: { unit: string; unitId: string; commonName: string; unitType: string }[];
   nerisExportHistory: NerisExportRecord[];
   setNerisExportHistory: React.Dispatch<React.SetStateAction<NerisExportRecord[]>>;
 }
@@ -1122,17 +1122,25 @@ function readApparatusOptionsFromDraft(): NerisValueOption[] {
     .filter((option) => option.value.length > 0);
 }
 
-/** Apparatus from Department Details for NERIS Resources (unit + unitType for auto-fill). */
-function readApparatusFromDepartmentDetails(): { unit: string; unitType: string }[] {
+/** Apparatus from Department Details for NERIS Resources (unit + unitType for auto-fill). Keys by both unitId and commonName so Unit Type resolves whether dropdown shows unitId or commonName. */
+function readApparatusFromDepartmentDetails(): {
+  unit: string;
+  unitId: string;
+  commonName: string;
+  unitType: string;
+}[] {
   const draft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
   const records = Array.isArray(draft.masterApparatusRecords)
     ? (draft.masterApparatusRecords as DepartmentApparatusRecord[])
     : [];
   return records
-    .map((record) => ({
-      unit: String(record.commonName || record.unitId || "").trim(),
-      unitType: String(record.unitType ?? "").trim(),
-    }))
+    .map((record) => {
+      const unitId = String(record.unitId ?? "").trim();
+      const commonName = String(record.commonName ?? "").trim();
+      const unit = commonName || unitId;
+      const unitType = String(record.unitType ?? "").trim();
+      return { unit, unitId, commonName, unitType };
+    })
     .filter((entry) => entry.unit.length > 0);
 }
 
@@ -1834,6 +1842,7 @@ function resourceUnitValidationErrorKey(
     | "enrouteTime"
     | "stagedTime"
     | "onSceneTime"
+    | "returningTime"
     | "canceledTime"
     | "clearTime",
 ): string {
@@ -2721,7 +2730,7 @@ function getNerisQueueFieldValue(
 
 function mapUserTypeToRole(userType: string): UserRole {
   const normalized = userType.trim().toLowerCase();
-  if (normalized === "super admin") {
+  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
     return "superadmin";
   }
   return normalized.includes("admin") ? "admin" : "user";
@@ -5463,7 +5472,7 @@ interface NerisReportFormRouteProps {
   ) => void;
   onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
-  apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
+  apparatusFromDepartmentDetails: { unit: string; unitId: string; commonName: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
   onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
   nerisRequiredFieldOverrides: string[];
@@ -12427,6 +12436,22 @@ function App() {
   ) => {
     const actor = session.username.trim() || "unknown";
     if (deleted) {
+      try {
+        const draft = await getNerisDraft(callNumber);
+        const status = draft?.reportStatus?.trim();
+        if (status === "In Review" || status === "Exported") {
+          alert(
+            "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance.",
+          );
+          return;
+        }
+      } catch {
+        // If we cannot fetch the draft, block delete to be safe (fail closed).
+        alert(
+          "Could not verify NERIS report status. Incident was not deleted. Try again or delete from the NERIS report form.",
+        );
+        return;
+      }
       try {
         const updated = await deleteIncident(callNumber, {
           deletedBy: actor,
