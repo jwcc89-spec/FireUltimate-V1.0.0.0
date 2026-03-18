@@ -19,7 +19,7 @@ import {
   createDefaultNerisFormValues,
   getNerisFieldsForSection,
   getNerisValueOptions,
-  isNerisFieldRequired,
+  isFieldEffectivelyRequired,
   validateNerisSection,
   type NerisFieldMetadata,
   type NerisFormValues,
@@ -78,6 +78,8 @@ export interface NerisReportFormPageProps {
     stateOptionValues: Set<string>,
     countryOptionValues: Set<string>,
   ) => ParsedImportedLocationValues;
+  /** Admin-selected NERIS field IDs to treat as required (default [] for new tenants). */
+  nerisRequiredFieldOverrides: string[];
   toResourceSummaryTime: (value: string) => string;
   toResourceDateTimeInputValue: (value: string, fallbackDate: string) => string;
   toResourceDateOnlyInputValue: (value: string, fallbackDate: string) => string;
@@ -345,7 +347,12 @@ function NerisReportFormPage({
   nerisProxyMappedFormFieldIds: NERIS_PROXY_MAPPED_FORM_FIELD_IDS,
   getDefaultNerisExportSettings,
   apparatusFromDepartmentDetails,
+  nerisRequiredFieldOverrides,
 }: NerisReportFormPageProps) {
+  const adminRequiredFieldIds = useMemo(
+    () => new Set(nerisRequiredFieldOverrides),
+    [nerisRequiredFieldOverrides],
+  );
   const navigate = useNavigate();
   const detail =
     getIncidentCallDetail(callNumber) ??
@@ -369,8 +376,8 @@ function NerisReportFormPage({
       return {
         ...summary,
         mapReference: "Pending GIS sync",
-        reportedBy: "Manual entry",
-        callbackNumber: "",
+        reportedBy: String(summary.reportedBy ?? "").trim(),
+        callbackNumber: String(summary.callbackNumber ?? "").trim(),
         apparatus: apparatusFromAssigned,
         dispatchNotes: [],
       };
@@ -413,6 +420,7 @@ function NerisReportFormPage({
     ],
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
+  const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const [reportStatus, setReportStatus] = useState<string>(() =>
     persistedDraft?.reportStatus ?? "Draft",
   );
@@ -989,28 +997,40 @@ function NerisReportFormPage({
         .filter((segment) => segment.length > 0)[0] ?? ""
     );
   }, [formValues.primary_incident_type, normalizeNerisEnumValue]);
-  const visibleNerisSections = useMemo(
-    () =>
-      NERIS_FORM_SECTIONS.filter((section) => {
-        if (section.id === "fire") {
-          return primaryIncidentCategory === "FIRE";
-        }
-        if (section.id === "medical") {
-          return primaryIncidentCategory === "MEDICAL";
-        }
-        if (section.id === "hazards") {
-          return (
-            primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
-          );
-        }
-        return true;
-      }),
-    [primaryIncidentCategory],
-  );
+  const visibleNerisSections = useMemo(() => {
+    let sections = NERIS_FORM_SECTIONS.filter((section) => {
+      if (section.id === "fire") {
+        return primaryIncidentCategory === "FIRE";
+      }
+      if (section.id === "medical") {
+        return primaryIncidentCategory === "MEDICAL";
+      }
+      if (section.id === "hazards") {
+        return (
+          primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
+        );
+      }
+      return true;
+    });
+    if (showRequiredOnly) {
+      sections = sections.filter((section) => {
+        const fields = getNerisFieldsForSection(section.id);
+        return fields.some((field) =>
+          isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
+        );
+      });
+    }
+    return sections;
+  }, [primaryIncidentCategory, showRequiredOnly, formValues, adminRequiredFieldIds]);
   const activeVisibleSectionId =
     visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
     visibleNerisSections[0]?.id ??
     "core";
+  useEffect(() => {
+    if (!visibleNerisSections.some((s) => s.id === activeSectionId)) {
+      setActiveSectionId((visibleNerisSections[0]?.id ?? "core") as NerisSectionId);
+    }
+  }, [visibleNerisSections, activeSectionId]);
   const currentSection =
     visibleNerisSections.find((section) => section.id === activeVisibleSectionId) ??
     visibleNerisSections[0] ??
@@ -1047,6 +1067,12 @@ function NerisReportFormPage({
       return leftOrder - rightOrder;
     });
   }, [currentSection.id, sectionFields]);
+  const displayedSectionFieldsFiltered = useMemo(() => {
+    if (!showRequiredOnly) return displayedSectionFields;
+    return displayedSectionFields.filter((field) =>
+      isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
+    );
+  }, [showRequiredOnly, displayedSectionFields, formValues, adminRequiredFieldIds]);
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
@@ -1130,19 +1156,9 @@ function NerisReportFormPage({
 
     const loadAidDepartmentOptions = async () => {
       const configuredAid = readConfiguredMutualAidAidDepartmentOptions();
-      const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
 
       if (configuredAid && configuredAid.length > 0) {
         const opts = [...configuredAid];
-        if (
-          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
-          !opts.some((option) => option.value === requestedEntityId)
-        ) {
-          opts.unshift({
-            value: requestedEntityId,
-            label: "Current export department",
-          });
-        }
         if (!isCancelled) {
           setAidDepartmentOptions(opts);
         }
@@ -1200,16 +1216,6 @@ function NerisReportFormPage({
           })
           .filter((option): option is NerisValueOption => Boolean(option));
 
-        if (
-          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
-          !apiOptions.some((option) => option.value === requestedEntityId)
-        ) {
-          apiOptions.unshift({
-            value: requestedEntityId,
-            label: "Current export department",
-          });
-        }
-
         const dedupedOptions = Array.from(
           new Map(
             [...apiOptions, ...fallbackOptions].map((option) => [option.value, option]),
@@ -1230,7 +1236,7 @@ function NerisReportFormPage({
     return () => {
       isCancelled = true;
     };
-  }, [nerisExportSettings.exportUrl, nerisExportSettings.vendorCode, NERIS_AID_DEPARTMENT_ID_PATTERN]);
+  }, [nerisExportSettings.exportUrl, NERIS_AID_DEPARTMENT_ID_PATTERN]);
 
   useEffect(() => {
     const vendorDepartmentCode = (nerisExportSettings.vendorCode ?? "").trim();
@@ -2376,7 +2382,11 @@ function NerisReportFormPage({
     const mergedErrors: Record<string, string> = {};
     const customIssueLabelsByFieldId: Record<string, string> = {};
     for (const section of NERIS_FORM_SECTIONS) {
-      const validation = validateNerisSection(section.id, formValues);
+      const validation = validateNerisSection(
+        section.id,
+        formValues,
+        adminRequiredFieldIds,
+      );
       Object.assign(mergedErrors, validation.errors);
     }
 
@@ -3614,7 +3624,9 @@ function NerisReportFormPage({
     try {
       const requestConfig = buildExportRequestConfig();
       const exportResult = await executeExport(requestConfig);
-      appendExportHistoryRecord(exportResult, "", reportStatus);
+      const statusForHistory =
+        exportResult.attemptStatus === "success" ? "Exported" : reportStatus;
+      appendExportHistoryRecord(exportResult, "", statusForHistory);
       const successMessage =
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
@@ -3964,7 +3976,11 @@ function NerisReportFormPage({
   const renderNerisField = (field: NerisFieldMetadata, fieldKey?: string) => {
     const inputId = `neris-field-${field.id}`;
     const value = formValues[field.id] ?? "";
-    const isRequired = isNerisFieldRequired(field, formValues);
+    const isRequired = isFieldEffectivelyRequired(
+      field,
+      formValues,
+      adminRequiredFieldIds,
+    );
     const options = field.optionsKey ? getNerisValueOptions(field.optionsKey) : [];
     const error = sectionErrors[field.id];
     const wrapperClassName = field.layout === "full" ? "field-span-two" : undefined;
@@ -5036,6 +5052,15 @@ function NerisReportFormPage({
           <div className="neris-sidebar-header">
             <h2>Fire Incidents</h2>
             <p>NERIS sections</p>
+            <label className="neris-show-required-only">
+              <input
+                type="checkbox"
+                checked={showRequiredOnly}
+                onChange={(e) => setShowRequiredOnly(e.target.checked)}
+                aria-label="Show required fields only"
+              />
+              Show Required Fields Only
+            </label>
           </div>
           <nav className="neris-section-nav" aria-label="NERIS section navigation">
             {visibleNerisSections.map((section) => (
@@ -6633,7 +6658,7 @@ function NerisReportFormPage({
                 </section>
               </div>
             ) : null}
-            {displayedSectionFields.flatMap((field) => {
+            {displayedSectionFieldsFiltered.flatMap((field) => {
               const nodes: ReactNode[] = [];
               const headingLabel =
                 currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;

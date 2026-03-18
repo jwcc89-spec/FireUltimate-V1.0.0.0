@@ -11,9 +11,16 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 | Item | Notes |
 |------|--------|
 | **CAD email receiving** | Ingest path live; emails stored; **parsing / auto-create incident** is next (`#29`). |
-| **NERIS cross-browser (export history + drafts)** | Server-backed history and drafts; migration run. **View Exports:** “Report Status” on **Reporting \| NERIS \| Exports** now uses the **latest successful server export** for that call (not local draft only), so Browser B matches Browser A after export (`src/App.tsx` — `getExportsListReportStatus`). |
+| **NERIS cross-browser (export history + drafts)** | Server-backed history and drafts; migration run. |
+| **View Exports — Report Status** | **Done (2026-03, staging verified).** Successful export shows **Exported** on **Reporting \| NERIS \| Exports** (matches NERIS queue); fixes second-browser **Draft** and post-validate **In Review** mismatch. `getExportsListReportStatus` + append stores **Exported** on success (`App.tsx`, `NerisReportFormPage.tsx`). |
 | **Incident Detail cross-browser** | Edits in Browser A visible in Browser B via API — go-live Item #1 treated **done** for current workflow. |
 | **Merge / deploy** | Branch merged/deployed per tenant (staging/prod as applicable). |
+| **Reported By in Edit (#2)** | Detail no longer overwrites API values; dropdown includes saved value so Edit shows what was selected/entered at create. |
+| **Dispatch notes & Callback save (#3)** | Same fix — display uses API; save already sent PATCH; values persist after refresh. |
+| **Create Incident onset date/time (#4)** | Create Incident modal has **Incident onset date** (YYYY-MM-DD) and **Incident onset time** (24h HH:MM:SS); stored in `receivedAt` and mapped to NERIS **Incident Onset Date & Time**. |
+| **Initial dispatch code (#6)** | Default in `createDefaultNerisFormValues` changed from `AMB.UNRESP-BREATHING` to empty; location: `src/nerisMetadata.ts`. |
+| **Aid department – remove "Current export department" (#8)** | Synthetic option removed from CORE Aid department name(s) dropdown in `NerisReportFormPage.tsx`. |
+| **Admin NERIS required fields (Reports \| NERIS)** | **Done (2026-03).** Admin Functions → Reports \| NERIS: configure which NERIS fields are required. `nerisRequiredFieldOverrides` in DepartmentDetails payload (default `[]` for new tenants). requiredIf fields use option (a): when condition applies, treat as required by NERIS; admin can add "also require always" for requiredIf fields. NERIS form uses effective-required (NERIS required + admin overrides) for "Show Required Fields Only" and for validation. |
 
 ---
 
@@ -43,11 +50,11 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 2 | **Reported By** shows "manual entry" in Edit instead of typed value | BACKLOG #1 | Edit Incident should show the value the user entered. |
-| 3 | **Dispatch notes and Callback Number** do not save in Edit | BACKLOG #2 | Persist and display when editing incident. |
+| 2 | **Reported By** in Edit | BACKLOG #1 | **Done (2026-03).** No overwrite; dropdown shows saved value. |
+| 3 | **Dispatch notes and Callback** save in Edit | BACKLOG #2 | **Done (2026-03).** Persist and display; timeline supports string or array. |
 | 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | **Partial (2026-03-18):** NERIS Core onset + Incident Times use 24h `HH:MM:SS`. Incidents / rest of app still open. |
 | 5 | **Incidents Setup – Edit Reported By** layout spills into Assigned Units | BACKLOG #4 | Fix layout so controls are visible and don’t overlap. |
-| 6 | **Initial dispatch code** – define source (NERIS / CAD / blank) | BACKLOG #5 | Document and implement mapping. |
+| 6 | **Initial dispatch code** – source (NERIS / CAD / blank) | BACKLOG #5 | Default now empty (`nerisMetadata.ts`). Document mapping when CAD/NERIS finalized. |
 | 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | **Largely done (11.3):** NERIS entity directory + DD-M + CORE. **Open:** exclude/grey-out tenant’s own FD (#8). |
 | 8 | **Aid Department:** do not allow selecting tenant’s own department (exclude or grey out) | BACKLOG #10 | UI: exclude or disable self in list. Server already strips. |
 | 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
@@ -60,6 +67,7 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 | 11.3b | **Local-only mutual aid rows in CORE aid dropdown** | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
 | 11.3c | **FIRE requiredness when mutual aid given** | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
 | 11.3d | **NERIS Core + Incident Times — 24h `HH:MM:SS`** | 2026-03-18 | **Done** for those fields (Core onset + Incident Times module). **Open:** app-wide 24h (#4) elsewhere. |
+| 11.4 | **Admin NERIS required fields** | 2026-03 | **Done.** Admin Functions → Reports \| NERIS: checkboxes for admin-selected required fields; NERIS-required fields locked; requiredIf fields show "Conditionally required by NERIS" + optional "also require always." Effective-required used in NERIS form (Show Required Fields Only + validation). |
 
 ---
 
@@ -112,15 +120,15 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
 | 25 | **CAD email ingest (receive + store)** | GO_LIVE §6, EMAIL_AND_CAD_SETUP | **Receiving path done.** **Open:** parsing / auto-create (`#29`); then Worker → production API URL. |
-| 26 | **NERIS cross-browser** | User report | **Phase 1–3 done** (server export history, drafts, lock). **2026-03-20:** View Exports list **Report Status** uses server export success row so second browser shows Exported, not Draft. See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** NERIS form drafts edge cases only if reported. |
+| 26 | **NERIS cross-browser** | User report | **Done** for export history, drafts, lock, and **View Exports Report Status** (Exported after success, cross-browser). See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** draft edge cases only if reported. |
 | 27 | **Production endpoint checks and first controlled production export** | GO_LIVE §3.6–3.7 | Re-run tenant/context, neris/health, entity-check on prod; perform first prod export when ready. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
-| 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings (submenu) → Parsing Data; per-tenant parsing rules (A→C→B); auto-create draft incident; apparatus from Dept Details; dedupe (multiple emails → one incident); optional call sequencing. **After NERIS Phase 2/3.** |
+| 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings → Parsing Data; per-tenant rules; auto-create draft incident; dedupe; optional sequencing. **Next major platform item** (NERIS cross-browser phases complete). |
 
 ### Expanded: NERIS cross-browser (#26) — resolved + follow-up
 
 - **Was:** Export history / drafts only in localStorage; second browser saw empty history and Draft on exports list.
-- **Now:** Server-backed export history and drafts; migrations applied. **View Exports** table: **Report Status** column uses **`getExportsListReportStatus`** — if latest export for that call is **success**, show **Exported** / `reportStatusAtExport` (not local draft), so Browser B matches Browser A.
+- **Now:** Server-backed export history and drafts; migrations applied. **View Exports** **Report Status:** if latest export is **success**, show **Exported** (matches queue; not pre-submit “In Review”). **`getExportsListReportStatus`** in `App.tsx`; successful append stores **Exported** in `NerisReportFormPage`.
 - **Details:** `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
 
 ---
@@ -147,11 +155,25 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 ---
 
-## Session 2026-03-20 — doc refresh (after tenant testing)
+## Session notes
 
-**Completed / verified:** CAD emails receiving; NERIS export history + drafts cross-browser; Incident Detail API cross-browser; View Exports **Report Status** aligned with server export (`getExportsListReportStatus` in `App.tsx`).
+**2026-03-20:** Doc refresh; View Exports uses server export row (cross-browser Draft fix).  
+**2026-03:** Staging verified — View Exports **Report Status** shows **Exported** after successful NERIS submit (queue and list aligned; In Review mismatch fixed).
 
-**Next:** CAD parsing (#29) → Worker prod URL. **Still open:** BACKLOG #2–#11 (except items marked Done in tables), #8 aid self-select, #12–#14 roles, platform backlog #15–#24, #27 prod checks.
+---
+
+## Still pending (at a glance)
+
+Use **Suggested order** below for sequencing. This is a single checklist of what remains.
+
+| Area | Pending |
+|------|---------|
+| **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
+| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h times app-wide (partial done); **#5** Edit Reported By layout; **#6** initial dispatch code; **#8** aid self-select exclude; **#10** UNIT TYPE; **#11** Populate Date + Returning; **#11.1** Narrative Builder; **#11.2** occupant contact fields. **Next:** Delete Incident must not delete NERIS report when In Review or Exported (BACKLOG #11). |
+| **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
+| **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
+| **Go-live / ops** | **#27** Production entity-check + controlled first prod export. |
+| **Architecture** | **#28** Per-tenant NERIS config scale-out (when ready). |
 
 ---
 

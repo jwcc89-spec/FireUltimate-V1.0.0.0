@@ -5,7 +5,7 @@
 
 ## Current focus (2026-03-20)
 - **CAD:** **Receiving** path verified (emails stored). **Next:** parsing / auto-create incident (`#29`, `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`). **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`).
-- **NERIS cross-browser:** Phases 1–3 done (export history, server drafts, lock). **View Exports** “Report Status” column uses server export success (`getExportsListReportStatus` in `App.tsx`) so Browser B shows **Exported** when Browser A exported. See `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
+- **NERIS cross-browser:** Phases 1–3 done. **View Exports Report Status** complete (staging): list shows **Exported** after successful submit, matches queue. See `NERIS_CROSS_BROWSER_FINDINGS.md`.
 - **Incident Detail:** Go-live item #1 verified — edits persist via API across browsers.
 - NERIS go-live for tenant cifpdil: continue staging/prod promotion as planned.
 

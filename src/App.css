@@ -3034,6 +3034,20 @@ body.resource-personnel-modal-open {
   font-size: 0.74rem;
 }
 
+.neris-show-required-only {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin: 0.5rem 0 0;
+  font-size: 0.8rem;
+  color: #334155;
+  cursor: pointer;
+}
+
+.neris-show-required-only input[type="checkbox"] {
+  cursor: pointer;
+}
+
 .neris-section-nav {
   display: grid;
 }

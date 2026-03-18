@@ -2,7 +2,7 @@
 
 **Issue:** In cifpdil.fireultimate.app, exports complete successfully in one browser. When the same user logs in from another browser (or device), the NERIS report does not show the same information and no export history is shown.
 
-**Priority:** Core cross-browser issues are addressed. Next platform priority is **CAD parsing / auto-create** (#29). See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
+**Status (2026-03):** Cross-browser export history, drafts, locking, and **View Exports → Report Status** (shows **Exported** after successful submit, matches queue) are **complete** (staging verified). Next platform priority: **CAD parsing / auto-create** (#29). See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` (#26).
 
 **Phase 1 (export history on server) is implemented.** The app now stores NERIS export history in the database and loads it when you log in, so export history appears in every browser. **Phase 2 (server-side drafts) is implemented.** Drafts are stored per incident (tenant + callNumber) on the server; opening the NERIS form in any browser loads the last saved draft. You only need to **run the database migrations once** (see “Steps for you” below). **Phase 3** (validation/export locking) is implemented. After Validate (In Review) or Export (Exported), the report is locked for non-admin users; they see a lock banner and cannot edit. Only admin can unlock (Unlock button) or edit when locked. Export remains admin-only.
 
@@ -13,7 +13,7 @@
 - **Incident list:** Loads correctly in the second browser. The list comes from `GET /api/incidents` after login.
 - **Export history:** Server-backed; second browser sees the same export rows after login + fetch.
 - **NERIS drafts:** Server-backed; second browser loads the same draft for a call number.
-- **Reporting → NERIS → Exports — “Report Status” column (2026-03-20):** Previously Browser B could show **Draft** while Browser A showed **Exported** because the column used **local** `getNerisReportStatus(callNumber)` only. **Fix:** `getExportsListReportStatus(callNumber, latestExport)` in `src/App.tsx` — when the **latest server export** for that call has `attemptStatus === "success"`, the column shows **Exported** / `reportStatusAtExport`; otherwise it falls back to local draft status. Verify: export in A → refresh Exports in B → Report Status matches.
+- **Reporting → NERIS → Exports — “Report Status” column:** Uses server export row. When `attemptStatus === "success"`, the column shows **Exported** (same as NERIS queue). *Reason:* history used to store `reportStatusAtExport` **before** the client set status to Exported, so validated reports showed **In Review** on the list even after a successful submit — fixed by treating success as **Exported** and recording **Exported** on append (`NerisReportFormPage`).
 
 ---
 
@@ -153,7 +153,7 @@ Implementation will need: report status/lock state stored (e.g. in draft or a se
 
 ## View Exports list — Report Status vs server export (2026-03-20)
 
-- **NerisExportsPage** table column **Report Status** now prefers **server export history** per call: if there is a successful export row for that `callNumber`, display matches export reality across browsers. Implementation: `getExportsListReportStatus` in `App.tsx`.
+- **NerisExportsPage** **Report Status:** successful export ⇒ **Exported** (`getExportsListReportStatus` in `App.tsx`). New export records store `reportStatusAtExport: "Exported"` on success (`NerisReportFormPage`).
 
 ## Phase 3 implemented (validation and export locking)
 

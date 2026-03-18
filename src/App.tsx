@@ -84,6 +84,10 @@ import { HydrantsAdminPage } from "./HydrantsAdminPage";
 import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
 import {
   getNerisValueOptions,
+  getNerisFieldsForSection,
+  isFieldRequiredByNeris,
+  isFieldConditionallyRequiredByNeris,
+  NERIS_FORM_SECTIONS,
   type NerisFormValues,
   type NerisValueOption,
 } from "./nerisMetadata";
@@ -129,6 +133,10 @@ interface IncidentCreatePayload {
   address: string;
   callbackNumber: string;
   dispatchNotes: string;
+  /** YYYY-MM-DD — maps to NERIS Incident Onset Date + receivedAt */
+  incidentOnsetDate: string;
+  /** HH:MM:SS (24h) — maps to NERIS Incident Onset Time */
+  incidentOnsetTime: string;
 }
 
 interface RouteResolverProps {
@@ -1091,6 +1099,16 @@ function readIncidentsSetupConfigFromDraft(): IncidentsSetupConfig {
   return normalizeIncidentsSetupConfig(draft.incidentsSetup);
 }
 
+/** Admin-selected NERIS field IDs to treat as required (default [] for new tenants). */
+function readNerisRequiredFieldOverridesFromDraft(): string[] {
+  const draft = readDepartmentDetailsDraft();
+  const raw = draft.nerisRequiredFieldOverrides;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((id) => String(id ?? "").trim())
+    .filter((id) => id.length > 0);
+}
+
 function readApparatusOptionsFromDraft(): NerisValueOption[] {
   const draft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
   const records = Array.isArray(draft.masterApparatusRecords)
@@ -1884,6 +1902,25 @@ function dedupeIncidentStatIds(values: IncidentStatId[]): IncidentStatId[] {
   return ids;
 }
 
+function getDefaultIncidentOnsetDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getDefaultIncidentOnsetTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+
+function formatReceivedAtForDisplay(raw: string): string {
+  const t = raw.trim();
+  const m = t.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})$/);
+  if (m) {
+    return `${m[1]} ${m[2]}`;
+  }
+  return t || "—";
+}
+
 function getDefaultSubmenuVisibilityMap(): SubmenuVisibilityMap {
   return Object.fromEntries(ALL_SUBMENU_PATHS.map((path) => [path, true]));
 }
@@ -2659,14 +2696,13 @@ function getNerisReportStatus(callNumber: string): string {
   return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
 }
 
-/** Exports list: use server export record so Browser B matches Browser A after a successful export. */
+/** Exports list: successful NERIS submit ⇒ show Exported (matches NERIS queue), not pre-submit workflow e.g. In Review. */
 function getExportsListReportStatus(
   callNumber: string,
   latestExport: NerisExportRecord | undefined,
 ): string {
   if (latestExport?.attemptStatus === "success") {
-    const atExport = latestExport.reportStatusAtExport?.trim();
-    return atExport || "Exported";
+    return "Exported";
   }
   return getNerisReportStatus(callNumber);
 }
@@ -3571,6 +3607,8 @@ function IncidentsListPage({
     address: "",
     callbackNumber: "",
     dispatchNotes: "",
+    incidentOnsetDate: getDefaultIncidentOnsetDate(),
+    incidentOnsetTime: getDefaultIncidentOnsetTime(),
   }));
   const [createIncidentError, setCreateIncidentError] = useState("");
   const isIncidentFieldVisible = useCallback(
@@ -3650,6 +3688,8 @@ function IncidentsListPage({
       address: "",
       callbackNumber: "",
       dispatchNotes: "",
+      incidentOnsetDate: getDefaultIncidentOnsetDate(),
+      incidentOnsetTime: getDefaultIncidentOnsetTime(),
     });
     setCreateIncidentError("");
   };
@@ -3749,6 +3789,12 @@ function IncidentsListPage({
       setCreateIncidentError("Dispatch Notes is required.");
       return;
     }
+    const onsetDate = createIncidentDraft.incidentOnsetDate.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(onsetDate)) {
+      setCreateIncidentError("Incident onset date must be YYYY-MM-DD.");
+      return;
+    }
+    // Time is normalized in handleCreateIncidentCall via parseTimeInput24h (e.g. 161654 → 16:16:54)
     try {
       const nextIncident = await onCreateIncidentCall(createIncidentDraft);
       setIsCreateIncidentModalOpen(false);
@@ -4125,6 +4171,49 @@ function IncidentsListPage({
               </button>
             </div>
             <div className="settings-form">
+              <label>
+                Incident onset date
+                <input
+                  type="date"
+                  value={createIncidentDraft.incidentOnsetDate}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentOnsetDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Incident onset time (24h — e.g. 16:16:54 or 161654)
+                <input
+                  type="text"
+                  placeholder="16:16:54 or 161654"
+                  autoComplete="off"
+                  value={createIncidentDraft.incidentOnsetTime}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentOnsetTime: event.target.value,
+                    }))
+                  }
+                  onBlur={(event) => {
+                    const raw = event.target.value.trim();
+                    if (raw) {
+                      const normalized = parseTimeInput24h(raw);
+                      setCreateIncidentDraft((previous) =>
+                        previous.incidentOnsetTime !== normalized
+                          ? { ...previous, incidentOnsetTime: normalized }
+                          : previous,
+                      );
+                    }
+                  }}
+                />
+              </label>
+              <p className="panel-description" style={{ marginTop: 0 }}>
+                Used for NERIS <strong>Incident Onset Date</strong> and{" "}
+                <strong>Incident Onset Time</strong> when you open the report for this incident.
+              </p>
               {isIncidentFieldVisible("incidentNumber") ? (
               <label>
                 Incident Number
@@ -4362,10 +4451,7 @@ function IncidentCallDetailPage({
       return {
         ...summary,
         mapReference: "Pending GIS sync",
-        reportedBy: "Manual entry",
-        callbackNumber: "",
-        apparatus: [],
-        dispatchNotes: [],
+        apparatus: [] as { unit: string; unitType: string; status: string; crew: string; eta: string }[],
       };
     })();
   const [callInfoExpanded, setCallInfoExpanded] = useState(false);
@@ -4387,6 +4473,8 @@ function IncidentCallDetailPage({
     address: String(detail?.address ?? "").trim(),
     callbackNumber: String(detail?.callbackNumber ?? "").trim(),
     dispatchNotes: String(detail?.dispatchNotes ?? detail?.dispatchInfo ?? "").trim(),
+    incidentOnsetDate: "",
+    incidentOnsetTime: "",
   }));
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -4394,6 +4482,14 @@ function IncidentCallDetailPage({
     (fieldKey: IncidentSetupRequiredFieldKey) => incidentsSetup.visibleFields[fieldKey] !== false,
     [incidentsSetup.visibleFields],
   );
+  const reportedByDropdownOptions = useMemo(() => {
+    const base = incidentsSetup.reportedByOptions.map((value) => ({ value, label: value }));
+    const v = draft.reportedBy.trim();
+    if (v && !base.some((o) => o.value === v)) {
+      return [{ value: v, label: v }, ...base];
+    }
+    return base;
+  }, [incidentsSetup.reportedByOptions, draft.reportedBy]);
 
   if (!detail) {
     return (
@@ -4552,7 +4648,8 @@ function IncidentCallDetailPage({
             <div className="call-info-line">
               <strong>Incident Details:</strong>
               <span>
-                {detail.receivedAt} | {detail.address} | {detail.stillDistrict}
+                {formatReceivedAtForDisplay(detail.receivedAt)} | {detail.address} |{" "}
+                {detail.stillDistrict}
               </span>
             </div>
             <ChevronDown
@@ -4662,10 +4759,7 @@ function IncidentCallDetailPage({
                   <NerisFlatSingleOptionSelect
                     inputId={`incident-detail-reported-by-${callNumber}`}
                     value={draft.reportedBy}
-                    options={incidentsSetup.reportedByOptions.map((value) => ({
-                      value,
-                      label: value,
-                    }))}
+                    options={reportedByDropdownOptions}
                     onChange={(value) =>
                       setDraft((previous) => ({ ...previous, reportedBy: value }))
                     }
@@ -4801,15 +4895,28 @@ function IncidentCallDetailPage({
               Future API updates will append notes automatically
             </span>
           </div>
-          <ul className="timeline-list">
-            {detail.dispatchNotes.map((note) => (
-              <li key={`${detail.callNumber}-${note.time}-${note.text}`}>
-                <p className="dispatch-note-line">
-                  <strong>{note.time}</strong> | {note.text}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {(() => {
+            const dn = detail.dispatchNotes;
+            const rows = Array.isArray(dn)
+              ? dn
+              : typeof dn === "string" && dn.trim()
+                ? [{ time: "—", text: dn.trim() }]
+                : [];
+            if (rows.length === 0) {
+              return <p className="panel-description">No dispatch notes yet.</p>;
+            }
+            return (
+              <ul className="timeline-list">
+                {rows.map((note: { time: string; text: string }, idx: number) => (
+                  <li key={`${detail.callNumber}-${note.time}-${idx}-${note.text.slice(0, 40)}`}>
+                    <p className="dispatch-note-line">
+                      <strong>{note.time}</strong> | {note.text}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </article>
       </section>
     </section>
@@ -5269,7 +5376,11 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
                 </div>
                 <div>
                   <dt>Status at Export</dt>
-                  <dd>{latestExport.reportStatusAtExport || "--"}</dd>
+                  <dd>
+                    {latestExport.attemptStatus === "success"
+                      ? "Exported"
+                      : latestExport.reportStatusAtExport || "--"}
+                  </dd>
                 </div>
               </dl>
 
@@ -5355,6 +5466,7 @@ interface NerisReportFormRouteProps {
   apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
   onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
+  nerisRequiredFieldOverrides: string[];
 }
 
 function NerisReportFormPage(props: NerisReportFormRouteProps) {
@@ -5488,6 +5600,140 @@ type PersonnelSortColumn =
   | "apparatusAssignment"
   | "station"
   | "qualifications";
+
+function NerisRequiredFieldsAdminPage() {
+  const [overrideIds, setOverrideIds] = useState<Set<string>>(new Set());
+  const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "done" | "error">("loading");
+  const [saveStatus, setSaveStatus] = useState<string>("");
+
+  useEffect(() => {
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        const data = json?.data ?? {};
+        const raw = data.nerisRequiredFieldOverrides;
+        const list = Array.isArray(raw)
+          ? (raw as string[]).map((id) => String(id ?? "").trim()).filter(Boolean)
+          : [];
+        setOverrideIds(new Set(list));
+        setLoadStatus("done");
+      })
+      .catch(() => setLoadStatus("error"));
+  }, []);
+
+  const toggleOverride = useCallback((fieldId: string) => {
+    setOverrideIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(fieldId)) next.delete(fieldId);
+      else next.add(fieldId);
+      return next;
+    });
+  }, []);
+
+  const save = useCallback(() => {
+    setSaveStatus("Saving…");
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        const data = json?.data ?? {};
+        const payload = { ...data, nerisRequiredFieldOverrides: Array.from(overrideIds) };
+        return fetch("/api/department-details", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+      })
+      .then((res) => {
+        if (res.ok) {
+          setSaveStatus("Saved.");
+          return fetch("/api/department-details").then((r) => (r.ok ? r.json() : null));
+        }
+        setSaveStatus("Save failed.");
+        return null;
+      })
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        if (json?.data) {
+          window.localStorage.setItem(DEPARTMENT_DETAILS_STORAGE_KEY, JSON.stringify(json.data));
+        }
+      })
+      .catch(() => setSaveStatus("Save failed."));
+  }, [overrideIds]);
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <div>
+          <h1>NERIS required fields</h1>
+          <p>Choose which NERIS report fields to treat as required (for &quot;Show Required Fields Only&quot; and validation). Fields required by NERIS are fixed.</p>
+        </div>
+        <div>
+          {loadStatus === "loading" && <span>Loading…</span>}
+          {loadStatus === "done" && (
+            <button type="button" className="primary" onClick={save}>
+              Save
+            </button>
+          )}
+          {saveStatus && <span>{saveStatus}</span>}
+        </div>
+      </header>
+      {loadStatus === "error" && <p className="error">Could not load department details.</p>}
+      {loadStatus === "done" && (
+        <div className="panel-grid">
+          {NERIS_FORM_SECTIONS.map((section) => {
+            const fields = getNerisFieldsForSection(section.id);
+            if (fields.length === 0) return null;
+            return (
+              <section key={section.id} className="panel">
+                <h2>{section.label}</h2>
+                <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+                  {fields.map((field) => {
+                    const requiredByNeris = isFieldRequiredByNeris(field);
+                    const conditionallyRequired = isFieldConditionallyRequiredByNeris(field);
+                    const checked = overrideIds.has(field.id);
+                    if (requiredByNeris) {
+                      return (
+                        <li key={field.id} style={{ marginBottom: "0.5rem" }}>
+                          <input type="checkbox" checked disabled aria-label={field.label} />
+                          <label style={{ marginLeft: "0.5rem" }}>Required by NERIS — {field.label}</label>
+                        </li>
+                      );
+                    }
+                    if (conditionallyRequired) {
+                      return (
+                        <li key={field.id} style={{ marginBottom: "0.5rem" }}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={() => toggleOverride(field.id)}
+                            aria-label={`Also require always: ${field.label}`}
+                          />
+                          <label style={{ marginLeft: "0.5rem" }}>
+                            Conditionally required by NERIS — {field.label} — also require always
+                          </label>
+                        </li>
+                      );
+                    }
+                    return (
+                      <li key={field.id} style={{ marginBottom: "0.5rem" }}>
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          onChange={() => toggleOverride(field.id)}
+                          aria-label={field.label}
+                        />
+                        <label style={{ marginLeft: "0.5rem" }}>{field.label}</label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              </section>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
 
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
@@ -11865,8 +12111,11 @@ function RouteResolver({
           const list = await getNerisExportHistory();
           setNerisExportHistory(list);
         }}
+        nerisRequiredFieldOverrides={readNerisRequiredFieldOverridesFromDraft()}
       />
     );
+  } else if (path === "/admin-functions/reports/neris") {
+    content = <NerisRequiredFieldsAdminPage />;
   } else if (path === "/admin-functions/department-details") {
     content = (
       <DepartmentDetailsPage
@@ -12083,11 +12332,12 @@ function App() {
   const handleCreateIncidentCall = async (
     payload: IncidentCreatePayload,
   ): Promise<IncidentCallSummary> => {
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
-    const ss = String(now.getSeconds()).padStart(2, "0");
-    const receivedAt = `${hh}:${mm}:${ss}`;
+    const od = payload.incidentOnsetDate.trim();
+    const ot = parseTimeInput24h(payload.incidentOnsetTime.trim());
+    const receivedAt =
+      /^\d{4}-\d{2}-\d{2}$/.test(od) && ot
+        ? `${od}T${ot}`
+        : `${getDefaultIncidentOnsetDate()}T${getDefaultIncidentOnsetTime()}`;
     const body = {
       incidentNumber: payload.incident_internal_id.trim() || undefined,
       dispatchNumber: payload.dispatch_internal_id.trim() || undefined,

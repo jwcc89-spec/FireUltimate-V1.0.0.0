@@ -354,6 +354,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 - Wave 7 DEMO safety decision is complete: `demo` remains a persistent, fully editable sandbox (no automatic reset, no new restrictions in this phase).
 - Wave 8 verification checklist is complete: tenant login/isolation checks, cross-tenant save separation checks, scheduler/personnel/Kelly validation, and lint/build + smoke checks in staging.
 - **2026-03-18 (NERIS UX, not Task-2 schema):** Mutual aid directory + CORE aid UX completions are tracked in **`docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`** (items 11.3–11.3d and session section).
+- **2026-03 (NERIS admin required fields):** Admin Functions → Reports | NERIS page; `nerisRequiredFieldOverrides` in DepartmentDetails payload; effective-required used in NERIS form and validation (see PRIORITY 11.4).
 
 ### Later (deferred hardening backlog)
 - Complete staging and production verification of the new incident workflow configuration surface (`Admin Functions -> Department Details -> Incidents Setup`) and incident linkage behavior (`Incident #` sync between incident queue and NERIS form).
