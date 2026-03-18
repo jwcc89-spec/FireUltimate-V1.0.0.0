@@ -6,13 +6,13 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 ## Incidents (Create / Edit)
 
-### 1. Reported By – shows "manual entry" in Edit
-- **Issue:** When an incident is created and a value is manually typed into **Reported By**, opening **Edit Incident** shows **"manual entry"** instead of the typed value.
-- **Desired:** Edit view should show the actual value that was entered.
+### 1. Reported By – shows "manual entry" in Edit — **Done (2026-03)**
+- **Issue:** When an incident is created and a value is manually typed (or selected from dropdown) into **Reported By**, opening **Edit Incident** showed **"manual entry"** or placeholder instead of the saved value.
+- **Fix:** Incident detail no longer overwrites API `reportedBy`/`callbackNumber`/`dispatchNotes` when building detail from list. Reported By dropdown on edit now includes the saved value in options so it displays correctly (`reportedByDropdownOptions` in `App.tsx`).
 
-### 2. Dispatch notes and Callback Number do not save
-- **Issue:** **Dispatch notes** and **Callback Number** do not persist. When **Edit Incident** is opened, these fields are not visible / not saved.
-- **Desired:** Both fields should save with the incident and display when editing.
+### 2. Dispatch notes and Callback Number do not save — **Done (2026-03)**
+- **Issue:** **Dispatch notes** and **Callback Number** did not persist; values cleared after refresh.
+- **Fix:** Same root cause as #1 — detail was overwriting with empty values when built from API list. Save already sent these fields via PATCH; display now uses `detail.reportedBy`, `detail.callbackNumber`, `detail.dispatchNotes` from API. Dispatch Notes timeline supports both string and array shape.
 
 ---
 
@@ -24,21 +24,18 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 ---
 
-## Incidents Setup – Edit Reported By layout
+## Incidents Setup – Edit Reported By layout (#5 in PRIORITY)
 
-- **Issue:** When **Edit Reported By** is clicked, the boxes are not viewable properly; they appear to spill into **Assigned Units**.
-- **Desired:** Layout should keep Reported By controls visible and not overlap Assigned Units.
+- **What it refers to:** **Admin Functions → Department Details → Incidents Setup.** There is an **Edit Reported By** control that lets admins configure the **Reported By** options list (e.g. "911 Caller", "Dispatch", etc.) and the mode (fill-in vs dropdown). The **layout** of that editor (the input boxes / list of options) can spill or overlap the **Assigned Units** configuration area below it.
+- **Desired:** Fix CSS/layout so the Reported By editor is fully visible and does not overlap Assigned Units. No change to behavior of Create Incident or Incident Detail — only the **admin** Incidents Setup layout.
 
 ---
 
-## NERIS Form – Initial dispatch code source
+## NERIS Form – Initial dispatch code source (#6 in PRIORITY)
 
-- **Issue:** Need to define where **Initial dispatch code** is populated from.
-- **Desired behavior (to confirm):**
-  - If NERIS has a mandatory value for export → align with NERIS.
-  - Else if available from CAD → align with CAD.
-  - If neither → leave blank.
-- **Action:** Document/implement the mapping and source of truth.
+- **Where it is:** **`src/nerisMetadata.ts`** — `createDefaultNerisFormValues()`. The default for **`initial_dispatch_code`** was hardcoded as **`"AMB.UNRESP-BREATHING"`**, so every new incident/NERIS form got that value.
+- **Change (2026-03):** Default is now **empty string** so new reports do not auto-populate a specific code. User selects or leaves blank per NERIS rules.
+- **Desired behavior (future):** If NERIS requires a value for export → align; if CAD supplies a code → map from CAD; otherwise leave blank. Document the source of truth when CAD parsing or NERIS rules are finalized.
 
 ---
 
@@ -54,6 +51,7 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 - **Requirement:** The Aid Department list must **not** allow the user to select the **current tenant’s** department (the incident base department NERIS ID). NERIS returns 422: "Aid department NERIS ID cannot be the same as the incident base department NERIS ID."
 - **Options:** Either (1) **exclude** the tenant’s own department from the selectable list, or (2) **show it but greyed out / disabled** so it cannot be selected. Display-only (greyed out) is acceptable if needed for context.
 - **Note:** The server already strips any aid entry that matches the base department before sending to NERIS (defense in depth); the UI change prevents the mistake in the first place.
+- **2026-03:** The synthetic **"Current export department"** option (tenant’s own FD pre-pended to the Aid department dropdown) was **removed** so it is no longer the first selectable value. Full self-select exclusion (hide or grey out tenant’s own FD in the list) is still open.
 
 ---
 
@@ -65,10 +63,10 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 ---
 
-## NERIS Form – Resources: UNIT TYPE value
+## NERIS Form – Resources: UNIT TYPE value (#10 in PRIORITY)
 
-- **Issue:** **UNIT TYPE** shows the placeholder text "auto-populates from unit setup" instead of the **actual value** from **Apparatus** in Department Details.
-- **Desired:** Show the real value pulled from Apparatus in the Department Details submenu.
+- **What it refers to:** In the NERIS form **Resources** section, each resource row has a **UNIT TYPE** field. Today it may show placeholder text like "auto-populates from unit setup" instead of the **actual apparatus type** (e.g. Engine, Ladder) from **Admin Functions → Department Details → Apparatus** (or Scheduler apparatus).
+- **Desired:** When a unit is assigned from department apparatus, **UNIT TYPE** should show that apparatus’s **unit type** value from Department Details, not a generic placeholder. Implementation: pull from the same apparatus source used for the queue (e.g. `apparatusFromDepartmentDetails` / Department Details payload) and map unit → unitType for the Resources grid.
 
 ---
 
@@ -86,16 +84,16 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 | # | Area | Short description |
 |---|------|-------------------|
-| 1 | Incidents | Reported By shows "manual entry" in Edit instead of typed value |
-| 2 | Incidents | Dispatch notes and Callback Number don't save in Edit |
+| 1 | Incidents | Reported By in Edit — **Done 2026-03** (no overwrite; dropdown shows saved value) |
+| 2 | Incidents | Dispatch notes and Callback save — **Done 2026-03** (same fix; PATCH already sent them) |
 | 3 | App-wide | Times: military (24h) not AM/PM |
-| 4 | Incidents Setup | Edit Reported By layout spills into Assigned Units |
-| 5 | NERIS | Initial dispatch code – define source (NERIS / CAD / blank) |
-| 6 | NERIS | AID GIVEN/RECEIVED – Aid departments (mostly done 2026-03-18; self-select #10 still open) |
+| 4 | Incidents Setup | Edit Reported By layout spills into Assigned Units (admin Department Details only) |
+| 5 | NERIS | Initial dispatch code – default now blank; source mapping doc when CAD/NERIS finalized |
+| 6 | NERIS | AID GIVEN/RECEIVED – Aid departments (mostly done; "Current export department" removed 2026-03; self-select #10 still open) |
 | 7 | NERIS | Required-if: FIRE + aid given (done 2026-03-18 for direction Given) |
-| 8 | NERIS | Resources UNIT TYPE – show Apparatus value, not placeholder |
+| 8 | NERIS | Resources UNIT TYPE – show Apparatus value from Department Details, not placeholder |
 | 9 | NERIS | Resources Populate Date: dates only for dispatch/en route/on scene/clear; add Returning |
-| 10 | NERIS | Aid Department: do not allow selecting tenant’s own department (exclude from list or show greyed out) |
+| 10 | NERIS | Aid Department: do not allow selecting tenant’s own department (exclude or grey out) |
 
 ---
 

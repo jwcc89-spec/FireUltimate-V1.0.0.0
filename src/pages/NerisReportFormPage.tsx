@@ -369,8 +369,8 @@ function NerisReportFormPage({
       return {
         ...summary,
         mapReference: "Pending GIS sync",
-        reportedBy: "Manual entry",
-        callbackNumber: "",
+        reportedBy: String(summary.reportedBy ?? "").trim(),
+        callbackNumber: String(summary.callbackNumber ?? "").trim(),
         apparatus: apparatusFromAssigned,
         dispatchNotes: [],
       };
@@ -1130,19 +1130,9 @@ function NerisReportFormPage({
 
     const loadAidDepartmentOptions = async () => {
       const configuredAid = readConfiguredMutualAidAidDepartmentOptions();
-      const requestedEntityId = (nerisExportSettings.vendorCode ?? "").trim();
 
       if (configuredAid && configuredAid.length > 0) {
         const opts = [...configuredAid];
-        if (
-          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
-          !opts.some((option) => option.value === requestedEntityId)
-        ) {
-          opts.unshift({
-            value: requestedEntityId,
-            label: "Current export department",
-          });
-        }
         if (!isCancelled) {
           setAidDepartmentOptions(opts);
         }
@@ -1200,16 +1190,6 @@ function NerisReportFormPage({
           })
           .filter((option): option is NerisValueOption => Boolean(option));
 
-        if (
-          NERIS_AID_DEPARTMENT_ID_PATTERN.test(requestedEntityId) &&
-          !apiOptions.some((option) => option.value === requestedEntityId)
-        ) {
-          apiOptions.unshift({
-            value: requestedEntityId,
-            label: "Current export department",
-          });
-        }
-
         const dedupedOptions = Array.from(
           new Map(
             [...apiOptions, ...fallbackOptions].map((option) => [option.value, option]),
@@ -1230,7 +1210,7 @@ function NerisReportFormPage({
     return () => {
       isCancelled = true;
     };
-  }, [nerisExportSettings.exportUrl, nerisExportSettings.vendorCode, NERIS_AID_DEPARTMENT_ID_PATTERN]);
+  }, [nerisExportSettings.exportUrl, NERIS_AID_DEPARTMENT_ID_PATTERN]);
 
   useEffect(() => {
     const vendorDepartmentCode = (nerisExportSettings.vendorCode ?? "").trim();

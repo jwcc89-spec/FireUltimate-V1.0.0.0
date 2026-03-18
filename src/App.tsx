@@ -129,6 +129,10 @@ interface IncidentCreatePayload {
   address: string;
   callbackNumber: string;
   dispatchNotes: string;
+  /** YYYY-MM-DD — maps to NERIS Incident Onset Date + receivedAt */
+  incidentOnsetDate: string;
+  /** HH:MM:SS (24h) — maps to NERIS Incident Onset Time */
+  incidentOnsetTime: string;
 }
 
 interface RouteResolverProps {
@@ -1884,6 +1888,25 @@ function dedupeIncidentStatIds(values: IncidentStatId[]): IncidentStatId[] {
   return ids;
 }
 
+function getDefaultIncidentOnsetDate(): string {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
+
+function getDefaultIncidentOnsetTime(): string {
+  const d = new Date();
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}:${String(d.getSeconds()).padStart(2, "0")}`;
+}
+
+function formatReceivedAtForDisplay(raw: string): string {
+  const t = raw.trim();
+  const m = t.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})$/);
+  if (m) {
+    return `${m[1]} ${m[2]}`;
+  }
+  return t || "—";
+}
+
 function getDefaultSubmenuVisibilityMap(): SubmenuVisibilityMap {
   return Object.fromEntries(ALL_SUBMENU_PATHS.map((path) => [path, true]));
 }
@@ -3570,6 +3593,8 @@ function IncidentsListPage({
     address: "",
     callbackNumber: "",
     dispatchNotes: "",
+    incidentOnsetDate: getDefaultIncidentOnsetDate(),
+    incidentOnsetTime: getDefaultIncidentOnsetTime(),
   }));
   const [createIncidentError, setCreateIncidentError] = useState("");
   const isIncidentFieldVisible = useCallback(
@@ -3649,6 +3674,8 @@ function IncidentsListPage({
       address: "",
       callbackNumber: "",
       dispatchNotes: "",
+      incidentOnsetDate: getDefaultIncidentOnsetDate(),
+      incidentOnsetTime: getDefaultIncidentOnsetTime(),
     });
     setCreateIncidentError("");
   };
@@ -3746,6 +3773,16 @@ function IncidentsListPage({
       !createIncidentDraft.dispatchNotes.trim()
     ) {
       setCreateIncidentError("Dispatch Notes is required.");
+      return;
+    }
+    const onsetDate = createIncidentDraft.incidentOnsetDate.trim();
+    const onsetTime = createIncidentDraft.incidentOnsetTime.trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(onsetDate)) {
+      setCreateIncidentError("Incident onset date must be YYYY-MM-DD.");
+      return;
+    }
+    if (!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(onsetTime)) {
+      setCreateIncidentError("Incident onset time must be 24-hour HH:MM:SS (e.g. 14:30:00).");
       return;
     }
     try {
@@ -4328,6 +4365,38 @@ function IncidentsListPage({
                 />
               </label>
               ) : null}
+              <label>
+                Incident onset date
+                <input
+                  type="date"
+                  value={createIncidentDraft.incidentOnsetDate}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentOnsetDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Incident onset time (24h, HH:MM:SS)
+                <input
+                  type="text"
+                  placeholder="14:30:00"
+                  autoComplete="off"
+                  value={createIncidentDraft.incidentOnsetTime}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentOnsetTime: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <p className="panel-description" style={{ marginTop: 0 }}>
+                Used for NERIS <strong>Incident Onset Date</strong> and{" "}
+                <strong>Incident Onset Time</strong> when you open the report for this incident.
+              </p>
               {createIncidentError ? <p className="auth-error">{createIncidentError}</p> : null}
               <div className="header-actions">
                 <button type="button" className="primary-button" onClick={handleCreateIncident}>
@@ -4361,10 +4430,7 @@ function IncidentCallDetailPage({
       return {
         ...summary,
         mapReference: "Pending GIS sync",
-        reportedBy: "Manual entry",
-        callbackNumber: "",
-        apparatus: [],
-        dispatchNotes: [],
+        apparatus: [] as { unit: string; unitType: string; status: string; crew: string; eta: string }[],
       };
     })();
   const [callInfoExpanded, setCallInfoExpanded] = useState(false);
@@ -4386,6 +4452,8 @@ function IncidentCallDetailPage({
     address: String(detail?.address ?? "").trim(),
     callbackNumber: String(detail?.callbackNumber ?? "").trim(),
     dispatchNotes: String(detail?.dispatchNotes ?? detail?.dispatchInfo ?? "").trim(),
+    incidentOnsetDate: "",
+    incidentOnsetTime: "",
   }));
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -4393,6 +4461,14 @@ function IncidentCallDetailPage({
     (fieldKey: IncidentSetupRequiredFieldKey) => incidentsSetup.visibleFields[fieldKey] !== false,
     [incidentsSetup.visibleFields],
   );
+  const reportedByDropdownOptions = useMemo(() => {
+    const base = incidentsSetup.reportedByOptions.map((value) => ({ value, label: value }));
+    const v = draft.reportedBy.trim();
+    if (v && !base.some((o) => o.value === v)) {
+      return [{ value: v, label: v }, ...base];
+    }
+    return base;
+  }, [incidentsSetup.reportedByOptions, draft.reportedBy]);
 
   if (!detail) {
     return (
@@ -4551,7 +4627,8 @@ function IncidentCallDetailPage({
             <div className="call-info-line">
               <strong>Incident Details:</strong>
               <span>
-                {detail.receivedAt} | {detail.address} | {detail.stillDistrict}
+                {formatReceivedAtForDisplay(detail.receivedAt)} | {detail.address} |{" "}
+                {detail.stillDistrict}
               </span>
             </div>
             <ChevronDown
@@ -4661,10 +4738,7 @@ function IncidentCallDetailPage({
                   <NerisFlatSingleOptionSelect
                     inputId={`incident-detail-reported-by-${callNumber}`}
                     value={draft.reportedBy}
-                    options={incidentsSetup.reportedByOptions.map((value) => ({
-                      value,
-                      label: value,
-                    }))}
+                    options={reportedByDropdownOptions}
                     onChange={(value) =>
                       setDraft((previous) => ({ ...previous, reportedBy: value }))
                     }
@@ -4800,15 +4874,28 @@ function IncidentCallDetailPage({
               Future API updates will append notes automatically
             </span>
           </div>
-          <ul className="timeline-list">
-            {detail.dispatchNotes.map((note) => (
-              <li key={`${detail.callNumber}-${note.time}-${note.text}`}>
-                <p className="dispatch-note-line">
-                  <strong>{note.time}</strong> | {note.text}
-                </p>
-              </li>
-            ))}
-          </ul>
+          {(() => {
+            const dn = detail.dispatchNotes;
+            const rows = Array.isArray(dn)
+              ? dn
+              : typeof dn === "string" && dn.trim()
+                ? [{ time: "—", text: dn.trim() }]
+                : [];
+            if (rows.length === 0) {
+              return <p className="panel-description">No dispatch notes yet.</p>;
+            }
+            return (
+              <ul className="timeline-list">
+                {rows.map((note: { time: string; text: string }, idx: number) => (
+                  <li key={`${detail.callNumber}-${note.time}-${idx}-${note.text.slice(0, 40)}`}>
+                    <p className="dispatch-note-line">
+                      <strong>{note.time}</strong> | {note.text}
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            );
+          })()}
         </article>
       </section>
     </section>
@@ -12086,11 +12173,12 @@ function App() {
   const handleCreateIncidentCall = async (
     payload: IncidentCreatePayload,
   ): Promise<IncidentCallSummary> => {
-    const now = new Date();
-    const hh = String(now.getHours()).padStart(2, "0");
-    const mm = String(now.getMinutes()).padStart(2, "0");
-    const ss = String(now.getSeconds()).padStart(2, "0");
-    const receivedAt = `${hh}:${mm}:${ss}`;
+    const od = payload.incidentOnsetDate.trim();
+    const ot = payload.incidentOnsetTime.trim();
+    const receivedAt =
+      /^\d{4}-\d{2}-\d{2}$/.test(od) && /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(ot)
+        ? `${od}T${ot}`
+        : `${getDefaultIncidentOnsetDate()}T${getDefaultIncidentOnsetTime()}`;
     const body = {
       incidentNumber: payload.incident_internal_id.trim() || undefined,
       dispatchNumber: payload.dispatch_internal_id.trim() || undefined,

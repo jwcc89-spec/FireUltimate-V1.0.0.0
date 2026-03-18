@@ -2442,23 +2442,43 @@ export function validateNerisSection(
 }
 
 function normalizeNerisTime(receivedAt: string | undefined): string {
-  if (!receivedAt) {
-    return "15:30:13";
+  if (!receivedAt?.trim()) {
+    return "00:00:00";
   }
-  const match = receivedAt.match(/^(\d{2}:\d{2}:\d{2})$/);
-  if (!match) {
-    return "15:30:13";
+  const s = receivedAt.trim();
+  const iso = s.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})$/);
+  if (iso) {
+    return iso[2];
   }
-  return match[1];
+  const match = s.match(/^(\d{2}:\d{2}:\d{2})$/);
+  if (match) {
+    return match[1];
+  }
+  return "00:00:00";
+}
+
+function incidentOnsetDateFromReceivedAt(receivedAt: string | undefined): string {
+  const iso = receivedAt?.trim().match(/^(\d{4}-\d{2}-\d{2})T\d{2}:\d{2}:\d{2}$/);
+  if (iso) {
+    return iso[1];
+  }
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
 function toDateTimeLocal(value: string | undefined, fallback: string): string {
-  if (!value) {
+  if (!value?.trim()) {
     return fallback;
   }
-  const timeMatch = value.match(/^(\d{2}:\d{2}:\d{2})$/);
+  const s = value.trim();
+  const full = s.match(/^(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})$/);
+  if (full) {
+    return `${full[1]}T${full[2]}`;
+  }
+  const timeMatch = s.match(/^(\d{2}:\d{2}:\d{2})$/);
   if (timeMatch) {
-    return `2026-02-18T${timeMatch[1]}`;
+    const date = incidentOnsetDateFromReceivedAt(undefined);
+    return `${date}T${timeMatch[1]}`;
   }
   return fallback;
 }
@@ -2539,7 +2559,7 @@ export function createDefaultNerisFormValues({
     location_in_use: "",
     location_used_as_intended: "",
     location_cross_street_name: "",
-    initial_dispatch_code: "AMB.UNRESP-BREATHING",
+    initial_dispatch_code: "",
     dispatch_determinate_code: "",
     dispatch_final_disposition: "",
     dispatch_automatic_alarm: "",

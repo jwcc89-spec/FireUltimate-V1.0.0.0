@@ -15,6 +15,11 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 | **View Exports — Report Status** | **Done (2026-03, staging verified).** Successful export shows **Exported** on **Reporting \| NERIS \| Exports** (matches NERIS queue); fixes second-browser **Draft** and post-validate **In Review** mismatch. `getExportsListReportStatus` + append stores **Exported** on success (`App.tsx`, `NerisReportFormPage.tsx`). |
 | **Incident Detail cross-browser** | Edits in Browser A visible in Browser B via API — go-live Item #1 treated **done** for current workflow. |
 | **Merge / deploy** | Branch merged/deployed per tenant (staging/prod as applicable). |
+| **Reported By in Edit (#2)** | Detail no longer overwrites API values; dropdown includes saved value so Edit shows what was selected/entered at create. |
+| **Dispatch notes & Callback save (#3)** | Same fix — display uses API; save already sent PATCH; values persist after refresh. |
+| **Create Incident onset date/time (#4)** | Create Incident modal has **Incident onset date** (YYYY-MM-DD) and **Incident onset time** (24h HH:MM:SS); stored in `receivedAt` and mapped to NERIS **Incident Onset Date & Time**. |
+| **Initial dispatch code (#6)** | Default in `createDefaultNerisFormValues` changed from `AMB.UNRESP-BREATHING` to empty; location: `src/nerisMetadata.ts`. |
+| **Aid department – remove "Current export department" (#8)** | Synthetic option removed from CORE Aid department name(s) dropdown in `NerisReportFormPage.tsx`. |
 
 ---
 
@@ -44,11 +49,11 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 2 | **Reported By** shows "manual entry" in Edit instead of typed value | BACKLOG #1 | Edit Incident should show the value the user entered. |
-| 3 | **Dispatch notes and Callback Number** do not save in Edit | BACKLOG #2 | Persist and display when editing incident. |
+| 2 | **Reported By** in Edit | BACKLOG #1 | **Done (2026-03).** No overwrite; dropdown shows saved value. |
+| 3 | **Dispatch notes and Callback** save in Edit | BACKLOG #2 | **Done (2026-03).** Persist and display; timeline supports string or array. |
 | 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | **Partial (2026-03-18):** NERIS Core onset + Incident Times use 24h `HH:MM:SS`. Incidents / rest of app still open. |
 | 5 | **Incidents Setup – Edit Reported By** layout spills into Assigned Units | BACKLOG #4 | Fix layout so controls are visible and don’t overlap. |
-| 6 | **Initial dispatch code** – define source (NERIS / CAD / blank) | BACKLOG #5 | Document and implement mapping. |
+| 6 | **Initial dispatch code** – source (NERIS / CAD / blank) | BACKLOG #5 | Default now empty (`nerisMetadata.ts`). Document mapping when CAD/NERIS finalized. |
 | 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | **Largely done (11.3):** NERIS entity directory + DD-M + CORE. **Open:** exclude/grey-out tenant’s own FD (#8). |
 | 8 | **Aid Department:** do not allow selecting tenant’s own department (exclude or grey out) | BACKLOG #10 | UI: exclude or disable self in list. Server already strips. |
 | 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
