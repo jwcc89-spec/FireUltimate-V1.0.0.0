@@ -12,6 +12,7 @@ import {
   Users,
   type LucideIcon,
 } from "lucide-react";
+import { isAdminOrHigher } from "./roleHierarchy";
 
 export type UserRole = "superadmin" | "admin" | "user";
 
@@ -1020,7 +1021,7 @@ const DISPLAY_CARDS: DisplayCardOption[] = MAIN_MENUS.flatMap((menu) =>
 export const ALL_SUBMENU_PATHS = DISPLAY_CARDS.map((submenu) => submenu.path);
 
 export function getVisibleMenus(role: UserRole): MainMenu[] {
-  if (role === "admin" || role === "superadmin") {
+  if (isAdminOrHigher(role)) {
     return MAIN_MENUS;
   }
   return MAIN_MENUS.filter((menu) => !menu.adminOnly);
@@ -1056,10 +1057,9 @@ export function getSubmenuForPath(pathname: string): NavSubmenu | undefined {
 }
 
 export function getDisplayCardOptions(role: UserRole): DisplayCardOption[] {
-  if (role === "admin" || role === "superadmin") {
+  if (isAdminOrHigher(role)) {
     return DISPLAY_CARDS;
   }
-
   return DISPLAY_CARDS.filter((card) => {
     if (card.adminOnly) {
       return false;
@@ -1098,7 +1098,7 @@ export function getIncidentCallDetail(
   return INCIDENT_CALL_DETAILS.find((call) => call.callNumber === callNumber);
 }
 
-export function getDefaultPathForRole(role: UserRole): string {
-  return role === "admin" || role === "superadmin" ? "/dashboard" : "/dashboard";
+export function getDefaultPathForRole(): string {
+  return "/dashboard";
 }
 

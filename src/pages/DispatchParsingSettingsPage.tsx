@@ -14,6 +14,45 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Try to decode base64 raw body from the ingest worker; returns decoded string or null if not base64. */
+function tryDecodeRawBody(rawBody: string): string | null {
+  if (!rawBody || typeof rawBody !== "string") return null;
+  const trimmed = rawBody.trim();
+  const withoutSuffix = trimmed.endsWith("[TRUNCATED]")
+    ? trimmed.slice(0, -"[TRUNCATED]".length).trim()
+    : trimmed;
+  if (!withoutSuffix.length) return null;
+  try {
+    const decoded = atob(withoutSuffix);
+    return decoded;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract the first base64-encoded text/plain part from decoded MIME (e.g. CAD dispatch body).
+ * Returns decoded plain text suitable for parsing, or null if none found.
+ */
+function extractPlainTextFromMime(decodedMime: string): string | null {
+  if (!decodedMime || typeof decodedMime !== "string") return null;
+  const idx = decodedMime.search(/Content-Transfer-Encoding:\s*base64/i);
+  if (idx === -1) return null;
+  const afterHeader = decodedMime.slice(idx);
+  const blankMatch = afterHeader.match(/\n\s*\n/);
+  const bodyStart = blankMatch ? afterHeader.indexOf(blankMatch[0]) + blankMatch[0].length : 0;
+  let block = afterHeader.slice(bodyStart);
+  const boundaryIdx = block.search(/\n--/);
+  if (boundaryIdx !== -1) block = block.slice(0, boundaryIdx);
+  const base64Only = block.replace(/\s/g, "").replace(/\[TRUNCATED\]/gi, "");
+  if (!base64Only.length || !/^[A-Za-z0-9+/=]*$/.test(base64Only)) return null;
+  try {
+    return atob(base64Only);
+  } catch {
+    return null;
+  }
+}
+
 export function DispatchParsingSettingsPage() {
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,10 +139,48 @@ export function DispatchParsingSettingsPage() {
                           <strong>Received:</strong> {formatDate(row.createdAt)}
                         </div>
                       </div>
-                      <label className="cad-email-raw-label">Raw body (for parsing)</label>
-                      <pre className="cad-email-raw-body">
-                        {row.rawBody || "(empty)"}
-                      </pre>
+                      {(() => {
+                        const decoded = tryDecodeRawBody(row.rawBody ?? "");
+                        if (decoded !== null) {
+                          const plainText = extractPlainTextFromMime(decoded);
+                          return (
+                            <>
+                              {plainText ? (
+                                <>
+                                  <label className="cad-email-raw-label">
+                                    Dispatch content (for parsing)
+                                  </label>
+                                  <pre className="cad-email-raw-body cad-email-dispatch-content">
+                                    {plainText}
+                                  </pre>
+                                </>
+                              ) : null}
+                              <details className="cad-email-raw-details">
+                                <summary>
+                                  {plainText ? "Show full MIME source" : "Show decoded MIME body"}
+                                </summary>
+                                <pre className="cad-email-raw-body cad-email-decoded">
+                                  {decoded}
+                                </pre>
+                              </details>
+                              <details className="cad-email-raw-details">
+                                <summary>Show raw base64</summary>
+                                <pre className="cad-email-raw-body">
+                                  {row.rawBody || "(empty)"}
+                                </pre>
+                              </details>
+                            </>
+                          );
+                        }
+                        return (
+                          <>
+                            <label className="cad-email-raw-label">Raw body (for parsing)</label>
+                            <pre className="cad-email-raw-body">
+                              {row.rawBody || "(empty)"}
+                            </pre>
+                          </>
+                        );
+                      })()}
                     </div>
                   ) : null}
                 </div>

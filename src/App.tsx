@@ -4,6 +4,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  Component,
   useCallback,
   useEffect,
   useMemo,
@@ -77,6 +78,7 @@ import {
   type Tone,
   type UserRole,
 } from "./appData";
+import { isAdminOrHigher, isSuperadmin } from "./roleHierarchy";
 import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
 import { HydrantsAdminPage } from "./HydrantsAdminPage";
 import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
@@ -1943,9 +1945,13 @@ function readSession(): SessionState {
       typeof parsed.isAuthenticated === "boolean" &&
       typeof parsed.username === "string" &&
       typeof parsed.unit === "string" &&
-      (parsed.role === "admin" || parsed.role === "user" || parsed.role === "superadmin")
+      typeof parsed.role === "string" &&
+      parsed.role.trim().length > 0
     ) {
-      return parsed;
+      return {
+        ...parsed,
+        role: parsed.role as UserRole,
+      };
     }
   } catch {
     return EMPTY_SESSION;
@@ -2971,8 +2977,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               location.pathname.startsWith(`${menu.path}/`);
             const visibleSubmenus = menu.submenus.filter(
               (submenu) =>
-                session.role === "admin" ||
-                session.role === "superadmin" ||
+                isAdminOrHigher(session.role) ||
                 !submenu.adminOnly,
             );
             const hasSubmenus = visibleSubmenus.length > 0;
@@ -3020,7 +3025,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                   <div className={`submenu-links ${isExpanded ? "open" : ""}`}>
                     {visibleSubmenus.map((submenu) => {
                       const isBeta = !submenu.isBuilt;
-                      const canClickBeta = session.role === "superadmin";
+                      const canClickBeta = isSuperadmin(session.role);
                       if (isBeta && !canClickBeta) {
                         return (
                           <span
@@ -3104,9 +3109,9 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             </button>
 
             <span className={`role-badge role-${session.role}`}>
-              {session.role === "superadmin"
+              {isSuperadmin(session.role)
                 ? "Super Admin"
-                : session.role === "admin"
+                : isAdminOrHigher(session.role)
                   ? "Admin"
                   : "User"}
             </span>
@@ -3185,7 +3190,7 @@ function MenuDisplayCards({
     () =>
       menu.submenus.filter(
         (submenu) =>
-          (role === "admin" || role === "superadmin" || !submenu.adminOnly) &&
+          (isAdminOrHigher(role) || !submenu.adminOnly) &&
           submenuVisibility[submenu.path] !== false,
       ),
     [menu, role, submenuVisibility],
@@ -3311,7 +3316,7 @@ function MenuDisplayCards({
         <section className="submenu-card-grid">
           {cards.map((card) => {
             const isBeta = !card.isBuilt;
-            const canClickBeta = role === "superadmin";
+            const canClickBeta = isSuperadmin(role);
             if (isBeta && !canClickBeta) {
               return (
                 <div
@@ -3400,7 +3405,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
           <div className="panel-header">
             <h2>Priority Shortcuts</h2>
             <span className="panel-caption">
-              {role === "admin" || role === "superadmin"
+              {isAdminOrHigher(role)
                 ? "Admin-level links included"
                 : "Admin-only links will route to access denied"}
             </span>
@@ -5264,6 +5269,7 @@ interface NerisReportFormRouteProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
+  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   apparatusFromDepartmentDetails: { unit: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
@@ -11418,6 +11424,51 @@ function NotFoundPage() {
   );
 }
 
+class RouteErrorBoundary extends Component<
+  { routeKey: string; children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(previousProps: { routeKey: string }) {
+    if (previousProps.routeKey !== this.props.routeKey && this.state.hasError) {
+      // Reset boundary when route changes so the app can recover without a hard refresh.
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Something went wrong</h1>
+            <p>
+              This page didn’t finish loading. You can reload the app and try again.
+            </p>
+          </div>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={() => window.location.reload()}
+            >
+              Reload page
+            </button>
+          </div>
+        </header>
+      </section>
+    );
+  }
+}
+
 function RouteResolver({
   role,
   username,
@@ -11506,6 +11557,9 @@ function RouteResolver({
         username={username}
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
+        onDeleteIncidentCall={(targetCallNumber: string, reason?: string) =>
+          onSetIncidentDeleted(targetCallNumber, true, reason ?? "Deleted from NERIS report form.")
+        }
         nerisExportSettings={nerisExportSettings}
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
         exportHistory={nerisExportHistory}
@@ -11570,9 +11624,11 @@ function RouteResolver({
   }
 
   return (
-    <div key={path} className="route-resolver-root">
-      {content}
-    </div>
+    <RouteErrorBoundary routeKey={path}>
+      <div key={path} className="route-resolver-root">
+        {content}
+      </div>
+    </RouteErrorBoundary>
   );
 }
 
@@ -11891,7 +11947,7 @@ function App() {
           path="/auth"
           element={
             session.isAuthenticated ? (
-              <Navigate to={getDefaultPathForRole(session.role)} replace />
+              <Navigate to={getDefaultPathForRole()} replace />
             ) : (
               <AuthPage onLogin={handleLogin} />
             )
