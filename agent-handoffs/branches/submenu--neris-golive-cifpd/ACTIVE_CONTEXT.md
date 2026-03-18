@@ -51,8 +51,9 @@
   - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
 
 ## Current blocker / status
-- No code blocker. **Uncommitted work (2026-03-14):** NERIS cross-browser Phase 1 (schema, migration, API routes, client wiring, findings doc). User asked not to commit/push this session.
-- User must run migration `20260314000000_add_neris_export_history` once (see NERIS_CROSS_BROWSER_FINDINGS.md).
+- No code blocker. Latest work (2026-03-16): CAD email UI — base64 decode + **extract plain-text dispatch content** from MIME (Dispatch Parsing Settings shows usable CAD text first); CREATE_SUPERADMIN_PRODUCTION.md + create-superadmin.ts; STAGING_VS_PRODUCTION_DATA.md (incidents/export + CAD emails); GIT_WORKTREE Option A/B; removed empty CAD_EMAIL_INGEST_SETUP_GUIDE.md. All committed and pushed.
+- User chose Option B: Worker stays on staging until parsing is dialed in; then switch CAD_INGEST_API_URL to production.
+- User must run migration `20260314000000_add_neris_export_history` once if not yet run (see NERIS_CROSS_BROWSER_FINDINGS.md).
 - NERIS support confirmed production client/entity enrollment active. Deployment gate: production behind branch until PR to `main`; staging validation still required before promotion.
 
 ## External dependency status
@@ -61,18 +62,20 @@
 ## Now vs Later
 - **Now**:
   - confirm/save tenant entity source so staging `hasTenantEntityId=true`,
-  - validate staging UX for:
-    - Admin `Incidents Setup` configuration save/load,
-    - Create Incident modal field behavior (required toggles + reportedBy mode),
-    - Incident Detail edit + save behavior,
-    - incident number linkage across Incidents queue, NERIS queue, and NERIS form,
-  - run staging validate/export proof.
+  - validate staging UX (Incidents Setup, Create Incident, Incident Detail, incident number linkage),
+  - run staging validate/export proof,
+  - dial in CAD email parsing (Dispatch Parsing Settings now shows extracted dispatch content).
 - **Later**:
-  - move incident table preferences (column widths/order/visibility) to backend per-user persistence so settings sync across devices and browsers,
+  - switch Worker **CAD_INGEST_API_URL** to production API when parsing is ready (per user choice),
+  - move incident table preferences to backend per-user persistence,
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (2026-03-14)
+## Last session (2026-03-16)
+- **CAD email UI:** Decode base64; extract plain-text dispatch content from MIME so Dispatch Parsing Settings shows usable CAD text first.
+- **Docs/scripts:** CREATE_SUPERADMIN_PRODUCTION.md + create-superadmin.ts; STAGING_VS_PRODUCTION_DATA.md; GIT_WORKTREE Option A/B; removed empty CAD_EMAIL_INGEST_SETUP_GUIDE.md. User chose Option B (Worker on staging until parsing ready).
+
+## Previous session (2026-03-14)
 - **NERIS cross-browser Phase 1:** Implemented server-side export history. Added `NerisExportHistory` table (Prisma + migration `20260314000000_add_neris_export_history`), GET/POST `/api/neris/export-history`, client API and App state; NERIS Exports/Details/Report Form use server data when available. Beginner-friendly “Steps for you” added to NERIS_CROSS_BROWSER_FINDINGS.md (run migration once; no commit/push this session per user).
 - **Docs (earlier in conversation):** Consolidated three CAD/email guides into **EMAIL_AND_CAD_SETUP.md**; added B11 (Worker staging→production). GO_LIVE and PRIORITY refs updated. Two commits already pushed (docs; then GIT_WORKTREE, package files).
 
@@ -80,15 +83,20 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
-- `894757f` updated cursavesinfo
-- `f731957` docs: add architecture, data model, lifecycle, integrations; agent guardrails and project context
-- `27a795b` remaining files not commit from auto cursor, go live plan etc
+- `4f65b55` feat(ui): extract plain-text dispatch content from MIME base64 in CAD emails
+- `162b38c` feat(docs+ui): CAD email decode, superadmin script, staging vs prod notes
+- `f6f9bfc` Handoff: ACTIVE_CONTEXT recent commit hash
+- `63e66a3` Dispatch Parsing Settings + doc/handoff updates (session end)
+- `f3ac5ad` Edit Times: place Clear button to the right of each time header
+- `eb4c21a` Edit Times: HH:mm:ss format + Clear buttons
+- `527b292` NERIS Edit Times: validation rules + doc note
+- `2911eca` Edit Times: fix cursor jumping; doc: where to view CAD emails
 
 ## Next-step checklist (detailed)
 
-**Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; NERIS cross-browser Phase 1 implemented (uncommitted).
+**Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; in-app email viewing (Dispatch Parsing Settings) implemented. NERIS cross-browser Phase 1 in branch (run migration if not done).
 
-**CAD (you):** Switch Worker to production (EMAIL_AND_CAD_SETUP.md §B11); give cifpdil@cad.fireultimate.app to dispatch. Parsing/auto-fill when sample email available.
+**CAD (you):** For now Worker stays on staging (Option B) until parsing is dialed in; then set CAD_INGEST_API_URL to production (EMAIL_AND_CAD_SETUP.md §B11). View incoming emails in **Admin Functions → Dispatch Parsing Settings** (dispatch content now extracted from MIME). Parsing/auto-fill module next (CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md).
 
 **NERIS cross-browser (you, once):** Run migration for Phase 1 — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Use same DATABASE_URL as your API (e.g. Render); then redeploy API if needed. Test: export in Browser A, check NERIS Exports in Browser B.
 

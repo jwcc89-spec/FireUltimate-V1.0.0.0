@@ -860,6 +860,18 @@ body.resizing-shell-sidebar {
   background-color: #f8fafc;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.primary-button:disabled:hover,
+.secondary-button:disabled:hover {
+  background-color: inherit;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
@@ -1161,6 +1173,89 @@ tbody tr:last-of-type td {
   color: #475569;
   font-size: 0.84rem;
   line-height: 1.45;
+}
+
+/* Dispatch Parsing Settings — incoming CAD email list */
+.cad-email-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.cad-email-item {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.cad-email-summary {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.75rem;
+  align-items: center;
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  background: #f8fafc;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  color: #0f172a;
+}
+
+.cad-email-summary:hover {
+  background: #f1f5f9;
+}
+
+.cad-email-from,
+.cad-email-to {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cad-email-date {
+  color: #64748b;
+  font-size: 0.8rem;
+  white-space: nowrap;
+}
+
+.cad-email-body-panel {
+  padding: 0.75rem 1rem;
+  background: #fff;
+  border-top: 1px solid #e2e8f0;
+}
+
+.cad-email-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.cad-email-raw-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #64748b;
+  margin-bottom: 0.35rem;
+}
+
+.cad-email-raw-body {
+  margin: 0;
+  padding: 0.75rem;
+  background: #f1f5f9;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 20rem;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
 }
 
 .dashboard-shortcut-list,
@@ -3453,6 +3548,18 @@ body.resource-personnel-modal-open {
   min-width: 0;
 }
 
+.neris-resource-datetime-header {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
+.neris-resource-time-clear {
+  white-space: nowrap;
+  font-size: 0.72rem;
+}
+
 .neris-resource-times-editor-grid label {
   display: grid;
   gap: 0.2rem;
@@ -3927,6 +4034,127 @@ body.resource-personnel-modal-open {
 .validation-modal-actions {
   display: flex;
   justify-content: flex-end;
+}
+
+@media print {
+  body {
+    background: #ffffff !important;
+  }
+
+  body.printing-neris * {
+    visibility: hidden !important;
+  }
+
+  body.printing-neris .neris-print-root,
+  body.printing-neris .neris-print-root * {
+    visibility: visible !important;
+  }
+
+  body.printing-neris .neris-print-root {
+    position: absolute;
+    inset: 0;
+    padding: 1rem 1.25rem;
+    background: #ffffff;
+  }
+
+  .sidebar,
+  .sidebar-resizer,
+  .topbar,
+  .settings-dropdown,
+  .mobile-backdrop,
+  .module-toggle,
+  .edit-display-wrap,
+  .validation-modal-backdrop,
+  .neris-resource-personnel-modal-backdrop {
+    display: none !important;
+  }
+
+  .shell-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .main-shell {
+    grid-template-rows: 1fr !important;
+  }
+
+  .page-content {
+    overflow: visible !important;
+  }
+
+  .page-header .header-actions {
+    display: none !important;
+  }
+
+  .panel {
+    box-shadow: none !important;
+  }
+
+  .neris-report-layout {
+    grid-template-columns: 1fr !important;
+  }
+
+  .neris-sidebar {
+    display: none !important;
+  }
+}
+
+.neris-print-root {
+  display: none;
+}
+
+body.printing-neris .neris-print-root {
+  display: block;
+}
+
+.neris-print-header h1 {
+  margin: 0;
+  font-size: 1.25rem;
+  color: #0f172a;
+}
+
+.neris-print-header p {
+  margin: 0.25rem 0 0.75rem;
+  color: #334155;
+  font-size: 0.9rem;
+}
+
+.neris-print-section {
+  margin-top: 0.9rem;
+  page-break-inside: avoid;
+}
+
+.neris-print-section h2 {
+  margin: 0 0 0.35rem;
+  font-size: 1rem;
+  color: #0f172a;
+  border-bottom: 1px solid #e2e8f0;
+  padding-bottom: 0.2rem;
+}
+
+.neris-print-section dl {
+  margin: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.neris-print-row {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 0.75rem;
+}
+
+.neris-print-row dt {
+  font-weight: 700;
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.neris-print-row dd {
+  margin: 0;
+  color: #1e293b;
+  font-size: 0.86rem;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .submenu-settings-group {

@@ -408,6 +408,13 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 - Use `.env.server` as fallback only in local/dev where tenant config is missing.
 - Verification note: do not treat `GET /entity` as a canonical authorization list. For entity confirmation, use `GET /entity?neris_id=<id>` and/or `GET /entity/<id>` and check enrollment via `GET /account/enrollment/<client_id>`.
 
+### NERIS form — Edit Times validation (per resource unit)
+
+- **Always required:** Dispatch time, Clear time.
+- **Staged:** Never required.
+- **When "Dispatched and canceled en route" is unchecked:** Enroute and On Scene are required.
+- **When "Dispatched and canceled en route" is checked:** Canceled time and Clear time are both required and must be the same (UI keeps them in sync on blur/toggle).
+
 ---
 
 ## Phase 6 — DNS + Domain Routing

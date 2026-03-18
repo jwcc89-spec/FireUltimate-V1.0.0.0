@@ -8,7 +8,7 @@
 
 ## 1. Goal
 
-- **Where emails show up:** New Admin Functions submenu **Incident Settings**, section **Parsing Data**. Incoming CAD emails are visible here so the department can configure parsing and monitor what’s coming in.
+- **Where emails show up:** Admin Functions submenu **Dispatch Parsing Settings**. Incoming CAD emails are listed and viewable (expand row for raw body). Parsing rules and config to be added later.
 - **Parsing configuration:** Per **tenant**. Each department sets up its own rules (their dispatch may send a different format). Setup is done by the department, not by the program owner.
 - **When parsing is used:** When a new email arrives and parsing rules are applied, the app **auto-creates one incident** (draft). Fields are filled from parsed text where rules match; others stay blank. Apparatus is matched to Department Details apparatus list; unrecognized units (e.g. private ambulance) are not added.
 - **Incident purpose:** (1) Give responders information immediately and during the call (address, units, dispatch notes; later map routing). (2) Pre-populate NERIS forms (current behavior). Incidents are separate from NERIS report locking; auto-created incidents start as **Draft**.
@@ -115,9 +115,9 @@ So: only subadmin+ see raw emails and parsing config; all users (and above) can 
 
 ## 11. References
 
-- **Existing:** `CadEmailIngest` table; POST `/api/cad/inbound-email`; Worker sends to API. Emails are stored; no parsing or UI yet.
-- **Where it lives in app:** Admin Functions → **Incident Settings** (new submenu) → **Parsing Data**.
-- **After this:** In-depth technical design (data model for parsing rules, dedupe logic, sequencing, API, and UI) before implementation.
+- **Existing:** `CadEmailIngest` table; POST `/api/cad/inbound-email`; Worker sends to API. GET `/api/cad/emails` (tenant-scoped list for UI). Emails are stored; viewing UI is implemented.
+- **Where it lives in app:** Admin Functions → **Dispatch Parsing Settings** (view incoming emails). Parsing Data / rules and auto-create to be added.
+- **After this:** In-depth technical design (data model for parsing rules, dedupe logic, sequencing, API, and UI) before full parsing module.
 
 ---
 

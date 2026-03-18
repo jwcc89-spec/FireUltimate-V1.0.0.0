@@ -12,6 +12,7 @@ import {
   type IncidentCallSummary,
   type UserRole,
 } from "../appData";
+import { isAdminOrHigher } from "../roleHierarchy";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
@@ -30,6 +31,9 @@ import {
   NerisFlatSingleOptionSelect,
 } from "../NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "../NerisGroupedOptionSelect";
+
+type PrintSummaryRow = { label: string; value: string };
+type PrintSummarySection = { id: string; title: string; rows: PrintSummaryRow[] };
 
 export interface NerisExportSettings {
   exportUrl: string;
@@ -52,6 +56,7 @@ export interface NerisReportFormPageProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
+  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
   writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void;
@@ -299,6 +304,7 @@ function NerisReportFormPage({
   username,
   incidentCalls,
   onUpdateIncidentCall,
+  onDeleteIncidentCall,
   nerisExportSettings,
   readNerisDraft,
   writeNerisDraft,
@@ -411,7 +417,7 @@ function NerisReportFormPage({
   );
   const isLocked =
     reportStatus === "In Review" || reportStatus === "Exported";
-  const canEdit = !isLocked || role === "admin";
+  const canEdit = !isLocked || isAdminOrHigher(role);
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
@@ -472,6 +478,8 @@ function NerisReportFormPage({
   const [validationModal, setValidationModal] = useState<ValidationModalState | null>(
     null,
   );
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [printSummaryOpen, setPrintSummaryOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
   const [isExporting, setIsExporting] = useState(false);
@@ -829,6 +837,10 @@ function NerisReportFormPage({
     formValues.risk_reduction_cooking_suppression_present ?? ""
   ).trim();
   const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
+    null,
+  );
+  /** While user is typing a resource time, hold raw value so cursor doesn't jump (parse on blur). */
+  const [resourceTimeDraft, setResourceTimeDraft] = useState<{ key: string; value: string } | null>(
     null,
   );
   const activeResourcePersonnelUnit = useMemo(
@@ -1550,6 +1562,40 @@ function NerisReportFormPage({
           "On Scene time is required unless dispatched and canceled en route.",
         );
       }
+    } else {
+      if (!unitEntry.canceledTime.trim()) {
+        addResourceError(
+          "canceledTime",
+          "Canceled time",
+          "Canceled time is required when dispatched and canceled en route.",
+        );
+      }
+      if (unitEntry.canceledTime.trim() && unitEntry.clearTime.trim()) {
+        const canceledTs = toResourceDateTimeTimestamp(
+          unitEntry.canceledTime,
+          resourceFallbackDate,
+        );
+        const clearTs = toResourceDateTimeTimestamp(
+          unitEntry.clearTime,
+          resourceFallbackDate,
+        );
+        if (
+          canceledTs !== null &&
+          clearTs !== null &&
+          canceledTs !== clearTs
+        ) {
+          addResourceError(
+            "canceledTime",
+            "Canceled time",
+            "When dispatched and canceled en route, Canceled and Clear times must be the same.",
+          );
+          addResourceError(
+            "clearTime",
+            "Clear time",
+            "When dispatched and canceled en route, Canceled and Clear times must be the same.",
+          );
+        }
+      }
     }
 
     const timelineEntries = [
@@ -1828,17 +1874,18 @@ function NerisReportFormPage({
                   entry.canceledTime,
                   resourceFallbackDate,
                 );
+                const sameTime = entry.isCanceledEnroute && normalizedDispatch
+                  ? normalizedCanceled || normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 1)
+                  : undefined;
                 return {
                   ...entry,
                   dispatchTime: normalizedDispatch,
-                  canceledTime:
-                    entry.isCanceledEnroute && !normalizedCanceled && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 1)
-                      : normalizedCanceled,
-                  clearTime:
-                    entry.isCanceledEnroute && !normalizedClear && normalizedDispatch
-                      ? addMinutesToResourceDateTime(normalizedDispatch, 2)
-                      : normalizedClear,
+                  ...(sameTime !== undefined
+                    ? { canceledTime: sameTime, clearTime: sameTime }
+                    : {
+                        canceledTime: normalizedCanceled,
+                        clearTime: normalizedClear,
+                      }),
                 };
               }
               if (
@@ -1848,9 +1895,17 @@ function NerisReportFormPage({
                 field === "canceledTime" ||
                 field === "clearTime"
               ) {
+                const normalized = toResourceDateTimeInputValue(value, resourceFallbackDate);
+                if (entry.isCanceledEnroute && (field === "canceledTime" || field === "clearTime")) {
+                  return {
+                    ...entry,
+                    canceledTime: normalized,
+                    clearTime: normalized,
+                  };
+                }
                 return {
                   ...entry,
-                  [field]: toResourceDateTimeInputValue(value, resourceFallbackDate),
+                  [field]: normalized,
                 };
               }
               return {
@@ -1964,18 +2019,18 @@ function NerisReportFormPage({
                 entry.canceledTime,
                 resourceFallbackDate,
               );
+              const sameTime =
+                normalizedClear ||
+                normalizedCanceled ||
+                (normalizedDispatch
+                  ? addMinutesToResourceDateTime(normalizedDispatch, 1)
+                  : "");
               return {
                 ...entry,
                 isCanceledEnroute: true,
                 dispatchTime: normalizedDispatch,
-                canceledTime:
-                  normalizedCanceled || normalizedDispatch
-                    ? normalizedCanceled || addMinutesToResourceDateTime(normalizedDispatch, 1)
-                    : "",
-                clearTime:
-                  normalizedClear || normalizedDispatch
-                    ? normalizedClear || addMinutesToResourceDateTime(normalizedDispatch, 2)
-                    : "",
+                canceledTime: sameTime,
+                clearTime: sameTime,
               };
             })()
           : entry,
@@ -3622,6 +3677,131 @@ function NerisReportFormPage({
     setValidationModal(null);
   };
 
+  const handleDeleteConfirmClose = () => {
+    setDeleteConfirmOpen(false);
+  };
+
+  const handleDeleteIncident = async () => {
+    try {
+      await onDeleteIncidentCall(callNumber, "Deleted from NERIS report form.");
+    } finally {
+      setDeleteConfirmOpen(false);
+      navigate("/reporting/neris");
+    }
+  };
+
+  const printSummarySections = useMemo((): PrintSummarySection[] => {
+    const normalizeForOptionLookup = (value: string) =>
+      value.trim().replace(/\s+/g, "_").replace(/\//g, "_").toUpperCase();
+
+    const formatFieldValueForPrint = (field: NerisFieldMetadata, raw: string): string => {
+      const value = raw.trim();
+      if (!value) return "";
+      if (!field.optionsKey) return value;
+      const options = getNerisValueOptions(field.optionsKey);
+      const byValue = new Map(
+        options.map((option) => [normalizeForOptionLookup(option.value), option.label] as const),
+      );
+      const parts =
+        field.inputKind === "multiselect"
+          ? value
+              .split(",")
+              .map((entry) => entry.trim())
+              .filter(Boolean)
+          : [value];
+      const mapped = parts.map((part) => byValue.get(normalizeForOptionLookup(part)) ?? part);
+      return mapped.join(", ");
+    };
+
+    const sections: PrintSummarySection[] = [];
+    for (const section of NERIS_FORM_SECTIONS) {
+      const fields = getNerisFieldsForSection(section.id);
+      const rows: PrintSummaryRow[] = [];
+      for (const field of fields) {
+        const raw = String(formValues[field.id] ?? "");
+        const formatted = formatFieldValueForPrint(field, raw);
+        if (!formatted) continue;
+        rows.push({ label: field.label, value: formatted });
+      }
+      if (rows.length > 0) {
+        sections.push({ id: section.id, title: section.label, rows });
+      }
+    }
+
+    const aidRows: PrintSummaryRow[] = [];
+    additionalAidEntries.forEach((entry, index) => {
+      const bits = [entry.aidDirection, entry.aidType, entry.aidDepartment]
+        .map((value) => value.trim())
+        .filter(Boolean);
+      if (bits.length > 0) {
+        aidRows.push({ label: `Aid (FD) #${index + 1}`, value: bits.join(" • ") });
+      }
+    });
+    additionalNonFdAidEntries.forEach((entry, index) => {
+      const value = entry.aidType.trim();
+      if (value) {
+        aidRows.push({ label: `Aid (Non-FD) #${index + 1}`, value });
+      }
+    });
+    if (aidRows.length > 0) {
+      sections.push({ id: "aidSummary", title: "Aid Given / Received", rows: aidRows });
+    }
+
+    const resourceRows: PrintSummaryRow[] = [];
+    resourceUnits.forEach((unit, index) => {
+      const unitBits: string[] = [];
+      const unitIdLabel = unit.unitId.trim() || `Unit ${index + 1}`;
+      if (unit.unitType.trim()) unitBits.push(`Type: ${unit.unitType.trim()}`);
+      if (unit.staffing.trim()) unitBits.push(`Staffing: ${unit.staffing.trim()}`);
+      if (unit.responseMode.trim()) unitBits.push(`Response: ${unit.responseMode.trim()}`);
+      if (unit.transportMode.trim()) unitBits.push(`Transport: ${unit.transportMode.trim()}`);
+      if (unit.dispatchTime.trim()) unitBits.push(`Dispatched: ${unit.dispatchTime.trim()}`);
+      if (unit.enrouteTime.trim()) unitBits.push(`Enroute: ${unit.enrouteTime.trim()}`);
+      if (unit.stagedTime.trim()) unitBits.push(`Staged: ${unit.stagedTime.trim()}`);
+      if (unit.onSceneTime.trim()) unitBits.push(`On Scene: ${unit.onSceneTime.trim()}`);
+      if (unit.canceledTime.trim()) unitBits.push(`Canceled: ${unit.canceledTime.trim()}`);
+      if (unit.clearTime.trim()) unitBits.push(`Clear: ${unit.clearTime.trim()}`);
+      if (unit.personnel.trim()) unitBits.push(`Personnel: ${unit.personnel.trim()}`);
+      if (unit.reportWriter.trim()) unitBits.push(`Writer: ${unit.reportWriter.trim()}`);
+      if (unit.unitNarrative.trim()) unitBits.push(`Narrative: ${unit.unitNarrative.trim()}`);
+      if (unitBits.length > 0) {
+        resourceRows.push({ label: unitIdLabel, value: unitBits.join(" | ") });
+      }
+    });
+    if (resourceRows.length > 0) {
+      sections.push({ id: "resourceSummary", title: "Resources", rows: resourceRows });
+    }
+
+    return sections;
+  }, [additionalAidEntries, additionalNonFdAidEntries, formValues, resourceUnits]);
+
+  const handlePrintSummary = () => {
+    if (typeof window === "undefined") return;
+    setPrintSummaryOpen(true);
+    document.body.classList.add("printing-neris");
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        window.print();
+      });
+    });
+  };
+
+  useEffect(() => {
+    if (!printSummaryOpen || typeof window === "undefined") {
+      return;
+    }
+    const cleanup = () => {
+      document.body.classList.remove("printing-neris");
+      setPrintSummaryOpen(false);
+    };
+    window.addEventListener("afterprint", cleanup);
+    const fallback = window.setTimeout(cleanup, 8_000);
+    return () => {
+      window.removeEventListener("afterprint", cleanup);
+      window.clearTimeout(fallback);
+    };
+  }, [printSummaryOpen]);
+
   const handleValidationModalReturn = () => {
     setValidationModal(null);
     navigate("/reporting/neris");
@@ -3924,6 +4104,11 @@ function NerisReportFormPage({
           field.inputKind === "time" ||
           field.inputKind === "datetime" ||
           field.inputKind === "readonly") ? (
+          (() => {
+            const allowAdminEditReadonly =
+              field.id === "incident_neris_id" && isAdminOrHigher(role);
+            const isReadonlyField = field.inputKind === "readonly" && !allowAdminEditReadonly;
+            return (
           <input
             id={inputId}
             type={
@@ -3934,11 +4119,13 @@ function NerisReportFormPage({
                   : field.inputKind
             }
             step={field.inputKind === "time" ? 1 : undefined}
-            readOnly={field.inputKind === "readonly"}
+            readOnly={isReadonlyField}
             value={value}
             placeholder={field.placeholder}
             onChange={(event) => updateFieldValue(field.id, event.target.value)}
           />
+            );
+          })()
         ) : null}
 
         {isAidGivenQuestionField ? (
@@ -4499,9 +4686,14 @@ function NerisReportFormPage({
           ) : null}
         </div>
         <div className="header-actions">
-          {role === "admin" ? (
+          {isAdminOrHigher(role) ? (
             <>
-              <button type="button" className="secondary-button compact-button">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                disabled
+                title="Import is not implemented yet."
+              >
                 Import
               </button>
               <button
@@ -4512,11 +4704,20 @@ function NerisReportFormPage({
               >
                 {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
               </button>
-              <button type="button" className="secondary-button compact-button">
-                CAD notes
-              </button>
-              <button type="button" className="secondary-button compact-button">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={handlePrintSummary}
+              >
                 Print
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setDeleteConfirmOpen(true)}
+                disabled={isExporting || isFetchingIncidentTest}
+              >
+                Delete
               </button>
             </>
           ) : null}
@@ -4528,7 +4729,7 @@ function NerisReportFormPage({
           >
             Validate
           </button>
-          {role === "admin" ? (
+          {isAdminOrHigher(role) ? (
             <>
               <button
                 type="button"
@@ -4611,6 +4812,75 @@ function NerisReportFormPage({
               </>
             ) : null}
           </div>
+        </div>
+      ) : null}
+
+      {deleteConfirmOpen ? (
+        <div
+          className="validation-modal-backdrop"
+          role="dialog"
+          aria-modal="true"
+          onClick={(event) => {
+            if (event.target === event.currentTarget) {
+              handleDeleteConfirmClose();
+            }
+          }}
+        >
+          <div className="validation-modal panel">
+            <h2>Delete incident?</h2>
+            <p>
+              This will remove the incident from Fire Ultimate for this tenant (including the NERIS
+              workflow entry). This cannot be undone.
+            </p>
+            <div className="validation-modal-actions">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={handleDeleteConfirmClose}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={handleDeleteIncident}
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {printSummaryOpen ? (
+        <div className="neris-print-root" aria-hidden>
+          <div className="neris-print-header">
+            <h1>NERIS Report Summary</h1>
+            <p>
+              {detailForSideEffects.callNumber}
+              {detailForSideEffects.address ? ` • ${detailForSideEffects.address}` : ""}
+            </p>
+          </div>
+
+          {printSummarySections.length > 0 ? (
+            <div className="neris-print-sections">
+              {printSummarySections.map((section) => (
+                <section key={`print-${section.id}`} className="neris-print-section">
+                  <h2>{section.title}</h2>
+                  <dl>
+                    {section.rows.map((row) => (
+                      <div key={`${section.id}-${row.label}`} className="neris-print-row">
+                        <dt>{row.label}</dt>
+                        <dd>{row.value}</dd>
+                      </div>
+                    ))}
+                  </dl>
+                </section>
+              ))}
+            </div>
+          ) : (
+            <p>No report fields have values yet.</p>
+          )}
         </div>
       ) : null}
 
@@ -5576,7 +5846,21 @@ function NerisReportFormPage({
                               <div className="neris-resource-times-editor">
                                 <div className="neris-resource-times-editor-grid">
                                   <label className="neris-resource-datetime-label">
-                                    Dispatch
+                                    <span className="neris-resource-datetime-header">
+                                      Dispatch
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "dispatchTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5595,10 +5879,31 @@ function NerisReportFormPage({
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        placeholder="HH:mm (24h)"
-                                        value={formatResourceTimePart(unitEntry.dispatchTime)}
-                                        onChange={(e) => {
-                                          const v = parseTimeInput24h(e.target.value);
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:dispatchTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.dispatchTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:dispatchTime`,
+                                            value: formatResourceTimePart(unitEntry.dispatchTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:dispatchTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:dispatchTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:dispatchTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.dispatchTime);
+                                          const v = parseTimeInput24h(raw);
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "dispatchTime",
@@ -5608,6 +5913,7 @@ function NerisReportFormPage({
                                               v,
                                             ) || unitEntry.dispatchTime,
                                           );
+                                          setResourceTimeDraft(null);
                                         }}
                                       />
                                     </span>
@@ -5616,7 +5922,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    Enroute
+                                    <span className="neris-resource-datetime-header">
+                                      Enroute
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "enrouteTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5635,10 +5955,31 @@ function NerisReportFormPage({
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        placeholder="HH:mm (24h)"
-                                        value={formatResourceTimePart(unitEntry.enrouteTime)}
-                                        onChange={(e) => {
-                                          const v = parseTimeInput24h(e.target.value);
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:enrouteTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.enrouteTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:enrouteTime`,
+                                            value: formatResourceTimePart(unitEntry.enrouteTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:enrouteTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:enrouteTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:enrouteTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.enrouteTime);
+                                          const v = parseTimeInput24h(raw);
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "enrouteTime",
@@ -5648,6 +5989,7 @@ function NerisReportFormPage({
                                               v,
                                             ) || unitEntry.enrouteTime,
                                           );
+                                          setResourceTimeDraft(null);
                                         }}
                                       />
                                     </span>
@@ -5656,7 +5998,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    Staged
+                                    <span className="neris-resource-datetime-header">
+                                      Staged
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "stagedTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5675,10 +6031,31 @@ function NerisReportFormPage({
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        placeholder="HH:mm (24h)"
-                                        value={formatResourceTimePart(unitEntry.stagedTime)}
-                                        onChange={(e) => {
-                                          const v = parseTimeInput24h(e.target.value);
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:stagedTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.stagedTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:stagedTime`,
+                                            value: formatResourceTimePart(unitEntry.stagedTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:stagedTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:stagedTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:stagedTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.stagedTime);
+                                          const v = parseTimeInput24h(raw);
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "stagedTime",
@@ -5688,6 +6065,7 @@ function NerisReportFormPage({
                                               v,
                                             ) || unitEntry.stagedTime,
                                           );
+                                          setResourceTimeDraft(null);
                                         }}
                                       />
                                     </span>
@@ -5696,7 +6074,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    On Scene
+                                    <span className="neris-resource-datetime-header">
+                                      On Scene
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "onSceneTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5715,10 +6107,31 @@ function NerisReportFormPage({
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        placeholder="HH:mm (24h)"
-                                        value={formatResourceTimePart(unitEntry.onSceneTime)}
-                                        onChange={(e) => {
-                                          const v = parseTimeInput24h(e.target.value);
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:onSceneTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.onSceneTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:onSceneTime`,
+                                            value: formatResourceTimePart(unitEntry.onSceneTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:onSceneTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:onSceneTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:onSceneTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.onSceneTime);
+                                          const v = parseTimeInput24h(raw);
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "onSceneTime",
@@ -5728,6 +6141,7 @@ function NerisReportFormPage({
                                               v,
                                             ) || unitEntry.onSceneTime,
                                           );
+                                          setResourceTimeDraft(null);
                                         }}
                                       />
                                     </span>
@@ -5736,7 +6150,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    Canceled
+                                    <span className="neris-resource-datetime-header">
+                                      Canceled
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "canceledTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5755,10 +6183,31 @@ function NerisReportFormPage({
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        placeholder="HH:mm (24h)"
-                                        value={formatResourceTimePart(unitEntry.canceledTime)}
-                                        onChange={(e) => {
-                                          const v = parseTimeInput24h(e.target.value);
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:canceledTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.canceledTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:canceledTime`,
+                                            value: formatResourceTimePart(unitEntry.canceledTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:canceledTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:canceledTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:canceledTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.canceledTime);
+                                          const v = parseTimeInput24h(raw);
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "canceledTime",
@@ -5768,6 +6217,7 @@ function NerisReportFormPage({
                                               v,
                                             ) || unitEntry.canceledTime,
                                           );
+                                          setResourceTimeDraft(null);
                                         }}
                                       />
                                     </span>
@@ -5776,7 +6226,21 @@ function NerisReportFormPage({
                                     ) : null}
                                   </label>
                                   <label className="neris-resource-datetime-label">
-                                    Clear
+                                    <span className="neris-resource-datetime-header">
+                                      Clear
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() => {
+                                          updateResourceUnitField(unitEntry.id, "clearTime", "");
+                                          clearResourceUnitValidationErrors(unitEntry.id);
+                                          setResourceTimeDraft(null);
+                                          markNerisFormDirty();
+                                        }}
+                                      >
+                                        Clear
+                                      </button>
+                                    </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
                                         type="date"
@@ -5795,10 +6259,31 @@ function NerisReportFormPage({
                                       <input
                                         type="text"
                                         inputMode="numeric"
-                                        placeholder="HH:mm (24h)"
-                                        value={formatResourceTimePart(unitEntry.clearTime)}
-                                        onChange={(e) => {
-                                          const v = parseTimeInput24h(e.target.value);
+                                        placeholder="HH:mm:ss (24h)"
+                                        value={
+                                          resourceTimeDraft?.key === `${unitEntry.id}:clearTime`
+                                            ? resourceTimeDraft.value
+                                            : formatResourceTimePart(unitEntry.clearTime)
+                                        }
+                                        onFocus={() =>
+                                          setResourceTimeDraft({
+                                            key: `${unitEntry.id}:clearTime`,
+                                            value: formatResourceTimePart(unitEntry.clearTime),
+                                          })
+                                        }
+                                        onChange={(e) =>
+                                          setResourceTimeDraft((prev) =>
+                                            prev?.key === `${unitEntry.id}:clearTime`
+                                              ? { ...prev, value: e.target.value }
+                                              : { key: `${unitEntry.id}:clearTime`, value: e.target.value },
+                                          )
+                                        }
+                                        onBlur={() => {
+                                          const raw =
+                                            resourceTimeDraft?.key === `${unitEntry.id}:clearTime`
+                                              ? resourceTimeDraft.value
+                                              : formatResourceTimePart(unitEntry.clearTime);
+                                          const v = parseTimeInput24h(raw);
                                           updateResourceUnitField(
                                             unitEntry.id,
                                             "clearTime",
@@ -5808,6 +6293,7 @@ function NerisReportFormPage({
                                               v,
                                             ) || unitEntry.clearTime,
                                           );
+                                          setResourceTimeDraft(null);
                                         }}
                                       />
                                     </span>

@@ -38,6 +38,22 @@ POST /api/cad/inbound-email → store in CadEmailIngest → (later) parse and cr
 
 ---
 
+## Where to view incoming CAD emails (e.g. cifpdil@cad.fireultimate.app)
+
+When an email is sent to your CAD address (e.g. **cifpdil@cad.fireultimate.app** or **cifpdil@fireultimate.app**), it is captured and stored. You can confirm receipt and view the content here:
+
+| Where | How |
+|-------|-----|
+| **Render (API logs)** | Render Dashboard → your API Web Service (e.g. fireultimate-api-staging or production) → **Logs**. Look for **POST /api/cad/inbound-email** with status **200**. This confirms the Worker called the API and the request was accepted. |
+| **Neon (database)** | **Neon** → your project → **SQL Editor**. Run a query against the **CadEmailIngest** table. Each row is one received email. Example to see latest emails with full body for parsing: |
+| | `SELECT id, "tenantId", "fromAddress", "toAddress", "rawBody", "headersJson", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 20;` |
+| | **Columns:** `fromAddress`, `toAddress` = sender and your CAD address; **`rawBody`** = full email body (use this for parsing/editing); `headersJson` = headers; `createdAt` = when it was stored. |
+| **In-app UI** | **Admin Functions → Dispatch Parsing Settings.** Lists incoming CAD emails (From, To, received time); expand a row to view raw body. Parsing rules and auto-create incidents are planned (see **CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md**). |
+
+**Before giving the address to dispatch:** Run the B8 test (send a test email, then check Render logs or Neon) so you know emails are reaching the API and the **CadEmailIngest** table. After you send the address to the CAD Dispatch center, view incoming mail in **Admin Functions → Dispatch Parsing Settings** (or Neon); parsing/editing rules will be added in a later update.
+
+---
+
 ## Before You Start
 
 - **Cloudflare:** Zone **fireultimate.app** in your account.
