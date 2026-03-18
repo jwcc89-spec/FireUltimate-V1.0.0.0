@@ -4681,7 +4681,12 @@ function NerisReportFormPage({
         <div className="header-actions">
           {isAdminOrHigher(role) ? (
             <>
-              <button type="button" className="secondary-button compact-button">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                disabled
+                title="Import is not implemented yet."
+              >
                 Import
               </button>
               <button

@@ -860,6 +860,18 @@ body.resizing-shell-sidebar {
   background-color: #f8fafc;
 }
 
+.primary-button:disabled,
+.secondary-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+  box-shadow: none;
+}
+
+.primary-button:disabled:hover,
+.secondary-button:disabled:hover {
+  background-color: inherit;
+}
+
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(175px, 1fr));
