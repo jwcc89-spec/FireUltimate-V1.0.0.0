@@ -2536,14 +2536,16 @@ export function createDefaultNerisFormValues({
   receivedAt,
   address,
 }: CreateNerisDefaultsInput): NerisFormValues {
-  const dispatchDateTime = toDateTimeLocal(receivedAt, "2026-02-18T15:30:13");
+  const onsetDate = incidentOnsetDateFromReceivedAt(receivedAt);
+  const onsetTime = normalizeNerisTime(receivedAt);
+  const dispatchDateTime = toDateTimeLocal(receivedAt, `${onsetDate}T15:30:13`);
   const { locationState, locationCountry } = inferLocationStateAndCountry(address);
 
   return {
     incident_neris_id: "",
     incident_internal_id: (incidentInternalId ?? "").trim() || callNumber,
-    incident_onset_date: "2026-02-18",
-    incident_onset_time: normalizeNerisTime(receivedAt),
+    incident_onset_date: onsetDate,
+    incident_onset_time: onsetTime,
     dispatch_internal_id: (dispatchInternalId ?? "").trim() || callNumber.replace(/^D-/, ""),
     primary_incident_type: "",
     additional_incident_types: "",

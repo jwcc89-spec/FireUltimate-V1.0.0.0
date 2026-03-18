@@ -3776,15 +3776,11 @@ function IncidentsListPage({
       return;
     }
     const onsetDate = createIncidentDraft.incidentOnsetDate.trim();
-    const onsetTime = createIncidentDraft.incidentOnsetTime.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(onsetDate)) {
       setCreateIncidentError("Incident onset date must be YYYY-MM-DD.");
       return;
     }
-    if (!/^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(onsetTime)) {
-      setCreateIncidentError("Incident onset time must be 24-hour HH:MM:SS (e.g. 14:30:00).");
-      return;
-    }
+    // Time is normalized in handleCreateIncidentCall via parseTimeInput24h (e.g. 161654 → 16:16:54)
     try {
       const nextIncident = await onCreateIncidentCall(createIncidentDraft);
       setIsCreateIncidentModalOpen(false);
@@ -4161,6 +4157,49 @@ function IncidentsListPage({
               </button>
             </div>
             <div className="settings-form">
+              <label>
+                Incident onset date
+                <input
+                  type="date"
+                  value={createIncidentDraft.incidentOnsetDate}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentOnsetDate: event.target.value,
+                    }))
+                  }
+                />
+              </label>
+              <label>
+                Incident onset time (24h — e.g. 16:16:54 or 161654)
+                <input
+                  type="text"
+                  placeholder="16:16:54 or 161654"
+                  autoComplete="off"
+                  value={createIncidentDraft.incidentOnsetTime}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      incidentOnsetTime: event.target.value,
+                    }))
+                  }
+                  onBlur={(event) => {
+                    const raw = event.target.value.trim();
+                    if (raw) {
+                      const normalized = parseTimeInput24h(raw);
+                      setCreateIncidentDraft((previous) =>
+                        previous.incidentOnsetTime !== normalized
+                          ? { ...previous, incidentOnsetTime: normalized }
+                          : previous,
+                      );
+                    }
+                  }}
+                />
+              </label>
+              <p className="panel-description" style={{ marginTop: 0 }}>
+                Used for NERIS <strong>Incident Onset Date</strong> and{" "}
+                <strong>Incident Onset Time</strong> when you open the report for this incident.
+              </p>
               {isIncidentFieldVisible("incidentNumber") ? (
               <label>
                 Incident Number
@@ -4365,38 +4404,6 @@ function IncidentsListPage({
                 />
               </label>
               ) : null}
-              <label>
-                Incident onset date
-                <input
-                  type="date"
-                  value={createIncidentDraft.incidentOnsetDate}
-                  onChange={(event) =>
-                    setCreateIncidentDraft((previous) => ({
-                      ...previous,
-                      incidentOnsetDate: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <label>
-                Incident onset time (24h, HH:MM:SS)
-                <input
-                  type="text"
-                  placeholder="14:30:00"
-                  autoComplete="off"
-                  value={createIncidentDraft.incidentOnsetTime}
-                  onChange={(event) =>
-                    setCreateIncidentDraft((previous) => ({
-                      ...previous,
-                      incidentOnsetTime: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-              <p className="panel-description" style={{ marginTop: 0 }}>
-                Used for NERIS <strong>Incident Onset Date</strong> and{" "}
-                <strong>Incident Onset Time</strong> when you open the report for this incident.
-              </p>
               {createIncidentError ? <p className="auth-error">{createIncidentError}</p> : null}
               <div className="header-actions">
                 <button type="button" className="primary-button" onClick={handleCreateIncident}>
@@ -12174,9 +12181,9 @@ function App() {
     payload: IncidentCreatePayload,
   ): Promise<IncidentCallSummary> => {
     const od = payload.incidentOnsetDate.trim();
-    const ot = payload.incidentOnsetTime.trim();
+    const ot = parseTimeInput24h(payload.incidentOnsetTime.trim());
     const receivedAt =
-      /^\d{4}-\d{2}-\d{2}$/.test(od) && /^([01]\d|2[0-3]):[0-5]\d:[0-5]\d$/.test(ot)
+      /^\d{4}-\d{2}-\d{2}$/.test(od) && ot
         ? `${od}T${ot}`
         : `${getDefaultIncidentOnsetDate()}T${getDefaultIncidentOnsetTime()}`;
     const body = {

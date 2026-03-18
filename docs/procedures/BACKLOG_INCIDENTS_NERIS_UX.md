@@ -80,6 +80,14 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 
 ---
 
+## Delete Incident – do not delete NERIS report when In Review or Exported
+
+- **Issue:** When an incident is deleted, the respective NERIS report (draft) is also removed. If the NERIS report is **In Review** or **Exported**, it must **not** be deleted (regulatory/audit retention).
+- **Desired:** Before deleting an incident (or when performing the delete), check the NERIS report status for that incident. If status is **In Review** or **Exported**, either (1) **block** incident deletion and show a message, or (2) **soft-delete** the incident but **retain** the NERIS draft/export record. Prefer blocking deletion with a clear message so the user understands the report is protected.
+- **Scope:** Incident delete flow (UI + any server logic that removes NERIS draft or export history for the incident).
+
+---
+
 ## Summary table
 
 | # | Area | Short description |
@@ -93,7 +101,8 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 | 7 | NERIS | Required-if: FIRE + aid given (done 2026-03-18 for direction Given) |
 | 8 | NERIS | Resources UNIT TYPE – show Apparatus value from Department Details, not placeholder |
 | 9 | NERIS | Resources Populate Date: dates only for dispatch/en route/on scene/clear; add Returning |
-| 10 | NERIS | Aid Department: do not allow selecting tenant’s own department (exclude or grey out) |
+| 10 | NERIS | Aid Department: do not allow selecting tenant's own department (exclude or grey out) |
+| 11 | Incidents + NERIS | **Delete Incident:** Do not delete NERIS report when status is In Review or Exported (block delete or retain report) |
 
 ---
 

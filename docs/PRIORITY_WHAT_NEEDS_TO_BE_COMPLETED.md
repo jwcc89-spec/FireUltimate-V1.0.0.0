@@ -167,7 +167,7 @@ Use **Suggested order** below for sequencing. This is a single checklist of what
 | Area | Pending |
 |------|---------|
 | **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
-| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h times app-wide (partial done); **#5** Edit Reported By layout; **#6** initial dispatch code; **#8** aid self-select exclude; **#10** UNIT TYPE; **#11** Populate Date + Returning; **#11.1** Narrative Builder; **#11.2** occupant contact fields. |
+| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h times app-wide (partial done); **#5** Edit Reported By layout; **#6** initial dispatch code; **#8** aid self-select exclude; **#10** UNIT TYPE; **#11** Populate Date + Returning; **#11.1** Narrative Builder; **#11.2** occupant contact fields. **Next:** Delete Incident must not delete NERIS report when In Review or Exported (BACKLOG #11). |
 | **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
 | **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
 | **Go-live / ops** | **#27** Production entity-check + controlled first prod export. |
