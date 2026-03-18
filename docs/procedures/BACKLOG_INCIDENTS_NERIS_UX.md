@@ -63,22 +63,22 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 ## NERIS Form – Resources: UNIT TYPE value (#10 in PRIORITY) — **Done (2026-03)**
 
 - **What it refers to:** In the NERIS form **Resources** section, each resource row has a **UNIT TYPE** field. It was showing placeholder "Auto-populates from unit setup" instead of the value from Department Details → Department Apparatus.
-- **Status:** **Done.** Unit Type now shows the corresponding **Unit Type** value from Department Details → Department Apparatus for the selected responding unit. Empty when unit is not in apparatus (placeholder "—").
+- **Status:** **Done.** Unit Type shows the **Unit Type** from Department Details → Department Apparatus for the selected responding unit. Lookup keys by both `unitId` and `commonName` so it populates whether the dropdown shows unit ID or common name. Empty when unit is not in apparatus (placeholder "—").
 
 ---
 
-## NERIS Form – Resources: Populate Date button and Returning — **Done (2026-03)**
+## NERIS Form – Resources: Populate Date button and Return/Avail — **Done (2026-03)**
 
 - **Issue 1 – Populate Date behavior:** When **Populate Date** is clicked, it should only populate **dates** (preserve times) for **dispatch**, **en route**, **on scene**, **clear**; **not** staged or canceled.
-- **Issue 2 – Returning:** **Returning** field (date + time) in **Edit Times**, between On Scene and Canceled, same styling as other times (Clear button, date, time).
-- **Status:** **Done.** Populate Date only updates those four fields; Returning added to Edit Times and to resource unit data/header summary.
+- **Issue 2 – Return/Avail:** **Return/Avail** field (date + time) in **Edit Times**, between On Scene and Canceled, same styling as other times (Clear button, date, time).
+- **Status:** **Done (verified).** Populate Date only updates those four fields; Return/Avail added to Edit Times and to resource unit data/header summary. Label shown as "Return/Avail".
 
 ---
 
 ## Delete Incident – do not delete NERIS report when In Review or Exported — **Done (2026-03)**
 
 - **Issue:** When an incident is deleted, the NERIS report (draft) was also removed. If the report is **In Review** or **Exported**, it must not be deleted (regulatory/audit retention).
-- **Status:** **Done.** Before delete, we check NERIS report status. If **In Review** or **Exported**, incident deletion is **blocked** with message: "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance." Applied in **both** places: (1) Delete from NERIS report form, (2) Delete from incident list/detail (report status fetched via `getNerisDraft` before calling delete).
+- **Status:** **Done (verified).** Before delete, we check NERIS report status. If **In Review** or **Exported**, incident deletion is **blocked** with message: "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance." Applied in **both** places: (1) Delete from NERIS report form, (2) Delete from incident list/detail (report status fetched via `getNerisDraft` before calling delete).
 
 ---
 
@@ -94,9 +94,9 @@ Captured 2026-03-13 from production testing on cifpdil.fireultimate.app. These a
 | 6 | NERIS | AID GIVEN/RECEIVED – Aid departments; self-select (#10) **Done 2026-03** |
 | 7 | NERIS | Required-if: FIRE + aid given (done 2026-03-18 for direction Given) |
 | 8 | NERIS | Resources UNIT TYPE – **Done 2026-03** (show Dept Apparatus Unit Type) |
-| 9 | NERIS | Resources Populate Date + Returning – **Done 2026-03** (dates only for dispatch/en route/on scene/clear; Returning in Edit Times) |
+| 9 | NERIS | Resources Populate Date + Return/Avail – **Done 2026-03 (verified)** (dates only for dispatch/en route/on scene/clear; Return/Avail in Edit Times) |
 | 10 | NERIS | Aid Department: do not allow selecting tenant's own department — **Done 2026-03** |
-| 11 | Incidents + NERIS | **Delete Incident:** block when NERIS In Review/Exported — **Done 2026-03** (both form and list/detail) |
+| 11 | Incidents + NERIS | **Delete Incident:** block when NERIS In Review/Exported — **Done 2026-03 (verified)** (both form and list/detail) |
 | — | Admin NERIS | **Admin NERIS required fields — Done (2026-03).** Admin Functions → Reports \| NERIS: configure required fields; effective-required (NERIS + admin overrides) used in form and validation. |
 
 ---

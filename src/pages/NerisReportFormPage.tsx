@@ -119,7 +119,7 @@ export interface NerisReportFormPageProps {
   nerisProxyMappedFormFieldIds: Set<string>;
   getDefaultNerisExportSettings: () => NerisExportSettings;
   /** Apparatus from Admin Department Details (unit + unitType) for Resources unit-type auto-fill when incident has no apparatus. */
-  apparatusFromDepartmentDetails?: { unit: string; unitType: string }[];
+  apparatusFromDepartmentDetails?: { unit: string; unitId: string; commonName: string; unitType: string }[];
 }
 
 interface IncidentCompareRow {
@@ -570,7 +570,7 @@ function NerisReportFormPage({
     const fromDetail =
       detail?.apparatus?.map((a) => a.unit) ?? [];
     const fromAssigned = detail ? parseAssignedUnits(detail.assignedUnits) : [];
-    const fromDept = apparatusFromDept.map((a) => a.unit);
+    const fromDept = apparatusFromDept.flatMap((a) => [a.unit, a.unitId].filter(Boolean));
     const units = dedupeAndCleanStrings([...fromDetail, ...fromAssigned, ...fromDept]);
     return units.map((unitId) => ({
       value: unitId,
@@ -580,11 +580,15 @@ function NerisReportFormPage({
   const apparatusByResourceUnitId = useMemo(() => {
     const map = new Map<string, { unitType: string }>();
     for (const a of apparatusFromDept) {
-      map.set(a.unit, { unitType: a.unitType });
+      const ut = a.unitType?.trim() ?? "";
+      if (a.unit.trim()) map.set(a.unit.trim(), { unitType: ut });
+      if (a.unitId.trim() && a.unitId.trim() !== a.unit.trim()) map.set(a.unitId.trim(), { unitType: ut });
+      if (a.commonName.trim() && a.commonName.trim() !== a.unit.trim()) map.set(a.commonName.trim(), { unitType: ut });
     }
     if (detail?.apparatus) {
       for (const apparatus of detail.apparatus) {
-        map.set(apparatus.unit, { unitType: apparatus.unitType });
+        const u = String(apparatus.unit ?? "").trim();
+        if (u) map.set(u, { unitType: String(apparatus.unitType ?? "").trim() });
       }
     }
     return map;
@@ -5879,7 +5883,7 @@ function NerisReportFormPage({
                                 <strong>{toResourceSummaryTime(unitEntry.onSceneTime)}</strong>
                               </div>
                               <div className="neris-resource-time-item">
-                                <span>Returning</span>
+                                <span>Return/Avail</span>
                                 <strong>{toResourceSummaryTime(unitEntry.returningTime)}</strong>
                               </div>
                               <div className="neris-resource-time-item">
@@ -6339,7 +6343,7 @@ function NerisReportFormPage({
                                   </label>
                                   <label className="neris-resource-datetime-label">
                                     <span className="neris-resource-datetime-header">
-                                      Returning
+                                      Return/Avail
                                       <button
                                         type="button"
                                         className="link-button neris-resource-time-clear"
