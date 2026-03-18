@@ -29,7 +29,9 @@
 
 **Workaround:** Click another menu item (e.g. Incidents) then hard refresh (F5 or Cmd+R), then open the NERIS report again.
 
-**Possible cause:** Initial render or a dependency (e.g. draft load, ref) not updating on first paint. The form already uses `key={callNumber}` so it remounts per incident. If this continues, we can add a focused pass to trace the first-render path and add a guard or force an extra render when the route becomes visible.
+**Mitigation added (2026-03-17):** A route-level error boundary was added around routed content. If the NERIS form (or any page) fails to finish rendering due to a runtime exception, the app shows a “Reload page” button instead of leaving the UI stuck until a hard refresh. This does not replace root-cause debugging.
+
+**Next debugging step:** When the issue occurs, open DevTools Console and capture any errors. If possible, also capture the Network tab request(s) immediately before the stuck state.
 
 ---
 

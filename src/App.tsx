@@ -4,6 +4,7 @@ import {
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
+  Component,
   useCallback,
   useEffect,
   useMemo,
@@ -11422,6 +11423,51 @@ function NotFoundPage() {
   );
 }
 
+class RouteErrorBoundary extends Component<
+  { routeKey: string; children: ReactNode },
+  { hasError: boolean }
+> {
+  state = { hasError: false };
+
+  static getDerivedStateFromError() {
+    return { hasError: true };
+  }
+
+  componentDidUpdate(previousProps: { routeKey: string }) {
+    if (previousProps.routeKey !== this.props.routeKey && this.state.hasError) {
+      // Reset boundary when route changes so the app can recover without a hard refresh.
+      this.setState({ hasError: false });
+    }
+  }
+
+  render() {
+    if (!this.state.hasError) {
+      return this.props.children;
+    }
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Something went wrong</h1>
+            <p>
+              This page didn’t finish loading. You can reload the app and try again.
+            </p>
+          </div>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="primary-button compact-button"
+              onClick={() => window.location.reload()}
+            >
+              Reload page
+            </button>
+          </div>
+        </header>
+      </section>
+    );
+  }
+}
+
 function RouteResolver({
   role,
   username,
@@ -11574,9 +11620,11 @@ function RouteResolver({
   }
 
   return (
-    <div key={path} className="route-resolver-root">
-      {content}
-    </div>
+    <RouteErrorBoundary routeKey={path}>
+      <div key={path} className="route-resolver-root">
+        {content}
+      </div>
+    </RouteErrorBoundary>
   );
 }
 
