@@ -1,5 +1,6 @@
 import {
   type ReactNode,
+  Fragment,
   useEffect,
   useMemo,
   useRef,
@@ -16,6 +17,7 @@ import { isAdminOrHigher } from "../roleHierarchy";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
+  NERIS_FORM_FIELDS,
   createDefaultNerisFormValues,
   getNerisFieldsForSection,
   getNerisValueOptions,
@@ -27,6 +29,10 @@ import {
   type NerisValueOption,
 } from "../nerisMetadata";
 import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowlist";
+import {
+  buildNarrativeFromTemplate,
+  type NarrativeTemplate,
+} from "../narrativeBuilder";
 import {
   NerisFlatMultiOptionSelect,
   NerisFlatSingleOptionSelect,
@@ -120,6 +126,10 @@ export interface NerisReportFormPageProps {
   getDefaultNerisExportSettings: () => NerisExportSettings;
   /** Apparatus from Admin Department Details (unit + unitType) for Resources unit-type auto-fill when incident has no apparatus. */
   apparatusFromDepartmentDetails?: { unit: string; unitId: string; commonName: string; unitType: string }[];
+  /** When true, show "Use Narrative Builder" in Narrative section (Phase 3). */
+  narrativeBuilderEnabled?: boolean;
+  /** Templates for Narrative Builder popup (Phase 2). */
+  narrativeTemplates?: NarrativeTemplate[];
 }
 
 interface IncidentCompareRow {
@@ -350,7 +360,13 @@ function NerisReportFormPage({
   getDefaultNerisExportSettings,
   apparatusFromDepartmentDetails,
   nerisRequiredFieldOverrides,
+  narrativeBuilderEnabled = false,
+  narrativeTemplates = [],
 }: NerisReportFormPageProps) {
+  const [narrativeBuilderModalOpen, setNarrativeBuilderModalOpen] = useState(false);
+  const [narrativeBuilderSelectedId, setNarrativeBuilderSelectedId] = useState<string | null>(null);
+  const [narrativeBuilderUserValues, setNarrativeBuilderUserValues] = useState<string[]>([]);
+
   const adminRequiredFieldIds = useMemo(
     () => new Set(nerisRequiredFieldOverrides),
     [nerisRequiredFieldOverrides],
@@ -5111,8 +5127,23 @@ function NerisReportFormPage({
           currentSection.id !== "location" &&
           currentSection.id !== "emergingHazards" &&
           currentSection.id !== "riskReduction" ? (
-            <div className="panel-header">
+            <div className="panel-header panel-header-with-rl">
               <h2>{currentSection.label}</h2>
+              {currentSection.id === "narrative" &&
+              narrativeBuilderEnabled &&
+              narrativeTemplates.length > 0 ? (
+                <button
+                  type="button"
+                  className="neris-rl-link"
+                  onClick={() => {
+                    setNarrativeBuilderSelectedId(null);
+                    setNarrativeBuilderUserValues([]);
+                    setNarrativeBuilderModalOpen(true);
+                  }}
+                >
+                  Use Narrative Builder
+                </button>
+              ) : null}
             </div>
           ) : null}
           {currentSection.id !== "core" && currentSection.helper.trim().length > 0 ? (
@@ -6919,6 +6950,161 @@ function NerisReportFormPage({
           </div>
         </article>
       </section>
+
+      {narrativeBuilderModalOpen ? (
+        <div
+          className="neris-narrative-builder-modal-overlay"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="neris-narrative-builder-modal-title"
+        >
+          <div className="neris-narrative-builder-modal panel">
+            <h2 id="neris-narrative-builder-modal-title">Use Narrative Builder</h2>
+            <button
+              type="button"
+              className="neris-narrative-builder-close"
+              aria-label="Close"
+              onClick={() => {
+                setNarrativeBuilderModalOpen(false);
+                setNarrativeBuilderSelectedId(null);
+                setNarrativeBuilderUserValues([]);
+              }}
+            >
+              Close
+            </button>
+            {!narrativeBuilderSelectedId ? (
+              <>
+                <p>Choose a template to insert into the narrative field.</p>
+                <ul className="neris-narrative-builder-template-list">
+                  {narrativeTemplates.map((t) => (
+                    <li key={t.id}>
+                      <button
+                        type="button"
+                        className="neris-narrative-builder-template-btn"
+                        onClick={() => {
+                          setNarrativeBuilderSelectedId(t.id);
+                          const userCount = t.segments.filter(
+                            (s) => s.type === "userFillable",
+                          ).length;
+                          setNarrativeBuilderUserValues(Array(userCount).fill(""));
+                        }}
+                      >
+                        {t.name}
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            ) : (() => {
+              const selected = narrativeTemplates.find(
+                (t) => t.id === narrativeBuilderSelectedId,
+              );
+              if (!selected) return null;
+              let userIndex = 0;
+              return (
+                <>
+                  <p>
+                    <strong>Template:</strong> {selected.name}
+                  </p>
+                  <div className="neris-narrative-builder-preview">
+                    {selected.segments.map((seg, idx) => (
+                      <Fragment key={idx}>
+                        {idx > 0 ? " " : null}
+                        {seg.type === "fillable" ? <span>{seg.text}</span> : null}
+                        {seg.type === "neris" ? (
+                          <span>
+                            {(() => {
+                              const rawValue = (formValues[seg.fieldId] ?? "").trim();
+                              const fieldMeta = NERIS_FORM_FIELDS.find(
+                                (f) => f.id === seg.fieldId,
+                              );
+                              let displayValue = rawValue;
+                              if (fieldMeta?.inputKind === "date") {
+                                const match = rawValue.match(
+                                  /^(\d{4})-(\d{2})-(\d{2})$/,
+                                );
+                                if (match) {
+                                  const [, yyyy, mm, dd] = match;
+                                  displayValue = `${mm}/${dd}/${yyyy}`;
+                                }
+                              }
+                              return displayValue || `[${seg.fieldId}]`;
+                            })()}
+                          </span>
+                        ) : null}
+                        {seg.type === "userFillable" ? (
+                          (() => {
+                            const i = userIndex++;
+                            return (
+                              <span className="neris-narrative-builder-user-slot">
+                                <input
+                                  type="text"
+                                  value={narrativeBuilderUserValues[i] ?? ""}
+                                  onChange={(e) => {
+                                    const next = [...narrativeBuilderUserValues];
+                                    next[i] = e.target.value;
+                                    setNarrativeBuilderUserValues(next);
+                                  }}
+                                  placeholder={
+                                    seg.placeholderHint ?? "Your text here"
+                                  }
+                                  aria-label={
+                                    seg.placeholderHint ?? `User fillable ${i + 1}`
+                                  }
+                                />
+                              </span>
+                            );
+                          })()
+                        ) : null}
+                      </Fragment>
+                    ))}
+                  </div>
+                  <div className="neris-narrative-builder-modal-actions">
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setNarrativeBuilderSelectedId(null);
+                        setNarrativeBuilderUserValues([]);
+                      }}
+                    >
+                      Back
+                    </button>
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={() => {
+                        const built = buildNarrativeFromTemplate(
+                          selected,
+                          formValues,
+                          narrativeBuilderUserValues,
+                        );
+                        updateFieldValue("narrative_outcome", built);
+                        setNarrativeBuilderModalOpen(false);
+                        setNarrativeBuilderSelectedId(null);
+                        setNarrativeBuilderUserValues([]);
+                      }}
+                    >
+                      Use Template
+                    </button>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setNarrativeBuilderModalOpen(false);
+                        setNarrativeBuilderSelectedId(null);
+                        setNarrativeBuilderUserValues([]);
+                      }}
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      ) : null}
     </section>
   );
 }

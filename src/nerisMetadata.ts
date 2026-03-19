@@ -117,11 +117,6 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
       "Complete baseline NERIS incident fields. Required and conditional rules are metadata-driven.",
   },
   {
-    id: "narrative",
-    label: "Narrative",
-    helper: "",
-  },
-  {
     id: "location",
     label: "Location",
     helper: "",
@@ -135,6 +130,11 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
     id: "resources",
     label: "Resources",
     helper: "Record units, apparatus, and mutual aid resource usage.",
+  },
+  {
+    id: "narrative",
+    label: "Narrative",
+    helper: "",
   },
   {
     id: "emergingHazards",

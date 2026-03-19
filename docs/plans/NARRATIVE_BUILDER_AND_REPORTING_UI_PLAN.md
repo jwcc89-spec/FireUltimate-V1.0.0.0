@@ -59,19 +59,31 @@
 - **Preview** in the same view: show how the narrative will look when rendered (e.g. “On &lt;incident.onset.date&gt; all KFD units were dispatched to &lt;dispatch.location&gt; &lt;user fillable&gt;” or with sample values).
 - When the **end user** selects this template in the NERIS report form (Phase 4), the narrative field is populated: NERIS placeholders replaced by current form values, admin text as-is, user fillable slots left for the user to type (or pre-filled if we support default text).
 
-### Follow-up questions (before implementing Phase 2)
+### Follow-up questions (before implementing Phase 2) — answered
 
-1. **Template naming and list:** Should each template have a **name** (e.g. “Standard dispatch narrative”) that the end user sees in a dropdown/list when choosing a template? Where should the list of templates be stored (e.g. Department Details payload, new API, or existing config)?
+1. **Template naming and list:** Each template has a **name**, **required** and entered by the admin on creation. **Storage recommendation:** store templates in **Department Details** (tenant-scoped). Add a top-level key e.g. `narrativeTemplates: NarrativeTemplate[]` in the payload sent to `GET/POST /api/department-details`. Same API and tenant isolation as other admin config (e.g. `nerisRequiredFieldOverrides`); no Prisma schema change. If the list grows very large later, a dedicated table can be added. **End user:** sees template **names** in a dropdown/list; after selecting one, sees a **preview** of the narrative, then clicks **“Use Template”** to apply.
 
-2. **Which NERIS fields are allowed in templates?** Should the admin pick from **all** NERIS form fields (e.g. from `nerisMetadata`), or only a curated list (e.g. Core + Incident Times + Location)? Can the same NERIS field appear more than once in one template?
+2. **Which NERIS fields:** Admin can pick from **all** NERIS form fields. The **same field can appear more than once** in one template.
 
-3. **User fillable behavior:** For “user fillable text box” — is it always a single free-text slot per occurrence, or do you want options (e.g. short vs long, or optional placeholder hint text like “Describe conditions on arrival”)? When the user applies the template, should multiple “user fillable” slots appear as separate blanks in the narrative or one combined area?
+3. **User fillable:** Always a **single free-text slot per occurrence**. Admin can **optionally** add a **placeholder hint** for that slot (e.g. “Describe conditions on arrival”).
 
-4. **Preview and placeholders:** In the admin preview, should NERIS placeholders show as human-readable labels (e.g. “Incident onset date”) or as the field key (e.g. `incident.onset.date`)? When the end user sees the populated narrative, should any remaining “user fillable” areas be visually marked (e.g. underlined or [Type here])?
+4. **Preview and placeholders:** **Admin preview:** NERIS placeholders show as **human-readable labels** (e.g. “Incident onset date”). **End-user preview:** User-fillable areas are shown as **value entry boxes** that can be **filled before** clicking “Use Template”; then the composed text (with those values and NERIS values) is inserted into the Narrative field.
 
-5. **Ordering and editing:** Can the admin reorder segments (e.g. drag to move a NERIS field after a fillable text)? Can they edit or delete an existing template, or only add new ones?
+5. **Ordering and editing:** Admin can **reorder segments** (e.g. drag to move). Admin can **edit** and **delete** existing templates.
 
-(Implementer: use answers to these to define data shape, UI for “add segment,” and preview logic before coding Phase 2.)
+### Phase 2 implementation notes (from answers)
+
+- **Storage:** `narrativeTemplates` in Department Details payload (tenant-scoped). Shape: `Array<{ id: string; name: string; segments: Segment[]; createdAt?: string }>`. Persist via existing `GET/POST /api/department-details`; merge with existing payload on POST (no overwrite of other keys).
+- **Segment types:** `"fillable"` (admin-entered fixed text), `"neris"` (NERIS field id, e.g. `incident.onset.date`), `"userFillable"` (optional `placeholderHint?: string`). Order preserved in `segments` array; admin can reorder (e.g. drag-and-drop).
+- **Admin UI:** Add template (name required). Build template by adding segments in order; for each segment type: fillable text, or pick NERIS field (all form fields), or user fillable (optional hint). Preview shows human-readable labels for NERIS segments and fixed text; user-fillable shown as placeholders. Edit/delete/reorder templates.
+- **End-user (Phase 4 popup):** Dropdown/list of template names → select one → preview with NERIS values resolved and user-fillable areas as **value entry boxes** → user can type into those boxes → “Use Template” builds final narrative and inserts into Narrative field (editable after).
+
+### Phase 2 implementation (done)
+
+- **Storage:** `narrativeTemplates` in Department Details payload; load/save via `GET/POST /api/department-details`; localStorage updated after save (same pattern as NERIS required fields).
+- **New file:** `src/pages/NarrativeBuilderAdminPage.tsx` — types `NarrativeSegment`, `NarrativeTemplate`; CRUD (add with required name, edit, delete); segment builder (fillable text, NERIS field picker from all `NERIS_FORM_FIELDS`, user fillable with optional hint); reorder via Up/Down buttons; admin preview with human-readable NERIS labels.
+- **App.tsx:** Second Reporting module “Narrative Builder”; renders `NarrativeBuilderAdminPage` when selected.
+- **App.css:** Styles for `.narrative-builder-admin`, `.segment-builder`, `.segment-list`, `.segment-tag`, preview, etc.
 
 ---
 
@@ -85,8 +97,14 @@
 
 ### Acceptance criteria
 
-- [ ] Toggle “Enable Narrative Builder” in Admin → Reporting → Narrative Builder.
+- [x] Toggle “Enable Narrative Builder” in Admin → Reporting → Narrative Builder.
 - [ ] When enabled, NERIS report form shows “Use Narrative Builder” (Phase 4); when disabled, it does not (or is not clickable).
+
+### Phase 3 implementation (done)
+
+- **Storage:** `narrativeBuilderEnabled` (boolean) in Department Details payload; loaded with narrative templates, saved when user clicks Save.
+- **UI:** At the top of the Narrative Builder module, an “Enable Narrative Builder” checkbox with short hint. Toggling updates local state; “Click Save to persist.” shown until user saves.
+- **Phase 4** will read this flag to show or hide “Use Narrative Builder” in the NERIS report form.
 
 ---
 
@@ -108,10 +126,18 @@
 
 ### Acceptance criteria
 
-- [ ] Narrative module is below Resources in the NERIS form side menu.
-- [ ] “Use Narrative Builder” appears next to “Narrative” (RL style); only when Narrative Builder is enabled.
-- [ ] Clicking it opens a popup with template list; selecting a template fills the Narrative field (editable after).
-- [ ] NERIS field placeholders in template are replaced by current form values; user fillable slots are empty or marked for user input.
+- [x] Narrative module is below Resources in the NERIS form side menu.
+- [x] “Use Narrative Builder” appears next to “Narrative” (RL style); only when Narrative Builder is enabled.
+- [x] Clicking it opens a popup with template list; selecting a template fills the Narrative field (editable after).
+- [x] NERIS field placeholders in template are replaced by current form values; user fillable slots are empty or marked for user input.
+
+### Phase 4 implementation (done)
+
+- **Section order:** `nerisMetadata.ts` — Narrative moved to appear after Resources in `NERIS_FORM_SECTIONS`.
+- **Shared module:** `src/narrativeBuilder.ts` — types `NarrativeSegment`, `NarrativeTemplate` and `buildNarrativeFromTemplate()` for use by admin page and NERIS form.
+- **App.tsx:** `readNarrativeBuilderEnabledFromDraft()`, `readNarrativeTemplatesFromDraft()`; pass `narrativeBuilderEnabled` and `narrativeTemplates` into `NerisReportFormPage` (and route props interface).
+- **NerisReportFormPage:** New props `narrativeBuilderEnabled`, `narrativeTemplates`. When Narrative section is active and enabled and templates exist, show “Use Narrative Builder” (`.neris-rl-link`) next to the section heading. Click opens modal: template list → select template → preview with NERIS values from form and input boxes for user-fillable slots → “Use Template” builds text via `buildNarrativeFromTemplate()`, sets `narrative_outcome` with `updateFieldValue()`, closes modal. Narrative field remains editable.
+- **CSS:** `.neris-rl-link`, `.neris-narrative-builder-modal-overlay`, `.neris-narrative-builder-modal`, template list, preview with inline user-slot inputs, modal actions.
 
 ---
 

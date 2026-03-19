@@ -92,6 +92,8 @@ import {
   type NerisValueOption,
 } from "./nerisMetadata";
 import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
+import type { NarrativeTemplate } from "./narrativeBuilder";
+import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
 import {
   NerisFlatMultiOptionSelect,
@@ -1107,6 +1109,27 @@ function readNerisRequiredFieldOverridesFromDraft(): string[] {
   return raw
     .map((id) => String(id ?? "").trim())
     .filter((id) => id.length > 0);
+}
+
+/** Whether Narrative Builder is enabled (Phase 3); from department details. */
+function readNarrativeBuilderEnabledFromDraft(): boolean {
+  const draft = readDepartmentDetailsDraft();
+  const v = draft.narrativeBuilderEnabled;
+  return v === true || v === "true";
+}
+
+/** Narrative Builder templates (Phase 2); from department details. */
+function readNarrativeTemplatesFromDraft(): NarrativeTemplate[] {
+  const draft = readDepartmentDetailsDraft();
+  const raw = draft.narrativeTemplates;
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .filter((t): t is NarrativeTemplate => t && typeof t === "object" && Array.isArray((t as NarrativeTemplate).segments))
+    .map((t) => ({
+      id: String((t as NarrativeTemplate).id ?? ""),
+      name: String((t as NarrativeTemplate).name ?? "").trim() || "Unnamed",
+      segments: (t as NarrativeTemplate).segments ?? [],
+    }));
 }
 
 function readApparatusOptionsFromDraft(): NerisValueOption[] {
@@ -5504,6 +5527,8 @@ interface NerisReportFormRouteProps {
   exportHistory?: NerisExportRecord[];
   onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
   nerisRequiredFieldOverrides: string[];
+  narrativeBuilderEnabled?: boolean;
+  narrativeTemplates?: NarrativeTemplate[];
 }
 
 function NerisReportFormPage(props: NerisReportFormRouteProps) {
@@ -5774,6 +5799,7 @@ function NerisRequiredFieldsAdminPage() {
 
 const REPORTING_ADMIN_MODULES = [
   { id: "required-fields", label: "NERIS Required Fields" },
+  { id: "narrative-builder", label: "Narrative Builder" },
 ] as const;
 
 function ReportingAdminPage() {
@@ -5802,6 +5828,7 @@ function ReportingAdminPage() {
         </aside>
         <article className="panel neris-form-panel reporting-admin-content">
           {activeModuleId === "required-fields" && <NerisRequiredFieldsAdminPage />}
+          {activeModuleId === "narrative-builder" && <NarrativeBuilderAdminPage />}
         </article>
       </section>
     </section>
@@ -12185,6 +12212,8 @@ function RouteResolver({
           setNerisExportHistory(list);
         }}
         nerisRequiredFieldOverrides={readNerisRequiredFieldOverridesFromDraft()}
+        narrativeBuilderEnabled={readNarrativeBuilderEnabledFromDraft()}
+        narrativeTemplates={readNarrativeTemplatesFromDraft()}
       />
     );
   } else if (path === "/admin-functions/reports/neris") {
