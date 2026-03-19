@@ -1,6 +1,7 @@
 import {
   type ReactNode,
   Fragment,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -427,6 +428,7 @@ function NerisReportFormPage({
         incidentType: detail?.incidentType,
         receivedAt: detail?.receivedAt,
         address: detail?.address,
+        initialDispatchCode: String(detail?.initialDispatchCode ?? "").trim(),
       }),
     [
       callNumber,
@@ -438,6 +440,7 @@ function NerisReportFormPage({
       detail?.incidentNumber,
       detail?.dispatch_internal_id,
       detail?.dispatchNumber,
+      detail?.initialDispatchCode,
     ],
   );
   const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
@@ -578,6 +581,138 @@ function NerisReportFormPage({
     () => new Set(getNerisValueOptions("country").map((option) => option.value)),
     [],
   );
+
+  type PersonOwnerAddress = {
+    streetHighwayName: string;
+    poBox: string;
+    apartmentNumber: string;
+    city: string;
+    state: string;
+    zipCode: string;
+  };
+
+  type PersonOwnerPerson = {
+    firstName: string;
+    lastName: string;
+    businessName: string;
+    phone: string;
+    affiliation: string;
+    address: PersonOwnerAddress;
+  };
+
+  type PersonOwnerOwner = {
+    firstName: string;
+    lastName: string;
+    businessName: string;
+    phone: string;
+    insuranceCompany: string;
+    address: PersonOwnerAddress;
+  };
+
+  type PersonOwnerVehicle = {
+    vehicleType: string;
+    vehicleMake: string;
+    model: string;
+    color: string;
+    year: string;
+    vin: string;
+    licensePlate: string;
+    licensePlateState: string;
+    licensePlateExpires: string;
+    personsInvolved: string[];
+    uninsured: boolean;
+    insuredName: string;
+    policyNumber: string;
+    policyType: string;
+    claimNumber: string;
+    insuranceCompanyName: string;
+    insuranceCompanyPhone: string;
+    insuranceCompanyAddress: string;
+    insuranceCompanyEmail: string;
+    insuranceAgentName: string;
+    insuranceAgentCompany: string;
+    insuranceAgentAddress: string;
+    insuranceAgentPhone: string;
+    lawEnforcementOfficer: string;
+    policeReportFileNumber: string;
+    numberOfOccupants: string;
+    numberOfInjuries: string;
+    numberOfFatalities: string;
+    notes: string;
+  };
+
+  const parseIncidentLocationAddressToPersonAddress = (
+    rawIncidentLocationAddress: string,
+  ): PersonOwnerAddress => {
+    const incidentAddress = (rawIncidentLocationAddress ?? "").trim();
+    const empty: PersonOwnerAddress = {
+      streetHighwayName: "",
+      poBox: "",
+      apartmentNumber: "",
+      city: "",
+      state: "",
+      zipCode: "",
+    };
+    if (!incidentAddress) return empty;
+
+    const upper = incidentAddress.toUpperCase();
+    const zipMatch = incidentAddress.match(/\b(\d{5}(?:-\d{4})?)\b/);
+    const zipCode = zipMatch?.[1] ?? "";
+
+    const poBoxMatch = incidentAddress.match(
+      /\b(?:P\.?\s*O\.?\s*BOX|PO\s*BOX|POST\s*OFFICE\s*BOX)\s*([A-Z0-9-]+)\b/i,
+    );
+    const poBox = poBoxMatch?.[1] ?? "";
+
+    const apartmentMatch = incidentAddress.match(
+      /\b(?:APT|APARTMENT|UNIT|STE|SUITE)\s*([A-Z0-9-]+)\b/i,
+    );
+    const apartmentNumber = apartmentMatch?.[1] ?? "";
+
+    const stateCandidates = upper.match(/\b[A-Z]{2}\b/g) ?? [];
+    const state =
+      stateCandidates.find((code) => locationStateOptionValues.has(code)) ?? "";
+
+    // Common format: "Street, City, ST 12345"
+    const commaParts = incidentAddress
+      .split(",")
+      .map((p) => p.trim())
+      .filter((p) => p.length > 0);
+
+    const city = commaParts.length >= 3 ? commaParts[1] : "";
+    const lastPart = commaParts[commaParts.length - 1] ?? "";
+    const stateZipMatch = lastPart.match(/\b([A-Z]{2})\s*(\d{5}(?:-\d{4})?)\b/i);
+    const parsedState = stateZipMatch?.[1]?.toUpperCase() ?? "";
+    const parsedZip = stateZipMatch?.[2] ?? "";
+
+    let nextState = state;
+    let nextZip = zipCode;
+    if (!nextState && parsedState && locationStateOptionValues.has(parsedState)) {
+      nextState = parsedState;
+    }
+    if (!nextZip && parsedZip) {
+      nextZip = parsedZip;
+    }
+
+    const streetBlock = commaParts[0] ?? "";
+    let streetHighwayName = streetBlock;
+    if (poBoxMatch?.[0]) {
+      streetHighwayName = streetHighwayName.replace(poBoxMatch[0], "").trim();
+    }
+    if (apartmentMatch?.[0]) {
+      streetHighwayName = streetHighwayName.replace(apartmentMatch[0], "").trim();
+    }
+    streetHighwayName = streetHighwayName.replace(/^[,\s]+|[,\s]+$/g, "").trim();
+
+    return {
+      streetHighwayName,
+      poBox,
+      apartmentNumber,
+      city,
+      state: nextState,
+      zipCode: nextZip,
+    };
+  };
   const responseModeOptions = useMemo(() => getNerisValueOptions("response_mode"), []);
   const unitTypeOptions = useMemo(() => getNerisValueOptions("unit_type"), []);
   const resourceFallbackDate = (formValues.incident_onset_date ?? "").trim() || "2026-02-18";
@@ -883,6 +1018,414 @@ function NerisReportFormPage({
   const riskReductionCookingSuppressionPresentValue = (
     formValues.risk_reduction_cooking_suppression_present ?? ""
   ).trim();
+
+  const personOwnerPersons = useMemo<PersonOwnerPerson[]>(() => {
+    const raw = formValues.person_owner_persons_json ?? "";
+    if (!raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((p) => {
+          const maybe = p as Partial<PersonOwnerPerson>;
+          const address = (maybe.address ?? {}) as Partial<PersonOwnerAddress>;
+          const normalizedAddress: PersonOwnerAddress = {
+            streetHighwayName: String(address.streetHighwayName ?? ""),
+            poBox: String(address.poBox ?? ""),
+            apartmentNumber: String(address.apartmentNumber ?? ""),
+            city: String(address.city ?? ""),
+            state: String(address.state ?? ""),
+            zipCode: String(address.zipCode ?? ""),
+          };
+          return {
+            firstName: String(maybe.firstName ?? ""),
+            lastName: String(maybe.lastName ?? ""),
+            businessName: String(maybe.businessName ?? ""),
+            phone: String(maybe.phone ?? ""),
+            affiliation: String(maybe.affiliation ?? ""),
+            address: normalizedAddress,
+          };
+        })
+        .filter((p) => (p.firstName + p.lastName).trim().length > 0);
+    } catch {
+      return [];
+    }
+  }, [formValues.person_owner_persons_json]);
+  const personOwnerOwners = useMemo<PersonOwnerOwner[]>(() => {
+    const raw = formValues.person_owner_owners_json ?? "";
+    if (!raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed
+        .map((p) => {
+          const maybe = p as Partial<PersonOwnerOwner>;
+          const address = (maybe.address ?? {}) as Partial<PersonOwnerAddress>;
+          const normalizedAddress: PersonOwnerAddress = {
+            streetHighwayName: String(address.streetHighwayName ?? ""),
+            poBox: String(address.poBox ?? ""),
+            apartmentNumber: String(address.apartmentNumber ?? ""),
+            city: String(address.city ?? ""),
+            state: String(address.state ?? ""),
+            zipCode: String(address.zipCode ?? ""),
+          };
+          return {
+            firstName: String(maybe.firstName ?? ""),
+            lastName: String(maybe.lastName ?? ""),
+            businessName: String(maybe.businessName ?? ""),
+            phone: String(maybe.phone ?? ""),
+            insuranceCompany: String(maybe.insuranceCompany ?? ""),
+            address: normalizedAddress,
+          };
+        })
+        .filter((p) => (p.firstName + p.lastName).trim().length > 0);
+    } catch {
+      return [];
+    }
+  }, [formValues.person_owner_owners_json]);
+  const personOwnerVehicles = useMemo<PersonOwnerVehicle[]>(() => {
+    const raw = formValues.person_owner_vehicles_json ?? "";
+    if (!raw.trim()) return [];
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (!Array.isArray(parsed)) return [];
+      return parsed.map((v) => {
+        const maybe = v as Partial<PersonOwnerVehicle>;
+        return {
+          vehicleType: String(maybe.vehicleType ?? ""),
+          vehicleMake: String(maybe.vehicleMake ?? ""),
+          model: String(maybe.model ?? ""),
+          color: String(maybe.color ?? ""),
+          year: String(maybe.year ?? ""),
+          vin: String(maybe.vin ?? ""),
+          licensePlate: String(maybe.licensePlate ?? ""),
+          licensePlateState: String(maybe.licensePlateState ?? ""),
+          licensePlateExpires: String(maybe.licensePlateExpires ?? ""),
+          personsInvolved: Array.isArray(maybe.personsInvolved)
+            ? maybe.personsInvolved.map((x) => String(x ?? "").trim()).filter(Boolean)
+            : [],
+          uninsured: Boolean(maybe.uninsured),
+          insuredName: String(maybe.insuredName ?? ""),
+          policyNumber: String(maybe.policyNumber ?? ""),
+          policyType: String(maybe.policyType ?? ""),
+          claimNumber: String(maybe.claimNumber ?? ""),
+          insuranceCompanyName: String(maybe.insuranceCompanyName ?? ""),
+          insuranceCompanyPhone: String(maybe.insuranceCompanyPhone ?? ""),
+          insuranceCompanyAddress: String(maybe.insuranceCompanyAddress ?? ""),
+          insuranceCompanyEmail: String(maybe.insuranceCompanyEmail ?? ""),
+          insuranceAgentName: String(maybe.insuranceAgentName ?? ""),
+          insuranceAgentCompany: String(maybe.insuranceAgentCompany ?? ""),
+          insuranceAgentAddress: String(maybe.insuranceAgentAddress ?? ""),
+          insuranceAgentPhone: String(maybe.insuranceAgentPhone ?? ""),
+          lawEnforcementOfficer: String(maybe.lawEnforcementOfficer ?? ""),
+          policeReportFileNumber: String(maybe.policeReportFileNumber ?? ""),
+          numberOfOccupants: String(maybe.numberOfOccupants ?? ""),
+          numberOfInjuries: String(maybe.numberOfInjuries ?? ""),
+          numberOfFatalities: String(maybe.numberOfFatalities ?? ""),
+          notes: String(maybe.notes ?? ""),
+        };
+      });
+    } catch {
+      return [];
+    }
+  }, [formValues.person_owner_vehicles_json]);
+
+  const [personOwnerAddPersonModalOpen, setPersonOwnerAddPersonModalOpen] = useState(false);
+  const [personOwnerAddPersonDraft, setPersonOwnerAddPersonDraft] = useState<PersonOwnerPerson>(() => ({
+    firstName: "",
+    lastName: "",
+    businessName: "",
+    phone: "",
+    affiliation: "",
+    address: {
+      streetHighwayName: "",
+      poBox: "",
+      apartmentNumber: "",
+      city: "",
+      state: "",
+      zipCode: "",
+    },
+  }));
+  const [personOwnerEditIndex, setPersonOwnerEditIndex] = useState<number | null>(null);
+  const [personOwnerAddOwnerModalOpen, setPersonOwnerAddOwnerModalOpen] = useState(false);
+  const [personOwnerOwnerEditIndex, setPersonOwnerOwnerEditIndex] = useState<number | null>(null);
+  const [personOwnerAddOwnerDraft, setPersonOwnerAddOwnerDraft] = useState<PersonOwnerOwner>(() => ({
+    firstName: "",
+    lastName: "",
+    businessName: "",
+    phone: "",
+    insuranceCompany: "",
+    address: {
+      streetHighwayName: "",
+      poBox: "",
+      apartmentNumber: "",
+      city: "",
+      state: "",
+      zipCode: "",
+    },
+  }));
+  const [personOwnerAddVehicleModalOpen, setPersonOwnerAddVehicleModalOpen] = useState(false);
+  const [personOwnerVehicleEditIndex, setPersonOwnerVehicleEditIndex] = useState<number | null>(null);
+  const [personOwnerVehicleInvolvedPicker, setPersonOwnerVehicleInvolvedPicker] = useState("");
+  const [personOwnerVehicleShowInvolvedSelector, setPersonOwnerVehicleShowInvolvedSelector] =
+    useState(false);
+  const [personOwnerAddVehicleDraft, setPersonOwnerAddVehicleDraft] = useState<PersonOwnerVehicle>(() => ({
+    vehicleType: "",
+    vehicleMake: "",
+    model: "",
+    color: "",
+    year: "",
+    vin: "",
+    licensePlate: "",
+    licensePlateState: "",
+    licensePlateExpires: "",
+    personsInvolved: [],
+    uninsured: false,
+    insuredName: "",
+    policyNumber: "",
+    policyType: "",
+    claimNumber: "",
+    insuranceCompanyName: "",
+    insuranceCompanyPhone: "",
+    insuranceCompanyAddress: "",
+    insuranceCompanyEmail: "",
+    insuranceAgentName: "",
+    insuranceAgentCompany: "",
+    insuranceAgentAddress: "",
+    insuranceAgentPhone: "",
+    lawEnforcementOfficer: "",
+    policeReportFileNumber: "",
+    numberOfOccupants: "",
+    numberOfInjuries: "",
+    numberOfFatalities: "",
+    notes: "",
+  }));
+
+  const resetPersonOwnerAddPersonDraft = () => {
+    setPersonOwnerEditIndex(null);
+    setPersonOwnerAddPersonDraft({
+      firstName: "",
+      lastName: "",
+      businessName: "",
+      phone: "",
+      affiliation: "",
+      address: {
+        streetHighwayName: "",
+        poBox: "",
+        apartmentNumber: "",
+        city: "",
+        state: "",
+        zipCode: "",
+      },
+    });
+  };
+
+  const openAddPersonModal = () => {
+    resetPersonOwnerAddPersonDraft();
+    setPersonOwnerAddPersonModalOpen(true);
+  };
+
+  const openEditPersonModal = (index: number) => {
+    const person = personOwnerPersons[index];
+    if (!person) return;
+    setPersonOwnerEditIndex(index);
+    setPersonOwnerAddPersonDraft(person);
+    setPersonOwnerAddPersonModalOpen(true);
+  };
+  const resetPersonOwnerAddOwnerDraft = () => {
+    setPersonOwnerOwnerEditIndex(null);
+    setPersonOwnerAddOwnerDraft({
+      firstName: "",
+      lastName: "",
+      businessName: "",
+      phone: "",
+      insuranceCompany: "",
+      address: {
+        streetHighwayName: "",
+        poBox: "",
+        apartmentNumber: "",
+        city: "",
+        state: "",
+        zipCode: "",
+      },
+    });
+  };
+  const openAddOwnerModal = () => {
+    resetPersonOwnerAddOwnerDraft();
+    setPersonOwnerAddOwnerModalOpen(true);
+  };
+  const openEditOwnerModal = (index: number) => {
+    const owner = personOwnerOwners[index];
+    if (!owner) return;
+    setPersonOwnerOwnerEditIndex(index);
+    setPersonOwnerAddOwnerDraft(owner);
+    setPersonOwnerAddOwnerModalOpen(true);
+  };
+
+  const resetPersonOwnerAddVehicleDraft = () => {
+    setPersonOwnerVehicleEditIndex(null);
+    setPersonOwnerVehicleInvolvedPicker("");
+    setPersonOwnerVehicleShowInvolvedSelector(false);
+    setPersonOwnerAddVehicleDraft({
+      vehicleType: "",
+      vehicleMake: "",
+      model: "",
+      color: "",
+      year: "",
+      vin: "",
+      licensePlate: "",
+      licensePlateState: "",
+      licensePlateExpires: "",
+      personsInvolved: [],
+      uninsured: false,
+      insuredName: "",
+      policyNumber: "",
+      policyType: "",
+      claimNumber: "",
+      insuranceCompanyName: "",
+      insuranceCompanyPhone: "",
+      insuranceCompanyAddress: "",
+      insuranceCompanyEmail: "",
+      insuranceAgentName: "",
+      insuranceAgentCompany: "",
+      insuranceAgentAddress: "",
+      insuranceAgentPhone: "",
+      lawEnforcementOfficer: "",
+      policeReportFileNumber: "",
+      numberOfOccupants: "",
+      numberOfInjuries: "",
+      numberOfFatalities: "",
+      notes: "",
+    });
+  };
+  const openAddVehicleModal = () => {
+    resetPersonOwnerAddVehicleDraft();
+    setPersonOwnerAddVehicleModalOpen(true);
+  };
+  const openEditVehicleModal = (index: number) => {
+    const vehicle = personOwnerVehicles[index];
+    if (!vehicle) return;
+    setPersonOwnerVehicleEditIndex(index);
+    setPersonOwnerVehicleInvolvedPicker("");
+    setPersonOwnerVehicleShowInvolvedSelector(false);
+    setPersonOwnerAddVehicleDraft(vehicle);
+    setPersonOwnerAddVehicleModalOpen(true);
+  };
+  const personOwnerInvolvedOptions = useMemo(
+    () => [
+      ...personOwnerPersons.map((p, idx) => ({
+        value: `person:${idx}`,
+        label: [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(" ") || `Person ${idx + 1}`,
+      })),
+      ...personOwnerOwners.map((o, idx) => ({
+        value: `owner:${idx}`,
+        label: [o.firstName.trim(), o.lastName.trim()].filter(Boolean).join(" ") || `Owner ${idx + 1}`,
+      })),
+    ],
+    [personOwnerPersons, personOwnerOwners],
+  );
+  const resolveInvolvedDisplayName = useCallback(
+    (ref: string): string => {
+      const [kind, rawIndex] = ref.split(":");
+      const index = Number.parseInt(rawIndex ?? "", 10);
+      if (!Number.isFinite(index) || index < 0) return ref;
+      if (kind === "person") {
+        const p = personOwnerPersons[index];
+        return p ? [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(" ") || ref : ref;
+      }
+      if (kind === "owner") {
+        const o = personOwnerOwners[index];
+        return o ? [o.firstName.trim(), o.lastName.trim()].filter(Boolean).join(" ") || ref : ref;
+      }
+      return ref;
+    },
+    [personOwnerPersons, personOwnerOwners],
+  );
+  const buildPersonOwnerFormOverrides = useCallback(
+    (
+      persons: PersonOwnerPerson[],
+      owners: PersonOwnerOwner[],
+      vehicles: PersonOwnerVehicle[],
+    ): Partial<NerisFormValues> => {
+      const join = (values: string[]) =>
+        values
+          .map((value) => value.trim())
+          .filter((value) => value.length > 0)
+          .join(" | ");
+      return {
+        person_owner_persons_json: JSON.stringify(persons),
+        person_owner_owners_json: JSON.stringify(owners),
+        person_owner_vehicles_json: JSON.stringify(vehicles),
+        person_owner_person_first_name: join(persons.map((p) => p.firstName)),
+        person_owner_person_last_name: join(persons.map((p) => p.lastName)),
+        person_owner_person_business_name: join(persons.map((p) => p.businessName)),
+        person_owner_person_phone: join(persons.map((p) => p.phone)),
+        person_owner_person_affiliation: join(persons.map((p) => p.affiliation)),
+        person_owner_person_address_street: join(persons.map((p) => p.address.streetHighwayName)),
+        person_owner_person_address_po_box: join(persons.map((p) => p.address.poBox)),
+        person_owner_person_address_apartment: join(persons.map((p) => p.address.apartmentNumber)),
+        person_owner_person_address_city: join(persons.map((p) => p.address.city)),
+        person_owner_person_address_state: join(persons.map((p) => p.address.state)),
+        person_owner_person_address_zip: join(persons.map((p) => p.address.zipCode)),
+        person_owner_owner_first_name: join(owners.map((o) => o.firstName)),
+        person_owner_owner_last_name: join(owners.map((o) => o.lastName)),
+        person_owner_owner_business_name: join(owners.map((o) => o.businessName)),
+        person_owner_owner_phone: join(owners.map((o) => o.phone)),
+        person_owner_owner_insurance_company: join(owners.map((o) => o.insuranceCompany)),
+        person_owner_owner_address_street: join(owners.map((o) => o.address.streetHighwayName)),
+        person_owner_owner_address_po_box: join(owners.map((o) => o.address.poBox)),
+        person_owner_owner_address_apartment: join(owners.map((o) => o.address.apartmentNumber)),
+        person_owner_owner_address_city: join(owners.map((o) => o.address.city)),
+        person_owner_owner_address_state: join(owners.map((o) => o.address.state)),
+        person_owner_owner_address_zip: join(owners.map((o) => o.address.zipCode)),
+        person_owner_vehicle_type: join(vehicles.map((v) => v.vehicleType)),
+        person_owner_vehicle_make: join(vehicles.map((v) => v.vehicleMake)),
+        person_owner_vehicle_model: join(vehicles.map((v) => v.model)),
+        person_owner_vehicle_color: join(vehicles.map((v) => v.color)),
+        person_owner_vehicle_year: join(vehicles.map((v) => v.year)),
+        person_owner_vehicle_vin: join(vehicles.map((v) => v.vin)),
+        person_owner_vehicle_license_plate: join(vehicles.map((v) => v.licensePlate)),
+        person_owner_vehicle_state: join(vehicles.map((v) => v.licensePlateState)),
+        person_owner_vehicle_license_plate_expires: join(vehicles.map((v) => v.licensePlateExpires)),
+        person_owner_vehicle_persons_involved: join(
+          vehicles.map((v) => v.personsInvolved.map((ref) => resolveInvolvedDisplayName(ref)).join(", ")),
+        ),
+        person_owner_vehicle_uninsured: join(vehicles.map((v) => (v.uninsured ? "YES" : "NO"))),
+        person_owner_vehicle_insured_name: join(vehicles.map((v) => v.insuredName)),
+        person_owner_vehicle_policy_number: join(vehicles.map((v) => v.policyNumber)),
+        person_owner_vehicle_policy_type: join(vehicles.map((v) => v.policyType)),
+        person_owner_vehicle_claim_number: join(vehicles.map((v) => v.claimNumber)),
+        person_owner_vehicle_insurance_company_name: join(vehicles.map((v) => v.insuranceCompanyName)),
+        person_owner_vehicle_insurance_company_phone: join(
+          vehicles.map((v) => v.insuranceCompanyPhone),
+        ),
+        person_owner_vehicle_insurance_company_address: join(
+          vehicles.map((v) => v.insuranceCompanyAddress),
+        ),
+        person_owner_vehicle_insurance_company_email: join(vehicles.map((v) => v.insuranceCompanyEmail)),
+        person_owner_vehicle_insurance_agent_name: join(vehicles.map((v) => v.insuranceAgentName)),
+        person_owner_vehicle_insurance_agent_company: join(
+          vehicles.map((v) => v.insuranceAgentCompany),
+        ),
+        person_owner_vehicle_insurance_agent_address: join(
+          vehicles.map((v) => v.insuranceAgentAddress),
+        ),
+        person_owner_vehicle_insurance_agent_phone: join(vehicles.map((v) => v.insuranceAgentPhone)),
+        person_owner_vehicle_law_enforcement_officer: join(
+          vehicles.map((v) => v.lawEnforcementOfficer),
+        ),
+        person_owner_vehicle_police_report_file_number: join(
+          vehicles.map((v) => v.policeReportFileNumber),
+        ),
+        person_owner_vehicle_number_of_occupants: join(vehicles.map((v) => v.numberOfOccupants)),
+        person_owner_vehicle_number_of_injuries: join(vehicles.map((v) => v.numberOfInjuries)),
+        person_owner_vehicle_number_of_fatalities: join(vehicles.map((v) => v.numberOfFatalities)),
+        person_owner_vehicle_notes: join(vehicles.map((v) => v.notes)),
+      };
+    },
+    [resolveInvolvedDisplayName],
+  );
+
   const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
     null,
   );
@@ -1058,6 +1601,9 @@ function NerisReportFormPage({
     });
     if (showRequiredOnly) {
       sections = sections.filter((section) => {
+        // This section is client-only (not NERIS required fields), but should remain visible
+        // even when the user toggles "Show required fields only".
+        if (section.id === "personOwner") return true;
         const fields = getNerisFieldsForSection(section.id);
         return fields.some((field) =>
           isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
@@ -3875,8 +4421,106 @@ function NerisReportFormPage({
       sections.push({ id: "resourceSummary", title: "Resources", rows: resourceRows });
     }
 
+    if (personOwnerPersons.length > 0 || personOwnerOwners.length > 0 || personOwnerVehicles.length > 0) {
+      const formatPersonAddressForPrint = (address: PersonOwnerAddress): string => {
+        const bits: string[] = [];
+        const streetBits: string[] = [];
+        if (address.streetHighwayName.trim()) streetBits.push(address.streetHighwayName.trim());
+        if (address.poBox.trim()) streetBits.push(`PO Box ${address.poBox.trim()}`);
+        if (address.apartmentNumber.trim()) streetBits.push(`Apt ${address.apartmentNumber.trim()}`);
+        if (streetBits.length > 0) bits.push(streetBits.join(" • "));
+
+        const cityStateZipBits: string[] = [];
+        if (address.city.trim()) cityStateZipBits.push(address.city.trim());
+        const stateZip = [address.state.trim(), address.zipCode.trim()].filter(Boolean).join(" ");
+        if (stateZip) cityStateZipBits.push(stateZip);
+        if (cityStateZipBits.length > 0) {
+          // Typically "City, ST ZIP"
+          const city = address.city.trim();
+          const rest = cityStateZipBits.filter((b) => b !== city).join(", ");
+          bits.push(city ? `${city}${rest ? `, ${rest}` : ""}` : cityStateZipBits.join(", "));
+        }
+        return bits.filter(Boolean).join(" | ");
+      };
+
+      const personRows: PrintSummaryRow[] = personOwnerPersons.map((p, index) => {
+        const nameBits = [
+          [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(" "),
+          p.businessName.trim() ? `(${p.businessName.trim()})` : "",
+        ].filter(Boolean);
+        const phoneBit = p.phone.trim() ? `Phone: ${p.phone.trim()}` : "";
+        const addressBit = formatPersonAddressForPrint(p.address);
+        const value = [nameBits.join(" "), phoneBit, addressBit].filter(Boolean).join(" • ");
+        return { label: `Person #${index + 1}`, value };
+      });
+      const ownerRows: PrintSummaryRow[] = personOwnerOwners.map((o, index) => {
+        const nameBits = [
+          [o.firstName.trim(), o.lastName.trim()].filter(Boolean).join(" "),
+          o.businessName.trim() ? `(${o.businessName.trim()})` : "",
+        ].filter(Boolean);
+        const phoneBit = o.phone.trim() ? `Phone: ${o.phone.trim()}` : "";
+        const insuranceBit = o.insuranceCompany.trim()
+          ? `Insurance: ${o.insuranceCompany.trim()}`
+          : "";
+        const addressBit = formatPersonAddressForPrint(o.address);
+        const value = [nameBits.join(" "), phoneBit, insuranceBit, addressBit]
+          .filter(Boolean)
+          .join(" • ");
+        return { label: `Owner #${index + 1}`, value };
+      });
+      const vehicleRows: PrintSummaryRow[] = personOwnerVehicles.map((v, index) => {
+        const vehicleLine = [
+          v.vehicleMake.trim(),
+          v.model.trim(),
+          v.color.trim(),
+          v.year.trim(),
+        ]
+          .filter(Boolean)
+          .join(" ");
+        const vehicleMeta = [v.vehicleType.trim(), v.licensePlate.trim(), v.licensePlateState.trim()]
+          .filter(Boolean)
+          .join(" • ");
+        const insuranceLine = v.uninsured
+          ? "Uninsured"
+          : [v.insuranceCompanyName.trim(), v.policyNumber.trim()].filter(Boolean).join(" • ");
+        const involvedLine = (v.personsInvolved ?? [])
+          .map((ref) => resolveInvolvedDisplayName(ref))
+          .filter(Boolean)
+          .join(", ");
+        const value = [vehicleLine, vehicleMeta, involvedLine && `People/Owners: ${involvedLine}`, insuranceLine]
+          .filter(Boolean)
+          .join(" | ");
+        return { label: `Vehicle #${index + 1}`, value };
+      });
+
+      sections.push({
+        id: "personOwnerSummary",
+        title: "Person/Owner",
+        rows: [...personRows, ...ownerRows, ...vehicleRows],
+      });
+    } else {
+      // If the JSON exists but parsing failed (or the data shape changed), still show something.
+      const raw = String(formValues.person_owner_persons_json ?? "").trim();
+      if (raw) {
+        sections.push({
+          id: "personOwnerSummary",
+          title: "Person/Owner",
+          rows: [{ label: "People (raw)", value: raw }],
+        });
+      }
+    }
+
     return sections;
-  }, [additionalAidEntries, additionalNonFdAidEntries, formValues, resourceUnits]);
+  }, [
+    additionalAidEntries,
+    additionalNonFdAidEntries,
+    formValues,
+    resourceUnits,
+    personOwnerPersons,
+    personOwnerOwners,
+    personOwnerVehicles,
+    resolveInvolvedDisplayName,
+  ]);
 
   const handlePrintSummary = () => {
     if (typeof window === "undefined") return;
@@ -6806,6 +7450,903 @@ function NerisReportFormPage({
                     Select one or more personnel. Click outside this dialog to close.
                   </small>
                 </section>
+              </div>
+            ) : null}
+            {currentSection.id === "personOwner" ? (
+              <div className="field-span-two neris-person-owner-module">
+                <div className="panel-header" style={{ marginBottom: "0.72rem" }}>
+                  <h2 style={{ margin: 0, fontSize: "0.98rem" }}>Person/Owner</h2>
+                </div>
+
+                <div className="panel-grid two-column" style={{ marginBottom: "0.85rem" }}>
+                  <div className="panel">
+                    <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Person</h3>
+                    <div style={{ height: "0.55rem" }} />
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={openAddPersonModal}
+                    >
+                      Add Person
+                    </button>
+
+                    <div style={{ height: "0.7rem" }} />
+                    {personOwnerPersons.length ? (
+                      <div style={{ display: "grid", gap: "0.55rem" }}>
+                        {personOwnerPersons.map((p, idx) => (
+                          <div key={`${p.firstName}-${p.lastName}-${idx}`} className="panel">
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem" }}>
+                              <div style={{ display: "flex", flexDirection: "column", gap: "0.2rem" }}>
+                                <strong style={{ fontSize: "0.9rem" }}>
+                                  {(p.firstName + " " + p.lastName).trim() || "Unnamed person"}
+                                </strong>
+                                {p.affiliation.trim() ? (
+                                  <span
+                                    style={{
+                                      color: "#475569",
+                                      fontSize: "0.54rem",
+                                      fontStyle: "italic",
+                                      lineHeight: 1.25,
+                                    }}
+                                  >
+                                    {p.affiliation.trim()}
+                                  </span>
+                                ) : null}
+                              </div>
+                              <div style={{ display: "inline-flex", gap: "0.35rem", alignItems: "flex-start" }}>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() => openEditPersonModal(idx)}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() => {
+                                    const nextPersons = personOwnerPersons.filter((_, i) => i !== idx);
+                                    stampSavedAt(
+                                      "manual",
+                                      reportStatus,
+                                      undefined,
+                                      buildPersonOwnerFormOverrides(
+                                        nextPersons,
+                                        personOwnerOwners,
+                                        personOwnerVehicles,
+                                      ),
+                                    );
+                                    if (personOwnerEditIndex === idx) {
+                                      resetPersonOwnerAddPersonDraft();
+                                      setPersonOwnerAddPersonModalOpen(false);
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="neris-section-placeholder">
+                        <p>No people added yet.</p>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="panel">
+                    <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Owner</h3>
+                    <div style={{ height: "0.55rem" }} />
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={openAddOwnerModal}
+                    >
+                      Add Owner
+                    </button>
+                    <div style={{ height: "0.7rem" }} />
+                    {personOwnerOwners.length ? (
+                      <div style={{ display: "grid", gap: "0.55rem" }}>
+                        {personOwnerOwners.map((o, idx) => (
+                          <div key={`${o.firstName}-${o.lastName}-${idx}`} className="panel">
+                            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem" }}>
+                              <strong style={{ fontSize: "0.9rem" }}>
+                                {(o.firstName + " " + o.lastName).trim() || "Unnamed owner"}
+                              </strong>
+                              <div style={{ display: "inline-flex", gap: "0.35rem", alignItems: "flex-start" }}>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() => openEditOwnerModal(idx)}
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() => {
+                                    const nextOwners = personOwnerOwners.filter((_, i) => i !== idx);
+                                    stampSavedAt(
+                                      "manual",
+                                      reportStatus,
+                                      undefined,
+                                      buildPersonOwnerFormOverrides(
+                                        personOwnerPersons,
+                                        nextOwners,
+                                        personOwnerVehicles,
+                                      ),
+                                    );
+                                    if (personOwnerOwnerEditIndex === idx) {
+                                      resetPersonOwnerAddOwnerDraft();
+                                      setPersonOwnerAddOwnerModalOpen(false);
+                                    }
+                                  }}
+                                >
+                                  Delete
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="neris-section-placeholder">
+                        <p>No owners added yet.</p>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Vehicle</h3>
+                  <div style={{ height: "0.55rem" }} />
+                  <button
+                    type="button"
+                    className="primary-button compact-button"
+                    onClick={openAddVehicleModal}
+                  >
+                    Add Vehicle
+                  </button>
+                  <div style={{ height: "0.7rem" }} />
+                  {personOwnerVehicles.length ? (
+                    <div style={{ display: "grid", gap: "0.55rem" }}>
+                      {personOwnerVehicles.map((v, idx) => (
+                        <div key={`${v.vin}-${v.licensePlate}-${idx}`} className="panel">
+                          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem" }}>
+                            <div style={{ display: "grid", gap: "0.26rem" }}>
+                              <strong style={{ fontSize: "0.9rem" }}>
+                                {[v.vehicleMake, v.model, v.color, v.year].filter((x) => x.trim()).join(" ") ||
+                                  `Vehicle ${idx + 1}`}
+                              </strong>
+                              <span style={{ color: "#475569", fontSize: "0.76rem" }}>
+                                {(v.personsInvolved ?? [])
+                                  .map((ref) => resolveInvolvedDisplayName(ref))
+                                  .filter(Boolean)
+                                  .join(", ")}
+                              </span>
+                              <span style={{ color: "#475569", fontSize: "0.76rem" }}>
+                                {v.uninsured
+                                  ? "Uninsured"
+                                  : [v.insuranceCompanyName.trim(), v.policyNumber.trim()]
+                                      .filter(Boolean)
+                                      .join(" • ")}
+                              </span>
+                            </div>
+                            <div style={{ display: "inline-flex", gap: "0.35rem", alignItems: "flex-start" }}>
+                              <button
+                                type="button"
+                                className="secondary-button compact-button"
+                                onClick={() => openEditVehicleModal(idx)}
+                              >
+                                Edit
+                              </button>
+                              <button
+                                type="button"
+                                className="secondary-button compact-button"
+                                onClick={() => {
+                                  const nextVehicles = personOwnerVehicles.filter((_, i) => i !== idx);
+                                  stampSavedAt(
+                                    "manual",
+                                    reportStatus,
+                                    undefined,
+                                    buildPersonOwnerFormOverrides(
+                                      personOwnerPersons,
+                                      personOwnerOwners,
+                                      nextVehicles,
+                                    ),
+                                  );
+                                  if (personOwnerVehicleEditIndex === idx) {
+                                    resetPersonOwnerAddVehicleDraft();
+                                    setPersonOwnerAddVehicleModalOpen(false);
+                                  }
+                                }}
+                              >
+                                Delete
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="neris-section-placeholder">
+                      <p>No vehicles added yet.</p>
+                    </div>
+                  )}
+                </div>
+
+                {personOwnerAddPersonModalOpen ? (
+                  <div
+                    className="neris-resource-personnel-modal-backdrop"
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={(event) => {
+                      if (event.target === event.currentTarget) {
+                        resetPersonOwnerAddPersonDraft();
+                        setPersonOwnerAddPersonModalOpen(false);
+                      }
+                    }}
+                  >
+                    <section
+                      className="panel neris-resource-personnel-modal"
+                      onWheel={(event) => event.stopPropagation()}
+                    >
+                      <div className="neris-resource-personnel-modal-header">
+                        <h3>{personOwnerEditIndex === null ? "Add Person" : "Edit Person"}</h3>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => {
+                            resetPersonOwnerAddPersonDraft();
+                            setPersonOwnerAddPersonModalOpen(false);
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+
+                      <div className="settings-form">
+                        <label>First Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.firstName}
+                          onChange={(e) => {
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              firstName: e.target.value,
+                            }));
+                          }}
+                        />
+
+                        <label>Last Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.lastName}
+                          onChange={(e) => {
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              lastName: e.target.value,
+                            }));
+                          }}
+                        />
+
+                        <label>Business Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.businessName}
+                          onChange={(e) => {
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              businessName: e.target.value,
+                            }));
+                          }}
+                        />
+
+                        <label>Phone</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.phone}
+                          onChange={(e) => {
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              phone: e.target.value,
+                            }));
+                          }}
+                        />
+
+                        <label>Affiliation</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.affiliation}
+                          onChange={(e) => {
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              affiliation: e.target.value,
+                            }));
+                          }}
+                        />
+
+                        <div className="state-edit-row">
+                          <label>Address</label>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => {
+                              const source =
+                                (formValues.incident_location_address ?? "").trim() ||
+                                (formValues.dispatch_location_address ?? "").trim();
+                              const parsed = parseIncidentLocationAddressToPersonAddress(source);
+                              setPersonOwnerAddPersonDraft((prev) => ({
+                                ...prev,
+                                address: parsed,
+                              }));
+                            }}
+                          >
+                            Same as Incident
+                          </button>
+                        </div>
+
+                        <label>Street or Highway Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.address.streetHighwayName}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, streetHighwayName: v },
+                            }));
+                          }}
+                        />
+
+                        <label>Post Office Box</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.address.poBox}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, poBox: v },
+                            }));
+                          }}
+                        />
+
+                        <label>Apartment Number</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.address.apartmentNumber}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, apartmentNumber: v },
+                            }));
+                          }}
+                        />
+
+                        <label>City</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.address.city}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, city: v },
+                            }));
+                          }}
+                        />
+
+                        <label>State</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.address.state}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, state: v },
+                            }));
+                          }}
+                          placeholder="e.g. IL"
+                        />
+
+                        <label>Zip Code</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddPersonDraft.address.zipCode}
+                          onChange={(e) => {
+                            const v = e.target.value;
+                            setPersonOwnerAddPersonDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, zipCode: v },
+                            }));
+                          }}
+                          placeholder="e.g. 62704"
+                        />
+
+                        <div className="neris-form-actions" style={{ justifyContent: "space-between" }}>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => {
+                              resetPersonOwnerAddPersonDraft();
+                              setPersonOwnerAddPersonModalOpen(false);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => {
+                              const cleaned: PersonOwnerPerson = {
+                                firstName: personOwnerAddPersonDraft.firstName.trim(),
+                                lastName: personOwnerAddPersonDraft.lastName.trim(),
+                                businessName: personOwnerAddPersonDraft.businessName.trim(),
+                                phone: personOwnerAddPersonDraft.phone.trim(),
+                                affiliation: personOwnerAddPersonDraft.affiliation.trim(),
+                                address: {
+                                  streetHighwayName:
+                                    personOwnerAddPersonDraft.address.streetHighwayName.trim(),
+                                  poBox: personOwnerAddPersonDraft.address.poBox.trim(),
+                                  apartmentNumber:
+                                    personOwnerAddPersonDraft.address.apartmentNumber.trim(),
+                                  city: personOwnerAddPersonDraft.address.city.trim(),
+                                  state: personOwnerAddPersonDraft.address.state.trim(),
+                                  zipCode: personOwnerAddPersonDraft.address.zipCode.trim(),
+                                },
+                              };
+
+                              const nextPersons = (() => {
+                                if (personOwnerEditIndex === null) {
+                                  return [...personOwnerPersons, cleaned];
+                                }
+                                const next = [...personOwnerPersons];
+                                if (personOwnerEditIndex >= 0 && personOwnerEditIndex < next.length) {
+                                  next[personOwnerEditIndex] = cleaned;
+                                  return next;
+                                }
+                                return [...next, cleaned];
+                              })();
+
+                              stampSavedAt(
+                                "manual",
+                                reportStatus,
+                                undefined,
+                                buildPersonOwnerFormOverrides(
+                                  nextPersons,
+                                  personOwnerOwners,
+                                  personOwnerVehicles,
+                                ),
+                              );
+
+                              resetPersonOwnerAddPersonDraft();
+                              setPersonOwnerAddPersonModalOpen(false);
+                            }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+                {personOwnerAddOwnerModalOpen ? (
+                  <div
+                    className="neris-resource-personnel-modal-backdrop"
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={(event) => {
+                      if (event.target === event.currentTarget) {
+                        resetPersonOwnerAddOwnerDraft();
+                        setPersonOwnerAddOwnerModalOpen(false);
+                      }
+                    }}
+                  >
+                    <section className="panel neris-resource-personnel-modal" onWheel={(event) => event.stopPropagation()}>
+                      <div className="neris-resource-personnel-modal-header">
+                        <h3>{personOwnerOwnerEditIndex === null ? "Add Owner" : "Edit Owner"}</h3>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => {
+                            resetPersonOwnerAddOwnerDraft();
+                            setPersonOwnerAddOwnerModalOpen(false);
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <div className="settings-form">
+                        <label>First Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.firstName}
+                          onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, firstName: e.target.value }))}
+                        />
+                        <label>Last Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.lastName}
+                          onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, lastName: e.target.value }))}
+                        />
+                        <label>Business Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.businessName}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, businessName: e.target.value }))
+                          }
+                        />
+                        <label>Phone</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.phone}
+                          onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, phone: e.target.value }))}
+                        />
+                        <label>Insurance Company</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.insuranceCompany}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, insuranceCompany: e.target.value }))
+                          }
+                        />
+                        <div className="state-edit-row">
+                          <label>Address</label>
+                          <button
+                            type="button"
+                            className="link-button"
+                            onClick={() => {
+                              const source =
+                                (formValues.incident_location_address ?? "").trim() ||
+                                (formValues.dispatch_location_address ?? "").trim();
+                              const parsed = parseIncidentLocationAddressToPersonAddress(source);
+                              setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, address: parsed }));
+                            }}
+                          >
+                            Same as Incident
+                          </button>
+                        </div>
+                        <label>Street or Highway Name</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.address.streetHighwayName}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, streetHighwayName: e.target.value },
+                            }))
+                          }
+                        />
+                        <label>Post Office Box</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.address.poBox}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, poBox: e.target.value },
+                            }))
+                          }
+                        />
+                        <label>Apartment Number</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.address.apartmentNumber}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, apartmentNumber: e.target.value },
+                            }))
+                          }
+                        />
+                        <label>City</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.address.city}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, city: e.target.value },
+                            }))
+                          }
+                        />
+                        <label>State</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.address.state}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, state: e.target.value },
+                            }))
+                          }
+                        />
+                        <label>Zip Code</label>
+                        <input
+                          type="text"
+                          value={personOwnerAddOwnerDraft.address.zipCode}
+                          onChange={(e) =>
+                            setPersonOwnerAddOwnerDraft((prev) => ({
+                              ...prev,
+                              address: { ...prev.address, zipCode: e.target.value },
+                            }))
+                          }
+                        />
+                        <div className="neris-form-actions" style={{ justifyContent: "space-between" }}>
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            onClick={() => {
+                              resetPersonOwnerAddOwnerDraft();
+                              setPersonOwnerAddOwnerModalOpen(false);
+                            }}
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => {
+                              const cleaned: PersonOwnerOwner = {
+                                firstName: personOwnerAddOwnerDraft.firstName.trim(),
+                                lastName: personOwnerAddOwnerDraft.lastName.trim(),
+                                businessName: personOwnerAddOwnerDraft.businessName.trim(),
+                                phone: personOwnerAddOwnerDraft.phone.trim(),
+                                insuranceCompany: personOwnerAddOwnerDraft.insuranceCompany.trim(),
+                                address: {
+                                  streetHighwayName: personOwnerAddOwnerDraft.address.streetHighwayName.trim(),
+                                  poBox: personOwnerAddOwnerDraft.address.poBox.trim(),
+                                  apartmentNumber: personOwnerAddOwnerDraft.address.apartmentNumber.trim(),
+                                  city: personOwnerAddOwnerDraft.address.city.trim(),
+                                  state: personOwnerAddOwnerDraft.address.state.trim(),
+                                  zipCode: personOwnerAddOwnerDraft.address.zipCode.trim(),
+                                },
+                              };
+                              const nextOwners =
+                                personOwnerOwnerEditIndex === null
+                                  ? [...personOwnerOwners, cleaned]
+                                  : personOwnerOwners.map((owner, i) =>
+                                      i === personOwnerOwnerEditIndex ? cleaned : owner,
+                                    );
+                              stampSavedAt(
+                                "manual",
+                                reportStatus,
+                                undefined,
+                                buildPersonOwnerFormOverrides(
+                                  personOwnerPersons,
+                                  nextOwners,
+                                  personOwnerVehicles,
+                                ),
+                              );
+                              resetPersonOwnerAddOwnerDraft();
+                              setPersonOwnerAddOwnerModalOpen(false);
+                            }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
+                {personOwnerAddVehicleModalOpen ? (
+                  <div
+                    className="neris-resource-personnel-modal-backdrop"
+                    role="dialog"
+                    aria-modal="true"
+                    onClick={(event) => {
+                      if (event.target === event.currentTarget) {
+                        resetPersonOwnerAddVehicleDraft();
+                        setPersonOwnerAddVehicleModalOpen(false);
+                      }
+                    }}
+                  >
+                    <section className="panel neris-resource-personnel-modal" onWheel={(event) => event.stopPropagation()}>
+                      <div className="neris-resource-personnel-modal-header">
+                        <h3>{personOwnerVehicleEditIndex === null ? "Add Vehicle" : "Edit Vehicle"}</h3>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => {
+                            resetPersonOwnerAddVehicleDraft();
+                            setPersonOwnerAddVehicleModalOpen(false);
+                          }}
+                        >
+                          Close
+                        </button>
+                      </div>
+                      <div className="settings-form">
+                        <h4 style={{ margin: "0.2rem 0" }}>Vehicle Info</h4>
+                        <label>Vehicle Type</label><input type="text" value={personOwnerAddVehicleDraft.vehicleType} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, vehicleType: e.target.value }))} />
+                        <label>Vehicle Make</label><input type="text" value={personOwnerAddVehicleDraft.vehicleMake} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, vehicleMake: e.target.value }))} />
+                        <label>Model</label><input type="text" value={personOwnerAddVehicleDraft.model} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, model: e.target.value }))} />
+                        <label>Color</label><input type="text" value={personOwnerAddVehicleDraft.color} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, color: e.target.value }))} />
+                        <label>Year</label><input type="text" value={personOwnerAddVehicleDraft.year} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, year: e.target.value }))} />
+                        <label>Vin</label><input type="text" value={personOwnerAddVehicleDraft.vin} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, vin: e.target.value }))} />
+                        <label>License Plate</label><input type="text" value={personOwnerAddVehicleDraft.licensePlate} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, licensePlate: e.target.value }))} />
+                        <label>State</label><input type="text" value={personOwnerAddVehicleDraft.licensePlateState} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, licensePlateState: e.target.value }))} />
+                        <label>License Plate Expires</label><input type="text" value={personOwnerAddVehicleDraft.licensePlateExpires} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, licensePlateExpires: e.target.value }))} />
+
+                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Persons Involved</h4>
+                        <button
+                          type="button"
+                          className="primary-button compact-button"
+                          onClick={() => setPersonOwnerVehicleShowInvolvedSelector((prev) => !prev)}
+                        >
+                          Add
+                        </button>
+                        {personOwnerVehicleShowInvolvedSelector ? (
+                          <>
+                            <select
+                              value={personOwnerVehicleInvolvedPicker}
+                              onChange={(e) => setPersonOwnerVehicleInvolvedPicker(e.target.value)}
+                            >
+                              <option value="">Select person/owner</option>
+                              {personOwnerInvolvedOptions.map((opt) => (
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
+                              ))}
+                            </select>
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() => {
+                                const pick = personOwnerVehicleInvolvedPicker.trim();
+                                if (!pick) return;
+                                setPersonOwnerAddVehicleDraft((prev) => ({
+                                  ...prev,
+                                  personsInvolved: prev.personsInvolved.includes(pick)
+                                    ? prev.personsInvolved
+                                    : [...prev.personsInvolved, pick],
+                                }));
+                                setPersonOwnerVehicleInvolvedPicker("");
+                                setPersonOwnerVehicleShowInvolvedSelector(false);
+                              }}
+                            >
+                              Add Selected
+                            </button>
+                          </>
+                        ) : null}
+                        {(personOwnerAddVehicleDraft.personsInvolved ?? []).length ? (
+                          <div style={{ display: "grid", gap: "0.25rem" }}>
+                            {personOwnerAddVehicleDraft.personsInvolved.map((ref) => (
+                              <div key={ref} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
+                                <span style={{ fontSize: "0.78rem" }}>{resolveInvolvedDisplayName(ref)}</span>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={() =>
+                                    setPersonOwnerAddVehicleDraft((prev) => ({
+                                      ...prev,
+                                      personsInvolved: prev.personsInvolved.filter((x) => x !== ref),
+                                    }))
+                                  }
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+
+                        <div className="state-edit-row">
+                          <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Insurance Info</h4>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() =>
+                              setPersonOwnerAddVehicleDraft((prev) => ({
+                                ...prev,
+                                uninsured: !prev.uninsured,
+                              }))
+                            }
+                          >
+                            Uninsured
+                          </button>
+                        </div>
+                        {!personOwnerAddVehicleDraft.uninsured ? (
+                          <>
+                            <label>Insured Name</label><input type="text" value={personOwnerAddVehicleDraft.insuredName} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuredName: e.target.value }))} />
+                            <label>Policy Number</label><input type="text" value={personOwnerAddVehicleDraft.policyNumber} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, policyNumber: e.target.value }))} />
+                            <label>Policy Type</label><input type="text" value={personOwnerAddVehicleDraft.policyType} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, policyType: e.target.value }))} />
+                            <label>Claim Number</label><input type="text" value={personOwnerAddVehicleDraft.claimNumber} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, claimNumber: e.target.value }))} />
+                            <label>Insurance Company Name</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyName} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyName: e.target.value }))} />
+                            <label>Insurance Company Phone</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyPhone} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyPhone: e.target.value }))} />
+                            <label>Insurance Company Address</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyAddress} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyAddress: e.target.value }))} />
+                            <label>Insurance Company Email</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyEmail} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyEmail: e.target.value }))} />
+                            <label>Insurance Agent name</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentName} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentName: e.target.value }))} />
+                            <label>Insurance Agent Company</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentCompany} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentCompany: e.target.value }))} />
+                            <label>Insurance Agent Address</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentAddress} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentAddress: e.target.value }))} />
+                            <label>Insurance Agent Phone</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentPhone} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentPhone: e.target.value }))} />
+                          </>
+                        ) : (
+                          <p className="field-hint" style={{ margin: 0 }}>
+                            Marked as uninsured. Insurance fields are hidden.
+                          </p>
+                        )}
+
+                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Law Enforcement</h4>
+                        <label>Law Enforcement Officer</label><input type="text" value={personOwnerAddVehicleDraft.lawEnforcementOfficer} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, lawEnforcementOfficer: e.target.value }))} />
+                        <label>Police Report / File Number</label><input type="text" value={personOwnerAddVehicleDraft.policeReportFileNumber} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, policeReportFileNumber: e.target.value }))} />
+
+                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Occupant Info</h4>
+                        <label>Number of Occupants</label><input type="text" value={personOwnerAddVehicleDraft.numberOfOccupants} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, numberOfOccupants: e.target.value }))} />
+                        <label>Number of Injuries</label><input type="text" value={personOwnerAddVehicleDraft.numberOfInjuries} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, numberOfInjuries: e.target.value }))} />
+                        <label>Number of Fatalities</label><input type="text" value={personOwnerAddVehicleDraft.numberOfFatalities} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, numberOfFatalities: e.target.value }))} />
+
+                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Billing Notes</h4>
+                        <label>Notes</label><textarea rows={4} value={personOwnerAddVehicleDraft.notes} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, notes: e.target.value }))} />
+
+                        <div className="neris-form-actions" style={{ justifyContent: "space-between" }}>
+                          <button type="button" className="secondary-button" onClick={() => { resetPersonOwnerAddVehicleDraft(); setPersonOwnerAddVehicleModalOpen(false); }}>Cancel</button>
+                          <button
+                            type="button"
+                            className="primary-button"
+                            onClick={() => {
+                              const cleaned: PersonOwnerVehicle = {
+                                ...personOwnerAddVehicleDraft,
+                                vehicleType: personOwnerAddVehicleDraft.vehicleType.trim(),
+                                vehicleMake: personOwnerAddVehicleDraft.vehicleMake.trim(),
+                                model: personOwnerAddVehicleDraft.model.trim(),
+                                color: personOwnerAddVehicleDraft.color.trim(),
+                                year: personOwnerAddVehicleDraft.year.trim(),
+                                vin: personOwnerAddVehicleDraft.vin.trim(),
+                                licensePlate: personOwnerAddVehicleDraft.licensePlate.trim(),
+                                licensePlateState: personOwnerAddVehicleDraft.licensePlateState.trim(),
+                                licensePlateExpires: personOwnerAddVehicleDraft.licensePlateExpires.trim(),
+                                personsInvolved: personOwnerAddVehicleDraft.personsInvolved,
+                                uninsured: personOwnerAddVehicleDraft.uninsured,
+                                insuredName: personOwnerAddVehicleDraft.insuredName.trim(),
+                                policyNumber: personOwnerAddVehicleDraft.policyNumber.trim(),
+                                policyType: personOwnerAddVehicleDraft.policyType.trim(),
+                                claimNumber: personOwnerAddVehicleDraft.claimNumber.trim(),
+                                insuranceCompanyName: personOwnerAddVehicleDraft.insuranceCompanyName.trim(),
+                                insuranceCompanyPhone: personOwnerAddVehicleDraft.insuranceCompanyPhone.trim(),
+                                insuranceCompanyAddress: personOwnerAddVehicleDraft.insuranceCompanyAddress.trim(),
+                                insuranceCompanyEmail: personOwnerAddVehicleDraft.insuranceCompanyEmail.trim(),
+                                insuranceAgentName: personOwnerAddVehicleDraft.insuranceAgentName.trim(),
+                                insuranceAgentCompany: personOwnerAddVehicleDraft.insuranceAgentCompany.trim(),
+                                insuranceAgentAddress: personOwnerAddVehicleDraft.insuranceAgentAddress.trim(),
+                                insuranceAgentPhone: personOwnerAddVehicleDraft.insuranceAgentPhone.trim(),
+                                lawEnforcementOfficer: personOwnerAddVehicleDraft.lawEnforcementOfficer.trim(),
+                                policeReportFileNumber: personOwnerAddVehicleDraft.policeReportFileNumber.trim(),
+                                numberOfOccupants: personOwnerAddVehicleDraft.numberOfOccupants.trim(),
+                                numberOfInjuries: personOwnerAddVehicleDraft.numberOfInjuries.trim(),
+                                numberOfFatalities: personOwnerAddVehicleDraft.numberOfFatalities.trim(),
+                                notes: personOwnerAddVehicleDraft.notes.trim(),
+                              };
+                              const nextVehicles =
+                                personOwnerVehicleEditIndex === null
+                                  ? [...personOwnerVehicles, cleaned]
+                                  : personOwnerVehicles.map((vehicle, i) =>
+                                      i === personOwnerVehicleEditIndex ? cleaned : vehicle,
+                                    );
+                              stampSavedAt(
+                                "manual",
+                                reportStatus,
+                                undefined,
+                                buildPersonOwnerFormOverrides(
+                                  personOwnerPersons,
+                                  personOwnerOwners,
+                                  nextVehicles,
+                                ),
+                              );
+                              resetPersonOwnerAddVehicleDraft();
+                              setPersonOwnerAddVehicleModalOpen(false);
+                            }}
+                          >
+                            Save
+                          </button>
+                        </div>
+                      </div>
+                    </section>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {displayedSectionFieldsFiltered.flatMap((field) => {

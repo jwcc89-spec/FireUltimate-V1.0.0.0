@@ -2,6 +2,7 @@ export type NerisSectionId =
   | "core"
   | "narrative"
   | "location"
+  | "personOwner"
   | "incidentTimes"
   | "resources"
   | "emergingHazards"
@@ -69,6 +70,7 @@ interface CreateNerisDefaultsInput {
   incidentType?: string;
   receivedAt?: string;
   address?: string;
+  initialDispatchCode?: string;
 }
 
 export const NERIS_METADATA_VERSION = "NERIS v1 metadata scaffold";
@@ -134,6 +136,11 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
     id: "narrative",
     label: "Narrative",
+    helper: "",
+  },
+  {
+    id: "personOwner",
+    label: "Person/Owner",
     helper: "",
   },
   {
@@ -2285,6 +2292,58 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     rows: 5,
     layout: "full",
   },
+  // Person/Owner module (custom Fire Ultimate fields; admin can mark required as needed).
+  { id: "person_owner_person_first_name", sectionId: "personOwner", label: "Person - First Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_last_name", sectionId: "personOwner", label: "Person - Last Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_business_name", sectionId: "personOwner", label: "Person - Business Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_phone", sectionId: "personOwner", label: "Person - Phone", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_affiliation", sectionId: "personOwner", label: "Person - Affiliation", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_address_street", sectionId: "personOwner", label: "Person Address - Street/Highway", inputKind: "text", layout: "full" },
+  { id: "person_owner_person_address_po_box", sectionId: "personOwner", label: "Person Address - PO Box", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_address_apartment", sectionId: "personOwner", label: "Person Address - Apartment", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_address_city", sectionId: "personOwner", label: "Person Address - City", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_address_state", sectionId: "personOwner", label: "Person Address - State", inputKind: "text", layout: "half" },
+  { id: "person_owner_person_address_zip", sectionId: "personOwner", label: "Person Address - Zip", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_first_name", sectionId: "personOwner", label: "Owner - First Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_last_name", sectionId: "personOwner", label: "Owner - Last Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_business_name", sectionId: "personOwner", label: "Owner - Business Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_phone", sectionId: "personOwner", label: "Owner - Phone", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_insurance_company", sectionId: "personOwner", label: "Owner - Insurance Company", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_address_street", sectionId: "personOwner", label: "Owner Address - Street/Highway", inputKind: "text", layout: "full" },
+  { id: "person_owner_owner_address_po_box", sectionId: "personOwner", label: "Owner Address - PO Box", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_address_apartment", sectionId: "personOwner", label: "Owner Address - Apartment", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_address_city", sectionId: "personOwner", label: "Owner Address - City", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_address_state", sectionId: "personOwner", label: "Owner Address - State", inputKind: "text", layout: "half" },
+  { id: "person_owner_owner_address_zip", sectionId: "personOwner", label: "Owner Address - Zip", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_type", sectionId: "personOwner", label: "Vehicle - Type", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_make", sectionId: "personOwner", label: "Vehicle - Make", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_model", sectionId: "personOwner", label: "Vehicle - Model", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_color", sectionId: "personOwner", label: "Vehicle - Color", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_year", sectionId: "personOwner", label: "Vehicle - Year", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_vin", sectionId: "personOwner", label: "Vehicle - VIN", inputKind: "text", layout: "full" },
+  { id: "person_owner_vehicle_license_plate", sectionId: "personOwner", label: "Vehicle - License Plate", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_state", sectionId: "personOwner", label: "Vehicle - License Plate State", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_license_plate_expires", sectionId: "personOwner", label: "Vehicle - License Plate Expires", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_persons_involved", sectionId: "personOwner", label: "Vehicle - Persons Involved", inputKind: "text", layout: "full" },
+  { id: "person_owner_vehicle_uninsured", sectionId: "personOwner", label: "Vehicle - Uninsured", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insured_name", sectionId: "personOwner", label: "Vehicle Insurance - Insured Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_policy_number", sectionId: "personOwner", label: "Vehicle Insurance - Policy Number", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_policy_type", sectionId: "personOwner", label: "Vehicle Insurance - Policy Type", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_claim_number", sectionId: "personOwner", label: "Vehicle Insurance - Claim Number", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insurance_company_name", sectionId: "personOwner", label: "Vehicle Insurance - Company Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insurance_company_phone", sectionId: "personOwner", label: "Vehicle Insurance - Company Phone", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insurance_company_address", sectionId: "personOwner", label: "Vehicle Insurance - Company Address", inputKind: "text", layout: "full" },
+  { id: "person_owner_vehicle_insurance_company_email", sectionId: "personOwner", label: "Vehicle Insurance - Company Email", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insurance_agent_name", sectionId: "personOwner", label: "Vehicle Insurance - Agent Name", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insurance_agent_company", sectionId: "personOwner", label: "Vehicle Insurance - Agent Company", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_insurance_agent_address", sectionId: "personOwner", label: "Vehicle Insurance - Agent Address", inputKind: "text", layout: "full" },
+  { id: "person_owner_vehicle_insurance_agent_phone", sectionId: "personOwner", label: "Vehicle Insurance - Agent Phone", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_law_enforcement_officer", sectionId: "personOwner", label: "Vehicle - Law Enforcement Officer", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_police_report_file_number", sectionId: "personOwner", label: "Vehicle - Police Report/File Number", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_number_of_occupants", sectionId: "personOwner", label: "Vehicle Occupants - Number of Occupants", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_number_of_injuries", sectionId: "personOwner", label: "Vehicle Occupants - Number of Injuries", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_number_of_fatalities", sectionId: "personOwner", label: "Vehicle Occupants - Number of Fatalities", inputKind: "text", layout: "half" },
+  { id: "person_owner_vehicle_notes", sectionId: "personOwner", label: "Vehicle - Billing Notes", inputKind: "textarea", rows: 4, layout: "full" },
   ...NERIS_SECTION_NOTE_FIELDS,
 ];
 
@@ -2556,6 +2615,7 @@ export function createDefaultNerisFormValues({
   dispatchInternalId,
   receivedAt,
   address,
+  initialDispatchCode,
 }: CreateNerisDefaultsInput): NerisFormValues {
   const onsetDate = incidentOnsetDateFromReceivedAt(receivedAt);
   const onsetTime = normalizeNerisTime(receivedAt);
@@ -2582,7 +2642,7 @@ export function createDefaultNerisFormValues({
     location_in_use: "",
     location_used_as_intended: "",
     location_cross_street_name: "",
-    initial_dispatch_code: "",
+    initial_dispatch_code: (initialDispatchCode ?? "").trim(),
     dispatch_determinate_code: "",
     dispatch_final_disposition: "",
     dispatch_automatic_alarm: "",
@@ -2620,5 +2680,9 @@ export function createDefaultNerisFormValues({
     medical_notes: "",
     rescuesCasualties_notes: "",
     attachments_notes: "",
+    // Person/Owner module (client-only draft persistence; not part of NERIS required fields yet).
+    person_owner_persons_json: "",
+    person_owner_owners_json: "",
+    person_owner_vehicles_json: "",
   };
 }

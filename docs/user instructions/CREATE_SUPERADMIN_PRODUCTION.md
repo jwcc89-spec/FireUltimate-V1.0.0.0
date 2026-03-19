@@ -19,7 +19,7 @@
 2. Open the **service** that runs the production app (e.g. the one serving **cifpdil.fireultimate.app**).
 3. Go to **Environment** (or **Env**).
 4. Find `**DATABASE_URL`** and copy its value.
-  - It usually looks like: `postgresql://user:password@host/database?sslmode=require`  
+  - It usually looks like: `postgresql://user:password@host/database?sslmode=require`
   - If you can’t see the value, use “Reveal” or your team’s way to access production env vars.
 
 **Important:** This URL is secret. Don’t paste it into chat, commit it, or share it. Use it only in the next step on your own machine.
@@ -39,7 +39,7 @@
 
 ## Step 3 — Set the production database URL for this run
 
-**Option A — One-time run (recommended)**  
+**Option A — One-time run (recommended)**
 Set the variable only for this command (no file change):
 
 - **macOS / Linux:**
@@ -56,7 +56,7 @@ Set the variable only for this command (no file change):
   $env:DATABASE_URL="paste-your-production-URL-here"
   ```
 
-**Option B — Use a local file (do not commit)**  
+**Option B — Use a local file (do not commit)**
 Create a file like `.env.production` in the project root with one line:
 
 ```bash

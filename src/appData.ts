@@ -107,6 +107,7 @@ export interface IncidentCallSummary {
   lastUpdated: string;
   receivedAt: string;
   dispatchInfo: string;
+  initialDispatchCode?: string;
   /** NERIS report status from server (Draft, In Review, Exported). */
   nerisReportStatus?: string;
 }

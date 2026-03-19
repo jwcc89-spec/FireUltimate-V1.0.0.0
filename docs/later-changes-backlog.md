@@ -54,17 +54,17 @@ Purpose: keep all deferred or future work in one place from this point forward, 
 
 ## Login / Auth (general UI)
 
-- [Done][P2] **Login screen:** Remove "Fire Department (optional)" field from main login form. (2026-03-16, menu-submenu/ui-updates)
-- [Done][P2] **Login screen:** Remove or simplify helper text on main login screen. (2026-03-16)
-- [Done][P2] **Login screen:** Display tenant picture on login page (and in form header when set). (2026-03-16)
+- [Done][P2] ~~**Login screen:** Remove "Fire Department (optional)" field from main login form.~~ (2026-03-16, menu-submenu/ui-updates)
+- [Done][P2] ~~**Login screen:** Remove or simplify helper text on main login screen.~~ (2026-03-16)
+- [Done][P2] ~~**Login screen:** Display tenant picture on login page (and in form header when set).~~ (2026-03-16)
 
 ---
 
 ## UI Conventions
 
-- [Done][P3] Demo-only helper text pattern: gate by tenant context (`/api/tenant/context`, demo-like slug) and style helper text in blue using `.demo-helper-text`.
-- [Done][P2] **"Scaffolded" → "Beta":** Change all "Scaffolded" wording to *Beta* (italicized blue text) app-wide. (2026-03-16)
-- [Done][P2] **Beta sections – super admin only:** Beta submenus/cards clickable only for super admin; admin and lower see label + "Beta", non-clickable. (2026-03-16)
+- [Done][P3] ~~Demo-only helper text pattern: gate by tenant context (`/api/tenant/context`, demo-like slug) and style helper text in blue using `.demo-helper-text`.~~
+- [Done][P2] ~~**"Scaffolded" → "Beta":** Change all "Scaffolded" wording to *Beta* (italicized blue text) app-wide.~~ (2026-03-16)
+- [Done][P2] ~~**Beta sections – super admin only:** Beta submenus/cards clickable only for super admin; admin and lower see label + "Beta", non-clickable.~~ (2026-03-16)
 
 ---
 

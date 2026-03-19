@@ -139,6 +139,8 @@ interface IncidentCreatePayload {
   incidentOnsetDate: string;
   /** HH:MM:SS (24h) — maps to NERIS Incident Onset Time */
   incidentOnsetTime: string;
+  /** Free-text initial dispatch code; maps to NERIS initial_dispatch_code. */
+  initialDispatchCode: string;
 }
 
 interface RouteResolverProps {
@@ -3641,6 +3643,7 @@ function IncidentsListPage({
     dispatchNotes: "",
     incidentOnsetDate: getDefaultIncidentOnsetDate(),
     incidentOnsetTime: getDefaultIncidentOnsetTime(),
+    initialDispatchCode: "",
   }));
   const [createIncidentError, setCreateIncidentError] = useState("");
   const isIncidentFieldVisible = useCallback(
@@ -3722,6 +3725,7 @@ function IncidentsListPage({
       dispatchNotes: "",
       incidentOnsetDate: getDefaultIncidentOnsetDate(),
       incidentOnsetTime: getDefaultIncidentOnsetTime(),
+      initialDispatchCode: "",
     });
     setCreateIncidentError("");
   };
@@ -4295,6 +4299,19 @@ function IncidentsListPage({
                 />
               </label>
               ) : null}
+              <label>
+                Initial Dispatch Code
+                <input
+                  type="text"
+                  value={createIncidentDraft.initialDispatchCode}
+                  onChange={(event) =>
+                    setCreateIncidentDraft((previous) => ({
+                      ...previous,
+                      initialDispatchCode: event.target.value,
+                    }))
+                  }
+                />
+              </label>
               {isIncidentFieldVisible("priority") ? (
               <label>
                 Priority
@@ -4507,6 +4524,7 @@ function IncidentCallDetailPage({
     dispatchNotes: String(detail?.dispatchNotes ?? detail?.dispatchInfo ?? "").trim(),
     incidentOnsetDate: "",
     incidentOnsetTime: "",
+    initialDispatchCode: String(detail?.initialDispatchCode ?? "").trim(),
   }));
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -4645,6 +4663,7 @@ function IncidentCallDetailPage({
       address: draft.address.trim(),
       callbackNumber: draft.callbackNumber.trim(),
       dispatchNotes: draft.dispatchNotes.trim(),
+      initialDispatchCode: draft.initialDispatchCode.trim(),
       dispatchInfo: draft.dispatchNotes.trim() || detail.dispatchInfo,
     });
     setSaveError("");
@@ -4751,6 +4770,20 @@ function IncidentCallDetailPage({
                 />
               </label>
               ) : null}
+              <label>
+                Initial Dispatch Code
+                <input
+                  type="text"
+                  value={draft.initialDispatchCode}
+                  readOnly={isIncidentLockedByNeris}
+                  onChange={(event) =>
+                    setDraft((previous) => ({
+                      ...previous,
+                      initialDispatchCode: event.target.value,
+                    }))
+                  }
+                />
+              </label>
               {isIncidentFieldVisible("priority") ? (
               <label>
                 Priority
@@ -12453,6 +12486,7 @@ function App() {
       reportedBy: payload.reportedBy.trim() || undefined,
       callbackNumber: payload.callbackNumber.trim() || undefined,
       dispatchNotes: payload.dispatchNotes.trim() || undefined,
+      initialDispatchCode: payload.initialDispatchCode.trim() || undefined,
       currentState: payload.currentState.trim() || "Draft",
       receivedAt,
       dispatchInfo:
@@ -12484,6 +12518,10 @@ function App() {
         dispatchNotes:
           typeof patch.dispatchNotes === "string"
             ? patch.dispatchNotes
+            : undefined,
+        initialDispatchCode:
+          typeof patch.initialDispatchCode === "string"
+            ? patch.initialDispatchCode
             : undefined,
         currentState: patch.currentState,
         dispatchInfo: patch.dispatchInfo,

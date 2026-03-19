@@ -19,6 +19,7 @@ export interface IncidentApiResponse {
   reportedBy?: string;
   callbackNumber?: string;
   dispatchNotes?: string;
+  initialDispatchCode?: string;
   currentState?: string;
   receivedAt?: string;
   dispatchInfo?: string;
@@ -50,6 +51,7 @@ function mapApiToSummary(data: IncidentApiResponse): IncidentCallSummary {
     reportedBy: data.reportedBy ?? undefined,
     callbackNumber: data.callbackNumber ?? undefined,
     dispatchNotes: data.dispatchNotes ?? undefined,
+    initialDispatchCode: data.initialDispatchCode ?? undefined,
     currentState: data.currentState ?? "Draft",
     lastUpdated: lastUpdated || "Just now",
     receivedAt: data.receivedAt ?? "",
@@ -97,6 +99,7 @@ export interface CreateIncidentBody {
   reportedBy?: string;
   callbackNumber?: string;
   dispatchNotes?: string;
+  initialDispatchCode?: string;
   currentState?: string;
   receivedAt?: string;
   dispatchInfo?: string;

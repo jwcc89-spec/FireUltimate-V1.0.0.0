@@ -102,6 +102,8 @@
 36. Continue UI buildout in parallel with API integration.
 37. Use server-side proxy/security best practices (avoid exposing secrets in frontend).
 38. If a proposed task is likely unrelated to the current error, state that clearly and recommend best route.
+38b. **NERIS print parity:** Any field, module, or custom data added to the NERIS report form must be included in the Print summary when it has a value. Agents must update print-summary logic alongside form changes so populated values are printable.
+38c. **NERIS required-fields parity:** Any field, module, or custom data added to the NERIS report form must also be represented in **Admin Functions -> Reporting -> NERIS Required Fields** so admins can mark it required/not required. Agents must update metadata + required-field selection support whenever new NERIS form fields are added.
 38a. **Time format:** All time inputs and displays use **24-hour (military)** format app-wide (no AM/PM). See `.cursor/project-context.md` § Time format. When adding or changing time fields, follow this convention.
 
 ## 9) User environment constraints
