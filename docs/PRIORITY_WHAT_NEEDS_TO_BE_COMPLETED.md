@@ -60,7 +60,7 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 | 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
 | 10 | **Resources UNIT TYPE** – show Apparatus value, not placeholder | BACKLOG #8 | **Done (2026-03).** Shows Department Details → Apparatus Unit Type for selected unit. |
 | 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | **Done (2026-03).** Populate Date only those four; Returning in Edit Times (between On Scene and Canceled). |
-| 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-17 | Add a Narrative Builder to help users create detailed narratives by pre-populating structured information based on narrative type. |
+| 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-19 | **Done (2026-03-19).** Admin template builder + enable toggle + “Use Narrative Builder” RL in NERIS Narrative to insert composed narrative text (editable after). |
 | 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
 | 11.3 | **Mutual aid directory + tenant allowlist** | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
 | 11.3a | **CORE “Aid department name(s)” — friendly name in UI** | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
@@ -169,7 +169,7 @@ Use **Suggested order** below for sequencing. This is a single checklist of what
 | Area | Pending |
 |------|---------|
 | **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
-| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h (**done**); **#5** Edit Reported By layout (**done**); **#6** Initial Dispatch Code in Create Incident → NERIS; **#8** aid self-select (**done**); **#10** UNIT TYPE (**done**); **#11** Populate Date + Returning (**done**); **#11 (incident)** Delete block when NERIS In Review/Exported (**done**); **#11.1** Narrative Builder; **#11.2** occupant contact fields. |
+| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h (**done**); **#5** Edit Reported By layout (**done**); **#6** Initial Dispatch Code in Create Incident → NERIS; **#8** aid self-select (**done**); **#10** UNIT TYPE (**done**); **#11** Populate Date + Returning (**done**); **#11 (incident)** Delete block when NERIS In Review/Exported (**done**); **#11.2** occupant contact fields. |
 | **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
 | **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
 | **Go-live / ops** | **#27** Production entity-check + controlled first prod export. |
