@@ -4499,6 +4499,9 @@ function IncidentCallDetailPage({
     }
     return base;
   }, [incidentsSetup.reportedByOptions, draft.reportedBy]);
+  const nerisReportStatus = readNerisDraft(callNumber)?.reportStatus ?? "";
+  const isIncidentLockedByNeris =
+    nerisReportStatus === "In Review" || nerisReportStatus === "Exported";
 
   if (!detail) {
     return (
@@ -4669,12 +4672,20 @@ function IncidentCallDetailPage({
 
           {callInfoExpanded ? (
             <div className="settings-form">
+              {isIncidentLockedByNeris ? (
+                <p className="panel-description auth-error" role="status">
+                  Incident editing is locked because the NERIS report is{" "}
+                  {nerisReportStatus === "Exported" ? "Exported" : "In Review"}. You cannot add or
+                  remove apparatus or change incident details until the report is back to Draft.
+                </p>
+              ) : null}
               {isIncidentFieldVisible("incidentNumber") ? (
               <label>
                 Incident Number
                 <input
                   type="text"
                   value={draft.incident_internal_id}
+                  readOnly={isIncidentLockedByNeris}
                   onChange={(event) =>
                     setDraft((previous) => ({
                       ...previous,
@@ -4690,6 +4701,7 @@ function IncidentCallDetailPage({
                 <input
                   type="text"
                   value={draft.dispatch_internal_id}
+                  readOnly={isIncidentLockedByNeris}
                   onChange={(event) =>
                     setDraft((previous) => ({
                       ...previous,
@@ -4709,6 +4721,7 @@ function IncidentCallDetailPage({
                     value,
                     label: value,
                   }))}
+                  disabled={isIncidentLockedByNeris}
                   onChange={(value) =>
                     setDraft((previous) => ({ ...previous, incidentType: value }))
                   }
@@ -4725,6 +4738,7 @@ function IncidentCallDetailPage({
                     value,
                     label: value,
                   }))}
+                  disabled={isIncidentLockedByNeris}
                   onChange={(value) => setDraft((previous) => ({ ...previous, priority: value }))}
                 />
               </label>
@@ -4739,6 +4753,7 @@ function IncidentCallDetailPage({
                     value,
                     label: value,
                   }))}
+                  disabled={isIncidentLockedByNeris}
                   onChange={(value) =>
                     setDraft((previous) => ({ ...previous, stillDistrict: value }))
                   }
@@ -4755,6 +4770,7 @@ function IncidentCallDetailPage({
                     value,
                     label: value,
                   }))}
+                  disabled={isIncidentLockedByNeris}
                   onChange={(value) =>
                     setDraft((previous) => ({ ...previous, currentState: value }))
                   }
@@ -4769,6 +4785,7 @@ function IncidentCallDetailPage({
                     inputId={`incident-detail-reported-by-${callNumber}`}
                     value={draft.reportedBy}
                     options={reportedByDropdownOptions}
+                    disabled={isIncidentLockedByNeris}
                     onChange={(value) =>
                       setDraft((previous) => ({ ...previous, reportedBy: value }))
                     }
@@ -4777,6 +4794,7 @@ function IncidentCallDetailPage({
                   <input
                     type="text"
                     value={draft.reportedBy}
+                    readOnly={isIncidentLockedByNeris}
                     onChange={(event) =>
                       setDraft((previous) => ({ ...previous, reportedBy: event.target.value }))
                     }
@@ -4791,6 +4809,7 @@ function IncidentCallDetailPage({
                   inputId={`incident-detail-assigned-units-${callNumber}`}
                   options={apparatusOptions}
                   value={draft.assignedUnits.join(",")}
+                  disabled={isIncidentLockedByNeris}
                   onChange={(nextValue) =>
                     setDraft((previous) => ({
                       ...previous,
@@ -4806,6 +4825,7 @@ function IncidentCallDetailPage({
                 <input
                   type="text"
                   value={draft.address}
+                  readOnly={isIncidentLockedByNeris}
                   onChange={(event) =>
                     setDraft((previous) => ({ ...previous, address: event.target.value }))
                   }
@@ -4818,6 +4838,7 @@ function IncidentCallDetailPage({
                 <input
                   type="text"
                   value={draft.callbackNumber}
+                  readOnly={isIncidentLockedByNeris}
                   onChange={(event) =>
                     setDraft((previous) => ({ ...previous, callbackNumber: event.target.value }))
                   }
@@ -4830,6 +4851,7 @@ function IncidentCallDetailPage({
                 <textarea
                   rows={4}
                   value={draft.dispatchNotes}
+                  readOnly={isIncidentLockedByNeris}
                   onChange={(event) =>
                     setDraft((previous) => ({ ...previous, dispatchNotes: event.target.value }))
                   }
@@ -4842,11 +4864,17 @@ function IncidentCallDetailPage({
                 <button
                   type="button"
                   className="secondary-button"
+                  disabled={isIncidentLockedByNeris}
                   onClick={handleDeleteIncident}
                 >
                   Delete
                 </button>
-                <button type="button" className="primary-button" onClick={handleSaveDetail}>
+                <button
+                  type="button"
+                  className="primary-button"
+                  disabled={isIncidentLockedByNeris}
+                  onClick={handleSaveDetail}
+                >
                   Save Incident Details
                 </button>
               </div>

@@ -51,6 +51,7 @@
   - `Incident #` display now resolves from `incidentNumber` (fallback to `callNumber`) in incident and NERIS queues.
   - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
 - **NERIS Resources module (2026-03):** Resources list now shows **only incident-assigned apparatus** (not all department apparatus). Default list is built from `incidentAssignedResourceUnitOptions` (detail.apparatus + parseAssignedUnits(detail.assignedUnits)); Add-unit dropdown still offers full department list. Effect that applied default resource units now runs **once per incident** when there is no persisted draft (`hasAppliedDefaultResourceUnitsForCall` ref); it no longer overwrites state after delete or expand/collapse, so delete removes the unit and the arrow toggle works.
+- **Incident Detail lock when NERIS In Review/Exported:** When the NERIS report for an incident is In Review or Exported, Edit Incident (Incident Detail) is now locked: Assigned Units and all other incident fields are read-only or disabled; Save and Delete are disabled; a message explains that editing is locked until the report is back to Draft. Uses `readNerisDraft(callNumber)?.reportStatus` in `IncidentCallDetailPage` (`App.tsx`).
 
 ## Current blocker / status
 - No code blocker. **2026-03-20:** Docs + `App.tsx` View Exports Report Status fix committed on this branch; verify in two browsers after deploy.
@@ -75,8 +76,8 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (NERIS Resources fix)
-- **NERIS report form Resources:** (1) Only incident-assigned apparatus populate by default (`incidentAssignedResourceUnitOptions`; no longer merged with full department list). (2) Delete and expand/collapse arrow now persist: effect that set `resourceUnits` from default runs once per incident when no persisted draft, so it no longer overwrites after user delete or toggle. File: `src/pages/NerisReportFormPage.tsx`. User to test: create incident with 2 apparatus, open NERIS report — only those 2 in Resources; delete and arrow should work.
+## Last session (Incident lock when NERIS In Review/Exported)
+- **Edit Incident lock:** When NERIS report is In Review or Exported, Incident Detail form is locked: Assigned Units (and all fields) read-only/disabled; Save and Delete disabled; message shown. File: `App.tsx` (`IncidentCallDetailPage`). User to test: set a report to In Review or Exported, open that incident’s Edit Incident — form and apparatus add/remove should be locked.
 
 ## Previous session (2026-03-12 — handoff only)
 - **COPY_PASTE_START_PROMPT:** Expanded so “read the COPY_PASTE_START_PROMPT for this branch” fully orients a new agent. Added numbered doc list (1–15), BACKLOG_INCIDENTS_NERIS_UX, GO_LIVE_CHECKPOINT, ROLE_HIERARCHY; “when touching” architecture/data/incidents/integrations; branch rules aligned. Commit `c210d42` pushed. Session note: `sessions/2026-03-12-copy-paste-start-prompt-handoff.md`. Summary: `conversations/2026-03-12-copy-paste-start-prompt-session-summary.md`.
