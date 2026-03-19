@@ -37,7 +37,6 @@ This phase focuses on:
 - Each user has a **role key** (string), e.g. `user`, `subadmin`, `admin`, `superadmin`.
 - Roles have a **numeric level** (rank). Higher number = higher privilege.
 - A helper compares levels:
-
   `hasAtLeastRole(currentRoleKey, minimumRoleKey)` ⇒ `level(currentRoleKey) >= level(minimumRoleKey)`
 
 ---
@@ -49,6 +48,7 @@ This phase focuses on:
 **Goal:** find all places where role gating exists so we don’t miss anything.
 
 **Agent tasks**
+
 - Search for:
   - `role === "admin"` / `role !== "admin"`
   - `adminOnly` flags (menus/routes)
@@ -64,6 +64,7 @@ This phase focuses on:
 **Goal:** introduce one shared module for role comparisons, without changing UI behavior yet.
 
 **Agent tasks**
+
 - Add a helper module in `src/`:
   - `roleLevels` default mapping (user/subadmin/admin/superadmin)
   - `getRoleLevel(roleKey)`
@@ -72,9 +73,11 @@ This phase focuses on:
 - Keep existing code working (fallback to “user” on unknown role keys).
 
 **User tests**
+
 - None required yet (should not change UI behavior).
 
 **Verification**
+
 - `npm run lint`
 - `npm run build`
 
@@ -85,22 +88,25 @@ This phase focuses on:
 **Goal:** ensure NERIS admin-only buttons appear for **admin and superadmin**.
 
 **Agent tasks**
+
 - Update `src/pages/NerisReportFormPage.tsx`:
   - replace `role === "admin"` with `isAdminOrHigher(role)`
   - keep any “superadmin-only” logic separate (if any)
 
 **User test steps (staging)**
+
 1. Log into **staging** as **superadmin**.
 2. Open **Reporting → NERIS → (any incident)**.
 3. Confirm you now see:
-   - Import
-   - Get Incident (Test)
-   - CAD notes
-   - Print
-   - Export
-   - Unlock (when locked)
+  - Import
+  - Get Incident (Test)
+  - CAD notes
+  - Print
+  - Export
+  - Unlock (when locked)
 
 **Verification**
+
 - `npm run lint`
 - `npm run build`
 
@@ -111,16 +117,19 @@ This phase focuses on:
 **Goal:** anywhere the UI treats “admin-only” as `role === "admin"` should become “admin and up”.
 
 **Agent tasks**
+
 - Update the “admin-only route” check in `src/App.tsx` (and any helpers it uses) so:
   - admin-only pages are accessible to admin + superadmin
 - Update menu visibility logic (if it gates Admin Functions).
 
 **User test steps (staging)**
+
 1. Log into staging as superadmin.
 2. Confirm Admin Functions items are visible and navigable.
 3. Confirm a normal user still cannot access admin-only pages.
 
 **Verification**
+
 - `npm run lint`
 - `npm run build`
 
@@ -131,11 +140,13 @@ This phase focuses on:
 **Goal:** keep Phase 1 shippable while preparing for Option B later.
 
 **Agent tasks**
+
 - Add a single “source of truth” function where role levels come from, so later we can swap in tenant-configured levels without rewriting all call sites.
   - (Example) `getEffectiveRoleLevelsForTenant()` with a default fallback.
 - Do not introduce DB/schema changes in this phase unless explicitly approved.
 
 **User tests**
+
 - None required beyond regression checks.
 
 ---
