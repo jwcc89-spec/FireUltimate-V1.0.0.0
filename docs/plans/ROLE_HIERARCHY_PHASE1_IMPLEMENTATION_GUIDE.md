@@ -35,9 +35,16 @@ This phase focuses on:
 ## How “role hierarchy” works (the model)
 
 - Each user has a **role key** (string), e.g. `user`, `subadmin`, `admin`, `superadmin`.
-- Roles have a **numeric level** (rank). Higher number = higher privilege.
-- A helper compares levels:
-  `hasAtLeastRole(currentRoleKey, minimumRoleKey)` ⇒ `level(currentRoleKey) >= level(minimumRoleKey)`
+- Roles have a **numeric level** (rank). **Higher number = higher privilege.** All comparisons use these levels, not string equality.
+- **Level mapping (implemented in `src/roleHierarchy.ts`):**
+  - `user` → 10  
+  - `subadmin` → 30  
+  - `admin` → 40  
+  - `superadmin` → 50 (also `super_admin` for API variants)
+- Comparison:
+  - `getRoleLevel(roleKey)` returns the numeric level (unknown keys fall back to user level).
+  - `hasAtLeastRole(currentRoleKey, minimumRoleKey)` ⇒ `getRoleLevel(currentRoleKey) >= getRoleLevel(minimumRoleKey)`  
+  So “admin and up” is implemented as level ≥ admin’s level, not `role === "admin"`.
 
 ---
 
@@ -61,16 +68,16 @@ This phase focuses on:
 
 ### Phase 1 — Add shared helpers (minimal surface area)
 
-**Goal:** introduce one shared module for role comparisons, without changing UI behavior yet.
+**Goal:** introduce one shared module for role comparisons using **numeric levels**, without changing UI behavior yet.
 
 **Agent tasks**
 
-- Add a helper module in `src/`:
-  - `roleLevels` default mapping (user/subadmin/admin/superadmin)
-  - `getRoleLevel(roleKey)`
-  - `hasAtLeastRole(roleKey, minimumRoleKey)`
-  - `isAdminOrHigher(roleKey)` convenience wrapper
-- Keep existing code working (fallback to “user” on unknown role keys).
+- Add a helper module in `src/` (see **`src/roleHierarchy.ts`**):
+  - **Numeric level mapping:** e.g. user=10, subadmin=30, admin=40, superadmin=50. (Exposed via `getRoleLevel`, not necessarily as a public constant.)
+  - `getRoleLevel(roleKey)` — returns the numeric level; unknown keys fall back to user level.
+  - `hasAtLeastRole(roleKey, minimumRoleKey)` — returns `getRoleLevel(roleKey) >= getRoleLevel(minimumRoleKey)`.
+  - `isAdminOrHigher(roleKey)` — convenience wrapper for “admin and up” (level ≥ admin).
+- All “admin or higher” checks must use this **level-based** comparison, not `role === "admin"`.
 
 **User tests**
 
@@ -164,4 +171,17 @@ This phase focuses on:
 
 - **Now (Phase 1–3):** implement hierarchy helper + replace admin checks with “admin and up”.
 - **Later:** tenant UI to configure role ordering and capabilities (see `docs/plans/TENANT_ROLES_AND_PERMISSIONS_PLAN.md`).
+
+---
+
+## Implementation status (number-based hierarchy)
+
+The **numeric level** system is implemented in **`src/roleHierarchy.ts`**:
+
+- **Levels:** `user` 10, `subadmin` 30, `admin` 40, `superadmin` 50 (and `super_admin` 50 for API variants).
+- **`getRoleLevel(role)`** returns the number; unknown roles default to 10 (user).
+- **`hasAtLeastRole(role, minimumRole)`** is `getRoleLevel(role) >= getRoleLevel(minimumRole)` — no string equality.
+- **`isAdminOrHigher(role)`** is `hasAtLeastRole(role, "admin")`, so superadmin (50 ≥ 40) is treated as admin-and-up.
+
+Use these helpers everywhere instead of `role === "admin"` so the hierarchy stays number-based and extensible.
 
