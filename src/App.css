@@ -3082,6 +3082,25 @@ body.resource-personnel-modal-open {
   overflow-y: auto;
 }
 
+/* Reporting admin (Admin → Reporting): side menu + module content */
+.reporting-admin-root {
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.reporting-admin-layout {
+  flex: 1;
+  min-height: 0;
+}
+.reporting-admin-content {
+  overflow-y: auto;
+}
+.reporting-admin-content .page-section {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+}
+
 .neris-core-section-title {
   font-size: 1.14rem;
   letter-spacing: 0.03em;

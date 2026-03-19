@@ -484,9 +484,9 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
-        label: "Reports | NERIS",
-        path: "/admin-functions/reports/neris",
-        summary: "Configure which NERIS report fields are required (Show Required Fields Only).",
+        label: "Reporting",
+        path: "/admin-functions/reporting",
+        summary: "NERIS required fields and narrative builder (Reporting).",
         isBuilt: true,
         adminOnly: true,
       },

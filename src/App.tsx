@@ -5772,6 +5772,42 @@ function NerisRequiredFieldsAdminPage() {
   );
 }
 
+const REPORTING_ADMIN_MODULES = [
+  { id: "required-fields", label: "NERIS Required Fields" },
+] as const;
+
+function ReportingAdminPage() {
+  const [activeModuleId, setActiveModuleId] = useState<string>(REPORTING_ADMIN_MODULES[0].id);
+
+  return (
+    <section className="page-section reporting-admin-root">
+      <section className="neris-report-layout reporting-admin-layout">
+        <aside className="panel neris-sidebar reporting-admin-sidebar">
+          <div className="neris-sidebar-header">
+            <h2>Reporting</h2>
+            <p>Admin modules</p>
+          </div>
+          <nav className="neris-section-nav" aria-label="Reporting module navigation">
+            {REPORTING_ADMIN_MODULES.map((mod) => (
+              <button
+                key={mod.id}
+                type="button"
+                className={mod.id === activeModuleId ? "active" : ""}
+                onClick={() => setActiveModuleId(mod.id)}
+              >
+                {mod.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <article className="panel neris-form-panel reporting-admin-content">
+          {activeModuleId === "required-fields" && <NerisRequiredFieldsAdminPage />}
+        </article>
+      </section>
+    </section>
+  );
+}
+
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
   incidentCalls?: IncidentCallSummary[];
@@ -12152,7 +12188,9 @@ function RouteResolver({
       />
     );
   } else if (path === "/admin-functions/reports/neris") {
-    content = <NerisRequiredFieldsAdminPage />;
+    content = <Navigate to="/admin-functions/reporting" replace />;
+  } else if (path === "/admin-functions/reporting") {
+    content = <ReportingAdminPage />;
   } else if (path === "/admin-functions/department-details") {
     content = (
       <DepartmentDetailsPage
