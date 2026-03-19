@@ -177,6 +177,7 @@ interface MainMenuLandingPageProps {
 }
 
 interface IncidentsListPageProps {
+  role: UserRole;
   incidentDisplaySettings: IncidentDisplaySettings;
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   incidentCalls: IncidentCallSummary[];
@@ -1132,6 +1133,13 @@ function readNarrativeTemplatesFromDraft(): NarrativeTemplate[] {
       name: String((t as NarrativeTemplate).name ?? "").trim() || "Unnamed",
       segments: (t as NarrativeTemplate).segments ?? [],
     }));
+}
+
+/** Whether Scheduler Settings is enabled for this tenant. */
+function readSchedulerEnabledFromDraft(): boolean {
+  const draft = readDepartmentDetailsDraft();
+  const v = draft.schedulerEnabled;
+  return v === true || v === "true";
 }
 
 function readApparatusOptionsFromDraft(): NerisValueOption[] {
@@ -2968,6 +2976,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     () => getSubmenuForPath(location.pathname),
     [location.pathname],
   );
+  const schedulerEnabled = readSchedulerEnabledFromDraft();
   const dateLabel = useMemo(
     () =>
       new Intl.DateTimeFormat("en-US", {
@@ -3122,8 +3131,12 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               location.pathname.startsWith(`${menu.path}/`);
             const visibleSubmenus = menu.submenus.filter(
               (submenu) =>
-                isAdminOrHigher(session.role) ||
-                !submenu.adminOnly,
+                (isAdminOrHigher(session.role) || !submenu.adminOnly) &&
+                !(
+                  session.role === "user" &&
+                  !schedulerEnabled &&
+                  submenu.path === "/personnel/schedule"
+                ),
             );
             const hasSubmenus = visibleSubmenus.length > 0;
             const isExpanded = hasSubmenus && menu.id === expandedMenuForRender;
@@ -3171,6 +3184,11 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                     {visibleSubmenus.map((submenu) => {
                       const isBeta = !submenu.isBuilt;
                       const canClickBeta = isSuperadmin(session.role);
+                      const isDisabledSchedulerSubmenu =
+                        submenu.path === "/personnel/schedule" && !schedulerEnabled;
+                      const showDisabledSchedulerBadge =
+                        isDisabledSchedulerSubmenu &&
+                        isAdminOrHigher(session.role);
                       if (isBeta && !canClickBeta) {
                         return (
                           <span
@@ -3180,6 +3198,18 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                           >
                             {submenu.label}
                             <span className="beta-label-inline"> Beta</span>
+                          </span>
+                        );
+                      }
+                      if (showDisabledSchedulerBadge) {
+                        return (
+                          <span
+                            key={submenu.path}
+                            className="submenu-link submenu-link-beta"
+                            title="Disabled — Scheduler Settings is off"
+                          >
+                            {submenu.label}
+                            <span className="beta-label-inline"> Disabled</span>
                           </span>
                         );
                       }
@@ -3326,6 +3356,7 @@ function MenuDisplayCards({
   role,
   submenuVisibility,
 }: MenuDisplayCardsProps) {
+  const schedulerEnabled = readSchedulerEnabledFromDraft();
   const [editorOpen, setEditorOpen] = useState(false);
   const [displayConfig, setDisplayConfig] = useState<DisplayCardConfig>(() =>
     readDisplayCardConfig(),
@@ -3336,9 +3367,10 @@ function MenuDisplayCards({
       menu.submenus.filter(
         (submenu) =>
           (isAdminOrHigher(role) || !submenu.adminOnly) &&
-          submenuVisibility[submenu.path] !== false,
+          submenuVisibility[submenu.path] !== false &&
+          !(role === "user" && !schedulerEnabled && submenu.path === "/personnel/schedule"),
       ),
-    [menu, role, submenuVisibility],
+    [menu, role, schedulerEnabled, submenuVisibility],
   );
   const defaultPathSet = useMemo(
     () => new Set<string>(defaultCards.map((submenu) => submenu.path)),
@@ -3347,9 +3379,11 @@ function MenuDisplayCards({
   const selectableOptions = useMemo(
     () =>
       getDisplayCardOptions(role).filter(
-        (option) => submenuVisibility[option.path] !== false,
+        (option) =>
+          submenuVisibility[option.path] !== false &&
+          !(role === "user" && !schedulerEnabled && option.path === "/personnel/schedule"),
       ),
-    [role, submenuVisibility],
+    [role, schedulerEnabled, submenuVisibility],
   );
   const selectableMap = useMemo(
     () =>
@@ -3462,6 +3496,10 @@ function MenuDisplayCards({
           {cards.map((card) => {
             const isBeta = !card.isBuilt;
             const canClickBeta = isSuperadmin(role);
+            const showDisabledSchedulerCard =
+              card.path === "/personnel/schedule" &&
+              !schedulerEnabled &&
+              isAdminOrHigher(role);
             if (isBeta && !canClickBeta) {
               return (
                 <div
@@ -3473,6 +3511,24 @@ function MenuDisplayCards({
                     <h2>{card.label}</h2>
                     <span className="build-status build-planned beta-label">
                       Beta
+                    </span>
+                  </div>
+                  <p>{card.summary}</p>
+                  <span className="submenu-card-origin">{card.parentMenuTitle}</span>
+                </div>
+              );
+            }
+            if (showDisabledSchedulerCard) {
+              return (
+                <div
+                  key={`${menu.id}-${card.path}`}
+                  className="submenu-card submenu-card-beta"
+                  title="Disabled — Scheduler Settings is off"
+                >
+                  <div className="submenu-card-header">
+                    <h2>{card.label}</h2>
+                    <span className="build-status build-planned beta-label">
+                      Disabled
                     </span>
                   </div>
                   <p>{card.summary}</p>
@@ -3601,6 +3657,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
 }
 
 function IncidentsListPage({
+  role,
   incidentDisplaySettings,
   onSaveIncidentDisplaySettings,
   incidentCalls,
@@ -3659,9 +3716,12 @@ function IncidentsListPage({
   const incidentDisplaySettingsRef = useRef(incidentDisplaySettings);
   const onSaveIncidentDisplaySettingsRef = useRef(onSaveIncidentDisplaySettings);
 
-  const visibleStats = INCIDENT_QUEUE_STATS.filter(
-    (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
-  );
+  const canSeeUnmappedIncidentStats = isSuperadmin(role);
+  const visibleStats = canSeeUnmappedIncidentStats
+    ? INCIDENT_QUEUE_STATS.filter(
+        (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
+      )
+    : [];
   const visibleCallFieldOrder = dedupeCallFieldOrder(
     incidentDisplaySettings.callFieldOrder.filter((fieldId) =>
       VALID_CALL_FIELD_IDS.has(fieldId) &&
@@ -3994,34 +4054,41 @@ function IncidentsListPage({
           </p>
         </div>
         <div className="header-actions">
-          <button type="button" className="secondary-button">
-            Export Call Queue
-          </button>
+          {isSuperadmin(role) ? (
+            <button
+              type="button"
+              className="secondary-button placeholder-superadmin-warning"
+            >
+              Export Call Queue
+            </button>
+          ) : null}
           <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
             Create Incident
           </button>
         </div>
       </header>
 
-      {visibleStats.length > 0 ? (
-        <section className="stat-grid">
-          {visibleStats.map((stat) => (
-            <article key={stat.id} className="stat-card">
-              <p>{stat.label}</p>
-              <strong>{stat.value}</strong>
-              <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+      {canSeeUnmappedIncidentStats ? (
+        visibleStats.length > 0 ? (
+          <section className="stat-grid">
+            {visibleStats.map((stat) => (
+              <article key={stat.id} className="stat-card stat-card-unmapped-warning">
+                <p>{stat.label}</p>
+                <strong>{stat.value}</strong>
+                <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+              </article>
+            ))}
+          </section>
+        ) : (
+          <section className="panel-grid">
+            <article className="panel">
+              <p className="panel-description">
+                All incident stat cards are currently hidden by customization.
+              </p>
             </article>
-          ))}
-        </section>
-      ) : (
-        <section className="panel-grid">
-          <article className="panel">
-            <p className="panel-description">
-              All incident stat cards are currently hidden by customization.
-            </p>
-          </article>
-        </section>
-      )}
+          </section>
+        )
+      ) : null}
 
       <section className="panel-grid">
         <article className="panel">
@@ -12332,6 +12399,7 @@ function RouteResolver({
   } else if (path === "/incidents-mapping/incidents") {
     content = (
       <IncidentsListPage
+        role={role}
         key={`incidents-list-${username}`}
         incidentDisplaySettings={incidentDisplaySettings}
         onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
@@ -12462,7 +12530,11 @@ function RouteResolver({
   } else if (path === "/admin-functions/personnel-management") {
     content = <DepartmentDetailsPage mode="personnelManagement" />;
   } else if (path === "/personnel/schedule") {
-    content = <PersonnelSchedulePage />;
+    if (role === "user" && !readSchedulerEnabledFromDraft()) {
+      content = <Navigate to="/dashboard" replace />;
+    } else {
+      content = <PersonnelSchedulePage />;
+    }
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/customization") {

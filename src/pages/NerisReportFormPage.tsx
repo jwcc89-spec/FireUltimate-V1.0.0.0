@@ -8349,88 +8349,90 @@ function NerisReportFormPage({
                 ) : null}
               </div>
             ) : null}
-            {displayedSectionFieldsFiltered.flatMap((field) => {
-              const nodes: ReactNode[] = [];
-              const headingLabel =
-                currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
-              if (headingLabel) {
-                nodes.push(
-                  <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
-                    {headingLabel}
-                  </div>,
-                );
-              }
-              if (currentSection.id === "location" && field.id === "location_state") {
-                nodes.push(
-                  <div
-                    key="heading-location-usage"
-                    className="field-span-two neris-core-field-heading"
-                  >
-                    LOCATION / USAGE
-                  </div>,
-                );
-                nodes.push(
-                  <div
-                    key="location-imported-address"
-                    className="field-span-two neris-imported-address-block"
-                  >
-                    <div className="neris-imported-address-header">
-                      <label htmlFor="location-imported-address-box">Imported address</label>
-                      <button
-                        type="button"
-                        className="secondary-button compact-button neris-imported-address-sync-button"
-                        onClick={handlePullLocationFromImportedAddress}
+            {currentSection.id !== "personOwner"
+              ? displayedSectionFieldsFiltered.flatMap((field) => {
+                  const nodes: ReactNode[] = [];
+                  const headingLabel =
+                    currentSection.id === "core" ? CORE_SECTION_FIELD_HEADERS[field.id] : undefined;
+                  if (headingLabel) {
+                    nodes.push(
+                      <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
+                        {headingLabel}
+                      </div>,
+                    );
+                  }
+                  if (currentSection.id === "location" && field.id === "location_state") {
+                    nodes.push(
+                      <div
+                        key="heading-location-usage"
+                        className="field-span-two neris-core-field-heading"
                       >
-                        Pull location data
-                      </button>
-                    </div>
-                    <div id="location-imported-address-box" className="neris-imported-address">
-                      {importedLocationAddress}
-                    </div>
-                  </div>,
-                );
-              }
-              if (currentSection.id === "location" && field.id === "location_direction_of_travel") {
-                nodes.push(
-                  <div
-                    key="location-direction-of-travel-link"
-                    className="field-span-two neris-location-add-links"
-                  >
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-expanded={showDirectionOfTravelField}
-                      onClick={() =>
-                        setShowDirectionOfTravelField((previous) => !previous)
-                      }
-                    >
-                      Add Direction of Travel
-                    </button>
-                  </div>,
-                );
-              }
-              if (currentSection.id === "location" && field.id === "location_cross_street_type") {
-                nodes.push(
-                  <div
-                    key="location-cross-street-link"
-                    className="field-span-two neris-location-add-links"
-                  >
-                    <button
-                      type="button"
-                      className="link-button"
-                      aria-expanded={showCrossStreetTypeField}
-                      onClick={() =>
-                        setShowCrossStreetTypeField((previous) => !previous)
-                      }
-                    >
-                      Add Cross Street -&gt; RL
-                    </button>
-                  </div>,
-                );
-              }
-              nodes.push(renderNerisField(field, `field-${field.id}`));
-              return nodes;
-            })}
+                        LOCATION / USAGE
+                      </div>,
+                    );
+                    nodes.push(
+                      <div
+                        key="location-imported-address"
+                        className="field-span-two neris-imported-address-block"
+                      >
+                        <div className="neris-imported-address-header">
+                          <label htmlFor="location-imported-address-box">Imported address</label>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button neris-imported-address-sync-button"
+                            onClick={handlePullLocationFromImportedAddress}
+                          >
+                            Pull location data
+                          </button>
+                        </div>
+                        <div id="location-imported-address-box" className="neris-imported-address">
+                          {importedLocationAddress}
+                        </div>
+                      </div>,
+                    );
+                  }
+                  if (currentSection.id === "location" && field.id === "location_direction_of_travel") {
+                    nodes.push(
+                      <div
+                        key="location-direction-of-travel-link"
+                        className="field-span-two neris-location-add-links"
+                      >
+                        <button
+                          type="button"
+                          className="link-button"
+                          aria-expanded={showDirectionOfTravelField}
+                          onClick={() =>
+                            setShowDirectionOfTravelField((previous) => !previous)
+                          }
+                        >
+                          Add Direction of Travel
+                        </button>
+                      </div>,
+                    );
+                  }
+                  if (currentSection.id === "location" && field.id === "location_cross_street_type") {
+                    nodes.push(
+                      <div
+                        key="location-cross-street-link"
+                        className="field-span-two neris-location-add-links"
+                      >
+                        <button
+                          type="button"
+                          className="link-button"
+                          aria-expanded={showCrossStreetTypeField}
+                          onClick={() =>
+                            setShowCrossStreetTypeField((previous) => !previous)
+                          }
+                        >
+                          Add Cross Street -&gt; RL
+                        </button>
+                      </div>,
+                    );
+                  }
+                  nodes.push(renderNerisField(field, `field-${field.id}`));
+                  return nodes;
+                })
+              : null}
           </div>
 
           {validationIssues.length ? (
