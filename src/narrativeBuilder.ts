@@ -12,10 +12,20 @@ export type NarrativeSegmentUserFillable = {
   type: "userFillable";
   placeholderHint?: string;
 };
+export interface NarrativeQuestionRow {
+  answer: string;
+  response: string;
+}
+export type NarrativeSegmentQuestion = {
+  type: "question";
+  questionText: string;
+  rows: NarrativeQuestionRow[];
+};
 export type NarrativeSegment =
   | NarrativeSegmentFillable
   | NarrativeSegmentNeris
-  | NarrativeSegmentUserFillable;
+  | NarrativeSegmentUserFillable
+  | NarrativeSegmentQuestion;
 
 export interface NarrativeTemplate {
   id: string;
@@ -38,8 +48,10 @@ export function buildNarrativeFromTemplate(
   template: NarrativeTemplate,
   formValues: Record<string, string>,
   userFillableValues: string[],
+  questionAnswerValues: string[],
 ): string {
   let userIndex = 0;
+  let questionIndex = 0;
   const parts = template.segments.map((seg) => {
     if (seg.type === "fillable") return seg.text.trim();
     if (seg.type === "neris") {
@@ -54,6 +66,12 @@ export function buildNarrativeFromTemplate(
       const value = userFillableValues[userIndex] ?? "";
       userIndex += 1;
       return value.trim();
+    }
+    if (seg.type === "question") {
+      const selectedAnswer = questionAnswerValues[questionIndex] ?? "";
+      questionIndex += 1;
+      const match = seg.rows.find((r) => r.answer === selectedAnswer);
+      return (match?.response ?? "").trim();
     }
     return "";
   });

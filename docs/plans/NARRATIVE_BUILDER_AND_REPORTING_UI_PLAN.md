@@ -74,14 +74,14 @@
 ### Phase 2 implementation notes (from answers)
 
 - **Storage:** `narrativeTemplates` in Department Details payload (tenant-scoped). Shape: `Array<{ id: string; name: string; segments: Segment[]; createdAt?: string }>`. Persist via existing `GET/POST /api/department-details`; merge with existing payload on POST (no overwrite of other keys).
-- **Segment types:** `"fillable"` (admin-entered fixed text), `"neris"` (NERIS field id, e.g. `incident.onset.date`), `"userFillable"` (optional `placeholderHint?: string`). Order preserved in `segments` array; admin can reorder (e.g. drag-and-drop).
+- **Segment types:** `"fillable"` (admin-entered fixed text), `"neris"` (NERIS field id, e.g. `incident.onset.date`), `"userFillable"` (optional `placeholderHint?: string`), `"question"` (admin-entered question text + 2+ answer/response rows; end user selects an answer from dropdown and the matching response text is inserted into the narrative).
 - **Admin UI:** Add template (name required). Build template by adding segments in order; for each segment type: fillable text, or pick NERIS field (all form fields), or user fillable (optional hint). Preview shows human-readable labels for NERIS segments and fixed text; user-fillable shown as placeholders. Edit/delete/reorder templates.
 - **End-user (Phase 4 popup):** Dropdown/list of template names → select one → preview with NERIS values resolved and user-fillable areas as **value entry boxes** → user can type into those boxes → “Use Template” builds final narrative and inserts into Narrative field (editable after).
 
 ### Phase 2 implementation (done)
 
 - **Storage:** `narrativeTemplates` in Department Details payload; load/save via `GET/POST /api/department-details`; localStorage updated after save (same pattern as NERIS required fields).
-- **New file:** `src/pages/NarrativeBuilderAdminPage.tsx` — types `NarrativeSegment`, `NarrativeTemplate`; CRUD (add with required name, edit, delete); segment builder (fillable text, NERIS field picker from all `NERIS_FORM_FIELDS`, user fillable with optional hint); reorder via Up/Down buttons; admin preview with human-readable NERIS labels.
+- **New file:** `src/pages/NarrativeBuilderAdminPage.tsx` — types `NarrativeSegment`, `NarrativeTemplate`; CRUD (add with required name, edit, delete); segment builder (fillable text, NERIS field picker from all `NERIS_FORM_FIELDS`, user fillable with optional hint, and question segments with answer/response rows); reorder via Up/Down buttons; admin preview with human-readable NERIS labels.
 - **App.tsx:** Second Reporting module “Narrative Builder”; renders `NarrativeBuilderAdminPage` when selected.
 - **App.css:** Styles for `.narrative-builder-admin`, `.segment-builder`, `.segment-list`, `.segment-tag`, preview, etc.
 

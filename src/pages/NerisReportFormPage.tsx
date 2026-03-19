@@ -366,6 +366,9 @@ function NerisReportFormPage({
   const [narrativeBuilderModalOpen, setNarrativeBuilderModalOpen] = useState(false);
   const [narrativeBuilderSelectedId, setNarrativeBuilderSelectedId] = useState<string | null>(null);
   const [narrativeBuilderUserValues, setNarrativeBuilderUserValues] = useState<string[]>([]);
+  const [narrativeBuilderQuestionAnswers, setNarrativeBuilderQuestionAnswers] = useState<
+    string[]
+  >([]);
 
   const adminRequiredFieldIds = useMemo(
     () => new Set(nerisRequiredFieldOverrides),
@@ -5138,6 +5141,7 @@ function NerisReportFormPage({
                   onClick={() => {
                     setNarrativeBuilderSelectedId(null);
                     setNarrativeBuilderUserValues([]);
+                    setNarrativeBuilderQuestionAnswers([]);
                     setNarrativeBuilderModalOpen(true);
                   }}
                 >
@@ -6968,6 +6972,7 @@ function NerisReportFormPage({
                 setNarrativeBuilderModalOpen(false);
                 setNarrativeBuilderSelectedId(null);
                 setNarrativeBuilderUserValues([]);
+                setNarrativeBuilderQuestionAnswers([]);
               }}
             >
               Close
@@ -6987,6 +6992,17 @@ function NerisReportFormPage({
                             (s) => s.type === "userFillable",
                           ).length;
                           setNarrativeBuilderUserValues(Array(userCount).fill(""));
+                          const questionSegments = t.segments.filter(
+                            (s) => s.type === "question",
+                          ) as Array<{
+                            type: "question";
+                            questionText: string;
+                            rows: Array<{ answer: string; response: string }>;
+                          }>;
+                          const questionAnswers = questionSegments.map(
+                            (seg) => seg.rows[0]?.answer ?? "",
+                          );
+                          setNarrativeBuilderQuestionAnswers(questionAnswers);
                         }}
                       >
                         {t.name}
@@ -7001,6 +7017,7 @@ function NerisReportFormPage({
               );
               if (!selected) return null;
               let userIndex = 0;
+              let questionIndex = 0;
               return (
                 <>
                   <p>
@@ -7056,6 +7073,43 @@ function NerisReportFormPage({
                             );
                           })()
                         ) : null}
+                        {seg.type === "question" ? (
+                          (() => {
+                            const qi = questionIndex++;
+                            const selectedAnswer =
+                              narrativeBuilderQuestionAnswers[qi] ?? "";
+                            const selectedRow =
+                              seg.rows.find((r) => r.answer === selectedAnswer) ??
+                              null;
+                            const selectedResponse = selectedRow?.response ?? "";
+                            return (
+                              <span className="neris-narrative-builder-question-slot">
+                                <select
+                                  value={selectedAnswer}
+                                  onChange={(e) => {
+                                    const next = [
+                                      ...narrativeBuilderQuestionAnswers,
+                                    ];
+                                    next[qi] = e.target.value;
+                                    setNarrativeBuilderQuestionAnswers(next);
+                                  }}
+                                  aria-label={seg.questionText}
+                                >
+                                  {seg.rows.map((row) => (
+                                    <option key={row.answer} value={row.answer}>
+                                      {row.answer}
+                                    </option>
+                                  ))}
+                                </select>
+                                {selectedResponse ? (
+                                  <span className="neris-narrative-builder-question-response">
+                                    {selectedResponse}
+                                  </span>
+                                ) : null}
+                              </span>
+                            );
+                          })()
+                        ) : null}
                       </Fragment>
                     ))}
                   </div>
@@ -7066,6 +7120,7 @@ function NerisReportFormPage({
                       onClick={() => {
                         setNarrativeBuilderSelectedId(null);
                         setNarrativeBuilderUserValues([]);
+                        setNarrativeBuilderQuestionAnswers([]);
                       }}
                     >
                       Back
@@ -7078,11 +7133,13 @@ function NerisReportFormPage({
                           selected,
                           formValues,
                           narrativeBuilderUserValues,
+                          narrativeBuilderQuestionAnswers,
                         );
                         updateFieldValue("narrative_outcome", built);
                         setNarrativeBuilderModalOpen(false);
                         setNarrativeBuilderSelectedId(null);
                         setNarrativeBuilderUserValues([]);
+                        setNarrativeBuilderQuestionAnswers([]);
                       }}
                     >
                       Use Template
@@ -7094,6 +7151,7 @@ function NerisReportFormPage({
                         setNarrativeBuilderModalOpen(false);
                         setNarrativeBuilderSelectedId(null);
                         setNarrativeBuilderUserValues([]);
+                        setNarrativeBuilderQuestionAnswers([]);
                       }}
                     >
                       Cancel

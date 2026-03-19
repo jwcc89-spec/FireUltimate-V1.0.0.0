@@ -46,6 +46,8 @@ function buildAdminPreview(segments: NarrativeSegment[]): string {
       return seg.placeholderHint
         ? `[User: ${seg.placeholderHint}]`
         : "[User fillable]";
+    if (seg.type === "question")
+      return seg.questionText.trim() ? `[${seg.questionText.trim()}]` : "[Question]";
     return "";
   });
 
@@ -379,10 +381,19 @@ function SegmentBuilder({
   onMoveSegment,
   onUpdateSegment,
 }: SegmentBuilderProps) {
-  const [addKind, setAddKind] = useState<"fillable" | "neris" | "userFillable">("fillable");
+  const [addKind, setAddKind] = useState<"fillable" | "neris" | "userFillable" | "question">(
+    "fillable",
+  );
   const [fillableText, setFillableText] = useState("");
   const [nerisFieldId, setNerisFieldId] = useState("");
   const [userHint, setUserHint] = useState("");
+  const [questionText, setQuestionText] = useState("");
+  const [questionRows, setQuestionRows] = useState<
+    Array<{ answer: string; response: string }>
+  >([
+    { answer: "", response: "" },
+    { answer: "", response: "" },
+  ]);
 
   const handleAddFillable = () => {
     const text = fillableText.trim();
@@ -405,17 +416,39 @@ function SegmentBuilder({
     setUserHint("");
   };
 
+  const handleAddQuestion = () => {
+    const q = questionText.trim();
+    const rows = questionRows.map((r) => ({
+      answer: r.answer.trim(),
+      response: r.response.trim(),
+    }));
+    if (!q) return;
+    if (rows.length < 2) return;
+    if (rows.some((r) => !r.answer || !r.response)) return;
+    onAddSegment({ type: "question", questionText: q, rows });
+    setQuestionText("");
+    setQuestionRows([
+      { answer: "", response: "" },
+      { answer: "", response: "" },
+    ]);
+  };
+
   return (
     <div className="segment-builder">
       <div className="segment-builder-add">
         <span>Add segment:</span>
         <select
           value={addKind}
-          onChange={(e) => setAddKind(e.target.value as "fillable" | "neris" | "userFillable")}
+          onChange={(e) =>
+            setAddKind(
+              e.target.value as "fillable" | "neris" | "userFillable" | "question",
+            )
+          }
         >
           <option value="fillable">Fillable text</option>
           <option value="neris">NERIS field</option>
           <option value="userFillable">User fillable</option>
+          <option value="question">Question (answer → response)</option>
         </select>
         {addKind === "fillable" && (
           <>
@@ -457,6 +490,76 @@ function SegmentBuilder({
               placeholder="Optional placeholder hint"
             />
             <button type="button" className="secondary" onClick={handleAddUserFillable}>
+              Add
+            </button>
+          </>
+        )}
+        {addKind === "question" && (
+          <>
+            <input
+              type="text"
+              value={questionText}
+              onChange={(e) => setQuestionText(e.target.value)}
+              placeholder="Question text (e.g. occupant location)"
+            />
+            <div className="segment-question-add-rows">
+              {questionRows.map((row, idx) => (
+                <div key={idx} className="segment-question-add-row">
+                  <input
+                    type="text"
+                    value={row.answer}
+                    onChange={(e) => {
+                      const next = [...questionRows];
+                      next[idx] = { ...next[idx]!, answer: e.target.value };
+                      setQuestionRows(next);
+                    }}
+                    placeholder={`Answer ${idx + 1}`}
+                  />
+                  <input
+                    type="text"
+                    value={row.response}
+                    onChange={(e) => {
+                      const next = [...questionRows];
+                      next[idx] = { ...next[idx]!, response: e.target.value };
+                      setQuestionRows(next);
+                    }}
+                    placeholder={`Response ${idx + 1}`}
+                  />
+                  <button
+                    type="button"
+                    className="segment-question-row-remove"
+                    onClick={() => {
+                      if (questionRows.length <= 2) return;
+                      setQuestionRows((prev) => prev.filter((_, i) => i !== idx));
+                    }}
+                    disabled={questionRows.length <= 2}
+                    aria-label={`Remove answer/response row ${idx + 1}`}
+                    title={questionRows.length <= 2 ? "Minimum 2 rows" : "Remove row"}
+                  >
+                    -
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="secondary"
+                onClick={() =>
+                  setQuestionRows((prev) => [...prev, { answer: "", response: "" }])
+                }
+              >
+                + Add answer/response
+              </button>
+            </div>
+            <button
+              type="button"
+              className="secondary"
+              onClick={handleAddQuestion}
+              disabled={
+                !questionText.trim() ||
+                questionRows.length < 2 ||
+                questionRows.some((r) => !r.answer.trim() || !r.response.trim())
+              }
+            >
               Add
             </button>
           </>
@@ -527,6 +630,92 @@ function SegmentBuilder({
                     }
                     placeholder="Optional hint"
                   />
+                </>
+              )}
+              {seg.type === "question" && (
+                <>
+                  <span className="segment-tag question">Question</span>
+                  <input
+                    type="text"
+                    value={seg.questionText}
+                    onChange={(e) =>
+                      onUpdateSegment(index, {
+                        type: "question",
+                        questionText: e.target.value,
+                        rows: seg.rows,
+                      })
+                    }
+                    placeholder="Question text"
+                  />
+                  <div className="segment-question-editor-rows">
+                    {seg.rows.map((row, idx) => (
+                      <div
+                        key={idx}
+                        className="segment-question-editor-row"
+                      >
+                        <input
+                          type="text"
+                          value={row.answer}
+                          onChange={(e) => {
+                            const nextRows = seg.rows.map((r, i) =>
+                              i === idx ? { ...r, answer: e.target.value } : r,
+                            );
+                            onUpdateSegment(index, {
+                              type: "question",
+                              questionText: seg.questionText,
+                              rows: nextRows,
+                            });
+                          }}
+                          placeholder={`Answer ${idx + 1}`}
+                        />
+                        <input
+                          type="text"
+                          value={row.response}
+                          onChange={(e) => {
+                            const nextRows = seg.rows.map((r, i) =>
+                              i === idx ? { ...r, response: e.target.value } : r,
+                            );
+                            onUpdateSegment(index, {
+                              type: "question",
+                              questionText: seg.questionText,
+                              rows: nextRows,
+                            });
+                          }}
+                          placeholder={`Response ${idx + 1}`}
+                        />
+                        <button
+                          type="button"
+                          className="segment-question-row-remove"
+                          onClick={() => {
+                            if (seg.rows.length <= 2) return;
+                            onUpdateSegment(index, {
+                              type: "question",
+                              questionText: seg.questionText,
+                              rows: seg.rows.filter((_, i) => i !== idx),
+                            });
+                          }}
+                          disabled={seg.rows.length <= 2}
+                          aria-label={`Remove answer/response row ${idx + 1}`}
+                          title={seg.rows.length <= 2 ? "Minimum 2 rows" : "Remove row"}
+                        >
+                          -
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      className="secondary"
+                      onClick={() =>
+                        onUpdateSegment(index, {
+                          type: "question",
+                          questionText: seg.questionText,
+                          rows: [...seg.rows, { answer: "", response: "" }],
+                        })
+                      }
+                    >
+                      + Add answer/response
+                    </button>
+                  </div>
                 </>
               )}
             </span>

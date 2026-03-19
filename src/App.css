@@ -3376,6 +3376,52 @@ body.resource-personnel-modal-open {
   background: #fef3c7;
   color: #92400e;
 }
+.segment-tag.question {
+  background: #e0f2fe;
+  color: #075985;
+}
+.segment-question-add-rows {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+  margin-top: 0.35rem;
+}
+.segment-question-add-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+.segment-question-add-row input {
+  max-width: 100%;
+}
+.segment-question-row-remove {
+  padding: 0.1rem 0.45rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #f8fafc;
+  cursor: pointer;
+  color: #475569;
+}
+.segment-question-row-remove:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.segment-question-editor-rows {
+  display: grid;
+  gap: 0.35rem;
+  width: 100%;
+}
+.segment-question-editor-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr auto;
+  gap: 0.45rem;
+  align-items: center;
+}
+.segment-question-editor-row input {
+  max-width: 100%;
+}
 .segment-remove {
   flex-shrink: 0;
 }
