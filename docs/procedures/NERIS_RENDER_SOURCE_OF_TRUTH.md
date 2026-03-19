@@ -69,8 +69,8 @@ Use these checks:
 3. Staging endpoint checks pass (`tenant/context`, `neris/health`, `debug/entity-check`).
 4. Staging validate/export proof pass.
 5. Production deploy + migration.
-6. Production endpoint checks pass.
-7. Controlled first production export.
+6. ~~Production endpoint checks pass.~~
+7. ~~Controlled first production export.~~
 
 ## 6) Current known status snapshot
 

@@ -50,6 +50,8 @@
   - Incident Detail now provides editable input boxes for all requested fields with Save action.
   - `Incident #` display now resolves from `incidentNumber` (fallback to `callNumber`) in incident and NERIS queues.
   - NERIS form now seeds `incident_internal_id` from queue `incidentNumber`, and updates queue `incidentNumber`/`dispatchNumber` when those NERIS fields change.
+- **NERIS Resources module (2026-03):** Resources list now shows **only incident-assigned apparatus** (not all department apparatus). Default list is built from `incidentAssignedResourceUnitOptions` (detail.apparatus + parseAssignedUnits(detail.assignedUnits)); Add-unit dropdown still offers full department list. Effect that applied default resource units now runs **once per incident** when there is no persisted draft (`hasAppliedDefaultResourceUnitsForCall` ref); it no longer overwrites state after delete or expand/collapse, so delete removes the unit and the arrow toggle works.
+- **Incident Detail lock when NERIS In Review/Exported:** When the NERIS report for an incident is In Review or Exported, Edit Incident (Incident Detail) is now locked: Assigned Units and all other incident fields are read-only or disabled; Save and Delete are disabled; a message explains that editing is locked until the report is back to Draft. Uses `readNerisDraft(callNumber)?.reportStatus` in `IncidentCallDetailPage` (`App.tsx`).
 
 ## Current blocker / status
 - No code blocker. **2026-03-20:** Docs + `App.tsx` View Exports Report Status fix committed on this branch; verify in two browsers after deploy.
@@ -74,7 +76,13 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (2026-03-18)
+## Last session (Incident lock when NERIS In Review/Exported)
+- **Edit Incident lock:** When NERIS report is In Review or Exported, Incident Detail form is locked: Assigned Units (and all fields) read-only/disabled; Save and Delete disabled; message shown. File: `App.tsx` (`IncidentCallDetailPage`). User to test: set a report to In Review or Exported, open that incident’s Edit Incident — form and apparatus add/remove should be locked.
+
+## Previous session (2026-03-12 — handoff only)
+- **COPY_PASTE_START_PROMPT:** Expanded so “read the COPY_PASTE_START_PROMPT for this branch” fully orients a new agent. Added numbered doc list (1–15), BACKLOG_INCIDENTS_NERIS_UX, GO_LIVE_CHECKPOINT, ROLE_HIERARCHY; “when touching” architecture/data/incidents/integrations; branch rules aligned. Commit `c210d42` pushed. Session note: `sessions/2026-03-12-copy-paste-start-prompt-handoff.md`. Summary: `conversations/2026-03-12-copy-paste-start-prompt-session-summary.md`.
+
+## Previous session (2026-03-18)
 - **NERIS CORE Aid department:** (1) Confirmed name-only labels in UI; export still uses FD/FM ID (commit `f757f52`). (2) **Local-only mutual aid** in CORE: Department Details local-only rows now appear in "Aid department name(s)" dropdown; `readConfiguredMutualAidAidDepartmentOptions()` in `mutualAidAllowlist.ts`; synthetic `LOCAL_AID_OPT:*` value (not sent as `department_neris_id`). (3) Docs: PRIORITY (11.3a–d, session summary), BACKLOG (status on aid/FIRE/24h), task-2 pointer, session handoff; conversation summary in `conversations/2026-03-18-session-summary.md`.
 - **Uncommitted (before end-of-session commit):** `src/mutualAidAllowlist.ts`, `src/pages/NerisReportFormPage.tsx` (local-only); PRIORITY, BACKLOG, task-2, sessions/2026-03-18-mutual-aid-department-details.md.
 
@@ -90,6 +98,7 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
+- `c210d42` docs(handoff): expand COPY_PASTE_START_PROMPT with full doc list and when-to-read
 - `f757f52` NERIS CORE: aid department dropdown shows name only (export still uses FD ID)
 - `4f65b55` feat(ui): extract plain-text dispatch content from MIME base64 in CAD emails
 - `162b38c` feat(docs+ui): CAD email decode, superadmin script, staging vs prod notes
@@ -113,9 +122,9 @@
 **Staging/incident testing:** `docs/procedures/STAGING_TEST_CHECKLIST_DETAILED.md` (A1–A5). Incident Detail editable + Save already in code.
 
 ## Next agent should do this first
-1. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present).
-2. Read this file (**ACTIVE_CONTEXT.md**).
-3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** (incl. Session 2026-03-18 section) and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
+1. Read **COPY_PASTE_START_PROMPT.md** (or user message: “read the COPY_PASTE_START_PROMPT for this branch”), then the docs it lists.
+2. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present) and this file (**ACTIVE_CONTEXT.md**).
+3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
 4. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
-5. Read **sessions/2026-03-18-mutual-aid-department-details.md** and **conversations/2026-03-18-session-summary.md**.
+5. Read **sessions/2026-03-12-copy-paste-start-prompt-handoff.md** and **conversations/2026-03-12-copy-paste-start-prompt-session-summary.md** (and earlier sessions/conversations as needed).
 6. Continue from user’s current blocker only (CAD, NERIS cross-browser, staging tests, or next PRIORITY item). Do not redo completed work.

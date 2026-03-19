@@ -35,10 +35,16 @@ This phase focuses on:
 ## How “role hierarchy” works (the model)
 
 - Each user has a **role key** (string), e.g. `user`, `subadmin`, `admin`, `superadmin`.
-- Roles have a **numeric level** (rank). Higher number = higher privilege.
-- A helper compares levels:
-
-  `hasAtLeastRole(currentRoleKey, minimumRoleKey)` ⇒ `level(currentRoleKey) >= level(minimumRoleKey)`
+- Roles have a **numeric level** (rank). **Higher number = higher privilege.** All comparisons use these levels, not string equality.
+- **Level mapping (implemented in `src/roleHierarchy.ts`):**
+  - `user` → 10  
+  - `subadmin` → 30  
+  - `admin` → 40  
+  - `superadmin` → 50 (also `super_admin` for API variants)
+- Comparison:
+  - `getRoleLevel(roleKey)` returns the numeric level (unknown keys fall back to user level).
+  - `hasAtLeastRole(currentRoleKey, minimumRoleKey)` ⇒ `getRoleLevel(currentRoleKey) >= getRoleLevel(minimumRoleKey)`  
+  So “admin and up” is implemented as level ≥ admin’s level, not `role === "admin"`.
 
 ---
 
@@ -49,6 +55,7 @@ This phase focuses on:
 **Goal:** find all places where role gating exists so we don’t miss anything.
 
 **Agent tasks**
+
 - Search for:
   - `role === "admin"` / `role !== "admin"`
   - `adminOnly` flags (menus/routes)
@@ -61,20 +68,23 @@ This phase focuses on:
 
 ### Phase 1 — Add shared helpers (minimal surface area)
 
-**Goal:** introduce one shared module for role comparisons, without changing UI behavior yet.
+**Goal:** introduce one shared module for role comparisons using **numeric levels**, without changing UI behavior yet.
 
 **Agent tasks**
-- Add a helper module in `src/`:
-  - `roleLevels` default mapping (user/subadmin/admin/superadmin)
-  - `getRoleLevel(roleKey)`
-  - `hasAtLeastRole(roleKey, minimumRoleKey)`
-  - `isAdminOrHigher(roleKey)` convenience wrapper
-- Keep existing code working (fallback to “user” on unknown role keys).
+
+- Add a helper module in `src/` (see **`src/roleHierarchy.ts`**):
+  - **Numeric level mapping:** e.g. user=10, subadmin=30, admin=40, superadmin=50. (Exposed via `getRoleLevel`, not necessarily as a public constant.)
+  - `getRoleLevel(roleKey)` — returns the numeric level; unknown keys fall back to user level.
+  - `hasAtLeastRole(roleKey, minimumRoleKey)` — returns `getRoleLevel(roleKey) >= getRoleLevel(minimumRoleKey)`.
+  - `isAdminOrHigher(roleKey)` — convenience wrapper for “admin and up” (level ≥ admin).
+- All “admin or higher” checks must use this **level-based** comparison, not `role === "admin"`.
 
 **User tests**
+
 - None required yet (should not change UI behavior).
 
 **Verification**
+
 - `npm run lint`
 - `npm run build`
 
@@ -85,22 +95,25 @@ This phase focuses on:
 **Goal:** ensure NERIS admin-only buttons appear for **admin and superadmin**.
 
 **Agent tasks**
+
 - Update `src/pages/NerisReportFormPage.tsx`:
   - replace `role === "admin"` with `isAdminOrHigher(role)`
   - keep any “superadmin-only” logic separate (if any)
 
 **User test steps (staging)**
+
 1. Log into **staging** as **superadmin**.
 2. Open **Reporting → NERIS → (any incident)**.
 3. Confirm you now see:
-   - Import
-   - Get Incident (Test)
-   - CAD notes
-   - Print
-   - Export
-   - Unlock (when locked)
+  - Import
+  - Get Incident (Test)
+  - CAD notes
+  - Print
+  - Export
+  - Unlock (when locked)
 
 **Verification**
+
 - `npm run lint`
 - `npm run build`
 
@@ -111,16 +124,19 @@ This phase focuses on:
 **Goal:** anywhere the UI treats “admin-only” as `role === "admin"` should become “admin and up”.
 
 **Agent tasks**
+
 - Update the “admin-only route” check in `src/App.tsx` (and any helpers it uses) so:
   - admin-only pages are accessible to admin + superadmin
 - Update menu visibility logic (if it gates Admin Functions).
 
 **User test steps (staging)**
+
 1. Log into staging as superadmin.
 2. Confirm Admin Functions items are visible and navigable.
 3. Confirm a normal user still cannot access admin-only pages.
 
 **Verification**
+
 - `npm run lint`
 - `npm run build`
 
@@ -131,11 +147,13 @@ This phase focuses on:
 **Goal:** keep Phase 1 shippable while preparing for Option B later.
 
 **Agent tasks**
+
 - Add a single “source of truth” function where role levels come from, so later we can swap in tenant-configured levels without rewriting all call sites.
   - (Example) `getEffectiveRoleLevelsForTenant()` with a default fallback.
 - Do not introduce DB/schema changes in this phase unless explicitly approved.
 
 **User tests**
+
 - None required beyond regression checks.
 
 ---
@@ -153,4 +171,17 @@ This phase focuses on:
 
 - **Now (Phase 1–3):** implement hierarchy helper + replace admin checks with “admin and up”.
 - **Later:** tenant UI to configure role ordering and capabilities (see `docs/plans/TENANT_ROLES_AND_PERMISSIONS_PLAN.md`).
+
+---
+
+## Implementation status (number-based hierarchy)
+
+The **numeric level** system is implemented in **`src/roleHierarchy.ts`**:
+
+- **Levels:** `user` 10, `subadmin` 30, `admin` 40, `superadmin` 50 (and `super_admin` 50 for API variants).
+- **`getRoleLevel(role)`** returns the number; unknown roles default to 10 (user).
+- **`hasAtLeastRole(role, minimumRole)`** is `getRoleLevel(role) >= getRoleLevel(minimumRole)` — no string equality.
+- **`isAdminOrHigher(role)`** is `hasAtLeastRole(role, "admin")`, so superadmin (50 ≥ 40) is treated as admin-and-up.
+
+Use these helpers everywhere instead of `role === "admin"` so the hierarchy stays number-based and extensible.
 

@@ -1,19 +1,28 @@
 # Copy/Paste Start Prompt (submenu--neris-golive-cifpd)
 
+When a new agent starts and the user says **"read the COPY_PASTE_START_PROMPT for this branch"**, read this file first, then read the docs and branch rules below so you are fully up to speed.
+
 The agent will state at the end of each response **which agent/model was used** for that response (or that it cannot see your Cursor selection so you can check the UI). You do not need to record this yourself each session.
 
-**Relevant docs to read (paste these for a new agent when starting remotely):**
-- `.cursor/project-context.md` (or `cursoragent-context.md` if present)
-- `agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md`
-- `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`
-- `docs/procedures/EMAIL_AND_CAD_SETUP.md`
-- `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`
-- `docs/agent-execution-contract.md`
-- `docs/task-2-multitenant-domain-plan.md`
-- `docs/later-changes-backlog.md`
-- `docs/procedures/README.md` (index of procedures)
-- Latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`
-- Any files in `agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/`
+**Relevant docs to read (in order):**
+1. `.cursor/project-context.md` (or `cursoragent-context.md` if present) — project constraints and time-format convention
+2. `cursoragent-context.md` — session handoff workflow and branch rules
+3. `agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md` — current focus, blocker, last session, next steps
+4. `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` — consolidated priority list and suggested order
+5. `docs/procedures/BACKLOG_INCIDENTS_NERIS_UX.md` — master list for incidents/NERIS UX (backlog #2–#11)
+6. `docs/agent-execution-contract.md` — preflight, delivery, verification, handoff rules
+7. `docs/task-2-multitenant-domain-plan.md` — multi-tenant and Now vs Later
+8. `docs/later-changes-backlog.md` — deferred platform/UI work
+9. `docs/procedures/README.md` — index of procedures
+10. `docs/procedures/EMAIL_AND_CAD_SETUP.md` — when working on email or CAD ingest
+11. `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` — when working on NERIS cross-browser
+12. `docs/procedures/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md` — go-live sequence and endpoint checks
+13. `docs/plans/ROLE_HIERARCHY_PHASE1_IMPLEMENTATION_GUIDE.md` — when touching roles/admin/superadmin (number-based hierarchy)
+14. Latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`
+15. Recent files in `agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/`
+
+**When touching architecture, data, incidents/export, or CAD/NERIS/NEMSIS, also read:**
+- `docs/system_architecture.md`, `docs/data_model.md`, `docs/incident-lifecycle.md`, `docs/integrations.md`
 
 ---
 
@@ -21,18 +30,12 @@ The agent will state at the end of each response **which agent/model was used** 
 Before doing any feature work, understand the Branch Rules:
 
 1) Stay on branch: submenu/neris-golive-cifpd unless I explicitly tell you to switch. Use branch slug: submenu--neris-golive-cifpd in paths.
-2) Read continuity docs:
-   - .cursor/project-context.md (or cursoragent-context.md)
-   - agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md
-   - docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md
-   - docs/procedures/EMAIL_AND_CAD_SETUP.md (if working on email or CAD ingest)
-   - docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md (if working on NERIS cross-browser)
-   - latest note(s) in agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/
-   - all conversations in agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/
+2) Read continuity docs (see numbered list above): project-context, cursoragent-context, ACTIVE_CONTEXT, PRIORITY, BACKLOG_INCIDENTS_NERIS_UX, execution contract, task-2 plan, later-changes-backlog; procedures README; EMAIL_AND_CAD_SETUP (if email/CAD); NERIS_CROSS_BROWSER_FINDINGS (if NERIS cross-browser); GO_LIVE_CHECKPOINT (go-live); ROLE_HIERARCHY (if roles/admin); latest sessions/ and conversations/.
 3) Read and follow before any edits:
    - docs/agent-execution-contract.md
    - docs/task-2-multitenant-domain-plan.md
    - docs/later-changes-backlog.md
+   - When touching architecture/data/incidents/export or CAD/NERIS/NEMSIS: docs/system_architecture.md, docs/data_model.md, docs/incident-lifecycle.md, docs/integrations.md
 4) Before coding, summarize:
    - current branch
    - identify latest commits
@@ -53,7 +56,7 @@ After acknowledging the rules above:
 3) Validate changes (build/test/lint as appropriate), then report clearly.
 4) If blocked by external dependency (vendor/API/permissions), state it explicitly and provide exact next action.
 
-When the user says "this session is coming to and end":
+When the user says "this session is coming to an end":
 Before ending: 
 1) Update session note + ACTIVE_CONTEXT.md
 2) Add conversation summary to conversations/ 

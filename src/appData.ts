@@ -107,6 +107,7 @@ export interface IncidentCallSummary {
   lastUpdated: string;
   receivedAt: string;
   dispatchInfo: string;
+  initialDispatchCode?: string;
   /** NERIS report status from server (Draft, In Review, Exported). */
   nerisReportStatus?: string;
 }
@@ -434,6 +435,13 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
+        label: "Audit Logs",
+        path: "/admin-functions/audit-logs",
+        summary: "Incident and system audit log views.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
         label: "Scheduler Settings",
         path: "/admin-functions/scheduler-settings",
         summary:
@@ -484,9 +492,9 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
-        label: "Reports | NERIS",
-        path: "/admin-functions/reports/neris",
-        summary: "Configure which NERIS report fields are required (Show Required Fields Only).",
+        label: "Reporting",
+        path: "/admin-functions/reporting",
+        summary: "NERIS required fields and narrative builder (Reporting).",
         isBuilt: true,
         adminOnly: true,
       },

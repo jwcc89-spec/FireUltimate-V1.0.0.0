@@ -1934,6 +1934,7 @@ function incidentRowToApi(row) {
     reportedBy: row.reportedBy ?? "",
     callbackNumber: row.callbackNumber ?? "",
     dispatchNotes: row.dispatchNotes ?? "",
+    initialDispatchCode: row.mapReference ?? "",
     currentState: row.currentState ?? "Draft",
     receivedAt: row.receivedAt ?? "",
     dispatchInfo: row.dispatchInfo ?? "",
@@ -2016,6 +2017,8 @@ app.post("/api/incidents", async (request, response) => {
         reportedBy: trimValue(body.reportedBy) || null,
         callbackNumber: trimValue(body.callbackNumber) || null,
         dispatchNotes: trimValue(body.dispatchNotes) || null,
+        mapReference:
+          trimValue(body.initialDispatchCode) || trimValue(body.mapReference) || null,
         currentState: trimValue(body.currentState) || "Draft",
         receivedAt: trimValue(body.receivedAt) || "",
         dispatchInfo: trimValue(body.dispatchInfo) || "",
@@ -2025,7 +2028,6 @@ app.post("/api/incidents", async (request, response) => {
             : Array.isArray(body.apparatus)
               ? body.apparatus
               : null,
-        mapReference: trimValue(body.mapReference) || null,
       },
     });
     response.status(201).json({ ok: true, data: incidentRowToApi(incident) });
@@ -2088,6 +2090,8 @@ app.patch("/api/incidents/:id", async (request, response) => {
     if (body.reportedBy !== undefined) update.reportedBy = trimValue(body.reportedBy) || null;
     if (body.callbackNumber !== undefined) update.callbackNumber = trimValue(body.callbackNumber) || null;
     if (body.dispatchNotes !== undefined) update.dispatchNotes = trimValue(body.dispatchNotes) || null;
+    if (body.initialDispatchCode !== undefined)
+      update.mapReference = trimValue(body.initialDispatchCode) || null;
     if (body.currentState !== undefined) update.currentState = trimValue(body.currentState) || "Draft";
     if (body.receivedAt !== undefined) update.receivedAt = trimValue(body.receivedAt) || "";
     if (body.dispatchInfo !== undefined) update.dispatchInfo = trimValue(body.dispatchInfo) || "";

@@ -1,26 +1,14 @@
 # What needs to be completed — consolidated list
 
-Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE_EXPORT_ROLES_AND_ADMIN_VISIBILITY, and `later-changes-backlog.md`. Use this to prioritize next work.
+Pulled from GO_LIVE_CHECKPOINT, completed backlog history, LATER_TASKS_VALIDATE_EXPORT_ROLES_AND_ADMIN_VISIBILITY, and `later-changes-backlog.md`. Use this to prioritize next work.
 
-**For backlog items #2–#11 (Incidents and NERIS form UX),** see **`docs/procedures/BACKLOG_INCIDENTS_NERIS_UX.md`** for full detail (issue, desired behavior, options). This file is the master list and order; BACKLOG is the implementation reference.
+**For completed history of backlog items #2–#11 (Incidents and NERIS form UX),** see **`docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`**. This file is the active prioritization reference for what remains.
 
 ---
 
-## Recently completed (tenant verification + code, 2026-03)
+## Active work only
 
-| Item | Notes |
-|------|--------|
-| **CAD email receiving** | Ingest path live; emails stored; **parsing / auto-create incident** is next (`#29`). |
-| **NERIS cross-browser (export history + drafts)** | Server-backed history and drafts; migration run. |
-| **View Exports — Report Status** | **Done (2026-03, staging verified).** Successful export shows **Exported** on **Reporting \| NERIS \| Exports** (matches NERIS queue); fixes second-browser **Draft** and post-validate **In Review** mismatch. `getExportsListReportStatus` + append stores **Exported** on success (`App.tsx`, `NerisReportFormPage.tsx`). |
-| **Incident Detail cross-browser** | Edits in Browser A visible in Browser B via API — go-live Item #1 treated **done** for current workflow. |
-| **Merge / deploy** | Branch merged/deployed per tenant (staging/prod as applicable). |
-| **Reported By in Edit (#2)** | Detail no longer overwrites API values; dropdown includes saved value so Edit shows what was selected/entered at create. |
-| **Dispatch notes & Callback save (#3)** | Same fix — display uses API; save already sent PATCH; values persist after refresh. |
-| **Create Incident onset date/time (#4)** | Create Incident modal has **Incident onset date** (YYYY-MM-DD) and **Incident onset time** (24h HH:MM:SS); stored in `receivedAt` and mapped to NERIS **Incident Onset Date & Time**. |
-| **Initial dispatch code (#6)** | Default in `createDefaultNerisFormValues` changed from `AMB.UNRESP-BREATHING` to empty; location: `src/nerisMetadata.ts`. |
-| **Aid department – remove "Current export department" (#8)** | Synthetic option removed from CORE Aid department name(s) dropdown in `NerisReportFormPage.tsx`. |
-| **Admin NERIS required fields (Reports \| NERIS)** | **Done (2026-03).** Admin Functions → Reports \| NERIS: configure which NERIS fields are required. `nerisRequiredFieldOverrides` in DepartmentDetails payload (default `[]` for new tenants). requiredIf fields use option (a): when condition applies, treat as required by NERIS; admin can add "also require always" for requiredIf fields. NERIS form uses effective-required (NERIS required + admin overrides) for "Show Required Fields Only" and for validation. |
+Completed history is in the **Completed archive** section at the bottom.
 
 ---
 
@@ -29,20 +17,8 @@ Pulled from GO_LIVE_CHECKPOINT, BACKLOG_INCIDENTS_NERIS_UX, LATER_TASKS_VALIDATE
 | Priority | Item | Guide / reference |
 |----------|------|-------------------|
 | **1** | **CAD email parsing + auto-create incident** | `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md` (see also `EMAIL_AND_CAD_SETUP.md`). After this: point Worker `CAD_INGEST_API_URL` to production. |
-| **2** | **NERIS / go-live backlog** | BACKLOG items #2–#11, #8 aid self-select, etc. |
+| **2** | **NERIS / go-live backlog** | Open items from this file: #6, #11.2, #11.5, #11.6, #11.7, #12, #13, #14, #14.1, #15–#24, #26.1, #28. Completed backlog history: `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`. |
 | 3+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
-
----
-
-## Critical / mandatory (go-live)
-
-| # | Item | Source | Notes |
-|---|------|--------|--------|
-| 1 | **Incident Detail page: editable + API save** | GO_LIVE_CHECKPOINT §2 | **Done (2026-03, tenant testing).** Edits persist via API; verified across browsers. Re-open if a field regresses. |
-
-### Expanded: Item 1 (closed out)
-
-Originally: Incident Detail needed editable fields and **PATCH /api/incidents** so changes sync across browsers. **Tenant testing (2026-03):** satisfied — Browser B sees edits from Browser A. If new gaps appear, track under BACKLOG #2–#3.
 
 ---
 
@@ -50,24 +26,27 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 2 | **Reported By** in Edit | BACKLOG #1 | **Done (2026-03).** No overwrite; dropdown shows saved value. |
-| 3 | **Dispatch notes and Callback** save in Edit | BACKLOG #2 | **Done (2026-03).** Persist and display; timeline supports string or array. |
-| 4 | **Times: military (24h)** not AM/PM app-wide | BACKLOG #3 | **Done (2026-03).** All time inputs/displays use 24-hour format app-wide (NERIS, Incidents, etc.). See `.cursor/project-context.md` § Time format. |
-| 5 | **Incidents Setup – Edit Reported By** layout spills into Assigned Units | BACKLOG #4 | **Done (2026-03).** Layout fixed so controls don’t overlap Assigned Units. |
-| 6 | **Initial dispatch code** – from Create Incident when set | BACKLOG #5 | Add **Initial Dispatch Code** field to Create Incident; when set, populate NERIS `initial_dispatch_code`. Otherwise leave blank (dispatch/CAD can populate later). |
-| 7 | **AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313) | BACKLOG #6 | **Largely done (11.3):** NERIS entity directory + DD-M + CORE. **Done:** #8 self-select excluded. |
-| 8 | **Aid Department:** do not allow selecting tenant’s own department (exclude or grey out) | BACKLOG #10 | **Done (2026-03).** UI excludes or disables tenant’s own department; server already strips. |
-| 9 | **Required-if:** FIRE module when fire + auto aid given | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
-| 10 | **Resources UNIT TYPE** – show Apparatus value, not placeholder | BACKLOG #8 | **Done (2026-03).** Shows Department Details → Apparatus Unit Type for selected unit. |
-| 11 | **Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning | BACKLOG #9 | **Done (2026-03).** Populate Date only those four; Returning in Edit Times (between On Scene and Canceled). |
-| 11.1 | **Narrative Builder** – guided narrative composition | 2026-03-17 | Add a Narrative Builder to help users create detailed narratives by pre-populating structured information based on narrative type. |
-| 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
-| 11.3 | **Mutual aid directory + tenant allowlist** | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
-| 11.3a | **CORE “Aid department name(s)” — friendly name in UI** | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
-| 11.3b | **Local-only mutual aid rows in CORE aid dropdown** | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
-| 11.3c | **FIRE requiredness when mutual aid given** | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
-| 11.3d | **NERIS Core + Incident Times — 24h `HH:MM:SS`** | 2026-03-18 | **Done.** Core onset + Incident Times use 24h; app-wide 24h completed (#4). |
-| 11.4 | **Admin NERIS required fields** | 2026-03 | **Done.** Admin Functions → Reports \| NERIS: checkboxes for admin-selected required fields; NERIS-required fields locked; requiredIf fields show "Conditionally required by NERIS" + optional "also require always." Effective-required used in NERIS form (Show Required Fields Only + validation). |
+| 2 | ~~**Reported By** in Edit~~ | BACKLOG #1 | **Done (2026-03).** No overwrite; dropdown shows saved value. |
+| 3 | ~~**Dispatch notes and Callback** save in Edit~~ | BACKLOG #2 | **Done (2026-03).** Persist and display; timeline supports string or array. |
+| 4 | ~~**Times: military (24h)** not AM/PM app-wide~~ | BACKLOG #3 | **Done (2026-03).** All time inputs/displays use 24-hour format app-wide (NERIS, Incidents, etc.). See `.cursor/project-context.md` § Time format. |
+| 5 | ~~**Incidents Setup – Edit Reported By** layout spills into Assigned Units~~ | BACKLOG #4 | **Done (2026-03).** Layout fixed so controls don’t overlap Assigned Units. |
+| 6 | ~~**Initial dispatch code** – from Create Incident when set~~ | BACKLOG #5 | **Done (2026-03-20).** Added free-text **Initial Dispatch Code** below Incident Type in Create Incident, editable in Edit Incident, and mapped into NERIS `initial_dispatch_code` on report initialization. CAD parsing precedence set to override when parser writes this field (Option B). |
+| 7 | ~~**AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313)~~ | BACKLOG #6 | **Done (2026-03).** Completed via 11.3/11.3a/11.3b plus self-select exclusion in #8. |
+| 8 | ~~**Aid Department:** do not allow selecting tenant’s own department (exclude or grey out)~~ | BACKLOG #10 | **Done (2026-03).** UI excludes or disables tenant’s own department; server already strips. |
+| 9 | ~~**Required-if:** FIRE module when fire + auto aid given~~ | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
+| 10 | ~~**Resources UNIT TYPE** – show Apparatus value, not placeholder~~ | BACKLOG #8 | **Done (2026-03).** Shows Department Details → Apparatus Unit Type for selected unit. |
+| 11 | ~~**Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning~~ | BACKLOG #9 | **Done (2026-03).** Populate Date only those four; Returning in Edit Times (between On Scene and Canceled). |
+| 11.1 | ~~**Narrative Builder** – guided narrative composition~~ | 2026-03-19 | **Done (2026-03-19).** Admin template builder + enable toggle + “Use Narrative Builder” RL in NERIS Narrative to insert composed narrative text (editable after). |
+| 11.2 | ~~**Additional occupant contact fields**~~ – capture + map to NERIS | 2026-03-17 | **Done (2026-03).** Added Person/Owner occupant contact capture and mapped support fields in NERIS form/admin required-fields/print paths. |
+| 11.5 | **Scheduler Apparatus: add remove/delete path for imported apparatus entries** | User report (2026-03-20) | In Scheduler Settings → Scheduler Apparatus, add explicit UI action to remove apparatus rows after Import Apparatus sync (currently supports add/import visibility but not clean remove workflow). |
+| 11.6 | **Incidents/Mapping stat cards: map to live metrics (replace placeholders)** | User report (2026-03-20) | Current cards (Open Calls, Average Turnout, Average Travel, Calls Awaiting Closure) are static placeholders in code. Define formulas + tenant-scoped data source and map to live values; remove superadmin-only placeholder warning mode once complete. |
+| 11.7 | **Incidents/Mapping “Export Call Queue” button: map behavior (replace placeholder)** | User report (2026-03-20) | Button is currently UI-only placeholder with no action. Define expected export target (CSV/download vs route/API), tenant-scoped data source, and role rules; remove superadmin-only warning styling after mapped. |
+| 11.3 | ~~**Mutual aid directory + tenant allowlist**~~ | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
+| 11.3a | ~~**CORE “Aid department name(s)” — friendly name in UI**~~ | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
+| 11.3b | ~~**Local-only mutual aid rows in CORE aid dropdown**~~ | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
+| 11.3c | ~~**FIRE requiredness when mutual aid given**~~ | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
+| 11.3d | ~~**NERIS Core + Incident Times — 24h `HH:MM:SS`**~~ | 2026-03-18 | **Done.** Core onset + Incident Times use 24h; app-wide 24h completed (#4). |
+| 11.4 | ~~**Admin NERIS required fields**~~ | 2026-03 | **Done.** Admin Functions → Reports \| NERIS: checkboxes for admin-selected required fields; NERIS-required fields locked; requiredIf fields show "Conditionally required by NERIS" + optional "also require always." Effective-required used in NERIS form (Show Required Fields Only + validation). |
 
 ---
 
@@ -103,13 +82,13 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 | # | Item | Status | Notes |
 |---|------|--------|--------|
-| L1 | **Login screen:** Remove "Fire Department (optional)" field | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
-| L2 | **Login screen:** Remove helper text | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
-| L3 | **Login screen:** Show tenant picture | **Done** 2026-03-16 | Tenant logo on login and in form header (right). |
-| L4 | **"Scaffolded" → "Beta":** Replace all "Scaffolded" wording with *Beta* (italicized blue text) | **Done** 2026-03-16 | Applies to submenu cards. |
-| L5 | **Beta sections – super admin only (clickable):** For super admin only, beta submenus remain viewable and clickable. | **Done** 2026-03-16 | UserRole superadmin; sidebar/cards clickable only for super admin. |
-| L6 | **Beta sections – admin and lower (not clickable):** Show label with "beta"; do not allow click. | **Done** 2026-03-16 | Sidebar: span + Beta for non–super-admin. |
-| L7 | **Beta cards on main menu:** Card visible but not clickable for admin and lower; only super admin can open. | **Done** 2026-03-16 | submenu-card-beta for non–super-admin. |
+| L1 | ~~**Login screen:** Remove "Fire Department (optional)" field~~ | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
+| L2 | ~~**Login screen:** Remove helper text~~ | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
+| L3 | ~~**Login screen:** Show tenant picture~~ | **Done** 2026-03-16 | Tenant logo on login and in form header (right). |
+| L4 | ~~**"Scaffolded" → "Beta":** Replace all "Scaffolded" wording with *Beta* (italicized blue text)~~ | **Done** 2026-03-16 | Applies to submenu cards. |
+| L5 | ~~**Beta sections – super admin only (clickable):** For super admin only, beta submenus remain viewable and clickable.~~ | **Done** 2026-03-16 | UserRole superadmin; sidebar/cards clickable only for super admin. |
+| L6 | ~~**Beta sections – admin and lower (not clickable):** Show label with "beta"; do not allow click.~~ | **Done** 2026-03-16 | Sidebar: span + Beta for non–super-admin. |
+| L7 | ~~**Beta cards on main menu:** Card visible but not clickable for admin and lower; only super admin can open.~~ | **Done** 2026-03-16 | submenu-card-beta for non–super-admin. |
 
 **Reference:** See also `docs/later-changes-backlog.md` (Login / Auth, UI Conventions).
 
@@ -119,9 +98,10 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 | # | Item | Source | Notes |
 |---|------|--------|--------|
-| 25 | **CAD email ingest (receive + store)** | GO_LIVE §6, EMAIL_AND_CAD_SETUP | **Receiving path done.** **Open:** parsing / auto-create (`#29`); then Worker → production API URL. |
-| 26 | **NERIS cross-browser** | User report | **Done** for export history, drafts, lock, and **View Exports Report Status** (Exported after success, cross-browser). See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** draft edge cases only if reported. |
-| 27 | **Production endpoint checks and first controlled production export** | GO_LIVE §3.6–3.7 | Re-run tenant/context, neris/health, entity-check on prod; perform first prod export when ready. |
+| 25 | ~~**CAD email ingest (receive + store)**~~ | GO_LIVE §6, EMAIL_AND_CAD_SETUP | **Receiving path done.** CAD address given to dispatch. **Open:** parsing / auto-create (`#29`) only. |
+| 26 | ~~**NERIS cross-browser**~~ | User report | **Done** for export history, drafts, lock, and **View Exports Report Status** (Exported after success, cross-browser). See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** draft edge cases only if reported. |
+| 26.1 | **Cross-browser settings persistence follow-up** | CROSS_BROWSER_AND_UX_NOTES | Persist NERIS Export Configuration via server API (tenant-scoped) if needed beyond localStorage-only behavior; monitor/report NERIS draft edge cases if encountered. |
+| 27 | ~~**Production endpoint checks and first controlled production export**~~ | GO_LIVE §3.6–3.7 | **Done.** Production tenant/context + neris/health/entity checks re-run; first controlled production export completed. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
 | 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings → Parsing Data; per-tenant rules; auto-create draft incident; dedupe; optional sequencing. **Next major platform item** (NERIS cross-browser phases complete). |
 
@@ -147,8 +127,9 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 
 **Sources:**  
 - `docs/procedures/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md`  
-- `docs/procedures/BACKLOG_INCIDENTS_NERIS_UX.md`  
+- `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`  
 - `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`  
+- `docs/procedures/CROSS_BROWSER_AND_UX_NOTES.md`  
 - `docs/procedures/LATER_TASKS_VALIDATE_EXPORT_ROLES_AND_ADMIN_VISIBILITY.md`  
 - `docs/later-changes-backlog.md`  
 - `docs/procedures/TENANT_ONBOARDING_CHECKLIST.md` (§H)
@@ -158,6 +139,7 @@ Originally: Incident Detail needed editable fields and **PATCH /api/incidents** 
 ## Session notes
 
 **2026-03-20:** Doc refresh; View Exports uses server export row (cross-browser Draft fix).  
+**2026-03-20:** Admin Functions menu cleanup completed for Department Details (sidebar module URLs), Audit Logs split-out with Incident Audit Log route, and Department Details save action moved to top-right header.  
 **2026-03:** Staging verified — View Exports **Report Status** shows **Exported** after successful NERIS submit (queue and list aligned; In Review mismatch fixed).
 
 ---
@@ -169,11 +151,39 @@ Use **Suggested order** below for sequencing. This is a single checklist of what
 | Area | Pending |
 |------|---------|
 | **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
-| **Incidents / NERIS UX** | **#2** Reported By in Edit; **#3** dispatch notes + callback save; **#4** 24h (**done**); **#5** Edit Reported By layout (**done**); **#6** Initial Dispatch Code in Create Incident → NERIS; **#8** aid self-select (**done**); **#10** UNIT TYPE (**done**); **#11** Populate Date + Returning (**done**); **#11 (incident)** Delete block when NERIS In Review/Exported (**done**); **#11.1** Narrative Builder; **#11.2** occupant contact fields. |
+| **Incidents / NERIS UX** | ~~**#2** Reported By in Edit~~; ~~**#3** dispatch notes + callback save~~; ~~**#4** 24h~~ (**done**); ~~**#5** Edit Reported By layout~~ (**done**); ~~**#6** Initial Dispatch Code in Create Incident → NERIS~~ (**done**); ~~**#8** aid self-select~~ (**done**); ~~**#10** UNIT TYPE~~ (**done**); ~~**#11** Populate Date + Returning~~ (**done**); ~~**#11 (incident)** Delete block when NERIS In Review/Exported~~ (**done**); **#11.2** occupant contact fields; **#11.5** scheduler apparatus remove/delete for imported rows; **#11.6** map Incidents/Mapping stat cards to live metrics; **#11.7** map Export Call Queue behavior; **#26.1** cross-browser settings persistence follow-up (`docs/procedures/CROSS_BROWSER_AND_UX_NOTES.md`). |
 | **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
 | **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
-| **Go-live / ops** | **#27** Production entity-check + controlled first prod export. |
+| **Go-live / ops** | ~~**#27** Production entity-check + controlled first prod export~~ (**done**). |
 | **Architecture** | **#28** Per-tenant NERIS config scale-out (when ready). |
+
+---
+
+## Completed archive
+
+### Completed section: Critical / mandatory (go-live)
+
+| # | Item | Source | Notes |
+|---|------|--------|--------|
+| 1 | ~~**Incident Detail page: editable + API save**~~ | GO_LIVE_CHECKPOINT §2 | **Done (2026-03, tenant testing).** Edits persist via API; verified across browsers. Re-open if a field regresses. |
+
+**Expanded:** Incident Detail needed editable fields and `PATCH /api/incidents` so changes sync across browsers. Tenant testing (2026-03) satisfied this (Browser B sees edits from Browser A).
+
+### Recently completed (tenant verification + code, 2026-03)
+
+| Item | Notes |
+|------|--------|
+| ~~**CAD email receiving**~~ | Ingest path live; emails stored; parsing / auto-create incident is next (`#29`). |
+| ~~**NERIS cross-browser (export history + drafts)**~~ | Server-backed history and drafts; migration run. |
+| ~~**View Exports — Report Status**~~ | **Done (2026-03, staging verified).** Successful export shows **Exported** on **Reporting \| NERIS \| Exports** (matches NERIS queue); fixes second-browser **Draft** and post-validate **In Review** mismatch. `getExportsListReportStatus` + append stores **Exported** on success (`App.tsx`, `NerisReportFormPage.tsx`). |
+| ~~**Incident Detail cross-browser**~~ | Edits in Browser A visible in Browser B via API — go-live Item #1 treated done for current workflow. |
+| ~~**Merge / deploy**~~ | Branch merged/deployed per tenant (staging/prod as applicable). |
+| ~~**Reported By in Edit (#2)**~~ | Detail no longer overwrites API values; dropdown includes saved value so Edit shows what was selected/entered at create. |
+| ~~**Dispatch notes & Callback save (#3)**~~ | Same fix — display uses API; save already sent PATCH; values persist after refresh. |
+| ~~**Create Incident onset date/time (#4)**~~ | Create Incident modal has incident onset date/time; stored in `receivedAt` and mapped to NERIS Incident Onset Date/Time. |
+| ~~**Initial dispatch code (#6)**~~ | Default in `createDefaultNerisFormValues` changed from `AMB.UNRESP-BREATHING` to empty; location: `src/nerisMetadata.ts`. |
+| ~~**Aid department – remove "Current export department" (#8)**~~ | Synthetic option removed from CORE Aid department name(s) dropdown in `NerisReportFormPage.tsx`. |
+| ~~**Admin NERIS required fields (Reports \| NERIS)**~~ | **Done (2026-03).** Admin Functions → Reports \| NERIS required-field config in place; effective-required used in form/filter/validation. |
 
 ---
 
