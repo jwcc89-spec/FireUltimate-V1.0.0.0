@@ -3,7 +3,7 @@
  * Used by admin page and NERIS report form.
  */
 
-import { NERIS_FORM_FIELDS } from "./nerisMetadata";
+import { getNerisValueOptions, NERIS_FORM_FIELDS } from "./nerisMetadata";
 
 // Segment types for building a narrative template
 export type NarrativeSegmentFillable = { type: "fillable"; text: string };
@@ -43,6 +43,35 @@ function formatNerisDateToMmDdYyyy(raw: string): string {
   return `${mm}/${dd}/${yyyy}`;
 }
 
+/** Format a NERIS stored value into the user-visible narrative display. */
+export function formatNerisValueForNarrative(fieldId: string, rawValue: string): string {
+  const fieldMeta = NERIS_FORM_FIELDS.find((f) => f.id === fieldId);
+  const value = rawValue.trim();
+  if (!value) return "";
+
+  if (fieldMeta?.inputKind === "date") {
+    return formatNerisDateToMmDdYyyy(value);
+  }
+
+  if (fieldMeta?.optionsKey) {
+    const options = getNerisValueOptions(fieldMeta.optionsKey);
+    const byValue = new Map(options.map((o) => [o.value, o.label] as const));
+
+    if (fieldMeta.inputKind === "multiselect") {
+      const parts = value
+        .split(",")
+        .map((p) => p.trim())
+        .filter(Boolean);
+      const mapped = parts.map((p) => byValue.get(p) ?? p);
+      return mapped.join(", ");
+    }
+
+    return byValue.get(value) ?? value;
+  }
+
+  return value;
+}
+
 /** Build final narrative string from template + form values + user-fillable values (for NERIS form). */
 export function buildNarrativeFromTemplate(
   template: NarrativeTemplate,
@@ -55,12 +84,7 @@ export function buildNarrativeFromTemplate(
   const parts = template.segments.map((seg) => {
     if (seg.type === "fillable") return seg.text.trim();
     if (seg.type === "neris") {
-      const rawValue = (formValues[seg.fieldId] ?? "").trim();
-      const fieldMeta = NERIS_FORM_FIELDS.find((f) => f.id === seg.fieldId);
-      if (fieldMeta?.inputKind === "date") {
-        return formatNerisDateToMmDdYyyy(rawValue);
-      }
-      return rawValue;
+      return formatNerisValueForNarrative(seg.fieldId, formValues[seg.fieldId] ?? "");
     }
     if (seg.type === "userFillable") {
       const value = userFillableValues[userIndex] ?? "";

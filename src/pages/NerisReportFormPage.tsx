@@ -17,7 +17,6 @@ import { isAdminOrHigher } from "../roleHierarchy";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
-  NERIS_FORM_FIELDS,
   createDefaultNerisFormValues,
   getNerisFieldsForSection,
   getNerisValueOptions,
@@ -31,6 +30,7 @@ import {
 import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowlist";
 import {
   buildNarrativeFromTemplate,
+  formatNerisValueForNarrative,
   type NarrativeTemplate,
 } from "../narrativeBuilder";
 import {
@@ -7032,19 +7032,10 @@ function NerisReportFormPage({
                           <span>
                             {(() => {
                               const rawValue = (formValues[seg.fieldId] ?? "").trim();
-                              const fieldMeta = NERIS_FORM_FIELDS.find(
-                                (f) => f.id === seg.fieldId,
+                              const displayValue = formatNerisValueForNarrative(
+                                seg.fieldId,
+                                rawValue,
                               );
-                              let displayValue = rawValue;
-                              if (fieldMeta?.inputKind === "date") {
-                                const match = rawValue.match(
-                                  /^(\d{4})-(\d{2})-(\d{2})$/,
-                                );
-                                if (match) {
-                                  const [, yyyy, mm, dd] = match;
-                                  displayValue = `${mm}/${dd}/${yyyy}`;
-                                }
-                              }
                               return displayValue || `[${seg.fieldId}]`;
                             })()}
                           </span>
