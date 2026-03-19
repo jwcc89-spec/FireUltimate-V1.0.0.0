@@ -566,6 +566,7 @@ function NerisReportFormPage({
     () => apparatusFromDepartmentDetails ?? [],
     [apparatusFromDepartmentDetails],
   );
+  /** Options for the Add-unit dropdown: incident-assigned + all department apparatus (so user can add any unit). */
   const availableResourceUnitOptions = useMemo(() => {
     const fromDetail =
       detail?.apparatus?.map((a) => a.unit) ?? [];
@@ -577,6 +578,13 @@ function NerisReportFormPage({
       label: unitId,
     }));
   }, [dedupeAndCleanStrings, detail, parseAssignedUnits, apparatusFromDept]);
+  /** Only incident-assigned units: used for default Resources list so we don't show all department apparatus. */
+  const incidentAssignedResourceUnitOptions = useMemo(() => {
+    const fromDetail = detail?.apparatus?.map((a) => a.unit) ?? [];
+    const fromAssigned = detail ? parseAssignedUnits(detail.assignedUnits) : [];
+    const units = dedupeAndCleanStrings([...fromDetail, ...fromAssigned]);
+    return units.map((unitId) => ({ value: unitId, label: unitId }));
+  }, [dedupeAndCleanStrings, detail, parseAssignedUnits]);
   const apparatusByResourceUnitId = useMemo(() => {
     const map = new Map<string, { unitType: string }>();
     for (const a of apparatusFromDept) {
@@ -594,11 +602,11 @@ function NerisReportFormPage({
     return map;
   }, [detail, apparatusFromDept]);
   const defaultResourceUnits = useMemo<ResourceUnitEntry[]>(() => {
-    if (!availableResourceUnitOptions.length) {
+    if (!incidentAssignedResourceUnitOptions.length) {
       return [];
     }
 
-    return availableResourceUnitOptions.map((option, index) => {
+    return incidentAssignedResourceUnitOptions.map((option, index) => {
       const source = apparatusByResourceUnitId.get(option.value);
       return {
         id: `resource-${index}-${option.value.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`,
@@ -625,7 +633,7 @@ function NerisReportFormPage({
       };
     });
   }, [
-    availableResourceUnitOptions,
+    incidentAssignedResourceUnitOptions,
     apparatusByResourceUnitId,
     unitTypeOptions,
     detail?.receivedAt,
@@ -892,12 +900,18 @@ function NerisReportFormPage({
     return assigned;
   }, [activeResourcePersonnelUnitId, resourceUnits]);
 
+  const hasAppliedDefaultResourceUnitsForCall = useRef<string | null>(null);
   useEffect(() => {
-    if (persistedResourceUnits.length) {
+    if (persistedResourceUnits.length > 0) {
+      hasAppliedDefaultResourceUnitsForCall.current = null;
       return;
     }
+    if (hasAppliedDefaultResourceUnitsForCall.current === callNumber) {
+      return;
+    }
+    hasAppliedDefaultResourceUnitsForCall.current = callNumber;
     setResourceUnits(defaultResourceUnits);
-  }, [defaultResourceUnits, persistedResourceUnits.length]);
+  }, [callNumber, defaultResourceUnits, persistedResourceUnits.length]);
 
   useEffect(() => {
     if (activeResourcePersonnelUnitId && !activeResourcePersonnelUnit) {
