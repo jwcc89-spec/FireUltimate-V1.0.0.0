@@ -17,7 +17,7 @@ Completed history is in the **Completed archive** section at the bottom.
 | Priority | Item | Guide / reference |
 |----------|------|-------------------|
 | **1** | **CAD email parsing + auto-create incident** | `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md` (see also `EMAIL_AND_CAD_SETUP.md`). After this: point Worker `CAD_INGEST_API_URL` to production. |
-| **2** | **NERIS / go-live backlog** | Open items from this file: #6, #11.2, #12, #13, #14, #14.1, #15–#24, #26.1, #28. Completed backlog history: `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`. |
+| **2** | **NERIS / go-live backlog** | Open items from this file: #6, #11.2, #11.5, #12, #13, #14, #14.1, #15–#24, #26.1, #28. Completed backlog history: `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`. |
 | 3+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
 
 ---
@@ -38,6 +38,7 @@ Completed history is in the **Completed archive** section at the bottom.
 | 11 | ~~**Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning~~ | BACKLOG #9 | **Done (2026-03).** Populate Date only those four; Returning in Edit Times (between On Scene and Canceled). |
 | 11.1 | ~~**Narrative Builder** – guided narrative composition~~ | 2026-03-19 | **Done (2026-03-19).** Admin template builder + enable toggle + “Use Narrative Builder” RL in NERIS Narrative to insert composed narrative text (editable after). |
 | 11.2 | **Additional occupant contact fields** – capture + map to NERIS | 2026-03-17 | Add additional contact fields for occupant information and map them into the appropriate NERIS fields/modules. |
+| 11.5 | **Scheduler Apparatus: add remove/delete path for imported apparatus entries** | User report (2026-03-20) | In Scheduler Settings → Scheduler Apparatus, add explicit UI action to remove apparatus rows after Import Apparatus sync (currently supports add/import visibility but not clean remove workflow). |
 | 11.3 | ~~**Mutual aid directory + tenant allowlist**~~ | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
 | 11.3a | ~~**CORE “Aid department name(s)” — friendly name in UI**~~ | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
 | 11.3b | ~~**Local-only mutual aid rows in CORE aid dropdown**~~ | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
@@ -136,6 +137,7 @@ Completed history is in the **Completed archive** section at the bottom.
 ## Session notes
 
 **2026-03-20:** Doc refresh; View Exports uses server export row (cross-browser Draft fix).  
+**2026-03-20:** Admin Functions menu cleanup completed for Department Details (sidebar module URLs), Audit Logs split-out with Incident Audit Log route, and Department Details save action moved to top-right header.  
 **2026-03:** Staging verified — View Exports **Report Status** shows **Exported** after successful NERIS submit (queue and list aligned; In Review mismatch fixed).
 
 ---
@@ -147,7 +149,7 @@ Use **Suggested order** below for sequencing. This is a single checklist of what
 | Area | Pending |
 |------|---------|
 | **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
-| **Incidents / NERIS UX** | ~~**#2** Reported By in Edit~~; ~~**#3** dispatch notes + callback save~~; ~~**#4** 24h~~ (**done**); ~~**#5** Edit Reported By layout~~ (**done**); ~~**#6** Initial Dispatch Code in Create Incident → NERIS~~ (**done**); ~~**#8** aid self-select~~ (**done**); ~~**#10** UNIT TYPE~~ (**done**); ~~**#11** Populate Date + Returning~~ (**done**); ~~**#11 (incident)** Delete block when NERIS In Review/Exported~~ (**done**); **#11.2** occupant contact fields; **#26.1** cross-browser settings persistence follow-up (`docs/procedures/CROSS_BROWSER_AND_UX_NOTES.md`). |
+| **Incidents / NERIS UX** | ~~**#2** Reported By in Edit~~; ~~**#3** dispatch notes + callback save~~; ~~**#4** 24h~~ (**done**); ~~**#5** Edit Reported By layout~~ (**done**); ~~**#6** Initial Dispatch Code in Create Incident → NERIS~~ (**done**); ~~**#8** aid self-select~~ (**done**); ~~**#10** UNIT TYPE~~ (**done**); ~~**#11** Populate Date + Returning~~ (**done**); ~~**#11 (incident)** Delete block when NERIS In Review/Exported~~ (**done**); **#11.2** occupant contact fields; **#11.5** scheduler apparatus remove/delete for imported rows; **#26.1** cross-browser settings persistence follow-up (`docs/procedures/CROSS_BROWSER_AND_UX_NOTES.md`). |
 | **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
 | **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
 | **Go-live / ops** | ~~**#27** Production entity-check + controlled first prod export~~ (**done**). |

@@ -435,6 +435,13 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
+        label: "Audit Logs",
+        path: "/admin-functions/audit-logs",
+        summary: "Incident and system audit log views.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
         label: "Scheduler Settings",
         path: "/admin-functions/scheduler-settings",
         summary:

@@ -5688,6 +5688,14 @@ type DepartmentDetailsPageMode =
   | "departmentDetails"
   | "schedulerSettings"
   | "personnelManagement";
+type DepartmentDetailsAdminModuleId =
+  | "department-profile"
+  | "department-logo-image"
+  | "contact-info"
+  | "operational-details"
+  | "incidents-setup"
+  | "department-resources"
+  | "department-access";
 type UserSortColumn = "name" | "username" | "userType";
 type PersonnelSortColumn =
   | "name"
@@ -5834,6 +5842,106 @@ const REPORTING_ADMIN_MODULES = [
   { id: "required-fields", label: "NERIS Required Fields" },
   { id: "narrative-builder", label: "Narrative Builder" },
 ] as const;
+const DEPARTMENT_DETAILS_ADMIN_MODULES: Array<{
+  id: DepartmentDetailsAdminModuleId;
+  label: string;
+  path: string;
+}> = [
+  {
+    id: "department-profile",
+    label: "Department Profile",
+    path: "/admin-functions/department-details/department-profile",
+  },
+  {
+    id: "department-logo-image",
+    label: "Department Logo / Image",
+    path: "/admin-functions/department-details/department-logo-image",
+  },
+  {
+    id: "contact-info",
+    label: "Contact Info",
+    path: "/admin-functions/department-details/contact-info",
+  },
+  {
+    id: "operational-details",
+    label: "Operational Details",
+    path: "/admin-functions/department-details/operational-details",
+  },
+  {
+    id: "incidents-setup",
+    label: "Incidents Setup",
+    path: "/admin-functions/department-details/incidents-setup",
+  },
+  {
+    id: "department-resources",
+    label: "Department Resources",
+    path: "/admin-functions/department-details/department-resources",
+  },
+  {
+    id: "department-access",
+    label: "Department Access",
+    path: "/admin-functions/department-details/department-access",
+  },
+];
+const AUDIT_LOGS_ADMIN_MODULES = [
+  {
+    id: "incident-audit-log",
+    label: "Incident Audit Log",
+    path: "/admin-functions/audit-logs/incident-audit-log",
+  },
+] as const;
+
+function IncidentAuditLogPanel({
+  entries,
+  onRestoreIncidentCall,
+}: {
+  entries: IncidentCallSummary[];
+  onRestoreIncidentCall?: (callNumber: string) => void;
+}) {
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <h2>Incident Audit Log</h2>
+      </div>
+      {entries.length > 0 ? (
+        <div className="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Incident Number</th>
+                <th>Deleted At</th>
+                <th>Deleted By</th>
+                <th>Reason</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {entries.map((entry) => (
+                <tr key={`incident-audit-${entry.callNumber}`}>
+                  <td>{getIncidentDisplayNumber(entry)}</td>
+                  <td>{entry.deletedAt || "--"}</td>
+                  <td>{entry.deletedBy || "--"}</td>
+                  <td>{entry.deletedReason || "--"}</td>
+                  <td>
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => onRestoreIncidentCall?.(entry.callNumber)}
+                    >
+                      Restore
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <p className="field-hint">No deleted incidents are currently hidden.</p>
+      )}
+    </article>
+  );
+}
 
 function ReportingAdminPage() {
   const [activeModuleId, setActiveModuleId] = useState<string>(REPORTING_ADMIN_MODULES[0].id);
@@ -5868,17 +5976,69 @@ function ReportingAdminPage() {
   );
 }
 
-interface DepartmentDetailsPageProps {
-  mode?: DepartmentDetailsPageMode;
+function AuditLogsAdminPage({
+  incidentCalls = [],
+  onRestoreIncidentCall,
+}: {
   incidentCalls?: IncidentCallSummary[];
   onRestoreIncidentCall?: (callNumber: string) => void;
+}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const path = normalizePath(location.pathname);
+  const activeModuleId = path === "/admin-functions/audit-logs/incident-audit-log"
+    ? "incident-audit-log"
+    : AUDIT_LOGS_ADMIN_MODULES[0].id;
+  const deletedIncidentAuditEntries = useMemo(
+    () =>
+      incidentCalls
+        .filter((entry) => isIncidentHiddenFromQueue(entry))
+        .sort((a, b) => String(b.deletedAt ?? "").localeCompare(String(a.deletedAt ?? ""))),
+    [incidentCalls],
+  );
+
+  return (
+    <section className="page-section reporting-admin-root">
+      <section className="neris-report-layout reporting-admin-layout">
+        <aside className="panel neris-sidebar reporting-admin-sidebar">
+          <div className="neris-sidebar-header">
+            <h2>Audit Logs</h2>
+            <p>Admin modules</p>
+          </div>
+          <nav className="neris-section-nav" aria-label="Audit logs module navigation">
+            {AUDIT_LOGS_ADMIN_MODULES.map((mod) => (
+              <button
+                key={mod.id}
+                type="button"
+                className={mod.id === activeModuleId ? "active" : ""}
+                onClick={() => navigate(mod.path)}
+              >
+                {mod.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <article className="panel neris-form-panel reporting-admin-content">
+          <IncidentAuditLogPanel
+            entries={deletedIncidentAuditEntries}
+            onRestoreIncidentCall={onRestoreIncidentCall}
+          />
+        </article>
+      </section>
+    </section>
+  );
+}
+
+interface DepartmentDetailsPageProps {
+  mode?: DepartmentDetailsPageMode;
+  adminModuleId?: DepartmentDetailsAdminModuleId;
 }
 
 function DepartmentDetailsPage({
   mode = "departmentDetails",
-  incidentCalls = [],
-  onRestoreIncidentCall,
+  adminModuleId = "department-profile",
 }: DepartmentDetailsPageProps) {
+  const navigate = useNavigate();
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
   const sessionUserName = readSession().username.trim().toLocaleLowerCase();
   const uiPreferenceUserKey = sessionUserName || USER_UI_PREFERENCES_FALLBACK_KEY;
@@ -6780,15 +6940,22 @@ function DepartmentDetailsPage({
     return rows;
   }, [filteredPersonnelRows, personnelSortColumn, personnelSortDirection]);
   const showDepartmentDetailsSection = mode === "departmentDetails";
+  const showDepartmentProfileModule =
+    showDepartmentDetailsSection && adminModuleId === "department-profile";
+  const showDepartmentLogoModule =
+    showDepartmentDetailsSection && adminModuleId === "department-logo-image";
+  const showContactInfoModule =
+    showDepartmentDetailsSection && adminModuleId === "contact-info";
+  const showOperationalDetailsModule =
+    showDepartmentDetailsSection && adminModuleId === "operational-details";
+  const showIncidentsSetupModule =
+    showDepartmentDetailsSection && adminModuleId === "incidents-setup";
+  const showDepartmentResourcesModule =
+    showDepartmentDetailsSection && adminModuleId === "department-resources";
+  const showDepartmentAccessModule =
+    showDepartmentDetailsSection && adminModuleId === "department-access";
   const showSchedulerSettingsSection = mode === "schedulerSettings";
   const showPersonnelManagementSection = mode === "personnelManagement";
-  const deletedIncidentAuditEntries = useMemo(
-    () =>
-      incidentCalls
-        .filter((entry) => isIncidentHiddenFromQueue(entry))
-        .sort((a, b) => String(b.deletedAt ?? "").localeCompare(String(a.deletedAt ?? ""))),
-    [incidentCalls],
-  );
   const pageTitle = showDepartmentDetailsSection
     ? "Admin Functions | Department Details"
     : showSchedulerSettingsSection
@@ -6804,6 +6971,7 @@ function DepartmentDetailsPage({
     : showPersonnelManagementSection
       ? "Save Personnel Management"
       : "Save Department Details";
+  const showSaveButton = true;
 
   const isStationsEditor = activeCollectionEditor === "stations";
   const isApparatusEditor = activeCollectionEditor === "apparatus";
@@ -8280,314 +8448,340 @@ function DepartmentDetailsPage({
           <h1>{pageTitle}</h1>
           <p>{pageSubtitle}</p>
         </div>
+        {showSaveButton ? (
+          <div className="header-actions">
+            <button type="submit" form="department-details-form" className="primary-button">
+              {saveButtonLabel}
+            </button>
+            {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
+          </div>
+        ) : null}
       </header>
 
-      <form className="panel-grid" onSubmit={handleDepartmentDetailsSave}>
-        <section
-          className="panel-grid two-column"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Department Profile</h2>
-            </div>
-            <div className="settings-form">
-              <label htmlFor="department-name">Department Name</label>
-              <input id="department-name" type="text" value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} />
-              <label htmlFor="department-street">Department Address - Street</label>
-              <input id="department-street" type="text" value={departmentStreet} onChange={(event) => setDepartmentStreet(event.target.value)} />
-              <div className="department-inline-grid">
-                <label htmlFor="department-city">
-                  Department Address - City
-                  <input id="department-city" type="text" value={departmentCity} onChange={(event) => setDepartmentCity(event.target.value)} />
-                </label>
-                <label htmlFor="department-state">
-                  Department Address - State
-                  <input id="department-state" type="text" value={departmentState} onChange={(event) => setDepartmentState(event.target.value)} />
-                </label>
-                <label htmlFor="department-zip">
-                  Department Address - Zip Code
-                  <input id="department-zip" type="text" value={departmentZipCode} onChange={(event) => setDepartmentZipCode(event.target.value)} />
-                </label>
+      <form
+        id="department-details-form"
+        className="panel-grid"
+        onSubmit={handleDepartmentDetailsSave}
+      >
+        {showDepartmentDetailsSection ? (
+          <section className="neris-report-layout reporting-admin-layout">
+            <aside className="panel neris-sidebar reporting-admin-sidebar">
+              <div className="neris-sidebar-header">
+                <h2>Department Details</h2>
+                <p>Admin modules</p>
               </div>
-              <label htmlFor="department-time-zone">Time Zone</label>
-              <select id="department-time-zone" className="department-select-box" value={departmentTimeZone} onChange={(event) => setDepartmentTimeZone(event.target.value)}>
-                <option value="">Select time zone</option>
-                {GMT_TIMEZONE_OPTIONS.map((option) => (
-                  <option key={`dept-timezone-${option}`} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </article>
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Department Logo / Image</h2>
-            </div>
-            <div className="settings-form">
-              <label htmlFor="department-logo-upload">Upload Department Logo/Image</label>
-              <input id="department-logo-upload" type="file" accept="image/*" onChange={handleLogoSelection} />
-              <p className="field-hint">Selected file: {departmentLogoFileName}</p>
-            </div>
-          </article>
-        </section>
-
-        <section
-          className="panel-grid two-column"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Main Contact</h2>
-            </div>
-            <div className="settings-form">
-              <label htmlFor="main-contact-name">Main Contact Name</label>
-              <input id="main-contact-name" type="text" value={mainContactName} onChange={(event) => setMainContactName(event.target.value)} />
-              <label htmlFor="main-contact-phone">Main Contact Phone Number</label>
-              <input id="main-contact-phone" type="tel" value={mainContactPhone} onChange={(event) => setMainContactPhone(event.target.value)} />
-            </div>
-          </article>
-          <article className="panel">
-            <div className="panel-header">
-              <h2>Secondary Contact</h2>
-            </div>
-            <div className="settings-form">
-              <label htmlFor="secondary-contact-name">Secondary Contact Name</label>
-              <input id="secondary-contact-name" type="text" value={secondaryContactName} onChange={(event) => setSecondaryContactName(event.target.value)} />
-              <label htmlFor="secondary-contact-phone">Secondary Contact Phone</label>
-              <input id="secondary-contact-phone" type="tel" value={secondaryContactPhone} onChange={(event) => setSecondaryContactPhone(event.target.value)} />
-            </div>
-          </article>
-        </section>
-
-        <article
-          className="panel"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <div className="panel-header">
-            <h2>Department Details</h2>
-          </div>
-          <div className="department-collection-grid">
-            {detailCards.map((definition) => (
-              <div key={definition.key} className="department-collection-card">
-                <div className="department-collection-card-header">
-                  <h3>{definition.label}</h3>
-                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
-                    {definition.editButtonLabel}
+              <nav className="neris-section-nav" aria-label="Department details module navigation">
+                {DEPARTMENT_DETAILS_ADMIN_MODULES.map((mod) => (
+                  <button
+                    key={mod.id}
+                    type="button"
+                    className={mod.id === adminModuleId ? "active" : ""}
+                    onClick={() => navigate(mod.path)}
+                  >
+                    {mod.label}
                   </button>
-                </div>
-                <p className="field-hint">
-                  {definition.key === "stations"
-                    ? `Total Stations: ${stationRecords.length}`
-                    : definition.key === "apparatus"
-                      ? `Total Apparatus: ${apparatusRecords.length}`
-                      : definition.key === "shiftInformation"
-                        ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
-                        : definition.key === "personnel"
-                          ? `Total Users: ${userRecords.length}`
-                        : definition.key === "kellyRotation"
-                          ? `Total Kelly Rotations: ${kellyRotations.length}`
-                          : `Total Qualifications: ${personnelQualifications.length}`}
-                </p>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article
-          className="panel"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <div className="panel-header">
-            <h2>Incident Audit Log</h2>
-          </div>
-          {deletedIncidentAuditEntries.length > 0 ? (
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Incident Number</th>
-                    <th>Deleted At</th>
-                    <th>Deleted By</th>
-                    <th>Reason</th>
-                    <th>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {deletedIncidentAuditEntries.map((entry) => (
-                    <tr key={`incident-audit-${entry.callNumber}`}>
-                      <td>{getIncidentDisplayNumber(entry)}</td>
-                      <td>{entry.deletedAt || "--"}</td>
-                      <td>{entry.deletedBy || "--"}</td>
-                      <td>{entry.deletedReason || "--"}</td>
-                      <td>
-                        <button
-                          type="button"
-                          className="secondary-button compact-button"
-                          onClick={() => onRestoreIncidentCall?.(entry.callNumber)}
-                        >
-                          Restore
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          ) : (
-            <p className="field-hint">
-              No deleted incidents are currently hidden.
-            </p>
-          )}
-        </article>
-
-        <article
-          className="panel"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <div className="panel-header">
-            <h2>Incidents Setup</h2>
-          </div>
-          <div className="department-collection-grid">
-            {INCIDENTS_SETUP_FIELD_CARDS.map((fieldCard) => {
-              const fieldKey = fieldCard.key;
-              const isEditing = editingIncidentSetupField === fieldKey;
-              const optionsValue = fieldCard.optionsKey ? incidentsSetup[fieldCard.optionsKey] : [];
-              const isVisible = incidentsSetup.visibleFields[fieldKey];
-              const isRequired = incidentsSetup.requiredFields[fieldKey];
-              return (
-                <div key={`incident-setup-${fieldKey}`} className="department-collection-card">
-                  <div className="department-collection-card-header">
-                    <h3>{INCIDENTS_SETUP_FIELD_LABELS[fieldKey]}</h3>
-                    {fieldCard.editButtonLabel ? (
-                      <button
-                        type="button"
-                        className="rl-box-button"
-                        onClick={() => {
-                          if (isEditing) {
-                            setEditingIncidentSetupField(null);
-                            setIncidentSetupOptionDrafts((priorDrafts) => {
-                              const nextDrafts = { ...priorDrafts };
-                              delete nextDrafts[fieldKey];
-                              return nextDrafts;
-                            });
-                            return;
-                          }
-                          setEditingIncidentSetupField(fieldKey);
-                          if (fieldCard.optionsKey) {
-                            const currentOptions = incidentsSetup[fieldCard.optionsKey];
-                            setIncidentSetupOptionDrafts((priorDrafts) => ({
-                              ...priorDrafts,
-                              [fieldKey]: currentOptions.join("\n"),
-                            }));
-                          }
-                        }}
-                      >
-                        {fieldCard.editButtonLabel}
-                      </button>
-                    ) : null}
+                ))}
+              </nav>
+            </aside>
+            <article className="panel neris-form-panel reporting-admin-content">
+              {showDepartmentProfileModule ? (
+                <article className="panel">
+                  <div className="panel-header">
+                    <h2>Department Profile</h2>
                   </div>
-                  <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-                    {isVisible ? <span>Visible</span> : <em>Hidden</em>}
-                    <input
-                      type="checkbox"
-                      checked={isVisible}
-                      onChange={(event) =>
-                        setIncidentsSetup((previous) => ({
-                          ...previous,
-                          visibleFields: {
-                            ...previous.visibleFields,
-                            [fieldKey]: event.target.checked,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-                  <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
-                    {isRequired ? <span>Required</span> : <em>Not required</em>}
-                    <input
-                      type="checkbox"
-                      checked={isRequired}
-                      onChange={(event) =>
-                        setIncidentsSetup((previous) => ({
-                          ...previous,
-                          requiredFields: {
-                            ...previous.requiredFields,
-                            [fieldKey]: event.target.checked,
-                          },
-                        }))
-                      }
-                    />
-                  </label>
-
-                  {isEditing ? (
-                    <div className="settings-form" style={{ marginTop: "0.5rem" }}>
-                      {fieldCard.key === "reportedBy" ? (
-                        <label
-                          className="field-hint"
-                          style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={incidentsSetup.reportedByMode === "fill-in"}
-                            onChange={(event) =>
-                              setIncidentsSetup((previous) => ({
-                                ...previous,
-                                reportedByMode: event.target.checked ? "fill-in" : "dropdown",
-                              }))
-                            }
-                          />
-                          Use fill-in text input (unchecked = DD-S dropdown)
-                        </label>
-                      ) : null}
-
-                      {fieldCard.optionsKey &&
-                      (fieldCard.key !== "reportedBy" || incidentsSetup.reportedByMode === "dropdown") ? (
-                        <label>
-                          {INCIDENTS_SETUP_FIELD_LABELS[fieldKey]} options (one per line)
-                          <textarea
-                            rows={4}
-                            value={
-                              incidentSetupOptionDrafts[fieldKey] ??
-                              (Array.isArray(optionsValue) ? optionsValue.join("\n") : "")
-                            }
-                            onChange={(event) =>
-                              (() => {
-                                const raw = event.target.value;
-                                setIncidentSetupOptionDrafts((previousDrafts) => ({
-                                  ...previousDrafts,
-                                  [fieldKey]: raw,
-                                }));
-                                setIncidentsSetup((previous) => {
-                                  const nextOptions = Array.from(
-                                    new Set(
-                                      raw
-                                        .split(/\n|,/)
-                                        .map((value) => value.trim())
-                                        .filter((value) => value.length > 0),
-                                    ),
-                                  );
-                                  if (!fieldCard.optionsKey) {
-                                    return previous;
-                                  }
-                                  return {
-                                    ...previous,
-                                    [fieldCard.optionsKey]: nextOptions,
-                                  } as IncidentsSetupConfig;
-                                });
-                              })()
-                            }
-                          />
-                        </label>
-                      ) : null}
+                  <div className="settings-form">
+                    <label htmlFor="department-name">Department Name</label>
+                    <input id="department-name" type="text" value={departmentName} onChange={(event) => setDepartmentName(event.target.value)} />
+                    <label htmlFor="department-street">Department Address - Street</label>
+                    <input id="department-street" type="text" value={departmentStreet} onChange={(event) => setDepartmentStreet(event.target.value)} />
+                    <div className="department-inline-grid">
+                      <label htmlFor="department-city">
+                        Department Address - City
+                        <input id="department-city" type="text" value={departmentCity} onChange={(event) => setDepartmentCity(event.target.value)} />
+                      </label>
+                      <label htmlFor="department-state">
+                        Department Address - State
+                        <input id="department-state" type="text" value={departmentState} onChange={(event) => setDepartmentState(event.target.value)} />
+                      </label>
+                      <label htmlFor="department-zip">
+                        Department Address - Zip Code
+                        <input id="department-zip" type="text" value={departmentZipCode} onChange={(event) => setDepartmentZipCode(event.target.value)} />
+                      </label>
                     </div>
-                  ) : null}
-                </div>
-              );
-            })}
-          </div>
-        </article>
+                    <label htmlFor="department-time-zone">Time Zone</label>
+                    <select id="department-time-zone" className="department-select-box" value={departmentTimeZone} onChange={(event) => setDepartmentTimeZone(event.target.value)}>
+                      <option value="">Select time zone</option>
+                      {GMT_TIMEZONE_OPTIONS.map((option) => (
+                        <option key={`dept-timezone-${option}`} value={option}>
+                          {option}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </article>
+              ) : null}
+              {showDepartmentLogoModule ? (
+                <article className="panel">
+                  <div className="panel-header">
+                    <h2>Department Logo / Image</h2>
+                  </div>
+                  <div className="settings-form">
+                    <label htmlFor="department-logo-upload">Upload Department Logo/Image</label>
+                    <input id="department-logo-upload" type="file" accept="image/*" onChange={handleLogoSelection} />
+                    <p className="field-hint">Selected file: {departmentLogoFileName}</p>
+                  </div>
+                </article>
+              ) : null}
+              {showContactInfoModule ? (
+                <section className="panel-grid two-column">
+                  <article className="panel">
+                    <div className="panel-header">
+                      <h2>Main Contact</h2>
+                    </div>
+                    <div className="settings-form">
+                      <label htmlFor="main-contact-name">Main Contact Name</label>
+                      <input id="main-contact-name" type="text" value={mainContactName} onChange={(event) => setMainContactName(event.target.value)} />
+                      <label htmlFor="main-contact-phone">Main Contact Phone Number</label>
+                      <input id="main-contact-phone" type="tel" value={mainContactPhone} onChange={(event) => setMainContactPhone(event.target.value)} />
+                    </div>
+                  </article>
+                  <article className="panel">
+                    <div className="panel-header">
+                      <h2>Secondary Contact</h2>
+                    </div>
+                    <div className="settings-form">
+                      <label htmlFor="secondary-contact-name">Secondary Contact Name</label>
+                      <input id="secondary-contact-name" type="text" value={secondaryContactName} onChange={(event) => setSecondaryContactName(event.target.value)} />
+                      <label htmlFor="secondary-contact-phone">Secondary Contact Phone</label>
+                      <input id="secondary-contact-phone" type="tel" value={secondaryContactPhone} onChange={(event) => setSecondaryContactPhone(event.target.value)} />
+                    </div>
+                  </article>
+                </section>
+              ) : null}
+              {showOperationalDetailsModule ? (
+                <article className="panel">
+                  <div className="panel-header">
+                    <h2>Operational Details</h2>
+                  </div>
+                  <div className="department-collection-grid">
+                    {detailCards.map((definition) => (
+                      <div key={definition.key} className="department-collection-card">
+                        <div className="department-collection-card-header">
+                          <h3>{definition.label}</h3>
+                          <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                            {definition.editButtonLabel}
+                          </button>
+                        </div>
+                        <p className="field-hint">
+                          {definition.key === "stations"
+                            ? `Total Stations: ${stationRecords.length}`
+                            : definition.key === "apparatus"
+                              ? `Total Apparatus: ${apparatusRecords.length}`
+                              : definition.key === "shiftInformation"
+                                ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
+                                : definition.key === "personnel"
+                                  ? `Total Users: ${userRecords.length}`
+                                  : definition.key === "kellyRotation"
+                                    ? `Total Kelly Rotations: ${kellyRotations.length}`
+                                    : `Total Qualifications: ${personnelQualifications.length}`}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ) : null}
+              {showIncidentsSetupModule ? (
+                <article className="panel">
+                  <div className="panel-header">
+                    <h2>Incidents Setup</h2>
+                  </div>
+                  <div className="department-collection-grid">
+                    {INCIDENTS_SETUP_FIELD_CARDS.map((fieldCard) => {
+                      const fieldKey = fieldCard.key;
+                      const isEditing = editingIncidentSetupField === fieldKey;
+                      const optionsValue = fieldCard.optionsKey ? incidentsSetup[fieldCard.optionsKey] : [];
+                      const isVisible = incidentsSetup.visibleFields[fieldKey];
+                      const isRequired = incidentsSetup.requiredFields[fieldKey];
+                      return (
+                        <div key={`incident-setup-${fieldKey}`} className="department-collection-card">
+                          <div className="department-collection-card-header">
+                            <h3>{INCIDENTS_SETUP_FIELD_LABELS[fieldKey]}</h3>
+                            {fieldCard.editButtonLabel ? (
+                              <button
+                                type="button"
+                                className="rl-box-button"
+                                onClick={() => {
+                                  if (isEditing) {
+                                    setEditingIncidentSetupField(null);
+                                    setIncidentSetupOptionDrafts((priorDrafts) => {
+                                      const nextDrafts = { ...priorDrafts };
+                                      delete nextDrafts[fieldKey];
+                                      return nextDrafts;
+                                    });
+                                    return;
+                                  }
+                                  setEditingIncidentSetupField(fieldKey);
+                                  if (fieldCard.optionsKey) {
+                                    const currentOptions = incidentsSetup[fieldCard.optionsKey];
+                                    setIncidentSetupOptionDrafts((priorDrafts) => ({
+                                      ...priorDrafts,
+                                      [fieldKey]: currentOptions.join("\n"),
+                                    }));
+                                  }
+                                }}
+                              >
+                                {fieldCard.editButtonLabel}
+                              </button>
+                            ) : null}
+                          </div>
+                          <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                            {isVisible ? <span>Visible</span> : <em>Hidden</em>}
+                            <input
+                              type="checkbox"
+                              checked={isVisible}
+                              onChange={(event) =>
+                                setIncidentsSetup((previous) => ({
+                                  ...previous,
+                                  visibleFields: {
+                                    ...previous.visibleFields,
+                                    [fieldKey]: event.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+                          <label className="field-hint" style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}>
+                            {isRequired ? <span>Required</span> : <em>Not required</em>}
+                            <input
+                              type="checkbox"
+                              checked={isRequired}
+                              onChange={(event) =>
+                                setIncidentsSetup((previous) => ({
+                                  ...previous,
+                                  requiredFields: {
+                                    ...previous.requiredFields,
+                                    [fieldKey]: event.target.checked,
+                                  },
+                                }))
+                              }
+                            />
+                          </label>
+
+                          {isEditing ? (
+                            <div className="settings-form" style={{ marginTop: "0.5rem" }}>
+                              {fieldCard.key === "reportedBy" ? (
+                                <label
+                                  className="field-hint"
+                                  style={{ display: "inline-flex", alignItems: "center", gap: "0.35rem" }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={incidentsSetup.reportedByMode === "fill-in"}
+                                    onChange={(event) =>
+                                      setIncidentsSetup((previous) => ({
+                                        ...previous,
+                                        reportedByMode: event.target.checked ? "fill-in" : "dropdown",
+                                      }))
+                                    }
+                                  />
+                                  Use fill-in text input (unchecked = DD-S dropdown)
+                                </label>
+                              ) : null}
+
+                              {fieldCard.optionsKey &&
+                              (fieldCard.key !== "reportedBy" || incidentsSetup.reportedByMode === "dropdown") ? (
+                                <label>
+                                  {INCIDENTS_SETUP_FIELD_LABELS[fieldKey]} options (one per line)
+                                  <textarea
+                                    rows={4}
+                                    value={
+                                      incidentSetupOptionDrafts[fieldKey] ??
+                                      (Array.isArray(optionsValue) ? optionsValue.join("\n") : "")
+                                    }
+                                    onChange={(event) =>
+                                      (() => {
+                                        const raw = event.target.value;
+                                        setIncidentSetupOptionDrafts((previousDrafts) => ({
+                                          ...previousDrafts,
+                                          [fieldKey]: raw,
+                                        }));
+                                        setIncidentsSetup((previous) => {
+                                          const nextOptions = Array.from(
+                                            new Set(
+                                              raw
+                                                .split(/\n|,/)
+                                                .map((value) => value.trim())
+                                                .filter((value) => value.length > 0),
+                                            ),
+                                          );
+                                          if (!fieldCard.optionsKey) {
+                                            return previous;
+                                          }
+                                          return {
+                                            ...previous,
+                                            [fieldCard.optionsKey]: nextOptions,
+                                          } as IncidentsSetupConfig;
+                                        });
+                                      })()
+                                    }
+                                  />
+                                </label>
+                              ) : null}
+                            </div>
+                          ) : null}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </article>
+              ) : null}
+              {showDepartmentResourcesModule ? (
+                <article className="panel">
+                  <div className="panel-header">
+                    <h2>Department Resources</h2>
+                  </div>
+                  <div className="department-collection-grid">
+                    {resourceCards.map((definition) => (
+                      <div key={definition.key} className="department-collection-card">
+                        <div className="department-collection-card-header">
+                          <h3>{definition.label}</h3>
+                          <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                            {definition.editButtonLabel}
+                          </button>
+                        </div>
+                        <p className="field-hint">
+                          Total Mutual Aid Departments: {mutualAidDepartmentSelections.length} (NERIS ID:{" "}
+                          {selectedMutualAidIds.length}, local-only:{" "}
+                          {mutualAidDepartmentSelections.filter((s) => s.kind === "local").length})
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ) : null}
+              {showDepartmentAccessModule ? (
+                <article className="panel">
+                  <div className="panel-header">
+                    <h2>Department Access</h2>
+                  </div>
+                  <div className="department-collection-grid">
+                    {accessCards.map((definition) => (
+                      <div key={definition.key} className="department-collection-card">
+                        <div className="department-collection-card-header">
+                          <h3>{definition.label}</h3>
+                          <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
+                            {definition.editButtonLabel}
+                          </button>
+                        </div>
+                        <p className="field-hint">Total User Types: {userTypeValues.length}</p>
+                      </div>
+                    ))}
+                  </div>
+                </article>
+              ) : null}
+            </article>
+          </section>
+        ) : null}
 
         <article
           className="panel"
@@ -8646,54 +8840,6 @@ function DepartmentDetailsPage({
 
         <article
           className="panel"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <div className="panel-header">
-            <h2>Department Resources</h2>
-          </div>
-          <div className="department-collection-grid">
-            {resourceCards.map((definition) => (
-              <div key={definition.key} className="department-collection-card">
-                <div className="department-collection-card-header">
-                  <h3>{definition.label}</h3>
-                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
-                    {definition.editButtonLabel}
-                  </button>
-                </div>
-                <p className="field-hint">
-                  Total Mutual Aid Departments: {mutualAidDepartmentSelections.length} (NERIS ID:{" "}
-                  {selectedMutualAidIds.length}, local-only:{" "}
-                  {mutualAidDepartmentSelections.filter((s) => s.kind === "local").length})
-                </p>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article
-          className="panel"
-          style={{ display: showDepartmentDetailsSection ? undefined : "none" }}
-        >
-          <div className="panel-header">
-            <h2>Department Access</h2>
-          </div>
-          <div className="department-collection-grid">
-            {accessCards.map((definition) => (
-              <div key={definition.key} className="department-collection-card">
-                <div className="department-collection-card-header">
-                  <h3>{definition.label}</h3>
-                  <button type="button" className="rl-box-button" onClick={() => openCollectionEditor(definition.key)}>
-                    {definition.editButtonLabel}
-                  </button>
-                </div>
-                <p className="field-hint">Total User Types: {userTypeValues.length}</p>
-              </div>
-            ))}
-          </div>
-        </article>
-
-        <article
-          className="panel"
           style={{ display: showPersonnelManagementSection ? undefined : "none" }}
         >
           <div className="panel-header">
@@ -8718,12 +8864,6 @@ function DepartmentDetailsPage({
           </div>
         </article>
 
-        <div className="header-actions">
-          <button type="submit" className="primary-button">
-            {saveButtonLabel}
-          </button>
-          {statusMessage ? <p className="save-message">{statusMessage}</p> : null}
-        </div>
       </form>
 
       {activeCollectionEditor && activeCollectionDefinition ? (
@@ -12254,9 +12394,63 @@ function RouteResolver({
   } else if (path === "/admin-functions/reporting") {
     content = <ReportingAdminPage />;
   } else if (path === "/admin-functions/department-details") {
+    content = <Navigate to="/admin-functions/department-details/department-profile" replace />;
+  } else if (path === "/admin-functions/department-details/department-profile") {
     content = (
       <DepartmentDetailsPage
         mode="departmentDetails"
+        adminModuleId="department-profile"
+      />
+    );
+  } else if (path === "/admin-functions/department-details/department-logo-image") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="department-logo-image"
+      />
+    );
+  } else if (path === "/admin-functions/department-details/contact-info") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="contact-info"
+      />
+    );
+  } else if (path === "/admin-functions/department-details/operational-details") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="operational-details"
+      />
+    );
+  } else if (path === "/admin-functions/department-details/incident-audit-log") {
+    content = <Navigate to="/admin-functions/audit-logs/incident-audit-log" replace />;
+  } else if (path === "/admin-functions/department-details/incidents-setup") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="incidents-setup"
+      />
+    );
+  } else if (path === "/admin-functions/department-details/department-resources") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="department-resources"
+      />
+    );
+  } else if (path === "/admin-functions/department-details/department-access") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="department-access"
+      />
+    );
+  } else if (path === "/admin-functions/audit-logs") {
+    content = <Navigate to="/admin-functions/audit-logs/incident-audit-log" replace />;
+  } else if (path === "/admin-functions/audit-logs/incident-audit-log") {
+    content = (
+      <AuditLogsAdminPage
         incidentCalls={incidentCalls}
         onRestoreIncidentCall={(targetCallNumber) =>
           onSetIncidentDeleted(targetCallNumber, false)
