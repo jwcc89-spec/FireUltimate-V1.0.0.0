@@ -57,16 +57,31 @@ export function formatNerisValueForNarrative(fieldId: string, rawValue: string):
     const options = getNerisValueOptions(fieldMeta.optionsKey);
     const byValue = new Map(options.map((o) => [o.value, o.label] as const));
 
+    const toLastOnly = (mappedOrRaw: string) => {
+      // Some NERIS enum values are hierarchical and stored/represented as
+      // `A||B||C` (which our general label formatting displays as `A / B / C`).
+      // For Narrative Builder we want the final label only (e.g. `C`).
+      if (mappedOrRaw.includes(" / ")) {
+        const parts = mappedOrRaw.split(" / ").map((p) => p.trim()).filter(Boolean);
+        if (parts.length > 0) return parts[parts.length - 1]!;
+      }
+      return mappedOrRaw;
+    };
+
     if (fieldMeta.inputKind === "multiselect") {
       const parts = value
         .split(",")
         .map((p) => p.trim())
         .filter(Boolean);
-      const mapped = parts.map((p) => byValue.get(p) ?? p);
+      const mapped = parts.map((p) => {
+        const label = byValue.get(p) ?? p;
+        return p.includes("||") ? toLastOnly(label) : label;
+      });
       return mapped.join(", ");
     }
 
-    return byValue.get(value) ?? value;
+    const mapped = byValue.get(value) ?? value;
+    return value.includes("||") ? toLastOnly(mapped) : mapped;
   }
 
   return value;
