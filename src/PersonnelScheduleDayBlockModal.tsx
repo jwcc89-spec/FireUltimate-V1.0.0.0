@@ -1,6 +1,13 @@
 import { useCallback, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import { parseAssignedNames } from "./scheduleStorage";
+import {
+  clampDayMinutes,
+  minutesToTimeValue,
+  parseAssignedNames,
+  parseTimeToMinutes,
+  type ScheduleSegment,
+} from "./scheduleStorage";
+import { formatScheduleSegmentToken } from "./scheduleUtils";
 
 type ModalRowType = "apparatus" | "support";
 type ModalSupportValueMode = "text" | "personnel";
@@ -51,6 +58,16 @@ interface PersonnelScheduleDayBlockModalProps {
   canUndo: boolean;
   sortPersonnel: (a: ModalPersonnel, b: ModalPersonnel, order: string[]) => number;
   getHighestQualificationLabel: (person: ModalPersonnel, order: string[]) => string;
+  shiftWindowStartMinutes: number;
+  shiftWindowEndMinutes: number;
+  getSegmentsForSlot: (dateKey: string, unitId: string, slotIndex: number) => ScheduleSegment[];
+  setSegmentsForSlot: (
+    dateKey: string,
+    unitId: string,
+    slotIndex: number,
+    segments: ScheduleSegment[],
+    actionLabel: string,
+  ) => void;
   onClose: () => void;
 }
 
@@ -76,6 +93,10 @@ export function PersonnelScheduleDayBlockModal({
   canUndo,
   sortPersonnel,
   getHighestQualificationLabel,
+  shiftWindowStartMinutes,
+  shiftWindowEndMinutes,
+  getSegmentsForSlot,
+  setSegmentsForSlot,
   onClose,
 }: PersonnelScheduleDayBlockModalProps) {
   const [draggedPerson, setDraggedPerson] = useState<string | null>(null);
@@ -125,6 +146,40 @@ export function PersonnelScheduleDayBlockModal({
       }
     },
     [dateKey, scheduleRows, getAssignmentsForDay, clearSlotValue],
+  );
+  const upsertSlotSegment = useCallback(
+    (
+      unitId: string,
+      slotIndex: number,
+      existingSegment: ScheduleSegment | null,
+      nextName: string,
+      nextStart: string,
+      nextEnd: string,
+    ) => {
+      const startMinutes = clampDayMinutes(parseTimeToMinutes(nextStart));
+      let endMinutes = clampDayMinutes(parseTimeToMinutes(nextEnd));
+      if (endMinutes <= startMinutes) {
+        endMinutes = clampDayMinutes(shiftWindowEndMinutes);
+      }
+      const segments = getSegmentsForSlot(dateKey, unitId, slotIndex).filter(
+        (segment) => segment.source !== "auto_hire",
+      );
+      const nextSegment: ScheduleSegment = {
+        id:
+          existingSegment?.id ??
+          `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+        assigneeType: nextName.toUpperCase() === "HIRE" ? "hire" : "personnel",
+        personnelName: nextName || "HIRE",
+        startMinutes,
+        endMinutes,
+        source: existingSegment?.source ?? "manual",
+        tradeRef: existingSegment?.tradeRef,
+      };
+      const remaining = segments.filter((segment) => segment.id !== nextSegment.id);
+      remaining.push(nextSegment);
+      setSegmentsForSlot(dateKey, unitId, slotIndex, remaining, "Updated timed segment.");
+    },
+    [dateKey, getSegmentsForSlot, setSegmentsForSlot, shiftWindowEndMinutes],
   );
 
   return createPortal(
@@ -269,13 +324,102 @@ export function PersonnelScheduleDayBlockModal({
                               />
                             ) : (() => {
                               const names = parseAssignedNames(name);
+                              const segments = getSegmentsForSlot(dateKey, row.unitId, slotIdx);
                               const isOvertime =
                                 row.rowType === "apparatus" &&
                                 slotIdx < row.minimumPersonnel &&
                                 isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
                               return (
                                 <div>
-                                  {names.length > 0 ? (
+                                  {segments.length > 0 ? (
+                                    <div className="personnel-schedule-modal-segments">
+                                      {segments.map((segment) => (
+                                        <div
+                                          key={segment.id}
+                                          className="personnel-schedule-modal-segment-row"
+                                        >
+                                          <input
+                                            type="text"
+                                            value={segment.personnelName}
+                                            onChange={(event) =>
+                                              upsertSlotSegment(
+                                                row.unitId,
+                                                slotIdx,
+                                                segment,
+                                                event.target.value,
+                                                minutesToTimeValue(segment.startMinutes),
+                                                minutesToTimeValue(segment.endMinutes),
+                                              )
+                                            }
+                                            placeholder="Name or HIRE"
+                                          />
+                                          <input
+                                            type="time"
+                                            step={900}
+                                            value={minutesToTimeValue(segment.startMinutes)}
+                                            onChange={(event) =>
+                                              upsertSlotSegment(
+                                                row.unitId,
+                                                slotIdx,
+                                                segment,
+                                                segment.personnelName,
+                                                event.target.value,
+                                                minutesToTimeValue(segment.endMinutes),
+                                              )
+                                            }
+                                          />
+                                          <input
+                                            type="time"
+                                            step={900}
+                                            value={minutesToTimeValue(segment.endMinutes)}
+                                            onChange={(event) =>
+                                              upsertSlotSegment(
+                                                row.unitId,
+                                                slotIdx,
+                                                segment,
+                                                segment.personnelName,
+                                                minutesToTimeValue(segment.startMinutes),
+                                                event.target.value,
+                                              )
+                                            }
+                                          />
+                                          <button
+                                            type="button"
+                                            className="secondary-button compact-button"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              setSegmentsForSlot(
+                                                dateKey,
+                                                row.unitId,
+                                                slotIdx,
+                                                segments.filter((entry) => entry.id !== segment.id),
+                                                "Removed timed segment.",
+                                              );
+                                            }}
+                                          >
+                                            Remove
+                                          </button>
+                                        </div>
+                                      ))}
+                                      <button
+                                        type="button"
+                                        className="secondary-button compact-button"
+                                        onClick={(event) => {
+                                          event.stopPropagation();
+                                          upsertSlotSegment(
+                                            row.unitId,
+                                            slotIdx,
+                                            null,
+                                            "",
+                                            minutesToTimeValue(shiftWindowStartMinutes),
+                                            minutesToTimeValue(shiftWindowEndMinutes),
+                                          );
+                                        }}
+                                      >
+                                        Add Segment
+                                      </button>
+                                    </div>
+                                  ) : names.length > 0 ? (
                                     names.map((personName, personIndex) => {
                                       const person = allPersonnel.find(
                                         (entry) => entry.name === personName,
@@ -293,7 +437,9 @@ export function PersonnelScheduleDayBlockModal({
                                               : undefined
                                           }
                                         >
-                                          {personName}
+                                          {names.length > 1
+                                            ? formatScheduleSegmentToken(personName)
+                                            : personName}
                                           {personIndex < names.length - 1 ? " / " : ""}
                                         </span>
                                       );

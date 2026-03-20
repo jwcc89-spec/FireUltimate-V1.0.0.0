@@ -252,6 +252,12 @@ export const MAIN_MENUS: MainMenu[] = [
         summary: "Personnel certification status and expiration tracking.",
         isBuilt: false,
       },
+      {
+        label: "Trades",
+        path: "/personnel/trades",
+        summary: "Shift trade request, response, and captain approval workflow.",
+        isBuilt: true,
+      },
     ],
   },
   {

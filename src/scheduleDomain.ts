@@ -58,6 +58,7 @@ export interface PersonnelScheduleData {
     shiftDuration: number;
     recurrence: string;
     recurrenceCustomValue?: string;
+    startTime?: string;
   }>;
 }
 
@@ -97,7 +98,13 @@ export function loadPersonnelScheduleData({
     ? (d.kellyRotations as PersonnelScheduleData["kellyRotations"])
     : [];
   const shiftEntries = Array.isArray(d.shiftInformationEntries)
-    ? (d.shiftInformationEntries as PersonnelScheduleData["shiftEntries"])
+    ? (d.shiftInformationEntries as Array<Record<string, unknown>>).map((entry) => ({
+        shiftType: String(entry.shiftType ?? ""),
+        shiftDuration: Number(entry.shiftDuration ?? 0) || 0,
+        recurrence: String(entry.recurrence ?? "Daily"),
+        recurrenceCustomValue: String(entry.recurrenceCustomValue ?? ""),
+        startTime: String(entry.startTime ?? ""),
+      }))
     : [];
   return {
     stations,
