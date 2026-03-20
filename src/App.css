@@ -5005,6 +5005,23 @@ body.printing-neris .neris-print-root {
   background-color: #f8fafc;
 }
 
+.personnel-schedule-modal-segments {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.personnel-schedule-modal-segment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 84px 84px auto;
+  gap: 0.3rem;
+  align-items: center;
+}
+
+.personnel-schedule-modal-segment-row input[type="text"] {
+  min-width: 0;
+}
+
 .personnel-schedule-slot-drag-over {
   background-color: #dbeafe;
   border-color: #3b82f6;

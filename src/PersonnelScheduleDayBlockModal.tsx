@@ -147,39 +147,75 @@ export function PersonnelScheduleDayBlockModal({
     },
     [dateKey, scheduleRows, getAssignmentsForDay, clearSlotValue],
   );
-  const upsertSlotSegment = useCallback(
+  const buildDefaultSegments = useCallback(
+    (unitId: string, slotIndex: number): ScheduleSegment[] => {
+      const segmentCount = Math.max(1, overtimeSplitCount);
+      const totalWindow = Math.max(15, shiftWindowEndMinutes - shiftWindowStartMinutes);
+      const segmentLength = Math.max(15, Math.floor(totalWindow / segmentCount));
+      const segments: ScheduleSegment[] = [];
+      for (let index = 0; index < segmentCount; index += 1) {
+        const startMinutes = shiftWindowStartMinutes + index * segmentLength;
+        const endMinutes =
+          index === segmentCount - 1
+            ? shiftWindowEndMinutes
+            : shiftWindowStartMinutes + (index + 1) * segmentLength;
+        segments.push({
+          id: `${dateKey}-${unitId}-${slotIndex}-default-${index}`,
+          assigneeType: "personnel",
+          personnelName: "",
+          startMinutes,
+          endMinutes,
+          source: "manual",
+        });
+      }
+      return segments;
+    },
+    [dateKey, overtimeSplitCount, shiftWindowEndMinutes, shiftWindowStartMinutes],
+  );
+  const ensureSegmentRows = useCallback(
+    (unitId: string, slotIndex: number): ScheduleSegment[] => {
+      const existing = getSegmentsForSlot(dateKey, unitId, slotIndex).filter(
+        (segment) => segment.source !== "auto_hire",
+      );
+      return existing.length > 0 ? existing : buildDefaultSegments(unitId, slotIndex);
+    },
+    [buildDefaultSegments, dateKey, getSegmentsForSlot],
+  );
+  const updateSegmentCollection = useCallback(
     (
       unitId: string,
       slotIndex: number,
-      existingSegment: ScheduleSegment | null,
-      nextName: string,
-      nextStart: string,
-      nextEnd: string,
+      mutate: (segments: ScheduleSegment[]) => ScheduleSegment[],
+      actionLabel: string,
     ) => {
-      const startMinutes = clampDayMinutes(parseTimeToMinutes(nextStart));
-      let endMinutes = clampDayMinutes(parseTimeToMinutes(nextEnd));
-      if (endMinutes <= startMinutes) {
-        endMinutes = clampDayMinutes(shiftWindowEndMinutes);
-      }
-      const segments = getSegmentsForSlot(dateKey, unitId, slotIndex).filter(
-        (segment) => segment.source !== "auto_hire",
-      );
-      const nextSegment: ScheduleSegment = {
-        id:
-          existingSegment?.id ??
-          `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-        assigneeType: nextName.toUpperCase() === "HIRE" ? "hire" : "personnel",
-        personnelName: nextName || "HIRE",
-        startMinutes,
-        endMinutes,
-        source: existingSegment?.source ?? "manual",
-        tradeRef: existingSegment?.tradeRef,
-      };
-      const remaining = segments.filter((segment) => segment.id !== nextSegment.id);
-      remaining.push(nextSegment);
-      setSegmentsForSlot(dateKey, unitId, slotIndex, remaining, "Updated timed segment.");
+      const base = ensureSegmentRows(unitId, slotIndex).map((segment) => ({ ...segment }));
+      const next = mutate(base);
+      setSegmentsForSlot(dateKey, unitId, slotIndex, next, actionLabel);
     },
-    [dateKey, getSegmentsForSlot, setSegmentsForSlot, shiftWindowEndMinutes],
+    [dateKey, ensureSegmentRows, setSegmentsForSlot],
+  );
+  const assignDraggedPersonToSegment = useCallback(
+    (unitId: string, slotIndex: number, targetSegmentId: string) => {
+      if (!draggedPerson) return;
+      updateSegmentCollection(
+        unitId,
+        slotIndex,
+        (segments) =>
+          segments.map((segment) =>
+            segment.id === targetSegmentId
+              ? {
+                  ...segment,
+                  personnelName: draggedPerson,
+                  assigneeType: "personnel",
+                }
+              : segment,
+          ),
+        "Assigned segment personnel.",
+      );
+      setDraggedPerson(null);
+      setDragOverSlot(null);
+    },
+    [draggedPerson, updateSegmentCollection],
   );
 
   return createPortal(
@@ -252,6 +288,10 @@ export function PersonnelScheduleDayBlockModal({
                       const isRed = isRequired && isEmpty;
                       const isTextRow =
                         row.rowType === "support" && row.supportValueMode === "text";
+                      const isSegmentModeAtSlot =
+                        row.rowType === "apparatus" &&
+                        slotIdx < row.minimumPersonnel &&
+                        isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
                       return (
                         <div key={slotIdx} className="personnel-schedule-modal-slot-row">
                           {row.rowType === "apparatus" && slotIdx < row.minimumPersonnel ? (
@@ -284,17 +324,25 @@ export function PersonnelScheduleDayBlockModal({
                                 : ""
                             }`}
                             onDragOver={
-                              isTextRow
+                              isTextRow || isSegmentModeAtSlot
                                 ? undefined
                                 : (e) => {
                                     e.preventDefault();
                                     setDragOverSlot({ unitId: row.unitId, slotIndex: slotIdx });
                                   }
                             }
-                            onDragLeave={isTextRow ? undefined : () => setDragOverSlot(null)}
-                            onDrop={isTextRow ? undefined : () => handleDrop(row.unitId, slotIdx)}
+                            onDragLeave={
+                              isTextRow || isSegmentModeAtSlot
+                                ? undefined
+                                : () => setDragOverSlot(null)
+                            }
+                            onDrop={
+                              isTextRow || isSegmentModeAtSlot
+                                ? undefined
+                                : () => handleDrop(row.unitId, slotIdx)
+                            }
                             onClick={
-                              isTextRow
+                              isTextRow || isSegmentModeAtSlot
                                 ? undefined
                                 : () => name && handleRemoveFromSlot(row.unitId, slotIdx)
                             }
@@ -324,75 +372,124 @@ export function PersonnelScheduleDayBlockModal({
                               />
                             ) : (() => {
                               const names = parseAssignedNames(name);
-                              const segments = getSegmentsForSlot(dateKey, row.unitId, slotIdx);
                               const isOvertime =
                                 row.rowType === "apparatus" &&
                                 slotIdx < row.minimumPersonnel &&
                                 isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
+                              const isSegmentMode = isSegmentModeAtSlot;
                               return (
                                 <div>
-                                  {segments.length > 0 ? (
+                                  {isSegmentMode ? (
                                     <div className="personnel-schedule-modal-segments">
-                                      {segments.map((segment) => (
+                                      {ensureSegmentRows(row.unitId, slotIdx).map((segment) => {
+                                        return (
                                         <div
                                           key={segment.id}
                                           className="personnel-schedule-modal-segment-row"
+                                          onDragOver={(event) => {
+                                            event.preventDefault();
+                                            setDragOverSlot({ unitId: row.unitId, slotIndex: slotIdx });
+                                          }}
+                                          onDrop={(event) => {
+                                            event.preventDefault();
+                                            assignDraggedPersonToSegment(
+                                              row.unitId,
+                                              slotIdx,
+                                              segment.id,
+                                            );
+                                          }}
                                         >
                                           <input
                                             type="text"
                                             value={segment.personnelName}
                                             onChange={(event) =>
-                                              upsertSlotSegment(
+                                              updateSegmentCollection(
                                                 row.unitId,
                                                 slotIdx,
-                                                segment,
-                                                event.target.value,
-                                                minutesToTimeValue(segment.startMinutes),
-                                                minutesToTimeValue(segment.endMinutes),
+                                                (existing) =>
+                                                  existing.map((entry) =>
+                                                    entry.id === segment.id
+                                                      ? {
+                                                          ...entry,
+                                                          personnelName: event.target.value,
+                                                          assigneeType: event.target.value.trim()
+                                                            ? "personnel"
+                                                            : "personnel",
+                                                        }
+                                                      : entry,
+                                                  ),
+                                                "Updated timed segment.",
                                               )
                                             }
-                                            placeholder="Name or HIRE"
+                                            placeholder="Assignee"
                                           />
                                           <input
-                                            type="time"
-                                            step={900}
-                                            value={minutesToTimeValue(segment.startMinutes)}
-                                            onChange={(event) =>
-                                              upsertSlotSegment(
+                                            type="text"
+                                            inputMode="numeric"
+                                            key={`${segment.id}-start-${segment.startMinutes}`}
+                                            defaultValue={minutesToTimeValue(segment.startMinutes)}
+                                            placeholder="HH:MM"
+                                            onBlur={(event) => {
+                                              const nextStart = event.currentTarget.value.trim();
+                                              if (!/^\d{2}:\d{2}$/.test(nextStart)) return;
+                                              updateSegmentCollection(
                                                 row.unitId,
                                                 slotIdx,
-                                                segment,
-                                                segment.personnelName,
-                                                event.target.value,
-                                                minutesToTimeValue(segment.endMinutes),
-                                              )
-                                            }
+                                                (existing) =>
+                                                  existing.map((entry) =>
+                                                    entry.id === segment.id
+                                                      ? {
+                                                          ...entry,
+                                                          startMinutes: clampDayMinutes(parseTimeToMinutes(nextStart)),
+                                                        }
+                                                      : entry,
+                                                  ),
+                                                "Updated timed segment.",
+                                              );
+                                            }}
                                           />
                                           <input
-                                            type="time"
-                                            step={900}
-                                            value={minutesToTimeValue(segment.endMinutes)}
-                                            onChange={(event) =>
-                                              upsertSlotSegment(
+                                            type="text"
+                                            inputMode="numeric"
+                                            key={`${segment.id}-end-${segment.endMinutes}`}
+                                            defaultValue={minutesToTimeValue(segment.endMinutes)}
+                                            placeholder="HH:MM"
+                                            onBlur={(event) => {
+                                              const nextEnd = event.currentTarget.value.trim();
+                                              if (!/^\d{2}:\d{2}$/.test(nextEnd)) return;
+                                              updateSegmentCollection(
                                                 row.unitId,
                                                 slotIdx,
-                                                segment,
-                                                segment.personnelName,
-                                                minutesToTimeValue(segment.startMinutes),
-                                                event.target.value,
-                                              )
-                                            }
+                                                (existing) =>
+                                                  existing.map((entry) =>
+                                                    entry.id === segment.id
+                                                      ? {
+                                                          ...entry,
+                                                          endMinutes: (() => {
+                                                            const parsedEnd = clampDayMinutes(
+                                                              parseTimeToMinutes(nextEnd),
+                                                            );
+                                                            return parsedEnd <= entry.startMinutes
+                                                              ? parsedEnd + 1440
+                                                              : parsedEnd;
+                                                          })(),
+                                                        }
+                                                      : entry,
+                                                  ),
+                                                "Updated timed segment.",
+                                              );
+                                            }}
                                           />
                                           <button
                                             type="button"
                                             className="secondary-button compact-button"
                                             onClick={(event) => {
                                               event.stopPropagation();
-                                              setSegmentsForSlot(
-                                                dateKey,
+                                              updateSegmentCollection(
                                                 row.unitId,
                                                 slotIdx,
-                                                segments.filter((entry) => entry.id !== segment.id),
+                                                (existing) =>
+                                                  existing.filter((entry) => entry.id !== segment.id),
                                                 "Removed timed segment.",
                                               );
                                             }}
@@ -400,19 +497,28 @@ export function PersonnelScheduleDayBlockModal({
                                             Remove
                                           </button>
                                         </div>
-                                      ))}
+                                      );
+                                      })}
                                       <button
                                         type="button"
                                         className="secondary-button compact-button"
                                         onClick={(event) => {
                                           event.stopPropagation();
-                                          upsertSlotSegment(
+                                          updateSegmentCollection(
                                             row.unitId,
                                             slotIdx,
-                                            null,
-                                            "",
-                                            minutesToTimeValue(shiftWindowStartMinutes),
-                                            minutesToTimeValue(shiftWindowEndMinutes),
+                                            (existing) => [
+                                              ...existing,
+                                              {
+                                                id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+                                                assigneeType: "personnel",
+                                                personnelName: "",
+                                                startMinutes: shiftWindowStartMinutes,
+                                                endMinutes: shiftWindowEndMinutes,
+                                                source: "manual",
+                                              },
+                                            ],
+                                            "Added timed segment.",
                                           );
                                         }}
                                       >

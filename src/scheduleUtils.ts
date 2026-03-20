@@ -82,6 +82,7 @@ export function getBestQualificationRankForPerson(
 export function formatSchedulePersonnelDisplayName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "";
+  if (trimmed.toUpperCase() === "HIRE") return "HIRE";
   const parts = trimmed.split(/\s+/).filter(Boolean);
   const initial = parts[0]?.charAt(0).toUpperCase() ?? "";
   const lastName = parts.length > 1 ? parts[parts.length - 1]! : parts[0]!;

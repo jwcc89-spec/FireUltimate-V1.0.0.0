@@ -7924,6 +7924,20 @@ function DepartmentDetailsPage({
     setStatusMessage("Auto-saved.");
   };
 
+  const deleteSchedulerApparatusFormEntry = () => {
+    if (editingIndex === null || editingIndex < 0) {
+      return;
+    }
+    setSchedulerApparatusRecords((previous) =>
+      previous.filter((_, index) => index !== editingIndex),
+    );
+    setIsEntryFormOpen(false);
+    setEditingIndex(null);
+    setSelectedSingleIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Scheduler apparatus entry deleted.");
+  };
+
   const importSchedulerApparatusFromDepartment = () => {
     setSchedulerApparatusRecords((previous) => {
       const existing = new Set(
@@ -11569,6 +11583,15 @@ function DepartmentDetailsPage({
               >
                 Save
               </button>
+              {isSchedulerApparatusEditor && editingIndex !== null && editingIndex >= 0 ? (
+                <button
+                  type="button"
+                  className="secondary-button compact-button"
+                  onClick={deleteSchedulerApparatusFormEntry}
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           </article>
         </div>

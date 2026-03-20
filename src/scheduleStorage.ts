@@ -89,7 +89,7 @@ export function toScheduleStorageDateKey(shiftType: string, dateKey: string): st
 
 export function clampDayMinutes(value: number): number {
   if (!Number.isFinite(value)) return 0;
-  return Math.max(0, Math.min(1440, Math.floor(value)));
+  return Math.max(0, Math.min(2880, Math.floor(value)));
 }
 
 export function parseTimeToMinutes(value: string): number {
