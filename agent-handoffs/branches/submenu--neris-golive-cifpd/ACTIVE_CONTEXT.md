@@ -104,7 +104,6 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
-- `9f95713` docs(handoff): pin schedule session commit hash in ACTIVE_CONTEXT
 - `2507a93` feat(schedule): segmentation, OT roster, duplicate grey-out, handoff docs
 - `c210d42` docs(handoff): expand COPY_PASTE_START_PROMPT with full doc list and when-to-read
 - `f757f52` NERIS CORE: aid department dropdown shows name only (export still uses FD ID)
