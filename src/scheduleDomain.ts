@@ -11,7 +11,9 @@ export interface PersonnelScheduleRow {
   requiredQualifications: string[];
   stationName?: string;
   supportValueMode?: ScheduleSupportValueMode;
+  /** When true (UI: "Apparatus override"), support row removes/conflicts with apparatus coverage for that person. */
   personnelOverride?: boolean;
+  supportSegmentedMode?: boolean;
 }
 
 export interface PersonnelScheduleData {
@@ -35,7 +37,9 @@ export interface PersonnelScheduleData {
     fieldName: string;
     numberOfSlots: number;
     valueMode: ScheduleSupportValueMode;
+    /** Stored as personnelOverride; admin UI label: Apparatus override. */
     personnelOverride: boolean;
+    segmentedModeEnabled: boolean;
   }>;
   standardOvertimeSlot: number;
   personnel: Array<{

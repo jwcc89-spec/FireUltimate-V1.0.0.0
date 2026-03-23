@@ -5011,11 +5011,222 @@ body.printing-neris .neris-print-root {
   gap: 0.3rem;
 }
 
+.personnel-schedule-modal-segments-wrap {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 0.4rem;
+  width: 100%;
+}
+
+.personnel-schedule-modal-segments--horizontal {
+  flex: 1 1 0;
+  min-width: 0;
+  flex-direction: row;
+  flex-wrap: wrap;
+}
+
+.personnel-schedule-modal-segment-card {
+  position: relative;
+  flex: 1 1 140px;
+  min-width: 128px;
+  max-width: 220px;
+  padding: 1.65rem 0.4rem 0.4rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #fff;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: #0f172a;
+}
+
+.personnel-schedule-modal-segment-card:not(.personnel-schedule-modal-segment-card--ot)
+  .personnel-schedule-modal-segment-select {
+  color: #0f172a;
+}
+
+.personnel-schedule-modal-segment-card--ot {
+  border-color: #f59e0b;
+  background: #fffbeb;
+}
+
+.personnel-schedule-modal-segment-ot {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  margin: 0;
+  font-size: 0.72rem;
+}
+
+.personnel-schedule-segment-trash {
+  position: absolute;
+  top: 0.15rem;
+  right: 0.15rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  min-width: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: #dc2626;
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 0.65rem;
+  font-weight: 700;
+}
+
+.personnel-schedule-segment-trash:hover {
+  background: #b91c1c;
+}
+
+.personnel-schedule-segment-trash-icon {
+  display: block;
+  color: #fff;
+  line-height: 1;
+  font-size: 0.7rem;
+}
+
+.personnel-schedule-segment-layout-add {
+  flex: 0 0 auto;
+  align-self: center;
+  width: 2.1rem;
+  height: 2.1rem;
+  border: none;
+  border-radius: 8px;
+  background: #16a34a;
+  color: #fff;
+  font-size: 1.35rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 12%);
+}
+
+.personnel-schedule-segment-layout-add:hover {
+  background: #15803d;
+}
+
+.personnel-schedule-segment-builder-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 11000;
+  background: rgb(15 23 42 / 45%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.personnel-schedule-segment-builder {
+  background: #fff;
+  border-radius: 10px;
+  padding: 1rem 1.15rem;
+  max-width: 420px;
+  width: 100%;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 18%);
+}
+
+.personnel-schedule-segment-builder h4 {
+  margin: 0 0 0.35rem;
+  font-size: 1.05rem;
+}
+
+.personnel-schedule-segment-builder-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.5rem 0;
+}
+
+.personnel-schedule-segment-builder-row {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.personnel-schedule-segment-builder-remove {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.05rem;
+  height: 1.05rem;
+  min-width: 1.05rem;
+  padding: 0;
+  border: none;
+  border-radius: 3px;
+  background: #dc2626;
+  color: #fff;
+  cursor: pointer;
+  line-height: 1;
+  font-size: 0.7rem;
+  font-weight: 700;
+}
+
+.personnel-schedule-segment-builder-remove:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.personnel-schedule-segment-builder-remove:hover:not(:disabled) {
+  background: #b91c1c;
+}
+
+.personnel-schedule-segment-builder-time {
+  width: 4rem;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.35rem;
+}
+
+.personnel-schedule-segment-builder-toolbar {
+  margin-bottom: 0.5rem;
+}
+
+.personnel-schedule-segment-builder-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+
 .personnel-schedule-modal-segment-row {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 84px 84px auto;
   gap: 0.3rem;
   align-items: center;
+}
+
+.personnel-schedule-modal-segment-assignee {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.personnel-schedule-modal-segment-assignee select {
+  min-width: 0;
+  width: 100%;
+}
+
+.personnel-schedule-modal-segment-select option:disabled {
+  color: #94a3b8;
+  background-color: #f8fafc;
+}
+
+.personnel-schedule-modal-segment-time-display {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: #475569;
+  line-height: 1.2;
 }
 
 .personnel-schedule-modal-segment-row input[type="text"] {

@@ -149,6 +149,15 @@ Notes:
 
 ---
 
+## Personnel Schedule (optional — train after core setup)
+
+- [ ] **Timed segments:** In the day-block modal, the slot checkbox enables split timed coverage (hover for tooltip; explained in training, not a separate “Segment” label).
+- [ ] **Per-segment OT:** For hire-back / off-shift fills, check **OT** on that segment; the dropdown lists roster-eligible personnel (requires **name + shift** in Scheduler Personnel).
+- [ ] **Greyed names:** If someone is already on **another segment of the same slot**, they appear **disabled** in the shift list; enable **OT** on this segment to use the full roster for that slice.
+- [ ] Reference: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`.
+
+---
+
 ## G) Security + Operations Closeout
 
 - [ ] Confirm no secrets in repo (`.env.server` is gitignored).

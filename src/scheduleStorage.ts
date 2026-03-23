@@ -10,6 +10,8 @@ export interface ScheduleSegment {
   endMinutes: number;
   source: ScheduleSegmentSource;
   tradeRef?: string;
+  /** True when this slice counts as overtime / hire-back (apparatus segments). */
+  overtime?: boolean;
 }
 export type ScheduleSlotSegments = Record<string, Record<string, ScheduleSegment[][]>>;
 

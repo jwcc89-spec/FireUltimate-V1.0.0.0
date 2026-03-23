@@ -376,6 +376,8 @@ Use this section as the high-level backlog pointer. Track detailed deferred/futu
 23. Remove shared/global tenant data reads where inappropriate.
 24. **Phase 5 status (done):** Added tenant-scoped Schedule Assignments API (`GET/POST /api/schedule-assignments`) backed by `ScheduleAssignments` table. Scheduler now syncs assignments + overtime split through tenant-scoped API (with local cache fallback), replacing local-only persistence as the source of truth.
 
+**Schedule product decisions (segmentation, OT, HIRE, additional fields):** See `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. Implementation must preserve tenant isolation on all schedule reads/writes.
+
 Primary routes to scope first:
 
 - `/api/department-details`

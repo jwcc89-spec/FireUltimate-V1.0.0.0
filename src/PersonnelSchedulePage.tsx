@@ -37,9 +37,91 @@ import {
   getShiftStartOffsetDays,
   reorderAssignedByRequirementCoverage,
   requirementsSatisfiedByAssignedPersonnel,
+  isPersonnelSchedulerRecordComplete,
   toDateKey,
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
+
+function schedulesIntervalOverlap(
+  aStart: number,
+  aEnd: number,
+  bStart: number,
+  bEnd: number,
+): boolean {
+  return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
+}
+
+/** Block same person on two apparatus slots when time ranges overlap (cross-apparatus never auto-merges). */
+function computeCrossApparatusOverlapMessage(params: {
+  personName: string;
+  excludeUnitId: string;
+  excludeSlotIndex: number;
+  proposedStart: number;
+  proposedEnd: number;
+  shiftWindowStart: number;
+  shiftWindowEnd: number;
+  scheduleRows: PersonnelScheduleRow[];
+  dayData: Record<string, string[]>;
+  scheduleSlotSegments: ScheduleSlotSegments;
+  storageDateKey: string;
+}): string | null {
+  const {
+    personName,
+    excludeUnitId,
+    excludeSlotIndex,
+    proposedStart,
+    proposedEnd,
+    shiftWindowStart,
+    shiftWindowEnd,
+    scheduleRows,
+    dayData,
+    scheduleSlotSegments,
+    storageDateKey,
+  } = params;
+  for (const row of scheduleRows) {
+    if (row.rowType !== "apparatus") continue;
+    for (let si = 0; si < row.slotCount; si += 1) {
+      if (row.unitId === excludeUnitId && si === excludeSlotIndex) continue;
+      const unitSegRows = scheduleSlotSegments[storageDateKey]?.[row.unitId] ?? [];
+      const segsRaw = Array.isArray(unitSegRows[si]) ? unitSegRows[si]! : [];
+      const personSegs = segsRaw.filter(
+        (s) =>
+          s.personnelName === personName &&
+          s.assigneeType !== "hire" &&
+          s.source !== "auto_hire",
+      );
+      if (personSegs.length > 0) {
+        for (const seg of personSegs) {
+          if (
+            seg.endMinutes > seg.startMinutes &&
+            schedulesIntervalOverlap(
+              proposedStart,
+              proposedEnd,
+              seg.startMinutes,
+              seg.endMinutes,
+            )
+          ) {
+            return `${personName} already assigned to ${row.label}. Remove or segment assignments so times do not overlap.`;
+          }
+        }
+      } else {
+        const slotVal = dayData[row.unitId]?.[si] ?? "";
+        if (
+          parseAssignedNames(slotVal).includes(personName) &&
+          schedulesIntervalOverlap(
+            proposedStart,
+            proposedEnd,
+            shiftWindowStart,
+            shiftWindowEnd,
+          )
+        ) {
+          return `${personName} already assigned to ${row.label}. Remove or segment assignments so times do not overlap.`;
+        }
+      }
+    }
+  }
+  return null;
+}
 
 interface PersonnelSchedulePageProps {
   readDepartmentDetailsDraft: () => Record<string, unknown>;
@@ -342,6 +424,8 @@ export function PersonnelSchedulePage({
         requiredQualifications: [],
         supportValueMode: row.valueMode,
         personnelOverride: row.valueMode === "personnel" ? row.personnelOverride : false,
+        supportSegmentedMode:
+          row.valueMode === "personnel" ? Boolean(row.segmentedModeEnabled) : false,
       });
     });
 
@@ -375,6 +459,11 @@ export function PersonnelSchedulePage({
   const shiftPersonnel = useMemo(
     () => departmentData.personnel.filter((p) => personnelMatchesShift(p, effectiveShift)),
     [departmentData.personnel, effectiveShift],
+  );
+  /** OT segment dropdown: only people with a shift set in Scheduler Personnel (excludes blank/demo shells). */
+  const overtimeRosterPersonnel = useMemo(
+    () => departmentData.personnel.filter((p) => isPersonnelSchedulerRecordComplete(p)),
+    [departmentData.personnel],
   );
   const sortedShiftPersonnel = useMemo(
     () =>
@@ -549,7 +638,7 @@ export function PersonnelSchedulePage({
   );
   const toggleOvertimeForSlot = useCallback(
     (dateKey: string, unitId: string, slotIndex: number, enabled: boolean) => {
-      pushUndoSnapshot("Toggle overtime split");
+      pushUndoSnapshot("Toggle segment mode");
       const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
       const nextSplit: ScheduleOvertimeSplit = {
         ...scheduleOvertimeSplit,
@@ -565,6 +654,7 @@ export function PersonnelSchedulePage({
         [unitId]: unitFlags,
       };
       applyOvertimeSplitChange(nextSplit);
+      const targetRow = scheduleRows.find((row) => row.unitId === unitId);
 
       if (!enabled) {
         setScheduleAssignments((previous) => {
@@ -587,7 +677,8 @@ export function PersonnelSchedulePage({
           (segment) => segment.source !== "auto_hire",
         );
         if (existingSegments.length === 0) {
-          const segmentCount = Math.max(1, overtimeSplitCount);
+          const segmentCount =
+            targetRow?.rowType === "apparatus" ? Math.max(1, overtimeSplitCount) : 1;
           const totalWindow = Math.max(15, shiftWindowEndMinutes - shiftWindowStartMinutes);
           const segmentLength = Math.max(15, Math.floor(totalWindow / segmentCount));
           const defaults: ScheduleSegment[] = Array.from({ length: segmentCount }, (_, index) => {
@@ -603,6 +694,7 @@ export function PersonnelSchedulePage({
               startMinutes,
               endMinutes,
               source: "manual",
+              overtime: false,
             };
           });
           setScheduleSlotSegments((previous) => {
@@ -622,7 +714,7 @@ export function PersonnelSchedulePage({
           });
         }
       }
-      setLastScheduleAction("Updated overtime split.");
+      setLastScheduleAction("Updated segment mode.");
     },
     [
       effectiveShift,
@@ -631,6 +723,7 @@ export function PersonnelSchedulePage({
       scheduleOvertimeSplit,
       shiftWindowEndMinutes,
       shiftWindowStartMinutes,
+      scheduleRows,
       applyOvertimeSplitChange,
       pushUndoSnapshot,
     ],
@@ -751,6 +844,43 @@ export function PersonnelSchedulePage({
           targetRow?.rowType === "apparatus" &&
           slotIndex < (targetRow.minimumPersonnel ?? 0) &&
           isOvertimeEnabledForSlot(dateKey, unitId, slotIndex);
+        if (isTargetApparatusRow) {
+          const existsInOverrideSupport = scheduleRows.some((row) => {
+            if (!isOverrideSupportPersonnelRow(row)) return false;
+            const rowSlots = dayData[row.unitId] ?? [];
+            return rowSlots.some((slotValue) => parseAssignedNames(slotValue).includes(personName));
+          });
+          const existsInOverrideSupportSegments = scheduleRows.some((row) => {
+            if (!isOverrideSupportPersonnelRow(row)) return false;
+            const rowSlots = scheduleSlotSegments[storageDateKey]?.[row.unitId] ?? [];
+            return rowSlots.some((segments) =>
+              Array.isArray(segments)
+                ? segments.some((segment) => segment.personnelName === personName)
+                : false,
+            );
+          });
+          if (existsInOverrideSupport || existsInOverrideSupportSegments) {
+            blockedAssignmentReason = `Cannot assign ${personName}: remove from Apparatus override field first (e.g. Vacation/Sick/Kelly).`;
+            return prev;
+          }
+          const overlapMsg = computeCrossApparatusOverlapMessage({
+            personName,
+            excludeUnitId: unitId,
+            excludeSlotIndex: slotIndex,
+            proposedStart: shiftWindowStartMinutes,
+            proposedEnd: shiftWindowEndMinutes,
+            shiftWindowStart: shiftWindowStartMinutes,
+            shiftWindowEnd: shiftWindowEndMinutes,
+            scheduleRows,
+            dayData,
+            scheduleSlotSegments,
+            storageDateKey,
+          });
+          if (overlapMsg) {
+            blockedAssignmentReason = overlapMsg;
+            return prev;
+          }
+        }
         for (const [uid, slots] of Object.entries(dayData)) {
           const row = scheduleRows.find((candidate) => candidate.unitId === uid);
           if (!row) {
@@ -761,7 +891,7 @@ export function PersonnelSchedulePage({
             : isTargetOverrideSupportPersonnelRow
               ? row.rowType === "apparatus" || isSupportPersonnelRow(row)
               : isTargetApparatusRow
-                ? row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row)
+                ? false
                 : !isTargetSupportPersonnelRow
                   ? row.rowType === "apparatus" || isOverrideSupportPersonnelRow(row)
                   : false;
@@ -790,7 +920,7 @@ export function PersonnelSchedulePage({
               qualificationRankMap,
             );
             if (!(Number.isFinite(personBestRank) && personBestRank <= requiredRank)) {
-              blockedAssignmentReason = `Cannot assign ${personName}: does not meet required qualification for that OT slot.`;
+              blockedAssignmentReason = `Cannot assign ${personName}: does not meet required qualification for that segmented slot.`;
               return prev;
             }
           }
@@ -832,6 +962,9 @@ export function PersonnelSchedulePage({
         return next;
       });
       if (blockedAssignmentReason) {
+        if (blockedAssignmentReason.includes("already assigned to")) {
+          window.alert(blockedAssignmentReason);
+        }
         setLastScheduleAction(blockedAssignmentReason);
         return;
       }
@@ -846,6 +979,7 @@ export function PersonnelSchedulePage({
           startMinutes: shiftWindowStartMinutes,
           endMinutes: clampDayMinutes(shiftWindowEndMinutes),
           source: "manual",
+          overtime: false,
         });
         setSegmentsForSlot(
           dateKey,
@@ -872,6 +1006,104 @@ export function PersonnelSchedulePage({
       shiftWindowEndMinutes,
       qualificationRankMap,
       pushUndoSnapshot,
+      scheduleSlotSegments,
+    ],
+  );
+
+  const assertApparatusTimeOverlap = useCallback(
+    (
+      dateKey: string,
+      personName: string,
+      excludeUnitId: string,
+      excludeSlotIndex: number,
+      proposedStart: number,
+      proposedEnd: number,
+    ): string | null => {
+      const trimmed = personName.trim();
+      if (!trimmed) return null;
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      const dayData = { ...(scheduleAssignments[storageDateKey] ?? {}) } as Record<
+        string,
+        string[]
+      >;
+      const dayDefaults = buildDefaultAssignmentsForDate(dateKey);
+      scheduleRows.forEach((row) => {
+        if (!dayData[row.unitId]) {
+          dayData[row.unitId] = (dayDefaults[row.unitId] ?? []).slice(0, row.slotCount);
+        }
+      });
+      return computeCrossApparatusOverlapMessage({
+        personName: trimmed,
+        excludeUnitId,
+        excludeSlotIndex,
+        proposedStart,
+        proposedEnd,
+        shiftWindowStart: shiftWindowStartMinutes,
+        shiftWindowEnd: shiftWindowEndMinutes,
+        scheduleRows,
+        dayData,
+        scheduleSlotSegments,
+        storageDateKey,
+      });
+    },
+    [
+      effectiveShift,
+      scheduleAssignments,
+      scheduleSlotSegments,
+      scheduleRows,
+      buildDefaultAssignmentsForDate,
+      shiftWindowStartMinutes,
+      shiftWindowEndMinutes,
+    ],
+  );
+
+  /** When only one segment remains (e.g. user deleted others), exit segment mode: one 24h slot + clear segment data. */
+  const collapseSegmentModeToSingleSlot = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number, remainingPersonName: string) => {
+      pushUndoSnapshot("Collapse segment mode to single 24h slot");
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      setScheduleAssignments((prev) => {
+        const next = { ...prev };
+        const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+        const row = scheduleRows.find((r) => r.unitId === unitId);
+        if (!row) return prev;
+        const unitSlots = [...(dayData[unitId] ?? [])];
+        while (unitSlots.length <= slotIndex) unitSlots.push("");
+        unitSlots[slotIndex] = remainingPersonName.trim();
+        dayData[unitId] = unitSlots;
+        next[storageDateKey] = dayData;
+        saveScheduleAssignments(next);
+        return next;
+      });
+      setScheduleSlotSegments((previous) => {
+        const day = { ...(previous[storageDateKey] ?? {}) };
+        const unitRows = Array.isArray(day[unitId]) ? [...day[unitId]!] : [];
+        while (unitRows.length <= slotIndex) unitRows.push([]);
+        unitRows[slotIndex] = [];
+        const next = { ...previous, [storageDateKey]: { ...day, [unitId]: unitRows } };
+        saveScheduleSlotSegments(next);
+        return next;
+      });
+      applyOvertimeSplitChange({
+        ...scheduleOvertimeSplit,
+        [storageDateKey]: {
+          ...(scheduleOvertimeSplit[storageDateKey] ?? {}),
+          [unitId]: (() => {
+            const unitFlags = [...(scheduleOvertimeSplit[storageDateKey]?.[unitId] ?? [])];
+            while (unitFlags.length <= slotIndex) unitFlags.push(false);
+            unitFlags[slotIndex] = false;
+            return unitFlags;
+          })(),
+        },
+      });
+      setLastScheduleAction("Returned to single 24-hour slot.");
+    },
+    [
+      applyOvertimeSplitChange,
+      effectiveShift,
+      pushUndoSnapshot,
+      scheduleOvertimeSplit,
+      scheduleRows,
     ],
   );
 
@@ -1431,12 +1663,38 @@ export function PersonnelSchedulePage({
                             return orderedSlots.slice(0, visibleSlotCount);
                           })()
                         : slots;
+                    const effectiveSlotsForQual =
+                      row.rowType === "apparatus" && row.minimumPersonnel > 0
+                        ? slots.map((slotVal, slotIdx) => {
+                            if (
+                              slotIdx < row.minimumPersonnel &&
+                              isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx)
+                            ) {
+                              const segs = getSegmentsForSlot(
+                                dateKey,
+                                row.unitId,
+                                slotIdx,
+                              ).filter(
+                                (s) =>
+                                  s.source !== "auto_hire" &&
+                                  s.personnelName.trim() &&
+                                  s.personnelName !== "HIRE",
+                              );
+                              if (segs.length > 0) {
+                                return serializeAssignedNames(
+                                  segs.map((s) => s.personnelName.trim()),
+                                );
+                              }
+                            }
+                            return slotVal;
+                          })
+                        : slots;
                     const blockHasQualificationGap =
                       row.rowType === "apparatus" &&
                       row.minimumPersonnel > 0 &&
                       !requirementsSatisfiedByAssignedPersonnel(
                         row.requiredQualifications.slice(0, row.minimumPersonnel),
-                        slots.filter((name) => name.trim()),
+                        effectiveSlotsForQual.slice(0, row.minimumPersonnel),
                         personnelByName,
                         qualificationRankMap,
                       );
@@ -1458,8 +1716,11 @@ export function PersonnelSchedulePage({
                               slotIdx,
                             );
                             const segmentModeEnabled =
-                              row.rowType === "apparatus" &&
-                              slotIdx < row.minimumPersonnel &&
+                              ((row.rowType === "apparatus" &&
+                                slotIdx < row.minimumPersonnel) ||
+                                (row.rowType === "support" &&
+                                  row.supportValueMode === "personnel" &&
+                                  Boolean(row.supportSegmentedMode))) &&
                               isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
                             const shouldShowFallbackHire =
                               !segmentModeEnabled &&
@@ -1471,22 +1732,38 @@ export function PersonnelSchedulePage({
                               segmentModeEnabled &&
                               row.rowType === "apparatus" &&
                               slotIdx < row.minimumPersonnel;
-                            const displaySegments = shouldShowDynamicHire
+                            const displaySegmentsForUi: ScheduleSegment[] = shouldShowDynamicHire
                               ? withDynamicHireSegments(storedSegments)
-                              : [];
+                              : segmentModeEnabled
+                                ? storedSegments.filter((segment) => segment.source !== "auto_hire")
+                                : [];
                             const slotNames =
-                              displaySegments.length > 0
-                                ? displaySegments.map((segment) => segment.personnelName)
-                                : shouldShowFallbackHire
-                                  ? Array.from(
-                                      {
-                                        length: Math.max(1, overtimeSplitCount),
-                                      },
-                                      () => "HIRE",
-                                    )
-                                : parseAssignedNames(name);
+                              displaySegmentsForUi.length > 0
+                                ? displaySegmentsForUi.map((segment) => segment.personnelName)
+                                : segmentModeEnabled
+                                  ? getSegmentsForSlot(dateKey, row.unitId, slotIdx)
+                                      .filter((segment) => segment.source !== "auto_hire")
+                                      .map((segment) => segment.personnelName)
+                                      .filter((value) => value.trim().length > 0)
+                                  : shouldShowFallbackHire
+                                    ? Array.from(
+                                        {
+                                          length: Math.max(1, overtimeSplitCount),
+                                        },
+                                        () => "HIRE",
+                                      )
+                                  : parseAssignedNames(name);
                             const isRequired = slotIdx < row.minimumPersonnel;
-                            const isEmpty = !name.trim();
+                            const hasSegmentPersonnel =
+                              segmentModeEnabled &&
+                              storedSegments.some(
+                                (s) =>
+                                  s.source !== "auto_hire" &&
+                                  s.personnelName.trim() &&
+                                  s.personnelName !== "HIRE",
+                              );
+                            const isEmpty =
+                              isRequired && !name.trim() && (!segmentModeEnabled || !hasSegmentPersonnel);
                             const isRed = isRequired && isEmpty;
                             const requiredQualification = isRequired
                               ? row.requiredQualifications[slotIdx]?.trim() ?? ""
@@ -1513,9 +1790,39 @@ export function PersonnelSchedulePage({
                             const isRequiredInvalid =
                               isRequired &&
                               requiredQualification.length > 0 &&
-                              slotNames.length > 0 &&
-                              !targetSlotOvertimeEnabled &&
-                              !(slotBestRank <= requiredRank);
+                              (() => {
+                                if (row.rowType !== "apparatus") {
+                                  return (
+                                    slotNames.length > 0 &&
+                                    !targetSlotOvertimeEnabled &&
+                                    !(slotBestRank <= requiredRank)
+                                  );
+                                }
+                                if (!segmentModeEnabled) {
+                                  return (
+                                    slotNames.length > 0 &&
+                                    !targetSlotOvertimeEnabled &&
+                                    !(slotBestRank <= requiredRank)
+                                  );
+                                }
+                                const segs = storedSegments.filter((s) => s.source !== "auto_hire");
+                                if (segs.length === 0) return false;
+                                for (const seg of segs) {
+                                  if (!seg.personnelName.trim() || seg.personnelName === "HIRE") {
+                                    continue;
+                                  }
+                                  if (seg.overtime) continue;
+                                  const person = personnelByName.get(seg.personnelName);
+                                  const pr = getBestQualificationRankForPerson(
+                                    person,
+                                    qualificationRankMap,
+                                  );
+                                  if (!(Number.isFinite(pr) && pr <= requiredRank)) {
+                                    return true;
+                                  }
+                                }
+                                return false;
+                              })();
                             const isTextRow =
                               row.rowType === "support" &&
                               row.supportValueMode === "text";
@@ -1606,17 +1913,31 @@ export function PersonnelSchedulePage({
                                   </select>
                                 ) : slotNames.length > 0 ? (
                                   <span className="personnel-schedule-slot-name-list">
-                                    {slotNames.map((entry, nameIndex) => {
+                                    {(displaySegmentsForUi.length > 0
+                                      ? displaySegmentsForUi
+                                      : slotNames.map((n) => ({
+                                          id: `legacy-${n}`,
+                                          assigneeType: "personnel" as const,
+                                          personnelName: n,
+                                          startMinutes: 0,
+                                          endMinutes: 0,
+                                          source: "manual" as const,
+                                          overtime: false,
+                                        }))
+                                    ).map((seg, nameIndex) => {
+                                      const entry = seg.personnelName;
                                       const person = personnelByName.get(entry);
+                                      const isHireToken =
+                                        entry === "HIRE" || seg.assigneeType === "hire";
                                       const isOffShiftInOtSlot =
-                                        targetSlotOvertimeEnabled &&
-                                        !personnelMatchesShift(
-                                          person ?? {},
-                                          effectiveShift,
-                                        );
+                                        row.rowType === "apparatus" &&
+                                        Boolean(seg.overtime) &&
+                                        !isHireToken &&
+                                        person !== undefined &&
+                                        !personnelMatchesShift(person, effectiveShift);
                                       return (
                                         <span
-                                          key={`${entry}-${nameIndex}`}
+                                          key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
                                           className={
                                             isOffShiftInOtSlot
                                               ? "personnel-schedule-slot-name-off-shift"
@@ -1668,6 +1989,7 @@ export function PersonnelSchedulePage({
           onUndo={undoLastScheduleChange}
           canUndo={scheduleUndoStack.length > 0}
           allPersonnel={departmentData.personnel}
+          overtimeRosterPersonnel={overtimeRosterPersonnel}
           personnelQualificationOrder={departmentData.personnelQualifications}
           sortPersonnel={comparePersonnelByQualifications}
           getHighestQualificationLabel={getHighestQualificationLabel}
@@ -1675,6 +1997,8 @@ export function PersonnelSchedulePage({
           shiftWindowEndMinutes={shiftWindowEndMinutes}
           getSegmentsForSlot={getSegmentsForSlot}
           setSegmentsForSlot={setSegmentsForSlot}
+          assertApparatusTimeOverlap={assertApparatusTimeOverlap}
+          collapseSegmentModeToSingleSlot={collapseSegmentModeToSingleSlot}
           onClose={() => {
             normalizeDayAssignmentsForRequirements(editDayBlock.dateKey);
             setEditDayBlock(null);

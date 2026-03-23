@@ -391,6 +391,7 @@ interface AdditionalFieldRecord {
   numberOfSlots: number;
   valueMode: AdditionalFieldValueMode;
   personnelOverride: boolean;
+  segmentedModeEnabled: boolean;
 }
 
 interface DepartmentNerisEntityOption {
@@ -652,14 +653,14 @@ const DEFAULT_USER_TABLE_COLUMN_WIDTHS: Record<UserTableColumnId, number> = {
   userType: 180,
 };
 const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
-  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false },
-  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true },
-  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true },
+  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
 ];
 
 function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
@@ -675,8 +676,11 @@ function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
       const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
       const numberOfSlots = Math.max(1, Math.floor(Number((entry as { numberOfSlots?: unknown }).numberOfSlots ?? 1) || 1));
       const personnelOverride = Boolean((entry as { personnelOverride?: unknown }).personnelOverride);
+      const segmentedModeEnabled = Boolean(
+        (entry as { segmentedModeEnabled?: unknown }).segmentedModeEnabled,
+      );
       if (!fieldName) return null;
-      return { id, fieldName, numberOfSlots, valueMode, personnelOverride };
+      return { id, fieldName, numberOfSlots, valueMode, personnelOverride, segmentedModeEnabled };
     })
     .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
 
@@ -6570,6 +6574,7 @@ function DepartmentDetailsPage({
     numberOfSlots: 1,
     valueMode: "personnel",
     personnelOverride: true,
+    segmentedModeEnabled: false,
   });
   const [editingAdditionalFieldIndex, setEditingAdditionalFieldIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -7658,6 +7663,7 @@ function DepartmentDetailsPage({
         numberOfSlots: 1,
         valueMode: "personnel",
         personnelOverride: true,
+        segmentedModeEnabled: false,
       });
     }
   };
@@ -8573,6 +8579,7 @@ function DepartmentDetailsPage({
       numberOfSlots: 1,
       valueMode: "personnel",
       personnelOverride: true,
+      segmentedModeEnabled: false,
     });
   }, []);
 
@@ -8586,6 +8593,8 @@ function DepartmentDetailsPage({
       additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
     const normalizedOverride =
       normalizedMode === "personnel" ? Boolean(additionalFieldDraft.personnelOverride) : false;
+    const normalizedSegmented =
+      normalizedMode === "personnel" ? Boolean(additionalFieldDraft.segmentedModeEnabled) : false;
 
     setAdditionalFieldRecords((previous) => {
       const existingRow =
@@ -8612,6 +8621,7 @@ function DepartmentDetailsPage({
         numberOfSlots: normalizedSlots,
         valueMode: preserveKellyId ? "personnel" : normalizedMode,
         personnelOverride: preserveKellyId ? true : normalizedOverride,
+        segmentedModeEnabled: normalizedSegmented,
       };
       return editingAdditionalFieldIndex === null
         ? [...previous, normalizedRow]
@@ -10309,6 +10319,8 @@ function DepartmentDetailsPage({
                         valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
                         personnelOverride:
                           event.target.value === "text" ? false : previous.personnelOverride,
+                        segmentedModeEnabled:
+                          event.target.value === "text" ? false : previous.segmentedModeEnabled,
                       }))
                     }
                   >
@@ -10330,7 +10342,24 @@ function DepartmentDetailsPage({
                         }))
                       }
                     />
-                    Personnel Override
+                    Apparatus override
+                  </label>
+                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        additionalFieldDraft.valueMode === "personnel" &&
+                        additionalFieldDraft.segmentedModeEnabled
+                      }
+                      disabled={additionalFieldDraft.valueMode !== "personnel"}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          segmentedModeEnabled: event.target.checked,
+                        }))
+                      }
+                    />
+                    Segmented Mode
                   </label>
                   <button
                     type="button"
@@ -10352,14 +10381,15 @@ function DepartmentDetailsPage({
                           <th>Field Name</th>
                           <th style={{ width: "110px" }}>Slots</th>
                           <th style={{ width: "120px" }}>Type</th>
-                          <th style={{ width: "160px" }}>Personnel Override</th>
+                          <th style={{ width: "160px" }}>Apparatus override</th>
+                          <th style={{ width: "140px" }}>Segmented Mode</th>
                           <th style={{ width: "90px" }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {additionalFieldRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="department-apparatus-empty">
+                            <td colSpan={7} className="department-apparatus-empty">
                               No additional fields. Add one above.
                             </td>
                           </tr>
@@ -10410,6 +10440,7 @@ function DepartmentDetailsPage({
                               <td>{entry.numberOfSlots}</td>
                               <td>{entry.valueMode === "text" ? "Text" : "Personnel"}</td>
                               <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
+                              <td>{entry.valueMode === "personnel" && entry.segmentedModeEnabled ? "Yes" : "No"}</td>
                               <td>
                                 <button
                                   type="button"

@@ -4,6 +4,7 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus (2026-03-20)
+- **Personnel Schedule (2026-03-19):** Segmentation + per-segment OT + OT roster filter + duplicate-segment grey-out + calendar/qual fixes committed on this branch. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. Session: `sessions/2026-03-19-schedule-segmentation-ux-session-end.md`.
 - **CAD:** **Receiving** path verified (emails stored). **Next:** parsing / auto-create incident (`#29`, `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`). **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`).
 - **NERIS cross-browser:** Phases 1–3 done. **View Exports Report Status** complete (staging): list shows **Exported** after successful submit, matches queue. See `NERIS_CROSS_BROWSER_FINDINGS.md`.
 - **Incident Detail:** Go-live item #1 verified — edits persist via API across browsers.
@@ -76,7 +77,12 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (Incident lock when NERIS In Review/Exported)
+## Last session (2026-03-19 — Personnel Schedule segmentation)
+- **Scope:** Timed segments per apparatus/support slot, `ScheduleSegment.overtime`, full OT roster (`name`+`shift` in Scheduler Personnel), qualification + calendar behavior for segmented slots, red **×** segment remove, **greyed** shift-dropdown options when a person is already on another segment of the same slot (OT segment uses full roster), drag-drop aligned with same rule, removed visible **“Segment”** label (tooltip + `aria-label` remain).
+- **Files (high level):** `PersonnelSchedulePage.tsx`, `PersonnelScheduleDayBlockModal.tsx`, `scheduleUtils.ts`, `scheduleStorage.ts`, `scheduleDomain.ts`, `App.css`, `App.tsx`; docs: `SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`, `task-2-multitenant-domain-plan.md` (pointer), `seed-and-tenant-reference.md`, `TENANT_ONBOARDING_CHECKLIST.md` (scheduler bullets).
+- **Verify:** `npm run lint`, `npm run build`.
+
+## Previous session (Incident lock when NERIS In Review/Exported)
 - **Edit Incident lock:** When NERIS report is In Review or Exported, Incident Detail form is locked: Assigned Units (and all fields) read-only/disabled; Save and Delete disabled; message shown. File: `App.tsx` (`IncidentCallDetailPage`). User to test: set a report to In Review or Exported, open that incident’s Edit Incident — form and apparatus add/remove should be locked.
 
 ## Previous session (2026-03-12 — handoff only)
@@ -98,6 +104,7 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
+- feat(schedule): segmentation, OT roster, duplicate grey-out, handoff docs (2026-03-19 — `git log -1` for hash)
 - `c210d42` docs(handoff): expand COPY_PASTE_START_PROMPT with full doc list and when-to-read
 - `f757f52` NERIS CORE: aid department dropdown shows name only (export still uses FD ID)
 - `4f65b55` feat(ui): extract plain-text dispatch content from MIME base64 in CAD emails

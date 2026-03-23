@@ -10,6 +10,18 @@ export interface SchedulePersonLike {
   qualifications: string[];
 }
 
+/** True if the person has enough Scheduler Personnel data to appear in OT/full-roster pickers. */
+export function isPersonnelSchedulerRecordComplete(person: {
+  name?: string;
+  shift?: string;
+}): boolean {
+  const name = String(person.name ?? "").trim();
+  if (!name) return false;
+  const shift = String(person.shift ?? "").trim();
+  if (!shift) return false;
+  return true;
+}
+
 export function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }

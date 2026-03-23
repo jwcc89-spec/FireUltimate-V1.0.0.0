@@ -34,6 +34,18 @@ Use this command to print all tenants with domains and users:
 ```bash
 node --env-file=.env.server --input-type=module -e "import { PrismaPg } from '@prisma/adapter-pg'; import pkg from '@prisma/client'; import { Pool } from 'pg'; const { PrismaClient } = pkg; const prisma=new PrismaClient({ adapter:new PrismaPg(new Pool({ connectionString: process.env.DATABASE_URL }))}); const tenants=await prisma.tenant.findMany({ select:{ slug:true,name:true,status:true, domains:{ select:{ hostname:true,isPrimary:true }}, users:{ select:{ username:true,role:true }} }, orderBy:{ slug:'asc' }}); console.log(JSON.stringify(tenants,null,2)); await prisma.\$disconnect();"
 ```
+Use this command to print all tenants with domains (No Users)
+
+```bash
+node --env-file=.env.server --input-type=module -e "import { PrismaPg } from '@prisma/adapter-pg'; import pkg from '@prisma/client'; import { Pool } from 'pg'; const { PrismaClient } = pkg; const prisma=new PrismaClient({ adapter:new PrismaPg(new Pool({ connectionString: process.env.DATABASE_URL }))}); const tenants=await prisma.tenant.findMany({ select:{ slug:true,name:true,status:true, domains:{ select:{ hostname:true,isPrimary:true }} }, orderBy:{ slug:'asc' }}); console.log(JSON.stringify(tenants,null,2)); await prisma.\$disconnect();"
+
+```
+
+Use this command to print all tenants in table view
+
+```bash
+node --env-file=.env.server --input-type=module -e "import { PrismaPg } from '@prisma/adapter-pg'; import pkg from '@prisma/client'; import { Pool } from 'pg'; const { PrismaClient } = pkg; const prisma=new PrismaClient({ adapter:new PrismaPg(new Pool({ connectionString: process.env.DATABASE_URL }))}); const tenants=await prisma.tenant.findMany({ select:{ id:true,slug:true,name:true,status:true,createdAt:true,updatedAt:true }, orderBy:{ slug:'asc' }}); console.log(JSON.stringify(tenants,null,2)); await prisma.\$disconnect();"
+```
 
 ## Create a second local tenant
 
