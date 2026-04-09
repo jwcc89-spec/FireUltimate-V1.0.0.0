@@ -2709,6 +2709,7 @@ app.get("/api/schedule-assignments", async (request, response) => {
 
     const assignments = {};
     const overtimeSplit = {};
+    const slotSegments = {};
 
     for (const row of rows) {
       const storageKey = `${row.shiftType}::${row.dateKey}`;
@@ -2726,15 +2727,21 @@ app.get("/api/schedule-assignments", async (request, response) => {
         payload.overtimeSplit && typeof payload.overtimeSplit === "object"
           ? payload.overtimeSplit
           : {};
+      const rowSlotSegments =
+        payload.slotSegments && typeof payload.slotSegments === "object"
+          ? payload.slotSegments
+          : {};
 
       assignments[storageKey] = rowAssignments;
       overtimeSplit[storageKey] = rowOvertime;
+      slotSegments[storageKey] = rowSlotSegments;
     }
 
     response.json({
       ok: true,
       assignments,
       overtimeSplit,
+      slotSegments,
     });
   } catch (error) {
     response.status(500).json({
@@ -2760,6 +2767,8 @@ app.post("/api/schedule-assignments", async (request, response) => {
       body.assignments && typeof body.assignments === "object" ? body.assignments : {};
     const overtimeInput =
       body.overtimeSplit && typeof body.overtimeSplit === "object" ? body.overtimeSplit : {};
+    const slotSegmentsInput =
+      body.slotSegments && typeof body.slotSegments === "object" ? body.slotSegments : {};
 
     const parsedRows = [];
     for (const [storageKey, assignmentValue] of Object.entries(assignmentsInput)) {
@@ -2775,6 +2784,10 @@ app.post("/api/schedule-assignments", async (request, response) => {
       }
       const overtimeValue =
         overtimeInput && typeof overtimeInput === "object" ? overtimeInput[key] : {};
+      const slotSegmentsValue =
+        slotSegmentsInput && typeof slotSegmentsInput === "object"
+          ? slotSegmentsInput[key]
+          : {};
 
       parsedRows.push({
         shiftType,
@@ -2784,6 +2797,10 @@ app.post("/api/schedule-assignments", async (request, response) => {
             assignmentValue && typeof assignmentValue === "object" ? assignmentValue : {},
           overtimeSplit:
             overtimeValue && typeof overtimeValue === "object" ? overtimeValue : {},
+          slotSegments:
+            slotSegmentsValue && typeof slotSegmentsValue === "object"
+              ? slotSegmentsValue
+              : {},
         },
       });
     }

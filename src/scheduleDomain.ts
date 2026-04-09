@@ -11,7 +11,9 @@ export interface PersonnelScheduleRow {
   requiredQualifications: string[];
   stationName?: string;
   supportValueMode?: ScheduleSupportValueMode;
+  /** When true (UI: "Apparatus override"), support row removes/conflicts with apparatus coverage for that person. */
   personnelOverride?: boolean;
+  supportSegmentedMode?: boolean;
 }
 
 export interface PersonnelScheduleData {
@@ -35,7 +37,9 @@ export interface PersonnelScheduleData {
     fieldName: string;
     numberOfSlots: number;
     valueMode: ScheduleSupportValueMode;
+    /** Stored as personnelOverride; admin UI label: Apparatus override. */
     personnelOverride: boolean;
+    segmentedModeEnabled: boolean;
   }>;
   standardOvertimeSlot: number;
   personnel: Array<{
@@ -58,6 +62,7 @@ export interface PersonnelScheduleData {
     shiftDuration: number;
     recurrence: string;
     recurrenceCustomValue?: string;
+    startTime?: string;
   }>;
 }
 
@@ -97,7 +102,13 @@ export function loadPersonnelScheduleData({
     ? (d.kellyRotations as PersonnelScheduleData["kellyRotations"])
     : [];
   const shiftEntries = Array.isArray(d.shiftInformationEntries)
-    ? (d.shiftInformationEntries as PersonnelScheduleData["shiftEntries"])
+    ? (d.shiftInformationEntries as Array<Record<string, unknown>>).map((entry) => ({
+        shiftType: String(entry.shiftType ?? ""),
+        shiftDuration: Number(entry.shiftDuration ?? 0) || 0,
+        recurrence: String(entry.recurrence ?? "Daily"),
+        recurrenceCustomValue: String(entry.recurrenceCustomValue ?? ""),
+        startTime: String(entry.startTime ?? ""),
+      }))
     : [];
   return {
     stations,

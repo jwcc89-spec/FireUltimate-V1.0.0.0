@@ -10,6 +10,18 @@ export interface SchedulePersonLike {
   qualifications: string[];
 }
 
+/** True if the person has enough Scheduler Personnel data to appear in OT/full-roster pickers. */
+export function isPersonnelSchedulerRecordComplete(person: {
+  name?: string;
+  shift?: string;
+}): boolean {
+  const name = String(person.name ?? "").trim();
+  if (!name) return false;
+  const shift = String(person.shift ?? "").trim();
+  if (!shift) return false;
+  return true;
+}
+
 export function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
@@ -82,10 +94,21 @@ export function getBestQualificationRankForPerson(
 export function formatSchedulePersonnelDisplayName(name: string): string {
   const trimmed = name.trim();
   if (!trimmed) return "";
+  if (trimmed.toUpperCase() === "HIRE") return "HIRE";
   const parts = trimmed.split(/\s+/).filter(Boolean);
   const initial = parts[0]?.charAt(0).toUpperCase() ?? "";
   const lastName = parts.length > 1 ? parts[parts.length - 1]! : parts[0]!;
-  return initial ? `${initial}. ${lastName}` : lastName;
+  return initial ? `${initial}.${lastName}` : lastName;
+}
+
+export function formatScheduleSegmentToken(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  if (trimmed.toUpperCase() === "HIRE") return "HIRE";
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const firstName = parts[0] ?? "";
+  const lastName = parts.length > 1 ? parts[parts.length - 1]! : firstName;
+  return `${lastName.slice(0, 3)}${firstName.slice(0, 1)}`.toUpperCase();
 }
 
 export function buildQualificationRankMap(qualificationOrder: string[]): Map<string, number> {

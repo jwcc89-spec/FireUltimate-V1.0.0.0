@@ -307,6 +307,7 @@ interface ShiftInformationEntry {
   shiftDuration: number;
   recurrence: ShiftRecurrencePreset;
   recurrenceCustomValue: string;
+  startTime: string;
   location: string;
 }
 
@@ -390,6 +391,7 @@ interface AdditionalFieldRecord {
   numberOfSlots: number;
   valueMode: AdditionalFieldValueMode;
   personnelOverride: boolean;
+  segmentedModeEnabled: boolean;
 }
 
 interface DepartmentNerisEntityOption {
@@ -651,14 +653,14 @@ const DEFAULT_USER_TABLE_COLUMN_WIDTHS: Record<UserTableColumnId, number> = {
   userType: 180,
 };
 const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
-  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false },
-  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true },
-  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true },
-  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true },
+  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
 ];
 
 function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
@@ -674,8 +676,11 @@ function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
       const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
       const numberOfSlots = Math.max(1, Math.floor(Number((entry as { numberOfSlots?: unknown }).numberOfSlots ?? 1) || 1));
       const personnelOverride = Boolean((entry as { personnelOverride?: unknown }).personnelOverride);
+      const segmentedModeEnabled = Boolean(
+        (entry as { segmentedModeEnabled?: unknown }).segmentedModeEnabled,
+      );
       if (!fieldName) return null;
-      return { id, fieldName, numberOfSlots, valueMode, personnelOverride };
+      return { id, fieldName, numberOfSlots, valueMode, personnelOverride, segmentedModeEnabled };
     })
     .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
 
@@ -5112,6 +5117,251 @@ function PersonnelSchedulePage() {
   );
 }
 
+type TradeStatus =
+  | "requested"
+  | "counterpart_accepted"
+  | "counterpart_denied"
+  | "captain_approved"
+  | "captain_denied";
+
+interface TradeRequest {
+  id: string;
+  requester: string;
+  counterpart: string;
+  tradeDate: string;
+  receiveDate: string;
+  startTime: string;
+  endTime: string;
+  reason: string;
+  status: TradeStatus;
+  denialReason?: string;
+}
+
+const TRADE_REQUESTS_STORAGE_KEY = "fire-ultimate-trade-requests";
+
+function loadTradeRequests(): TradeRequest[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(TRADE_REQUESTS_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as TradeRequest[];
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTradeRequests(data: TradeRequest[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(TRADE_REQUESTS_STORAGE_KEY, JSON.stringify(data));
+}
+
+function PersonnelTradesPage() {
+  const session = readSession();
+  const currentUser = session.username || "unknown";
+  const [requests, setRequests] = useState<TradeRequest[]>(() => loadTradeRequests());
+  const [draft, setDraft] = useState({
+    counterpart: "",
+    tradeDate: "",
+    receiveDate: "",
+    startTime: "07:00",
+    endTime: "07:00",
+    reason: "",
+  });
+  const [denyReason, setDenyReason] = useState("");
+
+  const addRequest = () => {
+    if (!draft.counterpart.trim() || !draft.tradeDate || !draft.receiveDate) return;
+    const next: TradeRequest = {
+      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+      requester: currentUser,
+      counterpart: draft.counterpart.trim(),
+      tradeDate: draft.tradeDate,
+      receiveDate: draft.receiveDate,
+      startTime: draft.startTime,
+      endTime: draft.endTime,
+      reason: draft.reason.trim(),
+      status: "requested",
+    };
+    const updated = [next, ...requests];
+    setRequests(updated);
+    saveTradeRequests(updated);
+  };
+
+  const updateStatus = (id: string, status: TradeStatus, denialReasonValue = "") => {
+    const updated = requests.map((request) =>
+      request.id === id
+        ? {
+            ...request,
+            status,
+            denialReason:
+              status === "counterpart_denied" || status === "captain_denied"
+                ? denialReasonValue.trim()
+                : undefined,
+          }
+        : request,
+    );
+    setRequests(updated);
+    saveTradeRequests(updated);
+  };
+
+  return (
+    <section className="page-section">
+      <header className="page-header">
+        <h1>Trades</h1>
+        <p>Create shift trade requests. Counterpart accepts/denies, then either captain can approve.</p>
+      </header>
+      <article className="panel">
+        <h3>New Trade Request</h3>
+        <div className="department-edit-grid">
+          <label>
+            Counterpart Username
+            <input
+              type="text"
+              value={draft.counterpart}
+              onChange={(event) =>
+                setDraft((prev) => ({ ...prev, counterpart: event.target.value }))
+              }
+            />
+          </label>
+          <label>
+            Your Assigned Date
+            <input
+              type="date"
+              value={draft.tradeDate}
+              onChange={(event) => setDraft((prev) => ({ ...prev, tradeDate: event.target.value }))}
+            />
+          </label>
+          <label>
+            Date You Work Instead
+            <input
+              type="date"
+              value={draft.receiveDate}
+              onChange={(event) => setDraft((prev) => ({ ...prev, receiveDate: event.target.value }))}
+            />
+          </label>
+          <label>
+            Start Time
+            <input
+              type="time"
+              step={900}
+              value={draft.startTime}
+              onChange={(event) => setDraft((prev) => ({ ...prev, startTime: event.target.value }))}
+            />
+          </label>
+          <label>
+            End Time
+            <input
+              type="time"
+              step={900}
+              value={draft.endTime}
+              onChange={(event) => setDraft((prev) => ({ ...prev, endTime: event.target.value }))}
+            />
+          </label>
+          <label>
+            Reason
+            <input
+              type="text"
+              value={draft.reason}
+              onChange={(event) => setDraft((prev) => ({ ...prev, reason: event.target.value }))}
+            />
+          </label>
+        </div>
+        <button type="button" className="primary-button compact-button" onClick={addRequest}>
+          Submit Trade Request
+        </button>
+      </article>
+      <article className="panel">
+        <h3>Active Requests</h3>
+        {requests.length === 0 ? (
+          <p className="field-hint">No trades yet.</p>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>Requester</th>
+                  <th>Counterpart</th>
+                  <th>Window</th>
+                  <th>Status</th>
+                  <th>Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                {requests.map((request) => (
+                  <tr key={request.id}>
+                    <td>{request.requester}</td>
+                    <td>{request.counterpart}</td>
+                    <td>
+                      {request.tradeDate} ({request.startTime}-{request.endTime}) {"->"}{" "}
+                      {request.receiveDate}
+                    </td>
+                    <td>{request.status}</td>
+                    <td>
+                      {request.status === "requested" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => updateStatus(request.id, "counterpart_accepted")}
+                          >
+                            Counterpart Accept
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => {
+                              if (!denyReason.trim()) return;
+                              updateStatus(request.id, "counterpart_denied", denyReason);
+                            }}
+                          >
+                            Counterpart Deny
+                          </button>
+                        </>
+                      ) : request.status === "counterpart_accepted" ? (
+                        <>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => updateStatus(request.id, "captain_approved")}
+                          >
+                            Captain Approve
+                          </button>
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => {
+                              if (!denyReason.trim()) return;
+                              updateStatus(request.id, "captain_denied", denyReason);
+                            }}
+                          >
+                            Captain Deny
+                          </button>
+                        </>
+                      ) : (
+                        request.denialReason || "Closed"
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+        <label style={{ marginTop: "0.75rem", display: "block" }}>
+          Denial Reason (required for deny)
+          <input
+            type="text"
+            value={denyReason}
+            onChange={(event) => setDenyReason(event.target.value)}
+            placeholder="Enter reason"
+          />
+        </label>
+      </article>
+    </section>
+  );
+}
+
 function useIsDemoTenant(): boolean {
   const [isDemoTenant, setIsDemoTenant] = useState(() =>
     window.location.hostname.toLowerCase().includes("demo"),
@@ -6292,6 +6542,7 @@ function DepartmentDetailsPage({
     shiftDuration: 0,
     recurrence: "Daily",
     recurrenceCustomValue: "",
+    startTime: "",
     location: "",
   });
   const [personnelDraft, setPersonnelDraft] = useState<DepartmentPersonnelRecord>({
@@ -6323,6 +6574,7 @@ function DepartmentDetailsPage({
     numberOfSlots: 1,
     valueMode: "personnel",
     personnelOverride: true,
+    segmentedModeEnabled: false,
   });
   const [editingAdditionalFieldIndex, setEditingAdditionalFieldIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -6714,7 +6966,7 @@ function DepartmentDetailsPage({
           entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
             ? entry.recurrenceCustomValue
             : entry.recurrence;
-        return `${entry.shiftType} | ${entry.shiftDuration} | ${recurrenceLabel}${
+        return `${entry.shiftType} | ${entry.startTime || "--:--"} | ${entry.shiftDuration} | ${recurrenceLabel}${
           entry.location.trim().length > 0 ? ` | ${entry.location}` : ""
         }`;
       }),
@@ -7411,6 +7663,7 @@ function DepartmentDetailsPage({
         numberOfSlots: 1,
         valueMode: "personnel",
         personnelOverride: true,
+        segmentedModeEnabled: false,
       });
     }
   };
@@ -7675,6 +7928,20 @@ function DepartmentDetailsPage({
     setIsEntryFormOpen(false);
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
+  };
+
+  const deleteSchedulerApparatusFormEntry = () => {
+    if (editingIndex === null || editingIndex < 0) {
+      return;
+    }
+    setSchedulerApparatusRecords((previous) =>
+      previous.filter((_, index) => index !== editingIndex),
+    );
+    setIsEntryFormOpen(false);
+    setEditingIndex(null);
+    setSelectedSingleIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Scheduler apparatus entry deleted.");
   };
 
   const importSchedulerApparatusFromDepartment = () => {
@@ -8239,6 +8506,9 @@ function DepartmentDetailsPage({
     if (!shiftDraft.shiftType.trim() || shiftDraft.shiftDuration <= 0) {
       return;
     }
+    if (!/^\d{2}:\d{2}$/.test(shiftDraft.startTime.trim())) {
+      return;
+    }
     if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
       return;
     }
@@ -8247,6 +8517,7 @@ function DepartmentDetailsPage({
       shiftType: shiftDraft.shiftType.trim(),
       shiftDuration: shiftDraft.shiftDuration,
       recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
+      startTime: shiftDraft.startTime.trim(),
       location: shiftDraft.location.trim(),
     };
     setShiftInformationEntries((previous) =>
@@ -8259,6 +8530,7 @@ function DepartmentDetailsPage({
       shiftDuration: 0,
       recurrence: "Daily",
       recurrenceCustomValue: "",
+      startTime: "",
       location: "",
     });
     setEditingIndex(null);
@@ -8307,6 +8579,7 @@ function DepartmentDetailsPage({
       numberOfSlots: 1,
       valueMode: "personnel",
       personnelOverride: true,
+      segmentedModeEnabled: false,
     });
   }, []);
 
@@ -8320,6 +8593,8 @@ function DepartmentDetailsPage({
       additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
     const normalizedOverride =
       normalizedMode === "personnel" ? Boolean(additionalFieldDraft.personnelOverride) : false;
+    const normalizedSegmented =
+      normalizedMode === "personnel" ? Boolean(additionalFieldDraft.segmentedModeEnabled) : false;
 
     setAdditionalFieldRecords((previous) => {
       const existingRow =
@@ -8346,6 +8621,7 @@ function DepartmentDetailsPage({
         numberOfSlots: normalizedSlots,
         valueMode: preserveKellyId ? "personnel" : normalizedMode,
         personnelOverride: preserveKellyId ? true : normalizedOverride,
+        segmentedModeEnabled: normalizedSegmented,
       };
       return editingAdditionalFieldIndex === null
         ? [...previous, normalizedRow]
@@ -9850,6 +10126,7 @@ function DepartmentDetailsPage({
                         shiftDuration: 0,
                         recurrence: "Daily",
                         recurrenceCustomValue: "",
+                        startTime: "",
                         location: "",
                       });
                     }}
@@ -9865,6 +10142,7 @@ function DepartmentDetailsPage({
                           <th>Shift Type</th>
                           <th>
                             <div className="department-shift-grid-line department-shift-grid-header">
+                              <span>Start Time</span>
                               <span>Duration</span>
                               <span>Recurrence</span>
                               <span>Location</span>
@@ -9894,14 +10172,20 @@ function DepartmentDetailsPage({
                                 onClick={() => {
                                   setSelectedSingleIndex(index);
                                   setEditingIndex(index);
-                                  setShiftDraft(entry);
+                                  setShiftDraft({
+                                    ...entry,
+                                    startTime: entry.startTime || "",
+                                  });
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
                                     setSelectedSingleIndex(index);
                                     setEditingIndex(index);
-                                    setShiftDraft(entry);
+                                    setShiftDraft({
+                                      ...entry,
+                                      startTime: entry.startTime || "",
+                                    });
                                   }
                                 }}
                               >
@@ -9911,6 +10195,9 @@ function DepartmentDetailsPage({
                                 <td>
                                   <div className="dispatch-info-cell">
                                     <div className="department-shift-grid-line">
+                                      <span className="department-apparatus-field">
+                                        {entry.startTime || "—"}
+                                      </span>
                                       <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
                                       <span className="department-apparatus-field">{recurrenceLabel}</span>
                                       <span className="department-apparatus-field">{entry.location || "—"}</span>
@@ -9929,6 +10216,20 @@ function DepartmentDetailsPage({
                   <label>
                     Shift Type
                     <input type="text" value={shiftDraft.shiftType} onChange={(event) => setShiftDraft((previous) => ({ ...previous, shiftType: event.target.value }))} />
+                  </label>
+                  <label>
+                    Start Time (24-hour)
+                    <input
+                      type="time"
+                      step={900}
+                      value={shiftDraft.startTime}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          startTime: event.target.value,
+                        }))
+                      }
+                    />
                   </label>
                   <label>
                     Shift Duration
@@ -10018,6 +10319,8 @@ function DepartmentDetailsPage({
                         valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
                         personnelOverride:
                           event.target.value === "text" ? false : previous.personnelOverride,
+                        segmentedModeEnabled:
+                          event.target.value === "text" ? false : previous.segmentedModeEnabled,
                       }))
                     }
                   >
@@ -10039,7 +10342,24 @@ function DepartmentDetailsPage({
                         }))
                       }
                     />
-                    Personnel Override
+                    Apparatus override
+                  </label>
+                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        additionalFieldDraft.valueMode === "personnel" &&
+                        additionalFieldDraft.segmentedModeEnabled
+                      }
+                      disabled={additionalFieldDraft.valueMode !== "personnel"}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          segmentedModeEnabled: event.target.checked,
+                        }))
+                      }
+                    />
+                    Segmented Mode
                   </label>
                   <button
                     type="button"
@@ -10061,14 +10381,15 @@ function DepartmentDetailsPage({
                           <th>Field Name</th>
                           <th style={{ width: "110px" }}>Slots</th>
                           <th style={{ width: "120px" }}>Type</th>
-                          <th style={{ width: "160px" }}>Personnel Override</th>
+                          <th style={{ width: "160px" }}>Apparatus override</th>
+                          <th style={{ width: "140px" }}>Segmented Mode</th>
                           <th style={{ width: "90px" }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {additionalFieldRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="department-apparatus-empty">
+                            <td colSpan={7} className="department-apparatus-empty">
                               No additional fields. Add one above.
                             </td>
                           </tr>
@@ -10119,6 +10440,7 @@ function DepartmentDetailsPage({
                               <td>{entry.numberOfSlots}</td>
                               <td>{entry.valueMode === "text" ? "Text" : "Personnel"}</td>
                               <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
+                              <td>{entry.valueMode === "personnel" && entry.segmentedModeEnabled ? "Yes" : "No"}</td>
                               <td>
                                 <button
                                   type="button"
@@ -11292,6 +11614,15 @@ function DepartmentDetailsPage({
               >
                 Save
               </button>
+              {isSchedulerApparatusEditor && editingIndex !== null && editingIndex >= 0 ? (
+                <button
+                  type="button"
+                  className="secondary-button compact-button"
+                  onClick={deleteSchedulerApparatusFormEntry}
+                >
+                  Delete
+                </button>
+              ) : null}
             </div>
           </article>
         </div>
@@ -12535,6 +12866,8 @@ function RouteResolver({
     } else {
       content = <PersonnelSchedulePage />;
     }
+  } else if (path === "/personnel/trades") {
+    content = <PersonnelTradesPage />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/customization") {
