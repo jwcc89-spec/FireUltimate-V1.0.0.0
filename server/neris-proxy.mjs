@@ -1923,6 +1923,281 @@ app.get("/api/cad/emails", async (request, response) => {
   }
 });
 
+const CAD_ALLOWLIST_PATTERN_TYPES = new Set(["domain_suffix", "exact_email", "regex"]);
+const CAD_ALLOWLIST_MAX_ENTRIES = 200;
+const CAD_ALLOWLIST_PATTERN_MAX_LEN = 500;
+
+function defaultCadParsingConfigApi() {
+  return {
+    enableIncidentCreation: false,
+    messageRules: [],
+    incidentRules: [],
+    incidentFieldMap: {},
+    incidentNumberExtract: null,
+  };
+}
+
+function cadParsingRowToApi(row) {
+  const msg = row.messageRulesJson;
+  const inc = row.incidentRulesJson;
+  const map = row.incidentFieldMapJson;
+  const ext = row.incidentNumberExtractJson;
+  return {
+    enableIncidentCreation: Boolean(row.enableIncidentCreation),
+    messageRules: Array.isArray(msg) ? msg : [],
+    incidentRules: Array.isArray(inc) ? inc : [],
+    incidentFieldMap: map && typeof map === "object" && !Array.isArray(map) ? map : {},
+    incidentNumberExtract:
+      ext !== null && ext !== undefined && typeof ext === "object" && !Array.isArray(ext)
+        ? ext
+        : null,
+  };
+}
+
+// ----- GET/PATCH /api/cad/parsing-config (tenant-scoped; Dispatch Parsing admin) -----
+app.get("/api/cad/parsing-config", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const row = await prisma.cadParsingSettings.findUnique({
+      where: { tenantId },
+    });
+    if (!row) {
+      response.json({ ok: true, data: defaultCadParsingConfigApi() });
+      return;
+    }
+    response.json({ ok: true, data: cadParsingRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to load CAD parsing config.",
+    });
+  }
+});
+
+app.patch("/api/cad/parsing-config", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const existing = await prisma.cadParsingSettings.findUnique({
+      where: { tenantId },
+    });
+    const base = existing ? cadParsingRowToApi(existing) : defaultCadParsingConfigApi();
+
+    let enableIncidentCreation = base.enableIncidentCreation;
+    if (typeof body.enableIncidentCreation === "boolean") {
+      enableIncidentCreation = body.enableIncidentCreation;
+    }
+
+    let messageRules = base.messageRules;
+    if (body.messageRules !== undefined) {
+      if (!Array.isArray(body.messageRules)) {
+        response.status(400).json({ ok: false, message: "messageRules must be an array." });
+        return;
+      }
+      messageRules = body.messageRules;
+    }
+
+    let incidentRules = base.incidentRules;
+    if (body.incidentRules !== undefined) {
+      if (!Array.isArray(body.incidentRules)) {
+        response.status(400).json({ ok: false, message: "incidentRules must be an array." });
+        return;
+      }
+      incidentRules = body.incidentRules;
+    }
+
+    let incidentFieldMap = base.incidentFieldMap;
+    if (body.incidentFieldMap !== undefined) {
+      if (
+        typeof body.incidentFieldMap !== "object" ||
+        body.incidentFieldMap === null ||
+        Array.isArray(body.incidentFieldMap)
+      ) {
+        response.status(400).json({ ok: false, message: "incidentFieldMap must be an object." });
+        return;
+      }
+      incidentFieldMap = body.incidentFieldMap;
+    }
+
+    let incidentNumberExtract = base.incidentNumberExtract;
+    if (Object.prototype.hasOwnProperty.call(body, "incidentNumberExtract")) {
+      if (body.incidentNumberExtract === null) {
+        incidentNumberExtract = null;
+      } else if (
+        typeof body.incidentNumberExtract === "object" &&
+        !Array.isArray(body.incidentNumberExtract)
+      ) {
+        incidentNumberExtract = body.incidentNumberExtract;
+      } else {
+        response.status(400).json({
+          ok: false,
+          message: "incidentNumberExtract must be an object or null.",
+        });
+        return;
+      }
+    }
+
+    await prisma.cadParsingSettings.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        enableIncidentCreation,
+        messageRulesJson: messageRules,
+        incidentRulesJson: incidentRules,
+        incidentFieldMapJson: incidentFieldMap,
+        incidentNumberExtractJson: incidentNumberExtract,
+      },
+      update: {
+        enableIncidentCreation,
+        messageRulesJson: messageRules,
+        incidentRulesJson: incidentRules,
+        incidentFieldMapJson: incidentFieldMap,
+        incidentNumberExtractJson: incidentNumberExtract,
+      },
+    });
+
+    response.json({
+      ok: true,
+      data: {
+        enableIncidentCreation,
+        messageRules,
+        incidentRules,
+        incidentFieldMap,
+        incidentNumberExtract,
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to save CAD parsing config.",
+    });
+  }
+});
+
+// ----- GET/PATCH /api/cad/allowlist (tenant-scoped; Batch D will enforce on ingest) -----
+app.get("/api/cad/allowlist", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.cadEmailAllowlistEntry.findMany({
+      where: { tenantId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    const entries = rows.map((r) => ({
+      id: r.id,
+      pattern: r.pattern,
+      patternType: r.patternType,
+      enabled: r.enabled,
+      sortOrder: r.sortOrder,
+    }));
+    response.json({ ok: true, data: { entries } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to load CAD allowlist.",
+    });
+  }
+});
+
+app.patch("/api/cad/allowlist", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    if (!Array.isArray(body.entries)) {
+      response.status(400).json({ ok: false, message: "Body must include entries array." });
+      return;
+    }
+    if (body.entries.length > CAD_ALLOWLIST_MAX_ENTRIES) {
+      response.status(400).json({
+        ok: false,
+        message: `At most ${CAD_ALLOWLIST_MAX_ENTRIES} allowlist entries allowed.`,
+      });
+      return;
+    }
+
+    const normalized = [];
+    for (let i = 0; i < body.entries.length; i++) {
+      const e = body.entries[i];
+      if (!e || typeof e !== "object") {
+        response.status(400).json({ ok: false, message: `Invalid entry at index ${i}.` });
+        return;
+      }
+      const pattern = trimValue(typeof e.pattern === "string" ? e.pattern : "");
+      if (!pattern) {
+        response.status(400).json({ ok: false, message: `Empty pattern at index ${i}.` });
+        return;
+      }
+      if (pattern.length > CAD_ALLOWLIST_PATTERN_MAX_LEN) {
+        response.status(400).json({
+          ok: false,
+          message: `Pattern at index ${i} exceeds ${CAD_ALLOWLIST_PATTERN_MAX_LEN} characters.`,
+        });
+        return;
+      }
+      const patternType = trimValue(
+        typeof e.patternType === "string" ? e.patternType : "domain_suffix",
+      );
+      if (!CAD_ALLOWLIST_PATTERN_TYPES.has(patternType)) {
+        response.status(400).json({
+          ok: false,
+          message: `Invalid patternType at index ${i}. Use domain_suffix, exact_email, or regex.`,
+        });
+        return;
+      }
+      const enabled = typeof e.enabled === "boolean" ? e.enabled : true;
+      const sortOrder =
+        typeof e.sortOrder === "number" && Number.isFinite(e.sortOrder) ? Math.trunc(e.sortOrder) : i;
+      normalized.push({ pattern, patternType, enabled, sortOrder });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      await tx.cadEmailAllowlistEntry.deleteMany({ where: { tenantId } });
+      const out = [];
+      for (const e of normalized) {
+        const row = await tx.cadEmailAllowlistEntry.create({
+          data: {
+            tenantId,
+            pattern: e.pattern,
+            patternType: e.patternType,
+            enabled: e.enabled,
+            sortOrder: e.sortOrder,
+          },
+        });
+        out.push({
+          id: row.id,
+          pattern: row.pattern,
+          patternType: row.patternType,
+          enabled: row.enabled,
+          sortOrder: row.sortOrder,
+        });
+      }
+      return out;
+    });
+
+    response.json({ ok: true, data: { entries: created } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Failed to save CAD allowlist.",
+    });
+  }
+});
+
 // ----- /api/incidents (tenant-scoped; Incident table) -----
 function incidentRowToApi(row) {
   if (!row) return null;

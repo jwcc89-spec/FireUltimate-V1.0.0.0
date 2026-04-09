@@ -18,9 +18,11 @@ model Tenant {
   users              User[]
   departments        DepartmentDetails[]
   incidents          Incident[]
-  cadEmails          CadEmailIngest[]
-  nerisExportHistory NerisExportHistory[]
-  nerisDrafts        NerisDraft[]
+  cadEmails               CadEmailIngest[]
+  cadParsingSettings      CadParsingSettings?
+  cadEmailAllowlist       CadEmailAllowlistEntry[]
+  nerisExportHistory      NerisExportHistory[]
+  nerisDrafts             NerisDraft[]
 }
 
 model TenantDomain {
@@ -120,6 +122,40 @@ model CadEmailIngest {
 
   @@index([tenantId])
   @@index([createdAt])
+}
+
+/// Per-tenant CAD dispatch parsing config (message + incident rule JSON; Batch C+).
+model CadParsingSettings {
+  id                         String   @id @default(cuid())
+  tenantId                   String   @unique
+  enableIncidentCreation     Boolean  @default(false)
+  messageRulesJson           Json     @default("[]")
+  incidentRulesJson          Json     @default("[]")
+  incidentFieldMapJson       Json     @default("{}")
+  incidentNumberExtractJson  Json?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Per-tenant allowed sender patterns for CAD email (enforced in Batch D).
+model CadEmailAllowlistEntry {
+  id          String   @id @default(cuid())
+  tenantId    String
+  pattern     String
+  patternType String   @default("domain_suffix")
+  enabled     Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, enabled])
 }
 
 model NerisExportHistory {

@@ -210,8 +210,21 @@ From **project root** (not inside cad-email-ingest-worker):
 node --env-file=.env.server -e "require('child_process').execSync('npx prisma migrate deploy', {stdio:'inherit', env: process.env})"
 ```
 
-- Success: you see “Applying migration `20260312200000_add_cad_email_ingest`” and “All migrations have been successfully applied.”
+- Success: you see migrations apply (including **`20260312200000_add_cad_email_ingest`** when not yet applied) and **“All migrations have been successfully applied.”**
 - **datasource.url property is required** → .env.server missing or DATABASE_URL empty. **Can’t reach database server** → check DATABASE_URL and network.
+
+### B6.5 — CAD parsing config + allowlist tables (after Batch C in code)
+
+The same **`prisma migrate deploy`** command applies **`20260409140000_add_cad_parsing_settings_and_allowlist`**, which creates **`CadParsingSettings`** and **`CadEmailAllowlistEntry`**. Run deploy against **each** environment’s database (staging Neon, production Neon, etc.) whenever you deploy an API build that includes those routes.
+
+**Tenant-scoped HTTP APIs** (browser on tenant host, `credentials: include`):
+
+- **`GET /api/cad/parsing-config`** — parsing flags + rule JSON placeholders (used by future Dispatch Parsing UI).
+- **`PATCH /api/cad/parsing-config`** — partial update; merges into existing row or creates one.
+- **`GET /api/cad/allowlist`** — list allowlist entries.
+- **`PATCH /api/cad/allowlist`** — body `{ "entries": [ { "pattern", "patternType?", "enabled?", "sortOrder?" } ] }` replaces **all** rows for the tenant.
+
+**Allowlist enforcement** on ingest is **not** active until **Batch D**; see **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
 
 ---
 

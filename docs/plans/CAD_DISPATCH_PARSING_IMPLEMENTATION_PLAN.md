@@ -1,7 +1,7 @@
 # CAD dispatch parsing — implementation plan (master)
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress (Batches A–B done; **next:** Batch C/D for Phase **2b** allowlist + parsing persistence)  
+**Status:** In progress (Batch C done — DB + GET/PATCH APIs; **next:** Batch D enforce allowlist on ingest)  
 **Related:** Product goals and rule types — `docs/plans/CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md`
 
@@ -61,29 +61,29 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 - ~~When **`NODE_ENV=production`**, API requires **`CAD_INGEST_SECRET`**; if unset → **503**; wrong/missing header → **401**.~~
 - ~~Documented in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**, **Worker README**, **`.env.server.example`**, **`TENANT_ONBOARDING_CHECKLIST.md`**.~~
 
-### 2b — Allowlist / spam filtering *(not started — next after Batch B)*
+### 2b — Allowlist / spam filtering *(partial — storage in Batch C; enforcement in Batch D)*
 
-**Is this the next thing to build?** **Yes, in roadmap order:** implementation is planned as **Batch C** (persistence: tables or config storage that can hold per-tenant allowlists) and **Batch D** (enforce allowlist on ingest—API and optionally Worker). **Nothing in 2b is shipped yet.** Until then, CAD security is **`CAD_INGEST_SECRET`** (Batch B) plus operational practices (non-public address, etc.); see **`docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md`** §I.
+**Status:** **`CadEmailAllowlistEntry`** + **`GET/PATCH /api/cad/allowlist`** shipped in **Batch C** (2026-04-09). **Enforcement** on **`POST /api/cad/inbound-email`** (reject or quarantine when sender does not match) is **Batch D** — not implemented yet. Until Batch D, filling the allowlist has **no effect** on ingest.
 
-- **Tenant-configurable allowlist** in DB (e.g. allowed **From** domains or patterns).
-- **Worker (first line):** Optionally drop or do not POST if sender not allowed (reduces noise).
-- **API (second line):** Re-check before storing/parsing/auto-incident as policy dictates.
-- **Default posture:** Document whether **empty allowlist** means reject, quarantine-only row, or store-but-do-not-parse.
-- **Admin UI:** Manage allowlist; optional “would this sender pass?” test.
+- ~~**Tenant-configurable allowlist** in DB (`CadEmailAllowlistEntry`: `pattern`, `patternType` = `domain_suffix` \| `exact_email` \| `regex`, `enabled`, `sortOrder`).~~
+- **Worker (first line):** Optionally drop or do not POST if sender not allowed (reduces noise) — *deferred / optional*.
+- **API (second line):** Re-check before storing/parsing/auto-incident — **Batch D**.
+- **Default posture:** Document whether **empty allowlist** means reject, quarantine-only row, or store-but-do-not-parse — **decide in Batch D**.
+- **Admin UI:** Manage allowlist — *Batch F/H or dedicated allowlist UI*.
 
-**Acceptance:** ~~Secret required when `NODE_ENV=production`~~ *(done)*; allowlist behavior documented and testable on staging *(pending Batches C + D)*.
+**Acceptance:** ~~Secret required when `NODE_ENV=production`~~ *(done)*; ~~allowlist rows persist per tenant~~ *(Batch C)*; allowlist **enforced** on ingest *(pending Batch D)*.
 
 ---
 
-## Phase 3 — Persistence model (dedicated tables)
+## ~~Phase 3 — Persistence model (dedicated tables)~~ *(Batch C, 2026-04-09)*
 
-Direction (exact columns in migration after explicit OK):
+- ~~**`CadParsingSettings`** (one row per `tenantId`): `enableIncidentCreation`, `messageRulesJson`, `incidentRulesJson`, `incidentFieldMapJson`, `incidentNumberExtractJson`.~~
+- ~~**`CadEmailAllowlistEntry`**: `tenantId`, `pattern`, `patternType`, `enabled`, `sortOrder`.~~
+- ~~**APIs:** `GET` / `PATCH` **`/api/cad/parsing-config`**, `GET` / `PATCH` **`/api/cad/allowlist`** (tenant from host; same trust model as `/api/department-details`).~~
+- ~~**Client:** `src/api/cadDispatchConfig.ts` for later UI batches.~~
+- Optional later: `CadEmailIngest` status columns / indexes for quarantine filtering.
 
-- Parsing config table(s): `tenantId`, flags (**Enable Incident Creation**, etc.), message vs incident rule sets, field map, incident-number extraction config.
-- Allowlist table (or embedded in config): `tenantId`, allowed domains/patterns, enabled.
-- Optional: `CadEmailIngest` status columns / indexes for list performance and quarantine filtering.
-
-**Acceptance:** Migrations applied; tenant isolation on all reads/writes.
+**~~Acceptance:~~** ~~Migration `20260409140000_add_cad_parsing_settings_and_allowlist`; tenant isolation on all reads/writes.~~
 
 ---
 
@@ -153,7 +153,7 @@ Direction (exact columns in migration after explicit OK):
 |--------|---------|
 | ~~A~~ | ~~Routes + sidebar + move current page to **Raw Email** + redirects~~ |
 | ~~B~~ | ~~Enforce **`CAD_INGEST_SECRET`** when `NODE_ENV=production`; Worker README + EMAIL_AND_CAD_SETUP + onboarding + `.env.server.example`~~ |
-| C | Prisma: parsing config + allowlist tables + tenant **GET/PATCH** APIs |
+| ~~C~~ | ~~Prisma: **`CadParsingSettings`** + **`CadEmailAllowlistEntry`**; **`GET`/`PATCH` `/api/cad/parsing-config`** and **`/api/cad/allowlist`**; `src/api/cadDispatchConfig.ts`~~ |
 | D | Allowlist enforcement on ingest (API; Worker optional) |
 | E | Rule engine + unit tests (ICOMM fixtures) |
 | F | Incident Parsing UI + preview + Save |
@@ -163,4 +163,4 @@ Direction (exact columns in migration after explicit OK):
 
 ---
 
-*Last updated: 2026-04-09 — Batch B: production requires `CAD_INGEST_SECRET` on API; docs + tenant onboarding updated.*
+*Last updated: 2026-04-09 — Batch C: `CadParsingSettings`, `CadEmailAllowlistEntry`, parsing-config + allowlist APIs; run `prisma migrate deploy` on each DB (see TENANT_ONBOARDING §I).*

@@ -237,6 +237,11 @@ Use this when dispatch will send mail to **`<tenant-slug>@cad.fireultimate.app`*
   4. Create or edit the address whose **local part** equals **`<tenant-slug>`** (e.g. `cifpdil`), so the full address is **`cifpdil@cad.fireultimate.app`** or **`cifpdil@fireultimate.app`** as designed for your tenant.
   5. Set the action to **Send to a Worker** (or **Worker**) and choose **`cad-email-ingest-worker`**. Save.
 - [ ] **Database:** `CadEmailIngest` migration applied on the **same** database as this API (see **`EMAIL_AND_CAD_SETUP.md`** §B6).
+- [ ] **Database migration (CAD parsing / allowlist storage):** After pulling code that adds **Batch C**, run **`prisma migrate deploy`** against the **same** Postgres database this API uses (e.g. Neon), so tables **`CadParsingSettings`** and **`CadEmailAllowlistEntry`** exist. From the project root (with **`DATABASE_URL`** set to that DB, e.g. via **`.env.server`**):
+  ```bash
+  node --env-file=.env.server -e "require('child_process').execSync('npx prisma migrate deploy', {stdio:'inherit', env: process.env})"
+  ```
+  Then **redeploy** the Render service. Migration folder name: **`20260409140000_add_cad_parsing_settings_and_allowlist`**. Until this runs, **`GET/PATCH /api/cad/parsing-config`** and **`/api/cad/allowlist`** will error at runtime.
 - [ ] **Smoke test (email path):** Send a real test email to the CAD address from your inbox.
   - **Render:** Service → **Logs** → look for **`POST /api/cad/inbound-email`** with status **200** (not **503** / **401**).
   - **App:** Log in as admin → **Admin Functions** → **Dispatch Parsing Settings** (parent) → sidebar **Raw Email** → confirm a new row appears.
