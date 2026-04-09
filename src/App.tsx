@@ -81,7 +81,7 @@ import {
 import { isAdminOrHigher, isSuperadmin } from "./roleHierarchy";
 import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
 import { HydrantsAdminPage } from "./HydrantsAdminPage";
-import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
+import { DispatchParsingAdminPage } from "./pages/DispatchParsingSettingsPage";
 import {
   getNerisValueOptions,
   getNerisFieldsForSection,
@@ -12884,7 +12884,15 @@ function RouteResolver({
       />
     );
   } else if (path === "/admin-functions/dispatch-parsing-settings") {
-    content = <DispatchParsingSettingsPage />;
+    content = (
+      <Navigate to="/admin-functions/dispatch-parsing-settings/raw-email" replace />
+    );
+  } else if (
+    path === "/admin-functions/dispatch-parsing-settings/raw-email" ||
+    path === "/admin-functions/dispatch-parsing-settings/message-parsing" ||
+    path === "/admin-functions/dispatch-parsing-settings/incident-parsing"
+  ) {
+    content = <DispatchParsingAdminPage />;
   } else {
     const menu = getMainMenuByPath(path);
     if (menu && path === menu.path) {

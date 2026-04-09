@@ -1,5 +1,26 @@
 import { useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
+
+export const DISPATCH_PARSING_ADMIN_MODULES = [
+  {
+    id: "raw-email",
+    label: "Raw Email",
+    path: "/admin-functions/dispatch-parsing-settings/raw-email",
+  },
+  {
+    id: "message-parsing",
+    label: "Message Parsing",
+    path: "/admin-functions/dispatch-parsing-settings/message-parsing",
+  },
+  {
+    id: "incident-parsing",
+    label: "Incident Parsing",
+    path: "/admin-functions/dispatch-parsing-settings/incident-parsing",
+  },
+] as const;
+
+export type DispatchParsingModuleId = (typeof DISPATCH_PARSING_ADMIN_MODULES)[number]["id"];
 
 function formatDate(iso: string): string {
   if (!iso) return "—";
@@ -53,7 +74,7 @@ function extractPlainTextFromMime(decodedMime: string): string | null {
   }
 }
 
-export function DispatchParsingSettingsPage() {
+function DispatchParsingRawEmailPanel() {
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,14 +98,15 @@ export function DispatchParsingSettingsPage() {
   }, []);
 
   return (
-    <section className="page-section">
-      <header className="page-header">
+    <>
+      <header className="page-header dispatch-parsing-module-header">
         <div>
-          <h1>Admin Functions | Dispatch Parsing Settings</h1>
+          <h1>Raw Email</h1>
           <p>
             View incoming CAD dispatch emails sent to your department address (e.g.
-            cifpdil@cad.fireultimate.app). Parsing rules and auto-create incidents
-            will be added in a later update.
+            cifpdil@cad.fireultimate.app). Expand a row for dispatch content, MIME source, and raw
+            base64 for troubleshooting. Parsing rules are configured under Message Parsing and
+            Incident Parsing.
           </p>
         </div>
       </header>
@@ -187,6 +209,85 @@ export function DispatchParsingSettingsPage() {
               ))}
             </div>
           )}
+        </article>
+      </section>
+    </>
+  );
+}
+
+function DispatchParsingPlaceholderModule({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <header className="page-header dispatch-parsing-module-header">
+      <div>
+        <h1>{title}</h1>
+        <p>{description}</p>
+      </div>
+    </header>
+  );
+}
+
+function normalizePath(pathname: string): string {
+  if (pathname === "/") return pathname;
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+/**
+ * Dispatch Parsing Settings: sidebar (Raw Email, Message Parsing, Incident Parsing) + content.
+ * Routed paths: …/raw-email, …/message-parsing, …/incident-parsing.
+ */
+export function DispatchParsingAdminPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const path = normalizePath(location.pathname);
+
+  const activeModuleId: DispatchParsingModuleId =
+    path === "/admin-functions/dispatch-parsing-settings/message-parsing"
+      ? "message-parsing"
+      : path === "/admin-functions/dispatch-parsing-settings/incident-parsing"
+        ? "incident-parsing"
+        : "raw-email";
+
+  return (
+    <section className="page-section reporting-admin-root">
+      <section className="neris-report-layout reporting-admin-layout">
+        <aside className="panel neris-sidebar reporting-admin-sidebar">
+          <div className="neris-sidebar-header">
+            <h2>Dispatch Parsing</h2>
+            <p>Admin modules</p>
+          </div>
+          <nav className="neris-section-nav" aria-label="Dispatch parsing module navigation">
+            {DISPATCH_PARSING_ADMIN_MODULES.map((mod) => (
+              <button
+                key={mod.id}
+                type="button"
+                className={mod.id === activeModuleId ? "active" : ""}
+                onClick={() => navigate(mod.path)}
+              >
+                {mod.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <article className="panel neris-form-panel reporting-admin-content">
+          {activeModuleId === "raw-email" ? <DispatchParsingRawEmailPanel /> : null}
+          {activeModuleId === "message-parsing" ? (
+            <DispatchParsingPlaceholderModule
+              title="Message Parsing"
+              description="Configure rules to build the parsed dispatch message for future member notifications. Rule builder and preview will be added in a later batch."
+            />
+          ) : null}
+          {activeModuleId === "incident-parsing" ? (
+            <DispatchParsingPlaceholderModule
+              title="Incident Parsing"
+              description="Configure rules to map dispatch text into Create Incident fields, enable automatic incident creation, and preview parsed data. This will be added in a later batch."
+            />
+          ) : null}
         </article>
       </section>
     </section>

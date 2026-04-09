@@ -4,6 +4,8 @@
 **Prerequisite:** NERIS cross-browser Phase 1–3; CAD emails already received and stored in `CadEmailIngest`.  
 **Next step after NERIS:** Build this feature so departments can see incoming CAD emails, define parsing rules per tenant, and auto-create incidents (with optional call sequencing).
 
+**Phased implementation and completion tracking:** `docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md` (strike through phases and batches there as work ships).
+
 ---
 
 ## 1. Goal
