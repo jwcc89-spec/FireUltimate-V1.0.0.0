@@ -41,9 +41,9 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 
 | Child | Route | Purpose |
 |--------|--------|--------|
-| ~~Raw Email~~ | ~~`/admin-functions/dispatch-parsing-settings/raw-email`~~ | ~~Current behavior: list, expand row, plain/MIME/base64 for troubleshooting.~~ |
 | ~~Message Parsing~~ | ~~`/admin-functions/dispatch-parsing-settings/message-parsing`~~ | ~~Rules + side-by-side preview → **parsed message** string (future member notifications). Placeholder page until Batch H.~~ |
 | ~~Incident Parsing~~ | ~~`/admin-functions/dispatch-parsing-settings/incident-parsing`~~ | ~~Rules + field mapping + side-by-side **dispatch text vs parsed incident fields**; **Enable Incident Creation** at top of this page (or shared header). Placeholder page until Batch F.~~ |
+| ~~Raw Email~~ | ~~`/admin-functions/dispatch-parsing-settings/raw-email`~~ | ~~Current behavior: list, expand row, plain/MIME/base64 for troubleshooting. (Nav order: third, below Incident Parsing.)~~ |
 
 3. ~~**Legacy route:** Any old single URL for dispatch parsing → **redirect** into this tree (e.g. `raw-email`).~~
 4. ~~**Admin menu:** Entry points at parent; sidebar lists the three children.~~
@@ -161,4 +161,4 @@ Direction (exact columns in migration after explicit OK):
 
 ---
 
-*Last updated: 2026-04-09 — Batch A complete (`DispatchParsingAdminPage`, routes under `/admin-functions/dispatch-parsing-settings/…`).*
+*Last updated: 2026-04-09 — Batch A complete; sidebar order Message → Incident → Raw Email; parent still redirects to `raw-email`.*

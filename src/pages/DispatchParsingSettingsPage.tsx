@@ -4,11 +4,6 @@ import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
 
 export const DISPATCH_PARSING_ADMIN_MODULES = [
   {
-    id: "raw-email",
-    label: "Raw Email",
-    path: "/admin-functions/dispatch-parsing-settings/raw-email",
-  },
-  {
     id: "message-parsing",
     label: "Message Parsing",
     path: "/admin-functions/dispatch-parsing-settings/message-parsing",
@@ -17,6 +12,11 @@ export const DISPATCH_PARSING_ADMIN_MODULES = [
     id: "incident-parsing",
     label: "Incident Parsing",
     path: "/admin-functions/dispatch-parsing-settings/incident-parsing",
+  },
+  {
+    id: "raw-email",
+    label: "Raw Email",
+    path: "/admin-functions/dispatch-parsing-settings/raw-email",
   },
 ] as const;
 
