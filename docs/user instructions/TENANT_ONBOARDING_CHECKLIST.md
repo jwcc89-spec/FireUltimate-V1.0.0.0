@@ -96,6 +96,61 @@ Notes:
 
 **Staging API (e.g. `*.staging.fireultimate.app`):** If Render sets **`NODE_ENV=production`** for staging (common), set **`CAD_INGEST_SECRET`** on the **staging** service too, and set the **same** value on **cad-email-ingest-worker** (Cloudflare Secret) while **`CAD_INGEST_API_URL`** points at staging. See **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**.
 
+### C.1 Step-by-step: `CAD_INGEST_SECRET` (same value on Render + Cloudflare Worker)
+
+Do this for **each** API deployment that uses CAD ingest (usually **staging** and **production** are separate Render services or the same service with one URL—match the Worker’s **`CAD_INGEST_API_URL`** to the service you are configuring).
+
+#### Part 1 — Generate a secret (once per environment pairing)
+
+1. On your computer, open a terminal **or** use a password manager to create a long random string (at least 32 characters).
+2. Example (macOS/Linux terminal):  
+   `openssl rand -hex 32`  
+   Copy the output and keep it in a secure note until pasted into Render and Cloudflare (same value in both places).
+
+#### Part 2 — Render (FireUltimate API)
+
+1. In your browser, go to **[https://dashboard.render.com](https://dashboard.render.com)** and sign in.
+2. Open your **Dashboard** and select the **Web Service** that runs the FireUltimate API (e.g. `fireultimate-api-staging` or your production API name).
+3. In the left sidebar for that service, click **Environment**.
+4. Under **Environment Variables**, click **Add Environment Variable** (or **Edit** if you are replacing an existing key).
+5. **Key:** `CAD_INGEST_SECRET` (exact spelling, all caps with underscores).
+6. **Value:** paste the secret from Part 1.
+7. Click **Save Changes**. Render will typically **redeploy** the service automatically; wait until the deploy shows **Live** (or trigger **Manual Deploy** if your team does that after env changes).
+
+**Check `NODE_ENV` (why this matters):** On the same **Environment** page, see whether **`NODE_ENV`** is set to **`production`**. If it is (common on Render), the API **requires** `CAD_INGEST_SECRET` for **`POST /api/cad/inbound-email`**. If you omit it, that endpoint returns **503** until you add the variable.
+
+#### Part 3 — Cloudflare Worker (`cad-email-ingest-worker`)
+
+1. Go to **[https://dash.cloudflare.com](https://dash.cloudflare.com)** and sign in.
+2. In the left sidebar, click **Workers & Pages** (or **Compute** → **Workers & Pages**, depending on Cloudflare’s UI).
+3. Click the Worker named **`cad-email-ingest-worker`** (or the name you deployed from `cad-email-ingest-worker/` in this repo).
+4. Open the **Settings** tab (top of the Worker detail page).
+5. Find **Variables and Secrets** (sometimes under **Settings** → scroll to **Variables and Secrets**).
+6. Under **Secrets**, click **Add** / **Add variable** and choose **Secret** (encrypted) when prompted:
+   - **Variable name:** `CAD_INGEST_SECRET`
+   - **Value:** paste the **same** secret you set on Render in Part 2.
+7. Save. (No redeploy is always required for Workers after secret change, but wait a minute if Cloudflare shows a propagation message.)
+
+8. Still on **Variables and Secrets**, confirm a **plain** (non-secret) variable exists:
+   - **Name:** `CAD_INGEST_API_URL`
+   - **Value:** must match the API you configured on Render, **no trailing slash**, for example:
+     - Staging: `https://<tenant-slug>.staging.fireultimate.app/api/cad/inbound-email`
+     - Production: `https://<tenant-slug>.fireultimate.app/api/cad/inbound-email`  
+   Replace `<tenant-slug>` with the tenant’s slug (e.g. `cifpdil`).
+
+#### Part 4 — Quick verification (optional but recommended)
+
+1. From a terminal (replace URL and secret):
+   ```bash
+   curl -s -o /dev/null -w "%{http_code}\n" -X POST "https://<tenant-slug>.staging.fireultimate.app/api/cad/inbound-email" \
+     -H "Content-Type: application/json" \
+     -H "X-CAD-Ingest-Secret: YOUR_SECRET_HERE" \
+     -d '{"from":"test@test.com","to":"<tenant-slug>@cad.fireultimate.app","raw":"","headers":{}}'
+   ```
+2. Expect **`200`**. **`503`** → API missing `CAD_INGEST_SECRET` on Render or not redeployed. **`401`** → Worker or curl header does not match the API value.
+
+Full CAD routing (DNS, Email Routing, migrations) remains in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**.
+
 ---
 
 ## D) DNS + Domain Routing
@@ -174,10 +229,20 @@ Notes:
 
 Use this when dispatch will send mail to **`<tenant-slug>@cad.fireultimate.app`** or **`<tenant-slug>@fireultimate.app`** (see **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**). The **tenant slug** in the address must match the **`Tenant.slug`** row so ingest resolves **`tenantId`**.
 
-- [ ] **Render (this environment):** **`CAD_INGEST_SECRET`** is set and matches the Worker (section C above).
-- [ ] **Cloudflare `cad-email-ingest-worker`:** **Secret** **`CAD_INGEST_SECRET`** = same value as Render; **Variable** **`CAD_INGEST_API_URL`** = `https://<tenant-slug>.<staging-or-production-host>/api/cad/inbound-email` (no trailing slash).
-- [ ] **Email Routing:** Custom address for **`<tenant-slug>`** → **Send to Worker** → **cad-email-ingest-worker**.
-- [ ] **Smoke test:** Send a test email to the CAD address; confirm **200** on **`POST /api/cad/inbound-email`** in Render logs (not **503** / **401**) and a row in **`CadEmailIngest`** for this tenant (Admin → Dispatch Parsing Settings → Raw Email).
+- [ ] **Secrets + API URL:** Complete **§C.1** above (Render `CAD_INGEST_SECRET` + Cloudflare Worker **Secret** `CAD_INGEST_SECRET` + Worker **`CAD_INGEST_API_URL`** pointing at this tenant’s API host).
+- [ ] **Email Routing (Cloudflare):** Route the CAD address to the Worker:
+  1. **[https://dash.cloudflare.com](https://dash.cloudflare.com)** → select the zone **`fireultimate.app`** (or **`cad.fireultimate.app`** if you use a separate zone for the cad subdomain—see **`EMAIL_AND_CAD_SETUP.md`**).
+  2. Left sidebar → **Email** → **Email Routing** (sometimes **Email** → **Routing rules**).
+  3. Open **Custom addresses** (or **Addresses** / **Routing** depending on UI).
+  4. Create or edit the address whose **local part** equals **`<tenant-slug>`** (e.g. `cifpdil`), so the full address is **`cifpdil@cad.fireultimate.app`** or **`cifpdil@fireultimate.app`** as designed for your tenant.
+  5. Set the action to **Send to a Worker** (or **Worker**) and choose **`cad-email-ingest-worker`**. Save.
+- [ ] **Database:** `CadEmailIngest` migration applied on the **same** database as this API (see **`EMAIL_AND_CAD_SETUP.md`** §B6).
+- [ ] **Smoke test (email path):** Send a real test email to the CAD address from your inbox.
+  - **Render:** Service → **Logs** → look for **`POST /api/cad/inbound-email`** with status **200** (not **503** / **401**).
+  - **App:** Log in as admin → **Admin Functions** → **Dispatch Parsing Settings** (parent) → sidebar **Raw Email** → confirm a new row appears.
+  - **Optional DB check:** Neon **SQL Editor** → `SELECT id, "toAddress", "fromAddress", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 5;`
+
+**Note:** **Sender allowlist / spam filtering** (per-tenant rules in the database) is **not** implemented yet; it is planned as **Phase 2b** / **Batches C–D** in **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. Until then, rely on a non-public CAD address and **`CAD_INGEST_SECRET`** to block random HTTP posts (not spoofed email to your CAD address).
 
 ---
 

@@ -1,7 +1,7 @@
 # CAD dispatch parsing — implementation plan (master)
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress (Batches A–B complete for secret enforcement + docs; Phase 2b allowlist pending)  
+**Status:** In progress (Batches A–B done; **next:** Batch C/D for Phase **2b** allowlist + parsing persistence)  
 **Related:** Product goals and rule types — `docs/plans/CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md`
 
@@ -61,7 +61,9 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 - ~~When **`NODE_ENV=production`**, API requires **`CAD_INGEST_SECRET`**; if unset → **503**; wrong/missing header → **401**.~~
 - ~~Documented in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**, **Worker README**, **`.env.server.example`**, **`TENANT_ONBOARDING_CHECKLIST.md`**.~~
 
-### 2b — Allowlist / spam filtering
+### 2b — Allowlist / spam filtering *(not started — next after Batch B)*
+
+**Is this the next thing to build?** **Yes, in roadmap order:** implementation is planned as **Batch C** (persistence: tables or config storage that can hold per-tenant allowlists) and **Batch D** (enforce allowlist on ingest—API and optionally Worker). **Nothing in 2b is shipped yet.** Until then, CAD security is **`CAD_INGEST_SECRET`** (Batch B) plus operational practices (non-public address, etc.); see **`docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md`** §I.
 
 - **Tenant-configurable allowlist** in DB (e.g. allowed **From** domains or patterns).
 - **Worker (first line):** Optionally drop or do not POST if sender not allowed (reduces noise).
@@ -69,7 +71,7 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 - **Default posture:** Document whether **empty allowlist** means reject, quarantine-only row, or store-but-do-not-parse.
 - **Admin UI:** Manage allowlist; optional “would this sender pass?” test.
 
-**Acceptance:** ~~Secret required when `NODE_ENV=production`~~ *(done)*; allowlist behavior documented and testable on staging *(pending 2b)*.
+**Acceptance:** ~~Secret required when `NODE_ENV=production`~~ *(done)*; allowlist behavior documented and testable on staging *(pending Batches C + D)*.
 
 ---
 
