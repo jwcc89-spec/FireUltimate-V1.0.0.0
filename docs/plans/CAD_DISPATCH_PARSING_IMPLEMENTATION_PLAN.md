@@ -1,7 +1,7 @@
 # CAD dispatch parsing — implementation plan (master)
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress (Batch A complete; see strikethroughs below)  
+**Status:** In progress (Batches A–B complete for secret enforcement + docs; Phase 2b allowlist pending)  
 **Related:** Product goals and rule types — `docs/plans/CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md`
 
@@ -54,12 +54,12 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 
 ## Phase 2 — Security: secret and allowlist
 
-### 2a — Secret (mandatory)
+### ~~2a — Secret (mandatory)~~ *(Batch B, 2026-04-09)*
 
-- Set **`CAD_INGEST_SECRET`** on API host (e.g. Render).
-- Set matching secret on **cad-email-ingest-worker**; Worker sends **`X-Cad-Ingest-Secret`**.
-- API rejects missing/wrong secret with **401**.
-- Document in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**.
+- ~~Set **`CAD_INGEST_SECRET`** on API host (e.g. Render).~~
+- ~~Set matching secret on **cad-email-ingest-worker**; Worker sends **`X-CAD-Ingest-Secret`**.~~
+- ~~When **`NODE_ENV=production`**, API requires **`CAD_INGEST_SECRET`**; if unset → **503**; wrong/missing header → **401**.~~
+- ~~Documented in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**, **Worker README**, **`.env.server.example`**, **`TENANT_ONBOARDING_CHECKLIST.md`**.~~
 
 ### 2b — Allowlist / spam filtering
 
@@ -69,7 +69,7 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 - **Default posture:** Document whether **empty allowlist** means reject, quarantine-only row, or store-but-do-not-parse.
 - **Admin UI:** Manage allowlist; optional “would this sender pass?” test.
 
-**Acceptance:** Secret required in production; allowlist behavior documented and testable on staging.
+**Acceptance:** ~~Secret required when `NODE_ENV=production`~~ *(done)*; allowlist behavior documented and testable on staging *(pending 2b)*.
 
 ---
 
@@ -150,7 +150,7 @@ Direction (exact columns in migration after explicit OK):
 | Batch | Content |
 |--------|---------|
 | ~~A~~ | ~~Routes + sidebar + move current page to **Raw Email** + redirects~~ |
-| B | Enforce **`CAD_INGEST_SECRET`** when set; Worker + doc updates |
+| ~~B~~ | ~~Enforce **`CAD_INGEST_SECRET`** when `NODE_ENV=production`; Worker README + EMAIL_AND_CAD_SETUP + onboarding + `.env.server.example`~~ |
 | C | Prisma: parsing config + allowlist tables + tenant **GET/PATCH** APIs |
 | D | Allowlist enforcement on ingest (API; Worker optional) |
 | E | Rule engine + unit tests (ICOMM fixtures) |
@@ -161,4 +161,4 @@ Direction (exact columns in migration after explicit OK):
 
 ---
 
-*Last updated: 2026-04-09 — Batch A complete; sidebar order Message → Incident → Raw Email; parent still redirects to `raw-email`.*
+*Last updated: 2026-04-09 — Batch B: production requires `CAD_INGEST_SECRET` on API; docs + tenant onboarding updated.*

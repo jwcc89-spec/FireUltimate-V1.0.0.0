@@ -1824,9 +1824,18 @@ app.get("/api/tenant/context", (request, response) => {
 
 // ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
 const CAD_INGEST_SECRET = trimValue(process.env.CAD_INGEST_SECRET);
+const IS_PRODUCTION_NODE_ENV = trimValue(process.env.NODE_ENV) === "production";
 
 app.post("/api/cad/inbound-email", async (request, response) => {
   try {
+    if (IS_PRODUCTION_NODE_ENV && !CAD_INGEST_SECRET) {
+      response.status(503).json({
+        ok: false,
+        message:
+          "CAD ingest is not configured: set CAD_INGEST_SECRET on the API service and the same value on cad-email-ingest-worker (header X-CAD-Ingest-Secret).",
+      });
+      return;
+    }
     if (CAD_INGEST_SECRET) {
       const secret = trimValue(request.headers["x-cad-ingest-secret"]);
       if (secret !== CAD_INGEST_SECRET) {
@@ -4065,6 +4074,11 @@ if (hasFrontendBuild) {
 app.listen(config.proxyPort, () => {
   console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
   console.log(`NERIS base URL: ${config.baseUrl}`);
+  if (IS_PRODUCTION_NODE_ENV && !CAD_INGEST_SECRET) {
+    console.warn(
+      "[CAD ingest] NODE_ENV=production but CAD_INGEST_SECRET is unset — POST /api/cad/inbound-email returns 503 until configured.",
+    );
+  }
   if (hasFrontendBuild) {
     console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
   }

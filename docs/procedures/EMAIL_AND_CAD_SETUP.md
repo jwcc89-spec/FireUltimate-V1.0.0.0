@@ -180,7 +180,7 @@ The Worker needs the **full URL** of the FireUltimate API endpoint. In **Cloudfl
   - Staging (test first): `https://cifpdil.staging.fireultimate.app/api/cad/inbound-email`
   - Production: `https://cifpdil.fireultimate.app/api/cad/inbound-email`
 - No trailing slash. **Save**.
-- **(Optional)** If the server uses **CAD_INGEST_SECRET**, add a **Secret** with the same name and value.
+- **Secret (required for staging/production APIs):** Add a **Secret** named **`CAD_INGEST_SECRET`** (long random string). Use the **same value** on your **Render API** service as environment variable **`CAD_INGEST_SECRET`**. The Worker sends it as header **`X-CAD-Ingest-Secret`** on every POST. If the API runs with **`NODE_ENV=production`** (typical on Render) and **`CAD_INGEST_SECRET`** is missing on the API, **`POST /api/cad/inbound-email` returns 503** until you set it. If the Worker secret and API secret do not match, the API returns **401**.
 
 ---
 
@@ -242,11 +242,11 @@ node --env-file=.env.server -e "require('child_process').execSync('npx prisma mi
 1. **Address:** You must send to the address you configured (root or cad subdomain). If you use **cifpdil@cad.fireultimate.app** without adding the cad subdomain in B2, mail won’t reach Cloudflare.
 2. **Custom address → Worker:** **Email** → **Email Routing** → **Custom addresses**. **cifpdil** must show **Action: Send to a Worker** and **Worker: cad-email-ingest-worker**. Edit and save if not.
 3. **CAD_INGEST_API_URL:** **Workers & Pages** → **cad-email-ingest-worker** → **Settings** → **Variables and Secrets**. Must be exactly e.g. `https://cifpdil.staging.fireultimate.app/api/cad/inbound-email` (no trailing slash).
-4. **Route exists?** In a terminal:
+4. **Route exists?** In a terminal (add **`-H "X-CAD-Ingest-Secret: YOUR_SECRET"`** if the API has **`CAD_INGEST_SECRET`** set):
    ```bash
-   curl -s -o /dev/null -w "%{http_code}" -X POST "https://cifpdil.staging.fireultimate.app/api/cad/inbound-email" -H "Content-Type: application/json" -d '{"from":"test@test.com","to":"cifpdil@fireultimate.app","raw":"","headers":{}}'
+   curl -s -o /dev/null -w "%{http_code}" -X POST "https://cifpdil.staging.fireultimate.app/api/cad/inbound-email" -H "Content-Type: application/json" -H "X-CAD-Ingest-Secret: YOUR_SECRET" -d '{"from":"test@test.com","to":"cifpdil@fireultimate.app","raw":"","headers":{}}'
    ```
-   **200** = route exists. **404** = deploy the branch that has the CAD route (e.g. submenu/neris-golive-cifpd) to staging.
+   **200** = route exists and secret accepted. **503** = API is production mode but **`CAD_INGEST_SECRET`** is not set on Render — add it and redeploy. **401** = wrong or missing **`X-CAD-Ingest-Secret`** (fix Worker secret or curl header). **404** = deploy the branch that has the CAD route (e.g. submenu/neris-golive-cifpd) to staging.
 5. **Worker logs:** **Workers & Pages** → **cad-email-ingest-worker** → **Logs**. Send another test email; if no logs, the Worker isn’t triggered (routing or address misconfigured).
 6. **Render logs:** Check that any request appears when you send the email; if not, the Worker isn’t calling your API (wrong URL or Worker not consuming queue).
 
@@ -272,7 +272,7 @@ If you enabled Email Routing on the root and want **jeremy@fireultimate.app** to
 1. **Cloudflare** → **Workers & Pages** → **cad-email-ingest-worker** → **Settings** → **Variables and Secrets**.
 2. **CAD_INGEST_API_URL:** Change from staging to production:
    - **Production value:** `https://cifpdil.fireultimate.app/api/cad/inbound-email` (no trailing slash).
-3. **CAD_INGEST_SECRET** (if you use it): If your **production** API has **CAD_INGEST_SECRET** set in its environment (e.g. on Render), set the Worker’s **CAD_INGEST_SECRET** Secret to the **same** value. If production uses a different secret than staging, update the Worker to match production. If you don’t use this secret, skip.
+3. **CAD_INGEST_SECRET:** Set the Worker’s **CAD_INGEST_SECRET** Secret to the **same** value as **`CAD_INGEST_SECRET`** on your **production** Render API. Production APIs use **`NODE_ENV=production`**, which **requires** this secret on the API and Worker. If staging and production use different secrets, switch the Worker value when you change **CAD_INGEST_API_URL** (B11).
 4. **Save.** The Worker will then send all incoming CAD emails to your production API.
 
 **If you ever want staging and production both receiving:** You would create a second Worker (e.g. `cad-email-ingest-staging`) and a second custom address (e.g. `cifpdil-staging@cad.fireultimate.app`), with the staging Worker’s **CAD_INGEST_API_URL** pointing at staging. Dispatch would use the production address only; you’d use the staging address for tests. For a single tenant, one Worker switched to production when going live is usually enough.

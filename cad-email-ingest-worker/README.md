@@ -27,7 +27,7 @@ Cloudflare Worker that receives email (e.g. **cifpdil@cad.fireultimate.app**), p
      `https://fireultimate-prod-api.onrender.com/api/cad/inbound-email`  
      (or your staging URL for testing).
 
-5. **(Optional)** If you set **CAD_INGEST_SECRET** on the FireUltimate server, add the same value as a **Secret** named **CAD_INGEST_SECRET** in the Worker so the Worker sends it in the `X-CAD-Ingest-Secret` header.
+5. **CAD_INGEST_SECRET (required for deployed APIs):** On Render (staging and production), **`NODE_ENV`** is usually **`production`**, and the FireUltimate API **requires** **`CAD_INGEST_SECRET`** for **`POST /api/cad/inbound-email`** (otherwise **503**). Add the same value as a **Secret** named **`CAD_INGEST_SECRET`** in the Worker so each POST includes header **`X-CAD-Ingest-Secret`**. For **local** API runs without **`NODE_ENV=production`**, the secret is optional.
 
 ## Worker name for Email Routing
 
@@ -41,4 +41,4 @@ When you bind the custom address **cifpdil** to “Send to a Worker” in **Emai
   ```bash
   npx prisma migrate deploy
   ```
-- The endpoint **POST /api/cad/inbound-email** is implemented in the main server. Optional env: **CAD_INGEST_SECRET** to require the Worker to send `X-CAD-Ingest-Secret`.
+- The endpoint **POST /api/cad/inbound-email** is implemented in the main server. When **`NODE_ENV=production`**, **`CAD_INGEST_SECRET`** must be set on the server and on the Worker (`X-CAD-Ingest-Secret`).

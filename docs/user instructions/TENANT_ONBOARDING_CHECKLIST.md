@@ -88,10 +88,13 @@ Set on production API service (example `fireultimate-prod-api`):
 - [ ] `NERIS_CLIENT_SECRET=<prod client secret>`
 - [ ] `NERIS_ENTITY_ID=<tenant or default prod entity id>` (current architecture fallback)
 - [ ] `NERIS_DEPARTMENT_NERIS_ID=<optional fallback>`
+- [ ] **`CAD_INGEST_SECRET`** — Long random shared secret for **CAD email ingest**. Required when the API runs with **`NODE_ENV=production`** (typical on Render): without it, **`POST /api/cad/inbound-email` returns 503** and the Cloudflare Worker cannot store mail. **Not** tenant-specific in the database — one value per API deployment — but you need it for any tenant whose CAD address feeds that API.
 
 Notes:
 - Keep secrets only in Render env, not in repo files.
 - Redeploy/restart after env changes.
+
+**Staging API (e.g. `*.staging.fireultimate.app`):** If Render sets **`NODE_ENV=production`** for staging (common), set **`CAD_INGEST_SECRET`** on the **staging** service too, and set the **same** value on **cad-email-ingest-worker** (Cloudflare Secret) while **`CAD_INGEST_API_URL`** points at staging. See **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**.
 
 ---
 
@@ -164,6 +167,17 @@ Notes:
 - [ ] Rotate temporary admin credentials after first login.
 - [ ] Document onboarding completion in handoff/session notes.
 - [ ] Add tenant to monitoring/watchlist.
+
+---
+
+## I) CAD dispatch email (when this tenant receives CAD by email)
+
+Use this when dispatch will send mail to **`<tenant-slug>@cad.fireultimate.app`** or **`<tenant-slug>@fireultimate.app`** (see **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**). The **tenant slug** in the address must match the **`Tenant.slug`** row so ingest resolves **`tenantId`**.
+
+- [ ] **Render (this environment):** **`CAD_INGEST_SECRET`** is set and matches the Worker (section C above).
+- [ ] **Cloudflare `cad-email-ingest-worker`:** **Secret** **`CAD_INGEST_SECRET`** = same value as Render; **Variable** **`CAD_INGEST_API_URL`** = `https://<tenant-slug>.<staging-or-production-host>/api/cad/inbound-email` (no trailing slash).
+- [ ] **Email Routing:** Custom address for **`<tenant-slug>`** → **Send to Worker** → **cad-email-ingest-worker**.
+- [ ] **Smoke test:** Send a test email to the CAD address; confirm **200** on **`POST /api/cad/inbound-email`** in Render logs (not **503** / **401**) and a row in **`CadEmailIngest`** for this tenant (Admin → Dispatch Parsing Settings → Raw Email).
 
 ---
 
