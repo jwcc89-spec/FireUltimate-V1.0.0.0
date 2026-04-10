@@ -4,7 +4,9 @@ import {
   patchCadParsingConfig,
 } from "../api/cadDispatchConfig.ts";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails.ts";
+import { CadDispatchRulePacksSection } from "../components/CadDispatchRulePacksSection.tsx";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
+import { MESSAGE_RULE_PACKS } from "../cadDispatch/rulePresets.ts";
 import {
   parseCadRulesJson,
   runCadRulePipeline,
@@ -33,9 +35,7 @@ type RowPreviewState =
 function formatSlotsPlain(slots: Record<string, string>): string {
   const keys = Object.keys(slots);
   if (keys.length === 0) return "";
-  return keys
-    .map((k) => `${k}: ${slots[k] ?? ""}`)
-    .join("\n");
+  return keys.map((k) => `${k}: ${slots[k] ?? ""}`).join("\n");
 }
 
 export function DispatchParsingMessagePanel() {
@@ -127,7 +127,7 @@ export function DispatchParsingMessagePanel() {
       if (!plain) {
         next[row.id] = {
           kind: "error",
-          message: "Could not extract plain text from this email.",
+          message: "Could not extract dispatch plain text from this email.",
         };
         continue;
       }
@@ -209,11 +209,10 @@ export function DispatchParsingMessagePanel() {
         <div>
           <h1>Message Parsing</h1>
           <p>
-            Define <strong>message rules</strong> as a JSON array (see <code>src/cadDispatch/ruleEngine.ts</code>). On
-            ingest, the server runs these rules on extracted plain text and saves the result on each email row. The list
-            below shows up to {EMAIL_LIST_LIMIT} recent emails with a plain-text preview for each.{" "}
-            <strong>Preview</strong> recomputes every row using the rules in the editor (saved or not). <strong>Save</strong>{" "}
-            persists rules for this tenant only.
+            Select <strong>rule packs</strong> we ship with the product, then <strong>Apply selected packs</strong>.{" "}
+            <strong>Preview</strong> runs those rules on up to {EMAIL_LIST_LIMIT} recent emails:{" "}
+            <strong>Dispatch content</strong> (same as Raw Email) on the left, <strong>After rules</strong> on the right.{" "}
+            <strong>Save</strong> persists rules for this tenant. Ingest stores the message result on each email row.
           </p>
         </div>
       </header>
@@ -221,15 +220,12 @@ export function DispatchParsingMessagePanel() {
       <section className="cad-dispatch-h-top">
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
-            <h2>Message rules (JSON array)</h2>
+            <h2>Message rules</h2>
           </div>
-          <textarea
-            className="cad-dispatch-rules-textarea"
-            spellCheck={false}
-            value={rulesJson}
-            onChange={(e) => setRulesJson(e.target.value)}
-            rows={12}
-            aria-label="Message rules JSON"
+          <CadDispatchRulePacksSection
+            packs={MESSAGE_RULE_PACKS}
+            rulesJson={rulesJson}
+            onRulesJsonChange={setRulesJson}
           />
           <div className="cad-dispatch-incident-actions">
             <button
@@ -261,9 +257,11 @@ export function DispatchParsingMessagePanel() {
 
       <section className="cad-dispatch-message-batch-section">
         <div className="panel-header cad-dispatch-message-batch-header">
-          <h2>Recent emails — preview for each</h2>
+          <h2>Recent emails</h2>
           <p className="panel-description cad-dispatch-email-rail-sub">
-            Up to {EMAIL_LIST_LIMIT} newest. Previews refresh when the list loads and when you click Preview.
+            Up to {EMAIL_LIST_LIMIT} newest. Left column matches <strong>Raw Email → Dispatch content (for parsing)</strong>
+            . Right column is the pipeline output after your rules. Previews refresh when the list loads and when you
+            click Preview.
           </p>
         </div>
         {emailsError ? <p className="field-error">{emailsError}</p> : null}
@@ -275,6 +273,7 @@ export function DispatchParsingMessagePanel() {
           <div className="cad-dispatch-message-batch-list">
             {emails.map((row) => {
               const pv = rowPreviews[row.id];
+              const dispatchPlain = getDispatchPlainTextFromRawBody(row.rawBody ?? "");
               return (
                 <article key={row.id} className="panel cad-dispatch-message-row-card">
                   <div className="cad-dispatch-message-row-meta">
@@ -282,6 +281,14 @@ export function DispatchParsingMessagePanel() {
                     <span className="cad-dispatch-message-row-from">{row.fromAddress || "—"}</span>
                   </div>
                   <div className="cad-dispatch-message-row-columns">
+                    <div className="cad-dispatch-message-row-col">
+                      <h3 className="cad-dispatch-message-row-h">Dispatch content (for parsing)</h3>
+                      {dispatchPlain ? (
+                        <pre className="cad-dispatch-preview-plain">{dispatchPlain}</pre>
+                      ) : (
+                        <p className="panel-description">Could not extract plain text (see Raw Email for MIME).</p>
+                      )}
+                    </div>
                     <div className="cad-dispatch-message-row-col">
                       <h3 className="cad-dispatch-message-row-h">After rules (preview)</h3>
                       {!pv ? (
@@ -300,14 +307,6 @@ export function DispatchParsingMessagePanel() {
                             </div>
                           ) : null}
                         </>
-                      )}
-                    </div>
-                    <div className="cad-dispatch-message-row-col cad-dispatch-message-row-col-stored">
-                      <h3 className="cad-dispatch-message-row-h">Stored at ingest</h3>
-                      {row.parsedMessageText ? (
-                        <pre className="cad-dispatch-preview-plain cad-dispatch-stored-pre">{row.parsedMessageText}</pre>
-                      ) : (
-                        <p className="panel-description">Empty for this row (rules at ingest, or no plain text).</p>
                       )}
                     </div>
                   </div>

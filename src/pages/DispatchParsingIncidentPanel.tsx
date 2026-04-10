@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   getCadParsingConfig,
   patchCadParsingConfig,
 } from "../api/cadDispatchConfig.ts";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails.ts";
+import { CadDispatchRulePacksSection } from "../components/CadDispatchRulePacksSection.tsx";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
+import { INCIDENT_RULE_PACKS } from "../cadDispatch/rulePresets.ts";
 import {
   parseCadRulesJson,
   runCadRulePipeline,
@@ -26,15 +28,14 @@ function formatRowDate(iso: string): string {
   }
 }
 
-function formatPreviewJson(result: CadRuleEngineResult): string {
-  if (result.ok) {
-    return JSON.stringify(
-      { ok: true, text: result.text, slots: result.slots },
-      null,
-      2,
-    );
-  }
-  return JSON.stringify(result, null, 2);
+type RowPreviewState =
+  | { kind: "ok"; text: string; slots: Record<string, string> }
+  | { kind: "error"; message: string };
+
+function formatSlotsPlain(slots: Record<string, string>): string {
+  const keys = Object.keys(slots);
+  if (keys.length === 0) return "";
+  return keys.map((k) => `${k}: ${slots[k] ?? ""}`).join("\n");
 }
 
 export function DispatchParsingIncidentPanel() {
@@ -43,15 +44,16 @@ export function DispatchParsingIncidentPanel() {
 
   const [enableIncidentCreation, setEnableIncidentCreation] = useState(false);
   const [rulesJson, setRulesJson] = useState<string>("[]");
+  const rulesJsonRef = useRef(rulesJson);
+  rulesJsonRef.current = rulesJson;
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
   const [emailsLoading, setEmailsLoading] = useState(true);
   const [emailsError, setEmailsError] = useState<string | null>(null);
-  const [selectedEmailId, setSelectedEmailId] = useState<string | null>(null);
 
-  const [plainText, setPlainText] = useState("");
-  const [previewResult, setPreviewResult] = useState<CadRuleEngineResult | null>(null);
-  const [previewError, setPreviewError] = useState<string | null>(null);
+  const [rowPreviews, setRowPreviews] = useState<Record<string, RowPreviewState>>({});
+  const [batchError, setBatchError] = useState<string | null>(null);
+  const [previewBusy, setPreviewBusy] = useState(false);
 
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
@@ -87,13 +89,7 @@ export function DispatchParsingIncidentPanel() {
     setEmailsError(null);
     getCadEmails(EMAIL_LIST_LIMIT, 0)
       .then((list) => {
-        if (!cancelled) {
-          setEmails(list);
-          setSelectedEmailId((prev) => {
-            if (prev && list.some((r) => r.id === prev)) return prev;
-            return list[0]?.id ?? null;
-          });
-        }
+        if (!cancelled) setEmails(list);
       })
       .catch((e) => {
         if (!cancelled) {
@@ -106,48 +102,65 @@ export function DispatchParsingIncidentPanel() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [saveOkAt]);
 
-  const selectedRow = emails.find((r) => r.id === selectedEmailId) ?? null;
-
-  useEffect(() => {
-    if (!selectedRow) {
-      setPlainText("");
-      setPreviewResult(null);
-      setPreviewError(null);
-      return;
-    }
-    const plain = getDispatchPlainTextFromRawBody(selectedRow.rawBody ?? "");
-    setPlainText(plain ?? "");
-    setPreviewResult(null);
-    setPreviewError(null);
-  }, [selectedRow]);
-
-  const parseRulesFromEditor = useCallback((): CadRule[] => {
-    const trimmed = rulesJson.trim();
+  const parseRulesFromRef = useCallback((): CadRule[] => {
+    const trimmed = rulesJsonRef.current.trim();
     if (!trimmed) return [];
     const parsed = JSON.parse(trimmed) as unknown;
     return parseCadRulesJson(parsed);
-  }, [rulesJson]);
+  }, []);
 
-  const runPreview = useCallback(() => {
-    setPreviewError(null);
-    setPreviewResult(null);
+  const runAllPreviews = useCallback(() => {
+    setBatchError(null);
+    setPreviewBusy(true);
+    let rules: CadRule[];
     try {
-      const rules = parseRulesFromEditor();
-      const result = runCadRulePipeline(plainText, rules);
-      setPreviewResult(result);
+      rules = parseRulesFromRef();
     } catch (e) {
-      setPreviewError(e instanceof Error ? e.message : String(e));
+      setBatchError(e instanceof Error ? e.message : String(e));
+      setPreviewBusy(false);
+      return;
     }
-  }, [parseRulesFromEditor, plainText]);
+
+    const next: Record<string, RowPreviewState> = {};
+    for (const row of emails) {
+      const plain = getDispatchPlainTextFromRawBody(row.rawBody ?? "");
+      if (!plain) {
+        next[row.id] = {
+          kind: "error",
+          message: "Could not extract dispatch plain text from this email.",
+        };
+        continue;
+      }
+      const result: CadRuleEngineResult = runCadRulePipeline(plain, rules);
+      if (result.ok) {
+        next[row.id] = { kind: "ok", text: result.text, slots: result.slots };
+      } else {
+        next[row.id] = { kind: "error", message: result.error ?? "Rule pipeline failed." };
+      }
+    }
+    setRowPreviews(next);
+    setPreviewBusy(false);
+  }, [emails, parseRulesFromRef]);
+
+  useEffect(() => {
+    if (emailsLoading || loading) return;
+    if (emails.length === 0) {
+      setRowPreviews({});
+      return;
+    }
+    runAllPreviews();
+  }, [emailsLoading, loading, emails, runAllPreviews]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
     setSaveOkAt(null);
     let rules: CadRule[];
     try {
-      rules = parseRulesFromEditor();
+      const trimmed = rulesJson.trim();
+      const parsed = JSON.parse(trimmed || "[]") as unknown;
+      rules = parseCadRulesJson(parsed);
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
       return;
@@ -164,7 +177,11 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, parseRulesFromEditor]);
+  }, [enableIncidentCreation, rulesJson]);
+
+  const handlePreviewClick = useCallback(() => {
+    runAllPreviews();
+  }, [runAllPreviews]);
 
   if (loading) {
     return (
@@ -197,9 +214,11 @@ export function DispatchParsingIncidentPanel() {
         <div>
           <h1>Incident Parsing</h1>
           <p>
-            Define <strong>incident rules</strong> as a JSON array (see <code>src/cadDispatch/ruleEngine.ts</code>
-            ). <strong>Save</strong> persists config; ingest runs the same pipeline on extracted plain text when{" "}
-            <strong>Enable automatic incident creation</strong> is on. Select a recent email below to preview.
+            Select <strong>incident rule packs</strong>, then <strong>Apply selected packs</strong>.{" "}
+            <strong>Preview</strong> runs on up to {EMAIL_LIST_LIMIT} recent emails:{" "}
+            <strong>Dispatch content (for parsing)</strong> on the left (same as Raw Email),{" "}
+            <strong>After rules</strong> on the right. <strong>Save</strong> persists config; ingest uses the same
+            pipeline when automatic incident creation is enabled.
           </p>
         </div>
       </header>
@@ -221,19 +240,21 @@ export function DispatchParsingIncidentPanel() {
 
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
-            <h2>Incident rules (JSON array)</h2>
+            <h2>Incident rules</h2>
           </div>
-          <textarea
-            className="cad-dispatch-rules-textarea"
-            spellCheck={false}
-            value={rulesJson}
-            onChange={(e) => setRulesJson(e.target.value)}
-            rows={12}
-            aria-label="Incident rules JSON"
+          <CadDispatchRulePacksSection
+            packs={INCIDENT_RULE_PACKS}
+            rulesJson={rulesJson}
+            onRulesJsonChange={setRulesJson}
           />
           <div className="cad-dispatch-incident-actions">
-            <button type="button" className="secondary-button" onClick={runPreview}>
-              Preview
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={handlePreviewClick}
+              disabled={previewBusy || emailsLoading}
+            >
+              {previewBusy ? "Updating previews…" : "Preview"}
             </button>
             <button
               type="button"
@@ -244,6 +265,7 @@ export function DispatchParsingIncidentPanel() {
               {saveBusy ? "Saving…" : "Save"}
             </button>
           </div>
+          {batchError ? <p className="field-error">{batchError}</p> : null}
           {saveError ? <p className="field-error">{saveError}</p> : null}
           {saveOkAt !== null && !saveError ? (
             <p className="cad-dispatch-save-ok" role="status">
@@ -253,73 +275,65 @@ export function DispatchParsingIncidentPanel() {
         </article>
       </section>
 
-      <section className="cad-dispatch-h-lower">
-        <div className="cad-dispatch-email-rail">
-          <div className="panel-header cad-dispatch-email-rail-header">
-            <h2>Recent emails</h2>
-            <p className="panel-description cad-dispatch-email-rail-sub">
-              Up to {EMAIL_LIST_LIMIT} newest (tenant-scoped).
-            </p>
-          </div>
-          {emailsError ? <p className="field-error">{emailsError}</p> : null}
-          {emailsLoading ? (
-            <p className="panel-description">Loading…</p>
-          ) : emails.length === 0 ? (
-            <p className="panel-description">No stored CAD emails yet. Send a test message to your CAD address.</p>
-          ) : (
-            <ul className="cad-dispatch-email-rail-list">
-              {emails.map((row) => (
-                <li key={row.id}>
-                  <button
-                    type="button"
-                    className={
-                      row.id === selectedEmailId
-                        ? "cad-dispatch-email-rail-item active"
-                        : "cad-dispatch-email-rail-item"
-                    }
-                    onClick={() => setSelectedEmailId(row.id)}
-                  >
-                    <span className="cad-dispatch-email-rail-date">{formatRowDate(row.createdAt)}</span>
-                    <span className="cad-dispatch-email-rail-from">{row.fromAddress || "—"}</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-          )}
+      <section className="cad-dispatch-message-batch-section">
+        <div className="panel-header cad-dispatch-message-batch-header">
+          <h2>Recent emails</h2>
+          <p className="panel-description cad-dispatch-email-rail-sub">
+            Up to {EMAIL_LIST_LIMIT} newest. Left = dispatch plain text (same extraction as Raw Email). Right = after
+            incident rules (plain text and extracted fields, not JSON).
+          </p>
         </div>
-
-        <div className="cad-dispatch-h-right">
-          <div className="cad-dispatch-h-split">
-            <article className="panel cad-dispatch-incident-card">
-              <div className="panel-header">
-                <h2>Dispatch plain text</h2>
-              </div>
-              <p className="panel-description">
-                From the selected email (extracted MIME → plain). Edit if needed before preview.
-              </p>
-              <textarea
-                className="cad-dispatch-rules-textarea"
-                spellCheck={false}
-                value={plainText}
-                onChange={(e) => setPlainText(e.target.value)}
-                rows={14}
-                aria-label="Dispatch plain text for incident preview"
-              />
-            </article>
-
-            <article className="panel cad-dispatch-incident-card">
-              <div className="panel-header">
-                <h2>Preview output</h2>
-              </div>
-              {previewError ? <p className="field-error">{previewError}</p> : null}
-              {previewResult ? (
-                <pre className="cad-dispatch-preview-pre">{formatPreviewJson(previewResult)}</pre>
-              ) : !previewError ? (
-                <p className="panel-description">Click Preview to run the incident rule pipeline.</p>
-              ) : null}
-            </article>
+        {emailsError ? <p className="field-error">{emailsError}</p> : null}
+        {emailsLoading ? (
+          <p className="panel-description">Loading…</p>
+        ) : emails.length === 0 ? (
+          <p className="panel-description">No stored CAD emails yet. Send a test message to your CAD address.</p>
+        ) : (
+          <div className="cad-dispatch-message-batch-list">
+            {emails.map((row) => {
+              const pv = rowPreviews[row.id];
+              const dispatchPlain = getDispatchPlainTextFromRawBody(row.rawBody ?? "");
+              return (
+                <article key={row.id} className="panel cad-dispatch-message-row-card">
+                  <div className="cad-dispatch-message-row-meta">
+                    <span className="cad-dispatch-message-row-date">{formatRowDate(row.createdAt)}</span>
+                    <span className="cad-dispatch-message-row-from">{row.fromAddress || "—"}</span>
+                  </div>
+                  <div className="cad-dispatch-message-row-columns">
+                    <div className="cad-dispatch-message-row-col">
+                      <h3 className="cad-dispatch-message-row-h">Dispatch content (for parsing)</h3>
+                      {dispatchPlain ? (
+                        <pre className="cad-dispatch-preview-plain">{dispatchPlain}</pre>
+                      ) : (
+                        <p className="panel-description">Could not extract plain text (see Raw Email for MIME).</p>
+                      )}
+                    </div>
+                    <div className="cad-dispatch-message-row-col">
+                      <h3 className="cad-dispatch-message-row-h">After rules (preview)</h3>
+                      {!pv ? (
+                        <p className="panel-description">—</p>
+                      ) : pv.kind === "error" ? (
+                        <p className="field-error">{pv.message}</p>
+                      ) : (
+                        <>
+                          <pre className="cad-dispatch-preview-plain">{pv.text}</pre>
+                          {formatSlotsPlain(pv.slots) ? (
+                            <div className="cad-dispatch-slots-plain" aria-label="Extracted slots">
+                              <div className="cad-dispatch-message-row-h-sub">Extracted</div>
+                              <pre className="cad-dispatch-preview-plain cad-dispatch-slots-pre">
+                                {formatSlotsPlain(pv.slots)}
+                              </pre>
+                            </div>
+                          ) : null}
+                        </>
+                      )}
+                    </div>
+                  </div>
+                </article>
+              );
+            })}
           </div>
-        </div>
+        )}
       </section>
     </>
   );
