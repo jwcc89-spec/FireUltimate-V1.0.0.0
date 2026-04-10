@@ -112,6 +112,13 @@ export interface IncidentCallSummary {
   nerisReportStatus?: string;
 }
 
+/** Display incident # (internal id, or incident number, or call id). */
+export function getIncidentDisplayNumber(call: IncidentCallSummary): string {
+  return (
+    String(call.incident_internal_id ?? call.incidentNumber ?? call.callNumber).trim() || call.callNumber
+  );
+}
+
 export interface DispatchNote {
   time: string;
   text: string;

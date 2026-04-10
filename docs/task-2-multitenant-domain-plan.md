@@ -356,6 +356,9 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 - **2026-03-18 (NERIS UX, not Task-2 schema):** Mutual aid directory + CORE aid UX completions are tracked in **`docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`** (items 11.3–11.3d and session section).
 - **2026-03 (NERIS admin required fields):** Admin Functions → Reports | NERIS page; `nerisRequiredFieldOverrides` in DepartmentDetails payload; effective-required used in NERIS form and validation (see PRIORITY 11.4).
 
+### In progress (Fire Recovery USA — not Task-2 schema core)
+- **Incident billing handoff (UX + API):** See **`docs/plans/FIRE_RECOVERY_INCIDENT_BILLING_UX_PLAN.md`** — Incident Export Queue **FireRecovery** column + per-row export; NERIS submenu **Fire Recovery** entry; **Fire Recovery Incidents for Billing** list; detail **Update** (Get Incident Billing Status). Tenant-scoped; secrets not in `DepartmentDetails.payloadJson`.
+
 ### Later (deferred hardening backlog)
 - Complete staging and production verification of the new incident workflow configuration surface (`Admin Functions -> Department Details -> Incidents Setup`) and incident linkage behavior (`Incident #` sync between incident queue and NERIS form).
 - Move incident table display preferences (column widths, order, visibility) from browser-local per-user storage to backend-persisted per-user preferences so settings follow users across devices/browsers.

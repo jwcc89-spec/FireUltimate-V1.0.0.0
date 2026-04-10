@@ -48,6 +48,15 @@ import {
 import { getNerisDraft, patchNerisDraft } from "./api/nerisDrafts";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
+  getFireRecoveryIncidents,
+  getFireRecoverySettings,
+  patchFireRecoverySettings,
+  postFireRecoverySubmit,
+  type FireRecoveryIncidentApi,
+} from "./api/fireRecovery";
+import { FireRecoveryIncidentsPage } from "./pages/FireRecoveryIncidentsPage";
+import { FireRecoveryIncidentDetailPage } from "./pages/FireRecoveryIncidentDetailPage";
+import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
   DASHBOARD_PRIORITY_LINKS,
@@ -67,6 +76,7 @@ import {
   getSubmenuByPath,
   getSubmenuForPath,
   getVisibleMenus,
+  getIncidentDisplayNumber,
   isPathAdminOnly,
   type DisplayCardOption,
   type IncidentCallSummary,
@@ -1180,10 +1190,6 @@ function readApparatusFromDepartmentDetails(): {
       return { unit, unitId, commonName, unitType };
     })
     .filter((entry) => entry.unit.length > 0);
-}
-
-function getIncidentDisplayNumber(call: IncidentCallSummary): string {
-  return String(call.incident_internal_id ?? call.incidentNumber ?? call.callNumber).trim() || call.callNumber;
 }
 
 function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
@@ -5431,6 +5437,12 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
           </p>
         </div>
         <div className="header-actions">
+          <NavLink
+            className="secondary-button button-link compact-button"
+            to="/reporting/neris/fire-recovery"
+          >
+            Fire Recovery
+          </NavLink>
           <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
             View Exports
           </NavLink>
@@ -5542,6 +5554,9 @@ interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
 function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPagePropsWithHistory) {
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
+  const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
+  const [frSubmittingCall, setFrSubmittingCall] = useState<string | null>(null);
+
   const queueCalls = useMemo(
     () =>
       isDemoTenant
@@ -5560,8 +5575,41 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
     return map;
   }, [exportHistory]);
 
+  useEffect(() => {
+    let cancelled = false;
+    getFireRecoveryIncidents()
+      .then((list) => {
+        if (cancelled) return;
+        const next = new Map<string, FireRecoveryIncidentApi>();
+        list.forEach((r) => next.set(r.callNumber, r));
+        setFrByCall(next);
+      })
+      .catch(() => {
+        if (!cancelled) setFrByCall(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [exportHistory]);
+
   const openExportDetails = (callNumber: string) => {
     navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
+  };
+
+  const handleFireRecoverySubmit = (callNumber: string) => {
+    setFrSubmittingCall(callNumber);
+    postFireRecoverySubmit(callNumber)
+      .then((record) => {
+        setFrByCall((prev) => {
+          const next = new Map(prev);
+          next.set(callNumber, record);
+          return next;
+        });
+      })
+      .catch((e: Error) => {
+        window.alert(e?.message ?? "Fire Recovery submit failed.");
+      })
+      .finally(() => setFrSubmittingCall(null));
   };
 
   return (
@@ -5575,6 +5623,12 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
           </p>
         </div>
         <div className="header-actions">
+          <NavLink
+            className="secondary-button button-link compact-button"
+            to="/reporting/neris/fire-recovery"
+          >
+            Fire Recovery
+          </NavLink>
           <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
             Back to NERIS Queue
           </NavLink>
@@ -5598,11 +5652,13 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                   <th>Validator</th>
                   <th>Report Writer</th>
                   <th>NERIS ID</th>
+                  <th>Fire Recovery</th>
                 </tr>
               </thead>
               <tbody>
                 {queueCalls.map((call) => {
                   const latestExport = latestExportByCall.get(call.callNumber);
+                  const fr = frByCall.get(call.callNumber);
                   return (
                     <tr
                       key={`neris-export-row-${call.callNumber}`}
@@ -5643,12 +5699,42 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                       <td>{latestExport?.validatorName || "--"}</td>
                       <td>{latestExport?.reportWriterName || "--"}</td>
                       <td>{latestExport?.nerisId || "--"}</td>
+                      <td
+                        className="fire-recovery-queue-cell"
+                        onClick={(event) => event.stopPropagation()}
+                        onKeyDown={(event) => event.stopPropagation()}
+                      >
+                        <div
+                          style={{
+                            display: "flex",
+                            flexDirection: "column",
+                            alignItems: "flex-start",
+                            gap: "0.35rem",
+                          }}
+                        >
+                          {fr?.lastSubmitOk ? (
+                            <span className="tone tone-positive">DataSent</span>
+                          ) : (
+                            <span>—</span>
+                          )}
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            disabled={frSubmittingCall === call.callNumber}
+                            onClick={() => handleFireRecoverySubmit(call.callNumber)}
+                          >
+                            {frSubmittingCall === call.callNumber
+                              ? "Sending…"
+                              : "Send to Fire Recovery"}
+                          </button>
+                        </div>
+                      </td>
                     </tr>
                   );
                 })}
                 {queueCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={9}>
                       <div className="empty-message">
                         No export queue rows are shown for live tenants until incidents are connected.
                       </div>
@@ -11744,6 +11830,12 @@ function CustomizationPage({
   );
   const [savedMessage, setSavedMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [frDepartmentName, setFrDepartmentName] = useState("");
+  const [frSubscriptionKeyInput, setFrSubscriptionKeyInput] = useState("");
+  const [frSubscriptionMasked, setFrSubscriptionMasked] = useState("");
+  const [frMessage, setFrMessage] = useState("");
+  const [frError, setFrError] = useState("");
+  const [frSaving, setFrSaving] = useState(false);
 
   const visibleCallFieldOrder = dedupeCallFieldOrder(
     incidentSettingsDraft.callFieldOrder.filter((fieldId) =>
@@ -11754,6 +11846,47 @@ function CustomizationPage({
   const parsingRow =
     DISPATCH_PARSING_PREVIEW.find((row) => row.callNumber === selectedParsingCall) ??
     DISPATCH_PARSING_PREVIEW[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const d = await getFireRecoverySettings();
+        if (!cancelled) {
+          setFrDepartmentName(d.departmentName);
+          setFrSubscriptionMasked(d.subscriptionKeyMasked);
+        }
+      } catch {
+        // Tenant may lack permission or API unavailable; leave fields empty.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSaveFireRecoverySettings = () => {
+    setFrSaving(true);
+    setFrMessage("");
+    setFrError("");
+    const payload: { fireRecoveryDepartmentName: string; fireRecoverySubscriptionKey?: string } = {
+      fireRecoveryDepartmentName: frDepartmentName.trim(),
+    };
+    if (frSubscriptionKeyInput.trim()) {
+      payload.fireRecoverySubscriptionKey = frSubscriptionKeyInput.trim();
+    }
+    patchFireRecoverySettings(payload)
+      .then((d) => {
+        setFrDepartmentName(d.departmentName);
+        setFrSubscriptionMasked(d.subscriptionKeyMasked);
+        setFrSubscriptionKeyInput("");
+        setFrMessage("Fire Recovery tenant settings saved.");
+      })
+      .catch((e: Error) => {
+        setFrError(e?.message ?? "Could not save Fire Recovery settings.");
+      })
+      .finally(() => setFrSaving(false));
+  };
 
   const updateWorkflowState = (index: number, value: string) => {
     setWorkflowDraft((previous) =>
@@ -11909,7 +12042,7 @@ function CustomizationPage({
             <h1>Admin Functions | Customization</h1>
             <p>
               Configure branding, incident display controls, submenu visibility,
-              parsing setup, and NERIS export settings.
+              parsing setup, NERIS export settings, and Fire Recovery billing identifiers.
             </p>
             {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
             {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
@@ -12215,6 +12348,72 @@ function CustomizationPage({
               Security note: these values are local browser settings for prototype
               testing. Production keys should be kept on a backend server.
             </small>
+          </div>
+        </CustomizationSection>
+
+        <CustomizationSection title="Fire Recovery USA (billing)">
+          <div className="settings-form">
+            <p className="field-hint">
+              <strong>Send to Fire Recovery</strong> uses Fire Recovery’s{" "}
+              <strong>Add NERIS Incident for Billing</strong> API. The tenant’s{" "}
+              <strong>NERIS Entity ID</strong> (FD########, set in Department Details) is sent as{" "}
+              <code>NERISDepartmentId</code>; the <strong>department name</strong> below is{" "}
+              <code>DepartmentName</code>. The incident must already be successfully exported to
+              NERIS (complete / ready for billing).
+            </p>
+            <p className="field-hint">
+              <strong>Subscription key</strong> is optional and kept for compatibility with older
+              vendor docs; the NERIS billing path does not require it.
+            </p>
+            <p className="field-hint">
+              The vendor <strong>username</strong> and <strong>password</strong> used to obtain a JWT
+              are the same as our server variables <code>FIRE_RECOVERY_API_USERNAME</code> and{" "}
+              <code>FIRE_RECOVERY_API_PASSWORD</code> in <code>.env.server</code> (staging/production
+              environment on Render)—not entered here.
+            </p>
+            <p className="field-hint">
+              Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server (e.g.{" "}
+              <code>https://process-dev.firerecoveryusa.com</code> for testing vs production host).
+            </p>
+
+            {frSubscriptionMasked ? (
+              <p className="field-hint">
+                Current subscription key (masked): <strong>{frSubscriptionMasked}</strong>
+              </p>
+            ) : (
+              <p className="field-hint">No subscription key saved yet for this tenant.</p>
+            )}
+
+            <label htmlFor="fr-subscription-key">New subscription key (optional)</label>
+            <input
+              id="fr-subscription-key"
+              type="password"
+              autoComplete="off"
+              placeholder="Leave blank to keep the current key"
+              value={frSubscriptionKeyInput}
+              onChange={(event) => setFrSubscriptionKeyInput(event.target.value)}
+            />
+
+            <label htmlFor="fr-department-name">Department name (for Fire Recovery API)</label>
+            <input
+              id="fr-department-name"
+              type="text"
+              placeholder="e.g. Crescent-Iroquois Fire Protection District"
+              value={frDepartmentName}
+              onChange={(event) => setFrDepartmentName(event.target.value)}
+            />
+
+            {frMessage ? <p className="save-message">{frMessage}</p> : null}
+            {frError ? <p className="auth-error">{frError}</p> : null}
+
+            <button
+              type="button"
+              className="primary-button"
+              disabled={frSaving}
+              onClick={handleSaveFireRecoverySettings}
+            >
+              {frSaving ? "Saving…" : "Save Fire Recovery settings"}
+            </button>
           </div>
         </CustomizationSection>
 
@@ -12757,6 +12956,17 @@ function RouteResolver({
     content = <Navigate to={`/reporting/neris/${encodeURIComponent(legacyReportId)}`} replace />;
   } else if (path === "/reporting/neris") {
     content = <NerisReportingPage incidentCalls={incidentCalls} />;
+  } else if (path === "/reporting/neris/fire-recovery") {
+    content = <FireRecoveryIncidentsPage incidentCalls={incidentCalls} />;
+  } else if (path.startsWith("/reporting/neris/fire-recovery/")) {
+    const frCallNumber = decodeURIComponent(path.replace("/reporting/neris/fire-recovery/", ""));
+    content = (
+      <FireRecoveryIncidentDetailPage
+        key={frCallNumber}
+        callNumber={frCallNumber}
+        incidentCalls={incidentCalls}
+      />
+    );
   } else if (path === "/reporting/neris/exports") {
     content = <NerisExportsPage incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
   } else if (path.startsWith("/reporting/neris/exports/")) {

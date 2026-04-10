@@ -12,6 +12,10 @@ model Tenant {
   name               String
   status             String               @default("active")
   nerisEntityId      String?
+  /// Fire Recovery USA Recovery Hub subscription key (non-secret identifier; store API password in env).
+  fireRecoverySubscriptionKey   String?
+  /// Department display name sent to Fire Recovery incident billing API.
+  fireRecoveryDepartmentName    String?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   domains            TenantDomain[]
@@ -23,6 +27,37 @@ model Tenant {
   cadEmailAllowlist       CadEmailAllowlistEntry[]
   nerisExportHistory      NerisExportHistory[]
   nerisDrafts             NerisDraft[]
+  fireRecoveryIncidentBillings FireRecoveryIncidentBilling[]
+}
+
+/// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.
+model FireRecoveryIncidentBilling {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  callNumber            String
+  trackingId            String?
+  lastSubmitAt          DateTime?
+  lastSubmitOk          Boolean   @default(false)
+  lastSubmitError       String    @default("")
+  incidentType          String    @default("")
+  incidentDateLabel     String    @default("")
+  invoiceId             String    @default("")
+  invoiceAmount         String    @default("")
+  invoiceAmountDue      String    @default("")
+  invoiceSubmitDate     String    @default("")
+  invoiceStatus         String    @default("")
+  lastPaymentDate       String    @default("")
+  lastPaymentAmount     String    @default("")
+  paymentPlan           Boolean   @default(false)
+  billingFetchedAt      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, callNumber])
+  @@index([tenantId])
+  @@index([tenantId, updatedAt])
 }
 
 model TenantDomain {

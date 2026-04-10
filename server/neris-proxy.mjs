@@ -14,6 +14,16 @@ import {
   parseCadRulesJson,
   runCadRulePipeline,
 } from "./cadDispatchRuleEngine.mjs";
+import {
+  buildNerisIncidentForBillingPayload,
+  extractIncidentMetadataFromExportPayload,
+} from "./fireRecoveryMapping.mjs";
+import {
+  getFireRecoveryApiCredentials,
+  getFireRecoveryJwt,
+  postAddNerisIncidentForBilling,
+  postIncidentBillingStatus,
+} from "./fireRecoveryClient.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -3019,6 +3029,416 @@ app.patch("/api/neris/settings", async (request, response) => {
       ok: false,
       message:
         error instanceof Error ? error.message : "Unexpected NERIS settings save error.",
+    });
+  }
+});
+
+// ----- Fire Recovery USA (incident billing) -----
+function maskFireRecoverySubscriptionKey(raw) {
+  const s = trimValue(raw);
+  if (!s) return "";
+  if (s.length <= 4) return "****";
+  return `****${s.slice(-4)}`;
+}
+
+function formatFireRecoveryExportDateLabel(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fireRecoveryBillingRowToApi(row) {
+  return {
+    id: row.id,
+    callNumber: row.callNumber,
+    trackingId: row.trackingId ?? "",
+    incidentType: row.incidentType ?? "",
+    incidentDateLabel: row.incidentDateLabel ?? "",
+    lastSubmitAt: row.lastSubmitAt ? row.lastSubmitAt.toISOString() : null,
+    lastSubmitOk: row.lastSubmitOk,
+    lastSubmitError: row.lastSubmitError ?? "",
+    exportDateLabel:
+      row.lastSubmitOk && row.lastSubmitAt ? formatFireRecoveryExportDateLabel(row.lastSubmitAt) : "",
+    amountDue: row.invoiceAmountDue ?? "",
+    amountPaid: row.lastPaymentAmount ?? "",
+    invoiceId: row.invoiceId ?? "",
+    invoiceStatus: row.invoiceStatus ?? "",
+    invoiceAmount: row.invoiceAmount ?? "",
+    billingFetchedAt: row.billingFetchedAt ? row.billingFetchedAt.toISOString() : null,
+  };
+}
+
+function parseExportPayloadPreview(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+app.get("/api/fire-recovery/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        fireRecoverySubscriptionKey: true,
+        fireRecoveryDepartmentName: true,
+      },
+    });
+    response.json({
+      ok: true,
+      data: {
+        subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
+        departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected Fire Recovery settings read error.",
+    });
+  }
+});
+
+app.patch("/api/fire-recovery/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const subscriptionKey =
+      typeof body.fireRecoverySubscriptionKey === "string"
+        ? body.fireRecoverySubscriptionKey
+        : undefined;
+    const departmentName =
+      typeof body.fireRecoveryDepartmentName === "string"
+        ? body.fireRecoveryDepartmentName
+        : undefined;
+    const data = {};
+    if (subscriptionKey !== undefined) {
+      data.fireRecoverySubscriptionKey = subscriptionKey.trim() || null;
+    }
+    if (departmentName !== undefined) {
+      data.fireRecoveryDepartmentName = departmentName.trim() || null;
+    }
+    if (Object.keys(data).length === 0) {
+      response.status(400).json({ ok: false, message: "No Fire Recovery fields to update." });
+      return;
+    }
+    const tenant = await prisma.tenant.update({
+      where: { id: tenantId },
+      data,
+      select: {
+        fireRecoverySubscriptionKey: true,
+        fireRecoveryDepartmentName: true,
+      },
+    });
+    response.json({
+      ok: true,
+      data: {
+        subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant.fireRecoverySubscriptionKey),
+        departmentName: trimValue(tenant.fireRecoveryDepartmentName),
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected Fire Recovery settings save error.",
+    });
+  }
+});
+
+app.get("/api/fire-recovery/incidents", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.fireRecoveryIncidentBilling.findMany({
+      where: { tenantId },
+      orderBy: { updatedAt: "desc" },
+      take: 500,
+    });
+    response.json({ ok: true, data: rows.map(fireRecoveryBillingRowToApi) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected Fire Recovery incidents list error.",
+    });
+  }
+});
+
+app.get("/api/fire-recovery/incidents/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing call number." });
+      return;
+    }
+    const row = await prisma.fireRecoveryIncidentBilling.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (!row) {
+      response.status(404).json({ ok: false, message: "Fire Recovery row not found for this incident." });
+      return;
+    }
+    response.json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        error instanceof Error ? error.message : "Unexpected Fire Recovery incident read error.",
+    });
+  }
+});
+
+app.post("/api/fire-recovery/submit", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    if (!getFireRecoveryApiCredentials()) {
+      response.status(503).json({
+        ok: false,
+        message:
+          "Fire Recovery API is not configured on the server (FIRE_RECOVERY_API_USERNAME / FIRE_RECOVERY_API_PASSWORD).",
+      });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const callNumber = trimValue(body.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "callNumber is required." });
+      return;
+    }
+
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        nerisEntityId: true,
+        fireRecoveryDepartmentName: true,
+      },
+    });
+    const nerisDepartmentId = trimValue(tenant?.nerisEntityId);
+    const dept = trimValue(tenant?.fireRecoveryDepartmentName);
+    if (!nerisDepartmentId || !NERIS_ENTITY_ID_PATTERN.test(nerisDepartmentId)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Set this tenant's NERIS Entity ID (FD########) in Department Details / tenant settings, and Fire Recovery Department Name under Customization, before submitting.",
+      });
+      return;
+    }
+    if (!dept) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Set Fire Recovery Department Name (Admin → Customization → Fire Recovery USA) before submitting.",
+      });
+      return;
+    }
+
+    const latestOk = await prisma.nerisExportHistory.findFirst({
+      where: { tenantId, callNumber, attemptStatus: "success" },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!latestOk?.submittedPayloadPreview) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "No successful NERIS export payload found for this incident. Export the NERIS report successfully first.",
+      });
+      return;
+    }
+
+    const nerisId = trimValue(latestOk.nerisId);
+    if (!nerisId) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "NERIS incident ID is missing from export history. Re-export the NERIS report so the response includes a NERIS incident id.",
+      });
+      return;
+    }
+
+    const parsed = parseExportPayloadPreview(latestOk.submittedPayloadPreview);
+    if (!parsed) {
+      response.status(400).json({
+        ok: false,
+        message: "Stored export payload is not valid JSON; cannot map to Fire Recovery.",
+      });
+      return;
+    }
+
+    const meta = extractIncidentMetadataFromExportPayload(parsed);
+    const frBody = buildNerisIncidentForBillingPayload(parsed, latestOk, {
+      nerisDepartmentId,
+      departmentName: dept,
+    });
+
+    const jwt = await getFireRecoveryJwt();
+    const { trackingId } = await postAddNerisIncidentForBilling(jwt, frBody);
+
+    const now = new Date();
+    const row = await prisma.fireRecoveryIncidentBilling.upsert({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      create: {
+        tenantId,
+        callNumber,
+        trackingId,
+        lastSubmitAt: now,
+        lastSubmitOk: true,
+        lastSubmitError: "",
+        incidentType: meta.incidentType,
+        incidentDateLabel: meta.incidentDateLabel,
+      },
+      update: {
+        trackingId,
+        lastSubmitAt: now,
+        lastSubmitOk: true,
+        lastSubmitError: "",
+        incidentType: meta.incidentType,
+        incidentDateLabel: meta.incidentDateLabel,
+      },
+    });
+
+    response.status(201).json({
+      ok: true,
+      data: fireRecoveryBillingRowToApi(row),
+    });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : "Unexpected Fire Recovery submit error.";
+    try {
+      const tenantId = request.tenant?.id;
+      const body = request.body && typeof request.body === "object" ? request.body : {};
+      const callNumber = trimValue(body.callNumber);
+      if (tenantId && callNumber) {
+        await prisma.fireRecoveryIncidentBilling.upsert({
+          where: { tenantId_callNumber: { tenantId, callNumber } },
+          create: {
+            tenantId,
+            callNumber,
+            lastSubmitAt: new Date(),
+            lastSubmitOk: false,
+            lastSubmitError: msg.slice(0, 2000),
+          },
+          update: {
+            lastSubmitAt: new Date(),
+            lastSubmitOk: false,
+            lastSubmitError: msg.slice(0, 2000),
+          },
+        });
+      }
+    } catch {
+      // ignore secondary persist errors
+    }
+    response.status(400).json({ ok: false, message: msg });
+  }
+});
+
+app.post("/api/fire-recovery/billing-status", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    if (!getFireRecoveryApiCredentials()) {
+      response.status(503).json({
+        ok: false,
+        message:
+          "Fire Recovery API is not configured on the server (FIRE_RECOVERY_API_USERNAME / FIRE_RECOVERY_API_PASSWORD).",
+      });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const callNumber = trimValue(body.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "callNumber is required." });
+      return;
+    }
+
+    const existing = await prisma.fireRecoveryIncidentBilling.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    const trackingId = trimValue(existing?.trackingId);
+    if (!trackingId) {
+      response.status(400).json({
+        ok: false,
+        message: "No Fire Recovery tracking ID for this incident. Submit to Fire Recovery first.",
+      });
+      return;
+    }
+
+    const jwt = await getFireRecoveryJwt();
+    const resp = await postIncidentBillingStatus(jwt, trackingId);
+    const now = new Date();
+
+    const invoiceAmount =
+      resp.InvoiceAmount !== undefined && resp.InvoiceAmount !== null
+        ? String(resp.InvoiceAmount)
+        : "";
+    const invoiceAmountDue =
+      resp.InvoiceAmountDue !== undefined && resp.InvoiceAmountDue !== null
+        ? String(resp.InvoiceAmountDue)
+        : "";
+    const lastPaymentAmount =
+      resp.LastPaymentAmount !== undefined && resp.LastPaymentAmount !== null
+        ? String(resp.LastPaymentAmount)
+        : "";
+    const lastPaymentDate =
+      resp.LastPaymentDate !== undefined && resp.LastPaymentDate !== null
+        ? String(resp.LastPaymentDate)
+        : "";
+    const invoiceSubmitDate =
+      resp.InvoiceSubmitDate !== undefined && resp.InvoiceSubmitDate !== null
+        ? String(resp.InvoiceSubmitDate)
+        : "";
+    const paymentPlan = Boolean(resp.PaymentPlan);
+
+    const row = await prisma.fireRecoveryIncidentBilling.update({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      data: {
+        invoiceId: trimValue(String(resp.InvoiceID ?? "")),
+        invoiceAmount,
+        invoiceAmountDue,
+        invoiceSubmitDate,
+        invoiceStatus: trimValue(String(resp.InvoiceStatus ?? "")),
+        lastPaymentDate,
+        lastPaymentAmount,
+        paymentPlan,
+        billingFetchedAt: now,
+      },
+    });
+
+    response.json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+  } catch (error) {
+    response.status(400).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected billing status error.",
     });
   }
 });

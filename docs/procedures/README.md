@@ -22,3 +22,4 @@ Use these when performing setup, onboarding, or verification.
 | **TENANTS_NERIS_AND_BRANCHES_EXPLAINED.md** | Tenants, NERIS, and branches overview. |
 | **CROSS_BROWSER_AND_UX_NOTES.md** | Cross-browser and UX notes. |
 | **CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md** | Single plan: product goals + implementation batches/phases for CAD email (Dispatch Parsing Settings, rules, auto-create incident, apparatus, dedupe, sequencing). **After NERIS cross-browser Phase 2/3.** |
+| **FIRE_RECOVERY_USA_API_REFERENCE.md** | Fire Recovery USA: vendor API reference (JWT, incident submit, billing status). **App UX (queue column, submenu, “Fire Recovery Incidents for Billing”, Update):** `docs/plans/FIRE_RECOVERY_INCIDENT_BILLING_UX_PLAN.md`. |
