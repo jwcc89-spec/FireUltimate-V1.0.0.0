@@ -1,7 +1,7 @@
 # CAD email dispatch — product & implementation plan
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress — **implementation:** Batches A–F done; **next:** Batch G (ingest → parse → create/update incident). **Product:** auto-create on ingest + Message Parsing UI remain open (see batches G–I).  
+**Status:** In progress — **implementation:** Batches A–G done; **next:** Batch H (Message Parsing UI) / polish. **Product:** apparatus matching from Department Details, richer rule UI, optional message profile on ingest — see batches H–I.  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md` · Migrations — `docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md` §**I.2**
 
 This file is the **single plan** for incoming CAD email: **what we want the product to do** and **how we are building it** (phases + batches). It replaces having separate “product” and “implementation” CAD plan documents.
@@ -157,32 +157,32 @@ Build toward (order can overlap engineering phases):
 - ~~**Engine:** `src/cadDispatch/ruleEngine.ts` — `parseCadRulesJson`, `runCadRulePipeline`, primitives → **slots**.~~
 - ~~**Profiles:** **`messageRulesJson`** vs **`incidentRulesJson`** (UI/ingest wiring in F/G).~~
 - ~~**Tests:** `icommFixtures.ts`, **`npm run test`**.~~
-- **Server:** `neris-proxy.mjs` does not import TS yet — **Batch G** bridges the module into Node.
+- ~~**Server:** `server/cadDispatchRuleEngine.mjs` mirrors TS rule engine; `cadIngestApplyIncidentAutomation` in `neris-proxy.mjs` runs after **`CadEmailIngest`** insert.~~ *(Batch G)*
 
-**~~Acceptance:~~** ~~`npm run test` passes.~~
+**~~Acceptance:~~** ~~`npm run test` passes; ingest creates/updates incidents when enabled.~~
 
 ---
 
-## Phase 5 — Incident merge and Create Incident mapping
+## ~~Phase 5 — Incident merge and Create Incident mapping~~ *(core behavior in Batch G)*
 
-1. Extract **incident number** from short/long email shapes.
-2. **Enable Incident Creation** off → no auto create/update from parse (ingest policy may still store email).
-3. **On** + allowlist → **create** draft if new number; **update** if exists (merge policy: document overwrite vs append).
-4. **CAD source badge** on incident.
-5. Tenant-scoped **`POST` / `PATCH` /api/incidents** only.
+1. ~~Extract **incident number** from slots: **`incidentNumberExtractJson.slot`**, else **`cfs`**, else **`incidentNumber`** slot.~~
+2. ~~**Enable Incident Creation** off → no auto create/update (email still stored).~~
+3. ~~**On** + allowlist → **create** draft if new merge key; **update** existing row (**dispatchNotes** appended with separator; other mapped fields overwrite when provided).~~
+4. **`dispatchInfo`** default `CAD email ingest` on create — *dedicated CAD badge field later* optional.
+5. ~~Tenant-scoped Prisma **`incident.create` / `update`** only.~~
 
-**Acceptance:** First email creates; second updates same incident; no duplicate CFS.
+**~~Acceptance:~~** ~~Same merge key → update; different key → new incident.~~ **Optional:** `incidentFieldMapJson` maps **slot → field** (`address`, `incidentType`, `priority`, …).
 
 ---
 
 ## Phase 6 — Ingest pipeline orchestration
 
-1. Secret (2a) → tenant → allowlist (2b) → **`CadEmailIngest`** insert.
-2. If allowed and **Enable Incident Creation**: **incident** rules → create/update incident.
-3. **Message** profile per product decision.
-4. Parse errors: logged; HTTP behavior compatible with Worker retries.
+1. ~~Secret (2a) → tenant → allowlist (2b) → **`CadEmailIngest`** insert.~~
+2. ~~If allowed and **Enable Incident Creation**: **incident** rules → create/update incident (errors logged; HTTP **200** `{ ok: true }` if email stored).~~ *(Batch G)*
+3. **Message** profile on ingest — *deferred (Batch H / later)*.
+4. ~~Parse errors: logged; ingest still **200** if row stored.~~
 
-**Acceptance:** Staging end-to-end: secret + allowlist + two-email scenario.
+**Acceptance:** Staging: secret + allowlist + two emails same merge key → one incident updated.
 
 ---
 
@@ -194,7 +194,7 @@ Build toward (order can overlap engineering phases):
 - Raw Email: troubleshooting unchanged.
 - Role gating: Subadmin+ for rules/allowlist.
 
-**Acceptance:** **Save** persists tenant config; **ingest** applies on next email **after Batch G**.
+**Acceptance:** **Save** persists tenant config; **ingest** applies on next inbound email when **Enable Incident Creation** is on *(Batch G)*.
 
 ---
 
@@ -218,7 +218,7 @@ Build toward (order can overlap engineering phases):
 | ~~D~~ | ~~Allowlist on **`POST /api/cad/inbound-email`**; **200** + **`ok: false`** if rejected~~ |
 | ~~E~~ | ~~Rule engine + tests (ICOMM fixtures); `src/cadDispatch/`~~ |
 | ~~F~~ | ~~Incident Parsing UI + preview + Save (`getCadParsingConfig` / `patchCadParsingConfig`, `runCadRulePipeline`)~~ |
-| G | Ingest → parse → create/update incident |
+| ~~G~~ | ~~Ingest → parse → create/update incident (`server/cadDispatchRuleEngine.mjs` + `cadIngestApplyIncidentAutomation`)~~ |
 | H | Message Parsing UI + parsed message path |
 | I | Docs polish, indexes/retention, staging verification |
 
@@ -226,9 +226,9 @@ Build toward (order can overlap engineering phases):
 
 ## Technical references (existing vs upcoming)
 
-- **Today:** `CadEmailIngest`; `POST /api/cad/inbound-email`; Worker → API; `GET /api/cad/emails` for Raw Email list; parsing config + allowlist APIs; `src/cadDispatch/` rule engine (Batch E); **Incident Parsing** UI + preview (Batch F).
+- **Today:** `CadEmailIngest`; `POST /api/cad/inbound-email` (stores email + optional **incident automation**); `server/cadDispatchRuleEngine.mjs`; parsing config + allowlist; **Incident Parsing** UI (Batch F).
 - **App entry:** Admin Functions → **Dispatch Parsing Settings** → **Incident Parsing**.
 
 ---
 
-*Last updated: 2026-04-09 — Batch F Incident Parsing UI; merged CAD plan docs (earlier same day).*
+*Last updated: 2026-04-09 — Batch G ingest incident automation.*

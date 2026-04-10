@@ -19,8 +19,15 @@ Earlier today there were extra files (`batch-e-summary`, `cad-plan-merge`, dupli
 
 ## Batch F (implementation)
 
-- **Admin Functions → Dispatch Parsing Settings → Incident Parsing:** edit **incident rules** as JSON, **Preview** (runs `runCadRulePipeline` on sample text), **Save** to tenant config. Toggle **Enable automatic incident creation** (used when ingest is wired). Buttons: **Load ICOMM sample**, **Load from latest email** (plain text via shared MIME extraction).
-- **Batch G** is next: server ingest uses the same engine and creates/updates incidents (TS bridge into `neris-proxy.mjs`).
+- **Admin Functions → Dispatch Parsing Settings → Incident Parsing:** edit **incident rules** as JSON, **Preview**, **Save**. Toggle **Enable automatic incident creation**.
+
+## Batch G (implementation)
+
+- After each stored CAD email, the API runs **`cadIngestApplyIncidentAutomation`** using **`server/cadDispatchRuleEngine.mjs`** (mirrors TS engine). If enabled, creates or updates **`Incident`** by merge key (slots `cfs` / `incidentNumber` or **`incidentNumberExtractJson.slot`**). See **`EMAIL_AND_CAD_SETUP.md`** after B6.5.
+
+## Next
+
+- **Batch H** — Message Parsing UI; optional message rules on ingest.
 
 ## What you can verify
 

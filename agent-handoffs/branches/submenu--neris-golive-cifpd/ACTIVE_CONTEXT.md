@@ -4,7 +4,7 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus (2026-04-09)
-- **CAD (2026-04-09):** Merged CAD plan docs; **Batch E** rule engine; **Batch F** Incident Parsing UI (`DispatchParsingIncidentPanel.tsx`, `extractDispatchPlainText.ts`). **Next:** Batch **G** (ingest → parse → incidents). Handoff: **`sessions/2026-04-09-session.md`** · **`conversations/2026-04-09-session-summary.md`**.
+- **CAD (2026-04-09):** Batches **E–G** — rule engine, Incident Parsing UI, **`cadIngestApplyIncidentAutomation`** + **`server/cadDispatchRuleEngine.mjs`**. **Next:** Batch **H** (Message Parsing UI). Handoff: **`sessions/2026-04-09-session.md`** · **`conversations/2026-04-09-session-summary.md`**.
 - **Personnel Schedule (2026-03-19):** Segmentation + per-segment OT + OT roster filter + duplicate-segment grey-out + calendar/qual fixes committed on this branch. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. Session: `sessions/2026-03-19-schedule-segmentation-ux-session-end.md`.
 - **CAD (product):** Receiving verified; **Batch E** rule pipeline done in repo. **Later:** auto-create incident per **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`) when ready.
 - **NERIS cross-browser:** Phases 1–3 done. **View Exports Report Status** complete (staging): list shows **Exported** after successful submit, matches queue. See `NERIS_CROSS_BROWSER_FINDINGS.md`.
@@ -79,8 +79,8 @@
   - run first controlled production export and 24-48h stabilization monitoring.
 
 ## Last session (2026-04-09 — CAD + handoff structure)
-- **Scope:** Merged CAD plan docs; **Batch E** rule engine; **Batch F** Incident Parsing UI + shared `extractDispatchPlainText`; handoff convention in **`COPY_PASTE_START_PROMPT.md`** / **`COPY_PASTE_START_PROMPT_TEMPLATE.md`**; consolidated handoff files into **`sessions/2026-04-09-session.md`** and **`conversations/2026-04-09-session-summary.md`**.
-- **Next:** Batch **G** (ingest → incidents + TS bridge in `neris-proxy.mjs`).
+- **Scope:** Merged CAD plan docs; **Batch E** rule engine; **Batch F** Incident Parsing UI; **Batch G** ingest incident automation (`server/cadDispatchRuleEngine.mjs`, `cadIngestApplyIncidentAutomation`); handoff convention in **`COPY_PASTE_START_PROMPT.md`** / template; consolidated handoff files into **`sessions/2026-04-09-session.md`** and **`conversations/2026-04-09-session-summary.md`**.
+- **Next:** Batch **H** (Message Parsing UI).
 
 ## Previous session (2026-03-19 — Personnel Schedule segmentation)
 - **Scope:** Timed segments per apparatus/support slot, `ScheduleSegment.overtime`, full OT roster (`name`+`shift` in Scheduler Personnel), qualification + calendar behavior for segmented slots, red **×** segment remove, **greyed** shift-dropdown options when a person is already on another segment of the same slot (OT segment uses full roster), drag-drop aligned with same rule, removed visible **“Segment”** label (tooltip + `aria-label` remain).

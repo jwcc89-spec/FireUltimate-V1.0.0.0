@@ -1,41 +1,16 @@
 /**
- * CAD dispatch rule pipeline (Batch E). Ordered rules mutate working text and fill named slots.
- * Server ingest uses a mirrored copy: `server/cadDispatchRuleEngine.mjs` — keep behavior in sync.
+ * CAD dispatch rule pipeline (server). Keep in sync with src/cadDispatch/ruleEngine.ts
+ * and related files — same behavior as the browser bundle.
  */
 
-import { normalizeDispatchTextForParsing } from "./normalizeDispatchText.ts";
+export function normalizeDispatchTextForParsing(input) {
+  if (!input) return "";
+  let s = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  s = s.replace(/\uFEFF/g, "");
+  return s.trim();
+}
 
-export type CadRule =
-  | { type: "trim" }
-  | { type: "normalize_newlines" }
-  | { type: "delete_before_nth"; substring: string; occurrence: number; caseSensitive?: boolean }
-  | { type: "delete_after_nth"; substring: string; occurrence: number; caseSensitive?: boolean }
-  | { type: "regex_replace"; pattern: string; replacement: string; flags?: string }
-  | {
-      type: "extract_capture";
-      pattern: string;
-      /** 0 = full match, 1 = first capture group, … */
-      group: number;
-      slot: string;
-      flags?: string;
-    };
-
-export type CadRuleEngineSuccess = {
-  ok: true;
-  text: string;
-  slots: Record<string, string>;
-};
-
-export type CadRuleEngineFailure = {
-  ok: false;
-  error: string;
-  text: string;
-  slots: Record<string, string>;
-};
-
-export type CadRuleEngineResult = CadRuleEngineSuccess | CadRuleEngineFailure;
-
-const RULE_TYPES = new Set<CadRule["type"]>([
+const RULE_TYPES = new Set([
   "trim",
   "normalize_newlines",
   "delete_before_nth",
@@ -44,41 +19,38 @@ const RULE_TYPES = new Set<CadRule["type"]>([
   "extract_capture",
 ]);
 
-function isPlainObject(v: unknown): v is Record<string, unknown> {
+function isPlainObject(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 
-function asString(v: unknown, field: string): string {
+function asString(v, field) {
   if (typeof v !== "string") throw new Error(`${field} must be a string`);
   return v;
 }
 
-function asPositiveInt(v: unknown, field: string): number {
+function asPositiveInt(v, field) {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
     throw new Error(`${field} must be a positive integer`);
   }
   return v;
 }
 
-function asNonNegInt(v: unknown, field: string): number {
+function asNonNegInt(v, field) {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
     throw new Error(`${field} must be a non-negative integer`);
   }
   return v;
 }
 
-/**
- * Parse and validate rules from JSON (DB/API). Throws with a short message if invalid.
- */
-export function parseCadRulesJson(raw: unknown): CadRule[] {
+export function parseCadRulesJson(raw) {
   if (raw === undefined || raw === null) return [];
   if (!Array.isArray(raw)) throw new Error("Rules must be an array.");
-  const out: CadRule[] = [];
+  const out = [];
   for (let i = 0; i < raw.length; i++) {
     const item = raw[i];
     if (!isPlainObject(item)) throw new Error(`Rule at index ${i} must be an object.`);
     const t = item.type;
-    if (typeof t !== "string" || !RULE_TYPES.has(t as CadRule["type"])) {
+    if (typeof t !== "string" || !RULE_TYPES.has(t)) {
       throw new Error(`Rule at index ${i} has invalid or missing type.`);
     }
     switch (t) {
@@ -126,12 +98,7 @@ export function parseCadRulesJson(raw: unknown): CadRule[] {
   return out;
 }
 
-function findNthSubstringIndex(
-  text: string,
-  sub: string,
-  occurrence: number,
-  caseSensitive: boolean,
-): number {
+function findNthSubstringIndex(text, sub, occurrence, caseSensitive) {
   if (!sub.length || occurrence < 1) return -1;
   const hay = caseSensitive ? text : text.toLowerCase();
   const needle = caseSensitive ? sub : sub.toLowerCase();
@@ -145,21 +112,14 @@ function findNthSubstringIndex(
   return -1;
 }
 
-function applyNormalizeNewlines(text: string): string {
+function applyNormalizeNewlines(text) {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-/**
- * Run ordered rules. On failure (e.g. invalid regex at runtime), returns `{ ok: false, error }` with best-effort text/slots.
- */
-export function runCadRulePipeline(
-  inputText: string,
-  rules: CadRule[],
-  options?: { normalizeFirst?: boolean },
-): CadRuleEngineResult {
+export function runCadRulePipeline(inputText, rules, options) {
   const normalizeFirst = options?.normalizeFirst !== false;
   let text = normalizeFirst ? normalizeDispatchTextForParsing(inputText) : inputText;
-  const slots: Record<string, string> = {};
+  const slots = {};
 
   for (let ri = 0; ri < rules.length; ri++) {
     const rule = rules[ri];
@@ -209,6 +169,8 @@ export function runCadRulePipeline(
           }
           break;
         }
+        default:
+          break;
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
@@ -222,4 +184,49 @@ export function runCadRulePipeline(
   }
 
   return { ok: true, text, slots };
+}
+
+export function tryDecodeRawBody(rawBody) {
+  if (!rawBody || typeof rawBody !== "string") return null;
+  const trimmed = rawBody.trim();
+  const withoutSuffix = trimmed.endsWith("[TRUNCATED]")
+    ? trimmed.slice(0, -"[TRUNCATED]".length).trim()
+    : trimmed;
+  if (!withoutSuffix.length) return null;
+  try {
+    return atob(withoutSuffix);
+  } catch {
+    return null;
+  }
+}
+
+export function extractPlainTextFromMime(decodedMime) {
+  if (!decodedMime || typeof decodedMime !== "string") return null;
+  const idx = decodedMime.search(/Content-Transfer-Encoding:\s*base64/i);
+  if (idx === -1) return null;
+  const afterHeader = decodedMime.slice(idx);
+  const blankMatch = afterHeader.match(/\n\s*\n/);
+  const bodyStart = blankMatch ? afterHeader.indexOf(blankMatch[0]) + blankMatch[0].length : 0;
+  let block = afterHeader.slice(bodyStart);
+  const boundaryIdx = block.search(/\n--/);
+  if (boundaryIdx !== -1) block = block.slice(0, boundaryIdx);
+  const base64Only = block.replace(/\s/g, "").replace(/\[TRUNCATED\]/gi, "");
+  if (!base64Only.length || !/^[A-Za-z0-9+/=]*$/.test(base64Only)) return null;
+  try {
+    return atob(base64Only);
+  } catch {
+    return null;
+  }
+}
+
+export function getDispatchPlainTextFromRawBody(rawBody) {
+  const decoded = tryDecodeRawBody(rawBody);
+  if (decoded === null) {
+    const t = typeof rawBody === "string" ? rawBody.trim() : "";
+    return t.length ? t : null;
+  }
+  const plain = extractPlainTextFromMime(decoded);
+  if (plain) return plain;
+  const t = decoded.trim();
+  return t.length ? t : null;
 }

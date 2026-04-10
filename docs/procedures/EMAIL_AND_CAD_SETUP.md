@@ -230,6 +230,8 @@ When **no enabled allowlist rows** exist for that tenant, **all** senders are ac
 
 See **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
 
+**Automatic incidents (Batch G):** After a CAD email is stored in **`CadEmailIngest`**, the API may run **incident rules** from **`CadParsingSettings`** and create or update an **`Incident`** when **`enableIncidentCreation`** is true. Merge key comes from rules (slots), e.g. **`incidentNumberExtractJson`** `{ "slot": "cfs" }` or default slots **`cfs`** / **`incidentNumber`**. Configure rules and toggle in **Admin Functions → Dispatch Parsing Settings → Incident Parsing**. Parse/automation errors are logged; **`POST /api/cad/inbound-email`** still returns **`{ ok: true }`** if the email row was saved.
+
 ---
 
 ## B7. Connect the custom address to the Worker

@@ -9,6 +9,12 @@ const { PrismaClient } = pkg;
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
+import {
+  getDispatchPlainTextFromRawBody,
+  parseCadRulesJson,
+  runCadRulePipeline,
+} from "./cadDispatchRuleEngine.mjs";
+
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
 if (!databaseUrl) {
@@ -1895,6 +1901,147 @@ async function cadInboundAllowlistDecision(tenantId, fromAddress) {
   return { allowed: false };
 }
 
+// ----- CAD ingest → incident automation (Batch G): after rules, create/update Incident by merge key -----
+
+const CAD_INCIDENT_FIELD_MAP_TARGETS = new Set([
+  "address",
+  "incidentType",
+  "priority",
+  "stillDistrict",
+  "assignedUnits",
+  "reportedBy",
+  "callbackNumber",
+  "dispatchNotes",
+  "mapReference",
+  "dispatchInfo",
+  "receivedAt",
+]);
+
+function extractCadIncidentMergeKey(slots, incidentNumberExtract) {
+  if (
+    incidentNumberExtract &&
+    typeof incidentNumberExtract === "object" &&
+    !Array.isArray(incidentNumberExtract)
+  ) {
+    const slotName = trimValue(incidentNumberExtract.slot);
+    if (slotName && slots[slotName]) return trimValue(String(slots[slotName]));
+  }
+  if (slots.cfs) return trimValue(String(slots.cfs));
+  if (slots.incidentNumber) return trimValue(String(slots.incidentNumber));
+  return "";
+}
+
+function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
+  const data = {};
+  if (fieldMap && typeof fieldMap === "object" && !Array.isArray(fieldMap)) {
+    for (const [slotKey, targetRaw] of Object.entries(fieldMap)) {
+      const target = trimValue(String(targetRaw));
+      if (!CAD_INCIDENT_FIELD_MAP_TARGETS.has(target)) continue;
+      const v = slots[slotKey];
+      if (v == null || trimValue(String(v)) === "") continue;
+      data[target] = trimValue(String(v));
+    }
+  }
+  if (!data.dispatchNotes && pipelineText) {
+    data.dispatchNotes = pipelineText.slice(0, 12000);
+  }
+  return data;
+}
+
+/**
+ * Loads tenant parsing settings; if enableIncidentCreation and rules yield a merge key, creates or updates Incident.
+ * Errors are logged; ingest HTTP response stays successful if email row was stored.
+ */
+async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
+  if (!tenantId) return;
+
+  const settings = await prisma.cadParsingSettings.findUnique({
+    where: { tenantId },
+  });
+  if (!settings || !settings.enableIncidentCreation) return;
+
+  const plain = getDispatchPlainTextFromRawBody(rawBody);
+  if (!plain) return;
+
+  let rules;
+  try {
+    rules = parseCadRulesJson(settings.incidentRulesJson);
+  } catch (e) {
+    console.warn("[CAD ingest] incident rules invalid:", e instanceof Error ? e.message : e);
+    return;
+  }
+
+  const result = runCadRulePipeline(plain, rules);
+  if (!result.ok) {
+    console.warn("[CAD ingest] rule pipeline failed:", result.error);
+    return;
+  }
+
+  const fieldMap =
+    settings.incidentFieldMapJson &&
+    typeof settings.incidentFieldMapJson === "object" &&
+    !Array.isArray(settings.incidentFieldMapJson)
+      ? settings.incidentFieldMapJson
+      : {};
+
+  const mergeKey = extractCadIncidentMergeKey(result.slots, settings.incidentNumberExtractJson);
+  if (!mergeKey) {
+    console.warn(
+      "[CAD ingest] no incident merge key in slots (set incidentNumberExtract.slot or extract slot cfs / incidentNumber).",
+    );
+    return;
+  }
+
+  const mapped = buildCadMappedIncidentFields(result.slots, fieldMap, result.text);
+
+  const existing = await prisma.incident.findFirst({
+    where: { tenantId, incidentNumber: mergeKey, deletedAt: null },
+  });
+
+  if (existing) {
+    const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
+    const combined = [trimValue(existing.dispatchNotes), newBlock].filter(Boolean).join("\n\n--- CAD dispatch ---\n");
+    const updateData = {
+      dispatchNotes: combined.slice(0, 20000),
+    };
+    if (trimValue(mapped.address)) updateData.address = mapped.address;
+    if (trimValue(mapped.incidentType)) updateData.incidentType = mapped.incidentType;
+    if (trimValue(mapped.priority)) updateData.priority = mapped.priority;
+    if (trimValue(mapped.stillDistrict)) updateData.stillDistrict = mapped.stillDistrict;
+    if (trimValue(mapped.assignedUnits)) updateData.assignedUnits = mapped.assignedUnits;
+    if (trimValue(mapped.reportedBy)) updateData.reportedBy = mapped.reportedBy;
+    if (trimValue(mapped.callbackNumber)) updateData.callbackNumber = mapped.callbackNumber;
+    if (trimValue(mapped.mapReference)) updateData.mapReference = mapped.mapReference;
+    if (trimValue(mapped.dispatchInfo)) updateData.dispatchInfo = mapped.dispatchInfo;
+    if (trimValue(mapped.receivedAt)) updateData.receivedAt = mapped.receivedAt;
+    await prisma.incident.update({
+      where: { id: existing.id },
+      data: updateData,
+    });
+    return;
+  }
+
+  await prisma.incident.create({
+    data: {
+      tenantId,
+      incidentNumber: mergeKey,
+      dispatchNumber: mergeKey,
+      incidentType: trimValue(mapped.incidentType) || "",
+      priority: trimValue(mapped.priority) || "",
+      address: trimValue(mapped.address) || "",
+      stillDistrict: trimValue(mapped.stillDistrict) || "",
+      assignedUnits: trimValue(mapped.assignedUnits) || "",
+      reportedBy: trimValue(mapped.reportedBy) || null,
+      callbackNumber: trimValue(mapped.callbackNumber) || null,
+      dispatchNotes: trimValue(mapped.dispatchNotes) || null,
+      mapReference: trimValue(mapped.mapReference) || null,
+      currentState: "Draft",
+      receivedAt: trimValue(mapped.receivedAt) || "",
+      dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",
+    },
+  });
+}
+
 // ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
 const CAD_INGEST_SECRET = trimValue(process.env.CAD_INGEST_SECRET);
 const IS_PRODUCTION_NODE_ENV = trimValue(process.env.NODE_ENV) === "production";
@@ -1956,6 +2103,12 @@ app.post("/api/cad/inbound-email", async (request, response) => {
         headersJson,
       },
     });
+
+    try {
+      await cadIngestApplyIncidentAutomation(tenantId, rawBody);
+    } catch (autoErr) {
+      console.error("[CAD ingest] incident automation error:", autoErr);
+    }
 
     response.status(200).json({ ok: true });
   } catch (error) {
