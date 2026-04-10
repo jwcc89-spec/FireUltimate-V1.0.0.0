@@ -13,7 +13,7 @@
     "postinstall": "prisma generate",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --import tsx/esm --test src/cadDispatch/ruleEngine.test.ts src/cadDispatch/extractDispatchPlainText.test.ts",
+    "test": "node --import tsx/esm --test src/cadDispatch/ruleEngine.test.ts src/cadDispatch/extractDispatchPlainText.test.ts src/cadDispatch/regexEscape.test.ts",
     "preview": "vite preview",
     "db:seed": "node --env-file=.env.server --import tsx prisma/seed.ts",
     "tenant:create": "tsx scripts/tenant-create.ts",
