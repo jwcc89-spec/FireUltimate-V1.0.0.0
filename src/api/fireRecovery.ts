@@ -13,16 +13,22 @@ export interface FireRecoveryIncidentApi {
   lastSubmitError: string;
   exportDateLabel: string;
   amountDue: string;
+  invoiceAmountDue: string;
   amountPaid: string;
   invoiceId: string;
   invoiceStatus: string;
   invoiceAmount: string;
+  invoiceSubmitDate: string;
+  lastPaymentDate: string;
+  paymentPlan: string;
   billingFetchedAt: string | null;
 }
 
 export interface FireRecoverySettingsApi {
   subscriptionKeyMasked: string;
   departmentName: string;
+  apiUsername: string;
+  passwordIsSet: boolean;
 }
 
 async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
@@ -78,6 +84,8 @@ export async function getFireRecoverySettings(): Promise<FireRecoverySettingsApi
 export async function patchFireRecoverySettings(payload: {
   fireRecoverySubscriptionKey?: string;
   fireRecoveryDepartmentName?: string;
+  fireRecoveryApiUsername?: string;
+  fireRecoveryApiPassword?: string;
 }): Promise<FireRecoverySettingsApi> {
   return apiJson<FireRecoverySettingsApi>("/api/fire-recovery/settings", {
     method: "PATCH",

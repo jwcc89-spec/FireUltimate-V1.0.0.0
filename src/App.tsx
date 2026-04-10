@@ -63,7 +63,6 @@ import {
   DASHBOARD_STATS,
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
-  DISPATCH_PARSING_PREVIEW,
   INCIDENT_CALLS,
   INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
@@ -225,8 +224,6 @@ interface CustomizationPageProps {
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   submenuVisibility: SubmenuVisibilityMap;
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
-  nerisExportSettings: NerisExportSettings;
-  onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
 }
 
 interface CustomizationSectionProps {
@@ -5555,7 +5552,6 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   const navigate = useNavigate();
   const isDemoTenant = useIsDemoTenant();
   const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
-  const [frSubmittingCall, setFrSubmittingCall] = useState<string | null>(null);
 
   const queueCalls = useMemo(
     () =>
@@ -5594,22 +5590,6 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
 
   const openExportDetails = (callNumber: string) => {
     navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
-  };
-
-  const handleFireRecoverySubmit = (callNumber: string) => {
-    setFrSubmittingCall(callNumber);
-    postFireRecoverySubmit(callNumber)
-      .then((record) => {
-        setFrByCall((prev) => {
-          const next = new Map(prev);
-          next.set(callNumber, record);
-          return next;
-        });
-      })
-      .catch((e: Error) => {
-        window.alert(e?.message ?? "Fire Recovery submit failed.");
-      })
-      .finally(() => setFrSubmittingCall(null));
   };
 
   return (
@@ -5704,30 +5684,11 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                         onClick={(event) => event.stopPropagation()}
                         onKeyDown={(event) => event.stopPropagation()}
                       >
-                        <div
-                          style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            alignItems: "flex-start",
-                            gap: "0.35rem",
-                          }}
-                        >
-                          {fr?.lastSubmitOk ? (
-                            <span className="tone tone-positive">DataSent</span>
-                          ) : (
-                            <span>—</span>
-                          )}
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            disabled={frSubmittingCall === call.callNumber}
-                            onClick={() => handleFireRecoverySubmit(call.callNumber)}
-                          >
-                            {frSubmittingCall === call.callNumber
-                              ? "Sending…"
-                              : "Send to Fire Recovery"}
-                          </button>
-                        </div>
+                        {fr?.lastSubmitOk ? (
+                          <span className="tone tone-positive">DataSent</span>
+                        ) : (
+                          <span>—</span>
+                        )}
                       </td>
                     </tr>
                   );
@@ -5752,6 +5713,7 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
 
 function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
+  const [frSending, setFrSending] = useState(false);
   const incident =
     getIncidentCallDetail(callNumber) ??
     (() => {
@@ -5797,6 +5759,18 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
   }
 
   const latestExport = exportHistory[0] ?? null;
+  const handleSendFireRecovery = () => {
+    setFrSending(true);
+    postFireRecoverySubmit(callNumber)
+      .then(() => {
+        navigate(`/reporting/neris/fire-recovery/${encodeURIComponent(callNumber)}`);
+      })
+      .catch((e: Error) => {
+        window.alert(e?.message ?? "Fire Recovery submit failed.");
+      })
+      .finally(() => setFrSending(false));
+  };
+
   return (
     <section className="page-section">
       <header className="page-header">
@@ -5809,6 +5783,14 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
         <div className="header-actions">
           <button
             type="button"
+            className="primary-button compact-button"
+            disabled={frSending}
+            onClick={handleSendFireRecovery}
+          >
+            {frSending ? "Sending…" : "Send to Fire Recovery"}
+          </button>
+          <button
+            type="button"
             className="secondary-button compact-button"
             onClick={() => navigate("/reporting/neris/exports")}
           >
@@ -5816,7 +5798,7 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </button>
           <button
             type="button"
-            className="primary-button compact-button"
+            className="secondary-button compact-button"
             onClick={() => navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`)}
           >
             Open Report
@@ -6098,7 +6080,9 @@ type DepartmentDetailsAdminModuleId =
   | "operational-details"
   | "incidents-setup"
   | "department-resources"
-  | "department-access";
+  | "department-access"
+  | "neris-configuration"
+  | "fire-recovery";
 type UserSortColumn = "name" | "username" | "userType";
 type PersonnelSortColumn =
   | "name"
@@ -6282,8 +6266,18 @@ const DEPARTMENT_DETAILS_ADMIN_MODULES: Array<{
   },
   {
     id: "department-access",
-    label: "Department Access",
+    label: "Access/Restrictions",
     path: "/admin-functions/department-details/department-access",
+  },
+  {
+    id: "neris-configuration",
+    label: "NERIS Configuration",
+    path: "/admin-functions/department-details/neris-configuration",
+  },
+  {
+    id: "fire-recovery",
+    label: "Fire Recovery",
+    path: "/admin-functions/department-details/fire-recovery",
   },
 ];
 const AUDIT_LOGS_ADMIN_MODULES = [
@@ -6435,11 +6429,15 @@ function AuditLogsAdminPage({
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
   adminModuleId?: DepartmentDetailsAdminModuleId;
+  nerisExportSettings?: NerisExportSettings;
+  onSaveNerisExportSettings?: (nextSettings: NerisExportSettings) => void;
 }
 
 function DepartmentDetailsPage({
   mode = "departmentDetails",
   adminModuleId = "department-profile",
+  nerisExportSettings,
+  onSaveNerisExportSettings,
 }: DepartmentDetailsPageProps) {
   const navigate = useNavigate();
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
@@ -7359,10 +7357,17 @@ function DepartmentDetailsPage({
     showDepartmentDetailsSection && adminModuleId === "department-resources";
   const showDepartmentAccessModule =
     showDepartmentDetailsSection && adminModuleId === "department-access";
+  const showNerisConfigurationModule =
+    showDepartmentDetailsSection && adminModuleId === "neris-configuration";
+  const showFireRecoveryModule =
+    showDepartmentDetailsSection && adminModuleId === "fire-recovery";
+  const hideDepartmentHeaderSave =
+    showDepartmentDetailsSection &&
+    (adminModuleId === "neris-configuration" || adminModuleId === "fire-recovery");
   const showSchedulerSettingsSection = mode === "schedulerSettings";
   const showPersonnelManagementSection = mode === "personnelManagement";
   const pageTitle = showDepartmentDetailsSection
-    ? "Admin Functions | Department Details"
+    ? "Admin Functions | Setup/Configuration"
     : showSchedulerSettingsSection
       ? "Admin Functions | Scheduler Settings"
       : "Admin Functions | Personnel Management";
@@ -7375,7 +7380,7 @@ function DepartmentDetailsPage({
     ? "Save Scheduler Settings"
     : showPersonnelManagementSection
       ? "Save Personnel Management"
-      : "Save Department Details";
+      : "Save setup";
   const showSaveButton = true;
 
   const isStationsEditor = activeCollectionEditor === "stations";
@@ -8877,7 +8882,7 @@ function DepartmentDetailsPage({
           <h1>{pageTitle}</h1>
           <p>{pageSubtitle}</p>
         </div>
-        {showSaveButton ? (
+        {showSaveButton && !hideDepartmentHeaderSave ? (
           <div className="header-actions">
             <button type="submit" form="department-details-form" className="primary-button">
               {saveButtonLabel}
@@ -8896,7 +8901,7 @@ function DepartmentDetailsPage({
           <section className="neris-report-layout reporting-admin-layout">
             <aside className="panel neris-sidebar reporting-admin-sidebar">
               <div className="neris-sidebar-header">
-                <h2>Department Details</h2>
+                <h2>Setup/Configuration</h2>
                 <p>Admin modules</p>
               </div>
               <nav className="neris-section-nav" aria-label="Department details module navigation">
@@ -9191,7 +9196,7 @@ function DepartmentDetailsPage({
               {showDepartmentAccessModule ? (
                 <article className="panel">
                   <div className="panel-header">
-                    <h2>Department Access</h2>
+                    <h2>Access / Restrictions</h2>
                   </div>
                   <div className="department-collection-grid">
                     {accessCards.map((definition) => (
@@ -9208,6 +9213,20 @@ function DepartmentDetailsPage({
                   </div>
                 </article>
               ) : null}
+              {showNerisConfigurationModule && nerisExportSettings && onSaveNerisExportSettings ? (
+                <SetupNerisExportConfigurationPanel
+                  key={JSON.stringify(normalizeNerisExportSettings(nerisExportSettings))}
+                  nerisExportSettings={nerisExportSettings}
+                  onSave={onSaveNerisExportSettings}
+                />
+              ) : null}
+              {showNerisConfigurationModule &&
+              (!nerisExportSettings || !onSaveNerisExportSettings) ? (
+                <article className="panel">
+                  <p className="panel-description">NERIS configuration could not be loaded.</p>
+                </article>
+              ) : null}
+              {showFireRecoveryModule ? <SetupFireRecoveryPanel /> : null}
             </article>
           </section>
         ) : null}
@@ -11769,6 +11788,270 @@ function DepartmentDetailsPage({
   );
 }
 
+function SetupNerisExportConfigurationPanel({
+  nerisExportSettings,
+  onSave,
+}: {
+  nerisExportSettings: NerisExportSettings;
+  onSave: (next: NerisExportSettings) => void;
+}) {
+  const [draft, setDraft] = useState<NerisExportSettings>(() => ({
+    ...nerisExportSettings,
+  }));
+
+  const update = (field: keyof NerisExportSettings, value: string) => {
+    setDraft((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const handleSave = () => {
+    const normalized = normalizeNerisExportSettings(draft);
+    onSave(normalized);
+    setDraft(normalized);
+  };
+
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <h2>NERIS Export Configuration</h2>
+      </div>
+      <div className="settings-form">
+        <p className="field-hint">
+          Values used by the Export action on NERIS reports. Stored per tenant when logged in; local
+          browser copy is kept in sync for offline testing.
+        </p>
+
+        <label htmlFor="setup-neris-export-url">Export URL (endpoint)</label>
+        <input
+          id="setup-neris-export-url"
+          type="text"
+          placeholder="https://..."
+          value={draft.exportUrl}
+          onChange={(event) => update("exportUrl", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-vendor-code">NERIS Entity ID</label>
+        <input
+          id="setup-neris-vendor-code"
+          type="text"
+          placeholder="ex: FD24160543"
+          value={draft.vendorCode}
+          onChange={(event) => update("vendorCode", event.target.value)}
+        />
+        <small className="field-hint">
+          OpenAPI format is usually <code>FD########</code> or <code>VN########</code> (for example:
+          FD24160543).
+        </small>
+
+        <label htmlFor="setup-neris-vendor-header">Entity ID header name</label>
+        <input
+          id="setup-neris-vendor-header"
+          type="text"
+          value={draft.vendorHeaderName}
+          onChange={(event) => update("vendorHeaderName", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-secret-key">Secret key / API token (direct mode only)</label>
+        <input
+          id="setup-neris-secret-key"
+          type="password"
+          value={draft.secretKey}
+          onChange={(event) => update("secretKey", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-auth-header">Auth header name (default from OpenAPI)</label>
+        <input
+          id="setup-neris-auth-header"
+          type="text"
+          value={draft.authHeaderName}
+          onChange={(event) => update("authHeaderName", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-auth-scheme">Auth scheme prefix (default from OpenAPI)</label>
+        <input
+          id="setup-neris-auth-scheme"
+          type="text"
+          placeholder="Bearer"
+          value={draft.authScheme}
+          onChange={(event) => update("authScheme", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-content-type">Content-Type (default from OpenAPI)</label>
+        <input
+          id="setup-neris-content-type"
+          type="text"
+          value={draft.contentType}
+          onChange={(event) => update("contentType", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-version-header">API version header name (optional)</label>
+        <input
+          id="setup-neris-version-header"
+          type="text"
+          value={draft.apiVersionHeaderName}
+          onChange={(event) => update("apiVersionHeaderName", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-version-value">API version header value (optional)</label>
+        <input
+          id="setup-neris-version-value"
+          type="text"
+          value={draft.apiVersionHeaderValue}
+          onChange={(event) => update("apiVersionHeaderValue", event.target.value)}
+        />
+
+        <small className="field-hint">
+          Security note: production secrets should be on the server in <code>.env.server</code> when
+          using proxy mode.
+        </small>
+
+        <button type="button" className="primary-button" onClick={handleSave}>
+          Save NERIS configuration
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function SetupFireRecoveryPanel() {
+  const [departmentName, setDepartmentName] = useState("");
+  const [apiUsername, setApiUsername] = useState("");
+  const [apiPasswordInput, setApiPasswordInput] = useState("");
+  const [passwordIsSet, setPasswordIsSet] = useState(false);
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const d = await getFireRecoverySettings();
+        if (!cancelled) {
+          setDepartmentName(d.departmentName);
+          setApiUsername(d.apiUsername ?? "");
+          setPasswordIsSet(d.passwordIsSet);
+        }
+      } catch {
+        // leave empty
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSave = () => {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const payload: {
+      fireRecoveryDepartmentName: string;
+      fireRecoveryApiUsername: string;
+      fireRecoveryApiPassword?: string;
+    } = {
+      fireRecoveryDepartmentName: departmentName.trim(),
+      fireRecoveryApiUsername: apiUsername.trim(),
+    };
+    if (apiPasswordInput.trim()) {
+      payload.fireRecoveryApiPassword = apiPasswordInput.trim();
+    }
+    patchFireRecoverySettings(payload)
+      .then((d) => {
+        setDepartmentName(d.departmentName);
+        setApiUsername(d.apiUsername ?? "");
+        setPasswordIsSet(d.passwordIsSet);
+        setApiPasswordInput("");
+        setMessage("Fire Recovery settings saved.");
+      })
+      .catch((e: Error) => {
+        setError(e?.message ?? "Could not save Fire Recovery settings.");
+      })
+      .finally(() => setSaving(false));
+  };
+
+  const handleClearPassword = () => {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    patchFireRecoverySettings({ fireRecoveryApiPassword: "" })
+      .then((d) => {
+        setPasswordIsSet(d.passwordIsSet);
+        setApiPasswordInput("");
+        setMessage("Saved Fire Recovery API password removed.");
+      })
+      .catch((e: Error) => {
+        setError(e?.message ?? "Could not clear password.");
+      })
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <h2>Fire Recovery</h2>
+      </div>
+      <div className="settings-form">
+        <p className="field-hint">
+          <strong>Username</strong> and <strong>password</strong> here are required for Fire Recovery API
+          calls (JWT for <strong>Add NERIS Incident for Billing</strong> and billing status). The server
+          does not use <code>.env.server</code> for Fire Recovery login—only these tenant fields. The
+          tenant <strong>NERIS Entity ID</strong> (FD########) is set elsewhere in Setup/Configuration.
+          Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server may point to dev vs production host.
+        </p>
+
+        <label htmlFor="setup-fr-username">Username</label>
+        <input
+          id="setup-fr-username"
+          type="text"
+          autoComplete="off"
+          value={apiUsername}
+          onChange={(event) => setApiUsername(event.target.value)}
+        />
+
+        <label htmlFor="setup-fr-password">Password</label>
+        <input
+          id="setup-fr-password"
+          type="password"
+          autoComplete="new-password"
+          placeholder={passwordIsSet ? "Leave blank to keep saved password" : "Password"}
+          value={apiPasswordInput}
+          onChange={(event) => setApiPasswordInput(event.target.value)}
+        />
+        {passwordIsSet ? (
+          <p className="field-hint">A password is saved for this tenant.</p>
+        ) : null}
+
+        <label htmlFor="setup-fr-dept-name">Department name</label>
+        <input
+          id="setup-fr-dept-name"
+          type="text"
+          placeholder="e.g. Crescent-Iroquois Fire Protection District"
+          value={departmentName}
+          onChange={(event) => setDepartmentName(event.target.value)}
+        />
+
+        {message ? <p className="save-message">{message}</p> : null}
+        {error ? <p className="auth-error">{error}</p> : null}
+
+        <button type="button" className="primary-button" disabled={saving} onClick={handleSave}>
+          {saving ? "Saving…" : "Save Fire Recovery"}
+        </button>
+        {passwordIsSet ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={saving}
+            onClick={handleClearPassword}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            Remove saved password
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function CustomizationSection({
   title,
   children,
@@ -11806,13 +12089,7 @@ function CustomizationPage({
   onSaveIncidentDisplaySettings,
   submenuVisibility,
   onSaveSubmenuVisibility,
-  nerisExportSettings,
-  onSaveNerisExportSettings,
 }: CustomizationPageProps) {
-  const [organizationName, setOrganizationName] = useState("CIFPD");
-  const [primaryColor, setPrimaryColor] = useState("#1d4ed8");
-  const [accentColor, setAccentColor] = useState("#0891b2");
-  const [logoFileName, setLogoFileName] = useState("No file selected");
   const [workflowDraft, setWorkflowDraft] = useState<string[]>(() => [...workflowStates]);
   const [newState, setNewState] = useState("");
   const [incidentSettingsDraft, setIncidentSettingsDraft] =
@@ -11822,71 +12099,14 @@ function CustomizationPage({
     }));
   const [submenuVisibilityDraft, setSubmenuVisibilityDraft] =
     useState<SubmenuVisibilityMap>(() => ({ ...submenuVisibility }));
-  const [nerisExportSettingsDraft, setNerisExportSettingsDraft] = useState<NerisExportSettings>(
-    () => ({ ...nerisExportSettings }),
-  );
-  const [selectedParsingCall, setSelectedParsingCall] = useState(
-    DISPATCH_PARSING_PREVIEW[0]?.callNumber ?? "",
-  );
   const [savedMessage, setSavedMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
-  const [frDepartmentName, setFrDepartmentName] = useState("");
-  const [frSubscriptionKeyInput, setFrSubscriptionKeyInput] = useState("");
-  const [frSubscriptionMasked, setFrSubscriptionMasked] = useState("");
-  const [frMessage, setFrMessage] = useState("");
-  const [frError, setFrError] = useState("");
-  const [frSaving, setFrSaving] = useState(false);
 
   const visibleCallFieldOrder = dedupeCallFieldOrder(
     incidentSettingsDraft.callFieldOrder.filter((fieldId) =>
       VALID_CALL_FIELD_IDS.has(fieldId),
     ),
   );
-
-  const parsingRow =
-    DISPATCH_PARSING_PREVIEW.find((row) => row.callNumber === selectedParsingCall) ??
-    DISPATCH_PARSING_PREVIEW[0];
-
-  useEffect(() => {
-    let cancelled = false;
-    void (async () => {
-      try {
-        const d = await getFireRecoverySettings();
-        if (!cancelled) {
-          setFrDepartmentName(d.departmentName);
-          setFrSubscriptionMasked(d.subscriptionKeyMasked);
-        }
-      } catch {
-        // Tenant may lack permission or API unavailable; leave fields empty.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const handleSaveFireRecoverySettings = () => {
-    setFrSaving(true);
-    setFrMessage("");
-    setFrError("");
-    const payload: { fireRecoveryDepartmentName: string; fireRecoverySubscriptionKey?: string } = {
-      fireRecoveryDepartmentName: frDepartmentName.trim(),
-    };
-    if (frSubscriptionKeyInput.trim()) {
-      payload.fireRecoverySubscriptionKey = frSubscriptionKeyInput.trim();
-    }
-    patchFireRecoverySettings(payload)
-      .then((d) => {
-        setFrDepartmentName(d.departmentName);
-        setFrSubscriptionMasked(d.subscriptionKeyMasked);
-        setFrSubscriptionKeyInput("");
-        setFrMessage("Fire Recovery tenant settings saved.");
-      })
-      .catch((e: Error) => {
-        setFrError(e?.message ?? "Could not save Fire Recovery settings.");
-      })
-      .finally(() => setFrSaving(false));
-  };
 
   const updateWorkflowState = (index: number, value: string) => {
     setWorkflowDraft((previous) =>
@@ -11974,16 +12194,6 @@ function CustomizationPage({
     }));
   };
 
-  const updateNerisExportSetting = (
-    field: keyof NerisExportSettings,
-    value: string,
-  ) => {
-    setNerisExportSettingsDraft((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-  };
-
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -12016,21 +12226,16 @@ function CustomizationPage({
       ...getDefaultSubmenuVisibilityMap(),
       ...submenuVisibilityDraft,
     };
-    const normalizedNerisExportSettings = normalizeNerisExportSettings(
-      nerisExportSettingsDraft,
-    );
 
     onSaveWorkflowStates(normalizedStates);
     onSaveIncidentDisplaySettings(normalizedIncidentSettings);
     onSaveSubmenuVisibility(normalizedSubmenuVisibility);
-    onSaveNerisExportSettings(normalizedNerisExportSettings);
 
     setIncidentSettingsDraft(normalizedIncidentSettings);
     setSubmenuVisibilityDraft(normalizedSubmenuVisibility);
-    setNerisExportSettingsDraft(normalizedNerisExportSettings);
     setErrorMessage("");
     setSavedMessage(
-      "Customization saved. Incident display, submenu visibility, workflow states, and NERIS export settings updated.",
+      "Customization saved. Incident display, submenu visibility, and workflow states updated.",
     );
   };
 
@@ -12041,8 +12246,7 @@ function CustomizationPage({
           <div>
             <h1>Admin Functions | Customization</h1>
             <p>
-              Configure branding, incident display controls, submenu visibility,
-              parsing setup, NERIS export settings, and Fire Recovery billing identifiers.
+              Configure dispatch workflow states, incident display controls, and submenu visibility.
             </p>
             {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
             {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
@@ -12053,45 +12257,6 @@ function CustomizationPage({
             </button>
           </div>
         </header>
-
-        <CustomizationSection title="Branding Controls">
-          <div className="settings-form">
-            <label htmlFor="org-name">Organization Name</label>
-            <input
-              id="org-name"
-              type="text"
-              value={organizationName}
-              onChange={(event) => setOrganizationName(event.target.value)}
-            />
-
-            <label htmlFor="logo-upload">Organization Logo</label>
-            <input
-              id="logo-upload"
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
-              }
-            />
-            <p className="field-hint">Selected file: {logoFileName}</p>
-
-            <label htmlFor="primary-color">Primary Color</label>
-            <input
-              id="primary-color"
-              type="color"
-              value={primaryColor}
-              onChange={(event) => setPrimaryColor(event.target.value)}
-            />
-
-            <label htmlFor="accent-color">Accent Color</label>
-            <input
-              id="accent-color"
-              type="color"
-              value={accentColor}
-              onChange={(event) => setAccentColor(event.target.value)}
-            />
-          </div>
-        </CustomizationSection>
 
         <CustomizationSection
           title="Dispatch Workflow States"
@@ -12236,262 +12401,6 @@ function CustomizationPage({
                 </ul>
               </div>
             ))}
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="NERIS Export Configuration">
-          <div className="settings-form">
-            <p className="field-hint">
-              Enter the API values needed for the Export button on NERIS reports.
-              These settings are stored in this browser only. In proxy mode,
-              credentials should be set on the server in <code>.env.server</code>.
-            </p>
-
-            <label htmlFor="neris-export-url">Export URL (endpoint)</label>
-            <input
-              id="neris-export-url"
-              type="text"
-              placeholder="https://..."
-              value={nerisExportSettingsDraft.exportUrl}
-              onChange={(event) =>
-                updateNerisExportSetting("exportUrl", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-vendor-code">NERIS Entity ID</label>
-            <input
-              id="neris-vendor-code"
-              type="text"
-              placeholder="ex: FD24160543"
-              value={nerisExportSettingsDraft.vendorCode}
-              onChange={(event) =>
-                updateNerisExportSetting("vendorCode", event.target.value)
-              }
-            />
-            <small className="field-hint">
-              OpenAPI format is usually <code>FD########</code> or{" "}
-              <code>VN########</code> (for example: FD24160543).
-            </small>
-
-            <label htmlFor="neris-vendor-header">Entity ID header name</label>
-            <input
-              id="neris-vendor-header"
-              type="text"
-              value={nerisExportSettingsDraft.vendorHeaderName}
-              onChange={(event) =>
-                updateNerisExportSetting("vendorHeaderName", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-secret-key">Secret key / API token (direct mode only)</label>
-            <input
-              id="neris-secret-key"
-              type="password"
-              value={nerisExportSettingsDraft.secretKey}
-              onChange={(event) =>
-                updateNerisExportSetting("secretKey", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-auth-header">Auth header name (default from OpenAPI)</label>
-            <input
-              id="neris-auth-header"
-              type="text"
-              value={nerisExportSettingsDraft.authHeaderName}
-              onChange={(event) =>
-                updateNerisExportSetting("authHeaderName", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-auth-scheme">Auth scheme prefix (default from OpenAPI)</label>
-            <input
-              id="neris-auth-scheme"
-              type="text"
-              placeholder="Bearer"
-              value={nerisExportSettingsDraft.authScheme}
-              onChange={(event) =>
-                updateNerisExportSetting("authScheme", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-content-type">Content-Type (default from OpenAPI)</label>
-            <input
-              id="neris-content-type"
-              type="text"
-              value={nerisExportSettingsDraft.contentType}
-              onChange={(event) =>
-                updateNerisExportSetting("contentType", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-version-header">API version header name (optional)</label>
-            <input
-              id="neris-version-header"
-              type="text"
-              value={nerisExportSettingsDraft.apiVersionHeaderName}
-              onChange={(event) =>
-                updateNerisExportSetting("apiVersionHeaderName", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-version-value">API version header value (optional)</label>
-            <input
-              id="neris-version-value"
-              type="text"
-              value={nerisExportSettingsDraft.apiVersionHeaderValue}
-              onChange={(event) =>
-                updateNerisExportSetting("apiVersionHeaderValue", event.target.value)
-              }
-            />
-
-            <small className="field-hint">
-              Security note: these values are local browser settings for prototype
-              testing. Production keys should be kept on a backend server.
-            </small>
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="Fire Recovery USA (billing)">
-          <div className="settings-form">
-            <p className="field-hint">
-              <strong>Send to Fire Recovery</strong> uses Fire Recovery’s{" "}
-              <strong>Add NERIS Incident for Billing</strong> API. The tenant’s{" "}
-              <strong>NERIS Entity ID</strong> (FD########, set in Department Details) is sent as{" "}
-              <code>NERISDepartmentId</code>; the <strong>department name</strong> below is{" "}
-              <code>DepartmentName</code>. The incident must already be successfully exported to
-              NERIS (complete / ready for billing).
-            </p>
-            <p className="field-hint">
-              <strong>Subscription key</strong> is optional and kept for compatibility with older
-              vendor docs; the NERIS billing path does not require it.
-            </p>
-            <p className="field-hint">
-              The vendor <strong>username</strong> and <strong>password</strong> used to obtain a JWT
-              are the same as our server variables <code>FIRE_RECOVERY_API_USERNAME</code> and{" "}
-              <code>FIRE_RECOVERY_API_PASSWORD</code> in <code>.env.server</code> (staging/production
-              environment on Render)—not entered here.
-            </p>
-            <p className="field-hint">
-              Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server (e.g.{" "}
-              <code>https://process-dev.firerecoveryusa.com</code> for testing vs production host).
-            </p>
-
-            {frSubscriptionMasked ? (
-              <p className="field-hint">
-                Current subscription key (masked): <strong>{frSubscriptionMasked}</strong>
-              </p>
-            ) : (
-              <p className="field-hint">No subscription key saved yet for this tenant.</p>
-            )}
-
-            <label htmlFor="fr-subscription-key">New subscription key (optional)</label>
-            <input
-              id="fr-subscription-key"
-              type="password"
-              autoComplete="off"
-              placeholder="Leave blank to keep the current key"
-              value={frSubscriptionKeyInput}
-              onChange={(event) => setFrSubscriptionKeyInput(event.target.value)}
-            />
-
-            <label htmlFor="fr-department-name">Department name (for Fire Recovery API)</label>
-            <input
-              id="fr-department-name"
-              type="text"
-              placeholder="e.g. Crescent-Iroquois Fire Protection District"
-              value={frDepartmentName}
-              onChange={(event) => setFrDepartmentName(event.target.value)}
-            />
-
-            {frMessage ? <p className="save-message">{frMessage}</p> : null}
-            {frError ? <p className="auth-error">{frError}</p> : null}
-
-            <button
-              type="button"
-              className="primary-button"
-              disabled={frSaving}
-              onClick={handleSaveFireRecoverySettings}
-            >
-              {frSaving ? "Saving…" : "Save Fire Recovery settings"}
-            </button>
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="Parsing Setup">
-          <div className="settings-form">
-            <label htmlFor="parsing-call-select">Dispatch feed preview call</label>
-            <select
-              id="parsing-call-select"
-              value={selectedParsingCall}
-              onChange={(event) => setSelectedParsingCall(event.target.value)}
-            >
-              {DISPATCH_PARSING_PREVIEW.map((row) => (
-                <option key={row.callNumber} value={row.callNumber}>
-                  {row.callNumber}
-                </option>
-              ))}
-            </select>
-
-            {parsingRow ? (
-              <div className="parsing-preview">
-                <p>
-                  <strong>Received:</strong> {parsingRow.receivedAt}
-                </p>
-                <p>
-                  <strong>Parsed:</strong> {parsingRow.parsedSummary}
-                </p>
-                <p>
-                  <strong>Raw:</strong>
-                </p>
-                <pre>{parsingRow.rawMessage}</pre>
-              </div>
-            ) : null}
-
-            <label>Incoming calls from dispatch</label>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Received</th>
-                    <th>Call #</th>
-                    <th>Parsed Summary</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DISPATCH_PARSING_PREVIEW.map((row) => (
-                    <tr key={`parse-${row.callNumber}`}>
-                      <td>{row.receivedAt}</td>
-                      <td>{row.callNumber}</td>
-                      <td>{row.parsedSummary}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="Preview">
-          <div className="branding-preview">
-            <div
-              className="branding-preview-banner"
-              style={{
-                background: `linear-gradient(120deg, ${primaryColor} 0%, ${accentColor} 100%)`,
-              }}
-            >
-              <span>{organizationName || "Organization Name"}</span>
-            </div>
-            <p>
-              Branding preview only. Future backend integration will persist
-              these choices per organization.
-            </p>
-            <ul className="workflow-chip-list">
-              {workflowDraft.map((state) => (
-                <li key={`preview-${state}`} className="workflow-chip">
-                  {state}
-                </li>
-              ))}
-            </ul>
           </div>
         </CustomizationSection>
       </form>
@@ -13009,6 +12918,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-profile"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/department-logo-image") {
@@ -13016,6 +12927,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-logo-image"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/contact-info") {
@@ -13023,6 +12936,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="contact-info"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/operational-details") {
@@ -13030,6 +12945,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="operational-details"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/incident-audit-log") {
@@ -13039,6 +12956,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="incidents-setup"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/department-resources") {
@@ -13046,6 +12965,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-resources"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/department-access") {
@@ -13053,6 +12974,26 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-access"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
+      />
+    );
+  } else if (path === "/admin-functions/department-details/neris-configuration") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="neris-configuration"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
+      />
+    );
+  } else if (path === "/admin-functions/department-details/fire-recovery") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="fire-recovery"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/audit-logs") {
@@ -13089,8 +13030,6 @@ function RouteResolver({
         onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
         submenuVisibility={submenuVisibility}
         onSaveSubmenuVisibility={onSaveSubmenuVisibility}
-        nerisExportSettings={nerisExportSettings}
-        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/dispatch-parsing-settings") {

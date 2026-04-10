@@ -12,25 +12,19 @@ function getFireRecoveryBaseUrl() {
 }
 
 /**
- * @returns {{ username: string, password: string } | null}
- */
-export function getFireRecoveryApiCredentials() {
-  const username = trimValue(process.env.FIRE_RECOVERY_API_USERNAME);
-  const password = trimValue(process.env.FIRE_RECOVERY_API_PASSWORD);
-  if (!username || !password) return null;
-  return { username, password };
-}
-
-/**
+ * Obtain JWT using tenant-stored Fire Recovery login only (no .env fallback).
+ * @param {{ username: string, password: string }} credentials
  * @returns {Promise<string>}
  */
-export async function getFireRecoveryJwt() {
-  const cred = getFireRecoveryApiCredentials();
-  if (!cred) {
+export async function getFireRecoveryJwt(credentials) {
+  const u = trimValue(credentials?.username);
+  const p = trimValue(credentials?.password);
+  if (!u || !p) {
     throw new Error(
-      "Fire Recovery API credentials are not configured. Set FIRE_RECOVERY_API_USERNAME and FIRE_RECOVERY_API_PASSWORD in .env.server.",
+      "Fire Recovery username and password must be set for this tenant under Admin → Setup/Configuration → Fire Recovery.",
     );
   }
+  const cred = { username: u, password: p };
   const baseUrl = getFireRecoveryBaseUrl();
   const url = `${baseUrl.replace(/\/$/, "")}/Primary/REST/AccountService/LoginAndGetJWTToken`;
   const basic = Buffer.from(`${cred.username}:${cred.password}`, "utf8").toString("base64");

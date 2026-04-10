@@ -16,6 +16,9 @@ model Tenant {
   fireRecoverySubscriptionKey   String?
   /// Department display name sent to Fire Recovery incident billing API.
   fireRecoveryDepartmentName    String?
+  /// Optional per-tenant Fire Recovery API login (JWT). If both username and password are set, server uses them instead of FIRE_RECOVERY_API_* env.
+  fireRecoveryApiUsername       String?
+  fireRecoveryApiPassword       String?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   domains            TenantDomain[]

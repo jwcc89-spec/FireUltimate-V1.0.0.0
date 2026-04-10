@@ -173,7 +173,19 @@ export function FireRecoveryIncidentDetailPage({
                   </tr>
                   <tr>
                     <th scope="row">Amount due</th>
-                    <td>{row.amountDue || "—"}</td>
+                    <td>{row.invoiceAmountDue || row.amountDue || "—"}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Invoice submit date</th>
+                    <td>{row.invoiceSubmitDate || "—"}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Last payment date</th>
+                    <td>{row.lastPaymentDate || "—"}</td>
+                  </tr>
+                  <tr>
+                    <th scope="row">Payment plan</th>
+                    <td>{row.paymentPlan || "—"}</td>
                   </tr>
                   <tr>
                     <th scope="row">Amount paid (last)</th>

@@ -66,8 +66,9 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
         <div>
           <h1>Reporting | NERIS | Fire Recovery Incidents for Billing</h1>
           <p>
-            Incidents submitted to Fire Recovery USA for billing. Click a row for details and to
-            refresh billing status.
+            Incidents submitted to Fire Recovery USA for billing. Values below are cached from{" "}
+            <strong>Get Incident Billing Status</strong> after you use <strong>Update</strong> on the
+            detail view. Click a row for details.
           </p>
         </div>
         <div className="header-actions">
@@ -96,11 +97,16 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
               <thead>
                 <tr>
                   <th>Incident #</th>
-                  <th>Incident Type</th>
                   <th>Incident Date</th>
                   <th>Export Date</th>
-                  <th>Amount Due</th>
-                  <th>Amount Paid</th>
+                  <th>Invoice Status</th>
+                  <th>Invoice Amount</th>
+                  <th>Invoice Amount Due</th>
+                  <th>Invoice Submit Date</th>
+                  <th>Last Payment Date</th>
+                  <th>Last Payment Amount</th>
+                  <th>Payment Plan</th>
+                  <th>Invoice ID</th>
                   <th>Tracking ID</th>
                 </tr>
               </thead>
@@ -126,11 +132,18 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
                           {call ? getIncidentDisplayNumber(call) : r.callNumber}
                         </strong>
                       </td>
-                      <td>{r.incidentType || "—"}</td>
                       <td>{r.incidentDateLabel || "—"}</td>
                       <td>{r.exportDateLabel || "—"}</td>
-                      <td>{r.amountDue || "—"}</td>
+                      <td>{r.invoiceStatus || "—"}</td>
+                      <td>{r.invoiceAmount || "—"}</td>
+                      <td>{r.invoiceAmountDue || r.amountDue || "—"}</td>
+                      <td>{r.invoiceSubmitDate || "—"}</td>
+                      <td>{r.lastPaymentDate || "—"}</td>
                       <td>{r.amountPaid || "—"}</td>
+                      <td>{r.paymentPlan || "—"}</td>
+                      <td style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.9em" }}>
+                        {r.invoiceId || "—"}
+                      </td>
                       <td style={{ fontFamily: "ui-monospace, monospace", fontSize: "0.9em" }}>
                         {r.trackingId || "—"}
                       </td>
@@ -139,10 +152,11 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={12}>
                       <div className="empty-message">
-                        No Fire Recovery billing rows yet. Use Incident Export Queue → Send to Fire
-                        Recovery after a successful NERIS export.
+                        No Fire Recovery billing rows yet. Open an incident from the NERIS Export Queue,
+                        then use <strong>Send to Fire Recovery</strong> on the export detail view after
+                        a successful NERIS export.
                       </div>
                     </td>
                   </tr>

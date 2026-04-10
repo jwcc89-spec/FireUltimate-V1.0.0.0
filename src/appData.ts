@@ -440,10 +440,10 @@ export const MAIN_MENUS: MainMenu[] = [
     adminOnly: true,
     submenus: [
       {
-        label: "Department Details",
+        label: "Setup/Configuration",
         path: "/admin-functions/department-details",
         summary:
-          "Set department profile information, contacts, address, and resources.",
+          "Department profile, contacts, resources, NERIS export options, and Fire Recovery billing identifiers.",
         isBuilt: true,
         adminOnly: true,
       },

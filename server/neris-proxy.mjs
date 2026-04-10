@@ -19,7 +19,6 @@ import {
   extractIncidentMetadataFromExportPayload,
 } from "./fireRecoveryMapping.mjs";
 import {
-  getFireRecoveryApiCredentials,
   getFireRecoveryJwt,
   postAddNerisIncidentForBilling,
   postIncidentBillingStatus,
@@ -3041,6 +3040,19 @@ function maskFireRecoverySubscriptionKey(raw) {
   return `****${s.slice(-4)}`;
 }
 
+function fireRecoveryJwtOverrideFromTenant(tenant) {
+  const u = trimValue(tenant?.fireRecoveryApiUsername);
+  const p = trimValue(tenant?.fireRecoveryApiPassword);
+  if (u && p) {
+    return { username: u, password: p };
+  }
+  return null;
+}
+
+function tenantHasFireRecoveryCredentials(tenant) {
+  return Boolean(fireRecoveryJwtOverrideFromTenant(tenant));
+}
+
 function formatFireRecoveryExportDateLabel(value) {
   if (!value) return "";
   const d = value instanceof Date ? value : new Date(value);
@@ -3050,6 +3062,7 @@ function formatFireRecoveryExportDateLabel(value) {
 }
 
 function fireRecoveryBillingRowToApi(row) {
+  const due = row.invoiceAmountDue ?? "";
   return {
     id: row.id,
     callNumber: row.callNumber,
@@ -3061,11 +3074,15 @@ function fireRecoveryBillingRowToApi(row) {
     lastSubmitError: row.lastSubmitError ?? "",
     exportDateLabel:
       row.lastSubmitOk && row.lastSubmitAt ? formatFireRecoveryExportDateLabel(row.lastSubmitAt) : "",
-    amountDue: row.invoiceAmountDue ?? "",
+    amountDue: due,
+    invoiceAmountDue: due,
     amountPaid: row.lastPaymentAmount ?? "",
     invoiceId: row.invoiceId ?? "",
     invoiceStatus: row.invoiceStatus ?? "",
     invoiceAmount: row.invoiceAmount ?? "",
+    invoiceSubmitDate: row.invoiceSubmitDate ?? "",
+    lastPaymentDate: row.lastPaymentDate ?? "",
+    paymentPlan: row.paymentPlan ? "Yes" : "No",
     billingFetchedAt: row.billingFetchedAt ? row.billingFetchedAt.toISOString() : null,
   };
 }
@@ -3093,6 +3110,8 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
       select: {
         fireRecoverySubscriptionKey: true,
         fireRecoveryDepartmentName: true,
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
       },
     });
     response.json({
@@ -3100,6 +3119,8 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
       data: {
         subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
         departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
+        apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
+        passwordIsSet: Boolean(trimValue(tenant?.fireRecoveryApiPassword)),
       },
     });
   } catch (error) {
@@ -3127,12 +3148,22 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
       typeof body.fireRecoveryDepartmentName === "string"
         ? body.fireRecoveryDepartmentName
         : undefined;
+    const apiUsername =
+      typeof body.fireRecoveryApiUsername === "string" ? body.fireRecoveryApiUsername : undefined;
+    const apiPassword =
+      typeof body.fireRecoveryApiPassword === "string" ? body.fireRecoveryApiPassword : undefined;
     const data = {};
     if (subscriptionKey !== undefined) {
       data.fireRecoverySubscriptionKey = subscriptionKey.trim() || null;
     }
     if (departmentName !== undefined) {
       data.fireRecoveryDepartmentName = departmentName.trim() || null;
+    }
+    if (apiUsername !== undefined) {
+      data.fireRecoveryApiUsername = apiUsername.trim() || null;
+    }
+    if (apiPassword !== undefined) {
+      data.fireRecoveryApiPassword = apiPassword.trim() || null;
     }
     if (Object.keys(data).length === 0) {
       response.status(400).json({ ok: false, message: "No Fire Recovery fields to update." });
@@ -3144,6 +3175,8 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
       select: {
         fireRecoverySubscriptionKey: true,
         fireRecoveryDepartmentName: true,
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
       },
     });
     response.json({
@@ -3151,6 +3184,8 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
       data: {
         subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant.fireRecoverySubscriptionKey),
         departmentName: trimValue(tenant.fireRecoveryDepartmentName),
+        apiUsername: trimValue(tenant.fireRecoveryApiUsername),
+        passwordIsSet: Boolean(trimValue(tenant.fireRecoveryApiPassword)),
       },
     });
   } catch (error) {
@@ -3220,14 +3255,6 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       response.status(400).json({ ok: false, message: "Missing tenant context." });
       return;
     }
-    if (!getFireRecoveryApiCredentials()) {
-      response.status(503).json({
-        ok: false,
-        message:
-          "Fire Recovery API is not configured on the server (FIRE_RECOVERY_API_USERNAME / FIRE_RECOVERY_API_PASSWORD).",
-      });
-      return;
-    }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const callNumber = trimValue(body.callNumber);
     if (!callNumber) {
@@ -3240,15 +3267,25 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       select: {
         nerisEntityId: true,
         fireRecoveryDepartmentName: true,
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
       },
     });
+    if (!tenantHasFireRecoveryCredentials(tenant)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+      });
+      return;
+    }
     const nerisDepartmentId = trimValue(tenant?.nerisEntityId);
     const dept = trimValue(tenant?.fireRecoveryDepartmentName);
     if (!nerisDepartmentId || !NERIS_ENTITY_ID_PATTERN.test(nerisDepartmentId)) {
       response.status(400).json({
         ok: false,
         message:
-          "Set this tenant's NERIS Entity ID (FD########) in Department Details / tenant settings, and Fire Recovery Department Name under Customization, before submitting.",
+          "Set this tenant's NERIS Entity ID (FD########) in Setup/Configuration, and Fire Recovery department name under Setup/Configuration → Fire Recovery, before submitting.",
       });
       return;
     }
@@ -3256,7 +3293,7 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       response.status(400).json({
         ok: false,
         message:
-          "Set Fire Recovery Department Name (Admin → Customization → Fire Recovery USA) before submitting.",
+          "Set Fire Recovery department name (Admin → Setup/Configuration → Fire Recovery) before submitting.",
       });
       return;
     }
@@ -3299,7 +3336,9 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       departmentName: dept,
     });
 
-    const jwt = await getFireRecoveryJwt();
+    const jwt = await getFireRecoveryJwt(
+      /** @type {{ username: string, password: string }} */ (fireRecoveryJwtOverrideFromTenant(tenant)),
+    );
     const { trackingId } = await postAddNerisIncidentForBilling(jwt, frBody);
 
     const now = new Date();
@@ -3366,18 +3405,26 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       response.status(400).json({ ok: false, message: "Missing tenant context." });
       return;
     }
-    if (!getFireRecoveryApiCredentials()) {
-      response.status(503).json({
-        ok: false,
-        message:
-          "Fire Recovery API is not configured on the server (FIRE_RECOVERY_API_USERNAME / FIRE_RECOVERY_API_PASSWORD).",
-      });
-      return;
-    }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const callNumber = trimValue(body.callNumber);
     if (!callNumber) {
       response.status(400).json({ ok: false, message: "callNumber is required." });
+      return;
+    }
+
+    const tenantForJwt = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
+      },
+    });
+    if (!tenantHasFireRecoveryCredentials(tenantForJwt)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+      });
       return;
     }
 
@@ -3393,7 +3440,11 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       return;
     }
 
-    const jwt = await getFireRecoveryJwt();
+    const jwt = await getFireRecoveryJwt(
+      /** @type {{ username: string, password: string }} */ (
+        fireRecoveryJwtOverrideFromTenant(tenantForJwt)
+      ),
+    );
     const resp = await postIncidentBillingStatus(jwt, trackingId);
     const now = new Date();
 
