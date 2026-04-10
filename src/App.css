@@ -1570,6 +1570,95 @@ tbody tr:last-of-type td {
   max-height: 10rem;
 }
 
+/* Message Parsing — all-visible batch preview */
+.cad-dispatch-message-batch-section {
+  margin-top: 1rem;
+}
+
+.cad-dispatch-message-batch-header {
+  margin-bottom: 0.75rem;
+}
+
+.cad-dispatch-message-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: min(70vh, 42rem);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.cad-dispatch-message-row-card {
+  margin: 0;
+}
+
+.cad-dispatch-message-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.cad-dispatch-message-row-date {
+  font-weight: 600;
+}
+
+.cad-dispatch-message-row-from {
+  word-break: break-word;
+}
+
+.cad-dispatch-message-row-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-message-row-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-message-row-h {
+  font-size: 0.82rem;
+  margin: 0 0 0.35rem;
+  color: #0f172a;
+}
+
+.cad-dispatch-message-row-h-sub {
+  font-size: 0.75rem;
+  margin: 0.5rem 0 0.25rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.cad-dispatch-preview-plain {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.cad-dispatch-slots-pre {
+  max-height: 8rem;
+  margin-top: 0.35rem;
+}
+
+.cad-dispatch-message-row-col-stored .cad-dispatch-stored-pre {
+  max-height: 10rem;
+}
+
 .dashboard-shortcut-list,
 .unit-status-list {
   margin: 0;

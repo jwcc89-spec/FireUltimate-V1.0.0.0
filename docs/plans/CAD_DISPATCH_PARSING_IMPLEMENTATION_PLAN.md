@@ -1,7 +1,7 @@
 # CAD email dispatch — product & implementation plan
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress — **implementation:** Batches A–G, **G1**, **H** **done** (2026-04-10). **Next:** **Batch I** / **J** as scheduled. **Batch J** = split create vs update (**schema approval**). **Product:** apparatus matching, richer rule UI.  
+**Status:** In progress — **implementation:** Batches A–G, **G1**, **H**, **I** **done** (2026-04-10). **Next:** **Batch J** (schema approval) → **K** (user-friendly parsing UX). **Product:** end-user-friendly rules (no JSON for departments), field mapping UI, plain-language previews; apparatus matching.  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md` · Migrations — `docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md` §**I.2**
 
 This file is the **single plan** for incoming CAD email: **what we want the product to do** and **how we are building it** (phases + batches). It replaces having separate “product” and “implementation” CAD plan documents.
@@ -15,7 +15,7 @@ This file is the **single plan** for incoming CAD email: **what we want the prod
 ### 1.1 Goal
 
 - **Where emails show up:** Admin Functions → **Dispatch Parsing Settings**. Incoming CAD emails are listed; expand a row for raw body / MIME / troubleshooting.
-- **Parsing configuration:** Per **tenant**. Each department defines its own rules (dispatch formats differ). Departments configure this, not the program owner.
+- **Parsing configuration:** Per **tenant**. Dispatch formats differ; **today** each tenant can store its own rule JSON (**Batch H**). **Target (**§1.3b**):** a **shared rule library** (product-maintained); each department **selects which rules apply** — not open-ended JSON authoring for normal setup.
 - **When parsing drives incidents:** When rules are applied on ingest, the app should **auto-create or update** incidents (draft) from parsed text where rules match; unmapped fields stay blank. Apparatus is matched to **Department Details → Apparatus**; unrecognized units are not added.
 - **Why:** (1) Inform responders during the call (address, units, notes; later routing). (2) Pre-populate NERIS flows. Auto-created incidents are **Draft**; NERIS export locking is separate.
 
@@ -34,6 +34,14 @@ Build toward (order can overlap engineering phases):
 
 **Stackable rules (example):** between 1st and 2nd hard return → **Address**; position/delimiter/target field as dropdowns in UI over time.
 
+**End-user requirement:** Department admins must be able to configure parsing **without editing raw JSON**. Interim admin UIs may expose JSON for power users; **Batch K** delivers the guided experience (see **§ Roadmap — step-by-step** and **Batch K**).
+
+### 1.3a Message parsing vs incident parsing — timeline
+
+- **Historical build order:** Incident automation (ingest → create/update draft incidents) shipped in **Batch G**; **member-facing parsed message text** (`CadEmailIngest.parsedMessageText`) and the **Message Parsing** admin tab shipped in **Batch H**. So engineering prioritized **incident** wiring first, then **message** persistence and UI.
+- **Current behavior (post–Batch H):** On each successful **`CadEmailIngest`** insert (after secret + allowlist), the server runs **both** pipelines when configured: **(1)** **Message rules** → `parsedMessageText` (does not require incident automation to be on); **(2)** if **Enable Incident Creation** is on, **incident rules** → create/update incident. They are **parallel concerns**, not sequential phases.
+- **Future:** **Batch K** makes **both** Message and Incident rule configuration **user-friendly** (same product direction as §1.3).
+
 ### 1.4 Apparatus matching
 
 - **Source of truth:** Department Details apparatus list only.
@@ -48,7 +56,7 @@ Build toward (order can overlap engineering phases):
 
 | Action | Role |
 |--------|------|
-| View raw CAD emails + parsing config | Subadmin+ |
+| View raw CAD emails + parsing config (**Dispatch Parsing Settings**) | **Admin and above** (stakeholder); lives under **Admin Functions** — same visibility as other admin-only tools. *Server routes must stay tenant-scoped.* |
 | Create/approve incidents (including auto-created) | User+ |
 
 ### 1.7 One email → one incident row; updates
@@ -75,15 +83,56 @@ Build toward (order can overlap engineering phases):
 | Topic | Decision |
 |-------|----------|
 | Email source | Single dispatch system per tenant; formats vary |
-| Parsing config | Per tenant |
+| Parsing config | Per tenant; **target:** catalog + **which rules apply** (**§1.3b**) |
 | Rule types (direction) | Labels → patterns/regex → highlight-assign |
 | Apparatus | Department Details only |
 | Missing fields | Draft with blanks first; stricter gating optional later |
 | Duplicates | Dedupe / merge by incident/CFS identity |
-| Raw email / rules UI | Subadmin+ |
+| Raw email / rules UI | Admin+ (stakeholder; **§1.6**) |
 | Incidents | User+ |
 | CAD-created incidents | Draft + badge |
 | Auto incident **create** vs **update** | **Split toggles** (Batch J); until then, single **`enableIncidentCreation`** controls both |
+| Admin parsing UX (no JSON) | **Batch K** — visual/guided rules + field mapping + plain previews |
+
+---
+
+## Roadmap — step-by-step (review checklist)
+
+Use this list to confirm work completes in the **intended order**. **End-user friendly** = department admins never need to edit raw JSON for normal configuration once **Batch K** is done.
+
+| Step | Batch / milestone | What gets done | End-user impact |
+|------|-------------------|----------------|-----------------|
+| 1 | ~~A–H, G1~~ | Routes, security, persistence, rule engine, incident ingest, MIME/plain text, **message** ingest field + admin panels | Admin+ can configure JSON rules (**§1.6**); ingest runs **message + incident** pipelines |
+| 2 | ~~**I**~~ | ~~Docs polish, index/retention **ops notes**, **`CAD_STAGING_VERIFICATION_CHECKLIST.md`**~~ | ~~Operator can validate staging without dev help~~ |
+| 3 | **J** | Split **create** vs **update** for incident automation (new fields, API, Incident Parsing UI, ingest branching) | Departments can allow updates without new auto-creates (or reverse); **requires schema approval** |
+| 4 | **K** | **User-friendly parsing:** **shared rule library** + tenant **rule selection** (see **§1.3b**), **incident field mapping** UI, merge key UI, **plain-language** previews; phased slices OK | Departments pick rules — no JSON for normal setup |
+| 5 | *(product backlog)* | **CAD allowlist admin UI** (API exists), **retention job** + admin settings (time/count per stakeholder), apparatus matching polish, dedupe tuning | Admins manage senders and storage without developers |
+
+**Dependency notes:** **K** can overlap **J** in design spikes but should **not** block **I** or **J**. **J** needs explicit migration approval before coding.
+
+### Stakeholder direction (captured for implementation)
+
+Plain-language decisions to align batches **I / J / K** and follow-ons. *Engineering must reconcile these with the current codebase (see **§1.3b**).*
+
+| Topic | Direction |
+|-------|-----------|
+| **“CAD settings”** means | **Inside this app only** — Admin Functions → **Dispatch Parsing Settings** (rules, toggles, allowlist, raw email list). **Not** changing software at the 911 center or CAD vendor. |
+| **Order of batches** | Flexible as long as work **does not pile up dead or duplicate code**; prefer **one clear path** per feature and remove or supersede old UI when replacing. |
+| **Existing users** | None on this feature yet — defaults can be simple; no legacy behavior to preserve. |
+| **Email retention** | No legal minimum known. **Target:** admin-configurable **automatic** cleanup: e.g. delete after **N days** *or* after **M stored emails** (or similar). Requires **persisted settings**, **scheduled job** or equivalent, and UX in admin setup — likely **after Batch I** as its own slice (schema approval if new tables/fields). |
+| **Shipping style** | **Step-by-step releases** preferred so each slice can be tested before the next. |
+| **Parsing rules model** | **Shared rule library** (~25 rules) maintained by the **product team**; each **tenant chooses which rules apply** (not each tenant authoring raw JSON rules from scratch). **§1.3b** — current system uses per-tenant JSON; migration to a catalog is a **major Batch K (or K.1) design task**. |
+| **Allowlist** | **Edit inside the app** so admins can react when CAD changes sender; optional UX: “Only allow emails from …” + addresses (often discovered after a **test email** appears under **Raw Email**). **APIs exist** (`GET/PATCH /api/cad/allowlist`); **dedicated admin UI** still to build. |
+| **What responders see** | **Only the cleaned parsed text** unless the **rules** intentionally include date/time (or other lines) in that output. |
+| **Who runs staging tests** | **Product owner** runs confirmation on staging — implementation must ship **very detailed, click-by-click** test steps (Batch **I** / runbooks). |
+| **Staging vs production tenants** | **One tenant** on staging; after go-live, **Crescent** (or delegate) configures parsing rules in **production** and adjusts as needed. |
+| **Work priority (when tradeoffs)** | **(1)** Safest **incident** handling → **(2)** Easiest **admin** setup → **(3)** Clearest **documentation**. Use this to order **J** (safety / automation behavior) before purely-UX items where possible, and to schedule doc polish after behavior is stable. |
+
+### 1.3b Rules: current implementation vs target (catalog + tenant selection)
+
+- **Today (shipped):** Each tenant stores **`messageRulesJson`** and **`incidentRulesJson`** on **`CadParsingSettings`** (admin+ edits JSON in admin panels per **§1.6**). The **rule engine** is shared; the **rule text** is per tenant.
+- **Target (stakeholder direction):** A **library** of predefined rules (e.g. ~25) ships with the product; tenants **enable or pick** rules that fit their dispatch format — **no tenant-specific rule authoring in JSON** for normal setup.
+- **Implication:** Batch **K** must include **data model + UI** for the library and tenant selection, and a **clean migration path** from JSON so we do not leave parallel dead code paths. Exact schema needs **explicit approval** when it touches Prisma.
 
 ---
 
@@ -196,6 +245,7 @@ Build toward (order can overlap engineering phases):
 
 1. ~~**Multipart MIME + quoted-printable (Batch G1):** …~~ *(Shipped: `extractPlainTextFromDecodedMime`, `getDispatchPlainTextFromRawBody`, server mirror, tests.)*
 2. **Split create vs update (Batch J):** §1.11 — **schema approval** required.
+3. **User-friendly parsing UX (Batch K):** §1.3 + **Roadmap — step-by-step** — no JSON for normal admin workflows; field mapping UI; plain previews.
 
 ---
 
@@ -206,7 +256,7 @@ Build toward (order can overlap engineering phases):
 - ~~**Incident Parsing UX polish** *(Batch H)* — no ICOMM sample; rules on top; up to **20** emails; side-by-side plain | preview.~~
 - ~~Side-by-side: source text | parsed output~~ — *Batch H shipped; visual rule builder may replace JSON later*.
 - Raw Email: uses **`getDispatchPlainTextFromRawBody`** for dispatch snippet (Batch G1).
-- Role gating: Subadmin+ for rules/allowlist.
+- Role gating: **Admin+** for rules/allowlist (**§1.6**).
 
 **Acceptance:** **Save** persists tenant config; **ingest** applies message + incident pipelines; **Batch H** UI as specified.
 
@@ -215,8 +265,8 @@ Build toward (order can overlap engineering phases):
 ## Phase 8 — Docs and operations
 
 - Keep **`EMAIL_AND_CAD_SETUP.md`** aligned (secret, Worker, allowlist).
-- Staging checklist: Worker URL, secret, allowlist testers.
-- Optional: **`CadEmailIngest`** retention/index notes.
+- ~~Staging checklist: Worker URL, secret, allowlist testers.~~ *Batch I: **`docs/procedures/CAD_STAGING_VERIFICATION_CHECKLIST.md`** + **`docs/operations/CAD_DATABASE_INDEXES_AND_RETENTION.md`**.*
+- ~~Optional: **`CadEmailIngest`** retention/index notes.~~ *Documented in **`docs/operations/CAD_DATABASE_INDEXES_AND_RETENTION.md`**; automated retention UI is backlog.*
 
 **Acceptance:** Operator can configure from runbooks + this plan.
 
@@ -235,16 +285,17 @@ Build toward (order can overlap engineering phases):
 | ~~G~~ | ~~Ingest → parse → create/update incident (`server/cadDispatchRuleEngine.mjs` + `cadIngestApplyIncidentAutomation`)~~ |
 | ~~G1~~ | ~~**MIME / plain text:** extract **`text/plain`** from **`multipart/*`**; decode **quoted-printable** (and keep base64 support); `extractDispatchPlainText.ts` + `server/cadDispatchRuleEngine.mjs` mirror; tests.~~ |
 | ~~H~~ | ~~**Message Parsing:** UI + **`parsedMessageText`** on ingest (`cadIngestApplyMessagePipeline`). **Incident Parsing UX:** rules on top; **20** emails; side-by-side; no ICOMM sample. Migration `parsedMessageText` on **`CadEmailIngest`**.~~ |
-| I | Docs polish, indexes/retention, staging verification |
+| ~~I~~ | ~~Docs polish, indexes/retention notes, **staging operator checklist** (`docs/procedures/CAD_STAGING_VERIFICATION_CHECKLIST.md`, `docs/operations/CAD_DATABASE_INDEXES_AND_RETENTION.md`)~~ |
 | J | **Split incident automation:** separate **`enableIncidentAutoCreate`** and **`enableIncidentAutoUpdate`** (names TBD) on **`CadParsingSettings`**, API, Incident Parsing UI, ingest branching. **Requires explicit Prisma migration approval.** Optional later: rule conditions for “when to update.” |
+| K | **User-friendly parsing:** **shared rule library** + tenant **rule selection** (§1.3b); **incident field mapping** + merge-key UI; **plain-language** previews; remove reliance on tenant-authored JSON for normal setup. Phased delivery OK. |
 
 ---
 
 ## Technical references (existing vs upcoming)
 
-- **Today:** `CadEmailIngest` (+ **`parsedMessageText`**); `POST /api/cad/inbound-email` (message pipeline + optional incident automation); `server/cadDispatchRuleEngine.mjs` (rules + MIME extract); **Message** + **Incident Parsing** admin UI. **Batch J** = split create/update flags.
-- **App entry:** Admin Functions → **Dispatch Parsing Settings** → **Incident Parsing**.
+- **Today:** `CadEmailIngest` (+ **`parsedMessageText`**); `POST /api/cad/inbound-email` (**message** pipeline + optional **incident** automation); `server/cadDispatchRuleEngine.mjs` (rules + MIME extract); **Message** + **Incident Parsing** admin UI (**per-tenant JSON** until **Batch K** replaces with **rule library + selection** per §1.3b). **Batch J** = split create/update flags.
+- **App entry:** Admin Functions → **Dispatch Parsing Settings** → **Message Parsing** / **Incident Parsing**.
 
 ---
 
-*Last updated: 2026-04-10 — Batches **G1** + **H** shipped (MIME extract, message ingest field, admin UI).*
+*Last updated: 2026-04-09 — **Batch I** complete: staging checklist + DB index/retention ops notes; linked from `EMAIL_AND_CAD_SETUP.md`.*

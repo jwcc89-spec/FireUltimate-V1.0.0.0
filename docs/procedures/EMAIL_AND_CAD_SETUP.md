@@ -9,6 +9,10 @@
 
 **Result (Part B):** Mail to your CAD address → Cloudflare → **cad-email-ingest-worker** → queue → **POST /api/cad/inbound-email** → stored in **CadEmailIngest** table. Later you can give the address to dispatch and (when implemented) parse emails to create/update incidents.
 
+**Staging verification (operator checklist):** After deploy, use **`docs/procedures/CAD_STAGING_VERIFICATION_CHECKLIST.md`** — step-by-step login, Raw Email, test send, optional Neon/Render checks.
+
+**Tenant routing:** The **local part** of the CAD address (before `@`) must match the department’s **tenant `slug`** in the database (example: **`cifpdil@...`** → tenant slug **`cifpdil`**). If it does not match, the row may store with **`tenantId` null** and will not appear under **Dispatch Parsing Settings** for that tenant.
+
 ---
 
 ## Overview: CAD email flow
