@@ -1,6 +1,7 @@
 /**
  * CAD dispatch rule pipeline (Batch E). Ordered rules mutate working text and fill named slots.
  * Server ingest uses a mirrored copy: `server/cadDispatchRuleEngine.mjs` — keep behavior in sync.
+ * Plain-text extraction: `extractDispatchPlainText.ts` (Batch G1), mirrored in the same `.mjs` file.
  */
 
 import { normalizeDispatchTextForParsing } from "./normalizeDispatchText.ts";

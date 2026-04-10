@@ -12,6 +12,7 @@ export {
   ICOMM_FIXTURE_UPDATE_DISPATCH,
 } from "./icommFixtures.ts";
 export {
+  extractPlainTextFromDecodedMime,
   extractPlainTextFromMime,
   getDispatchPlainTextFromRawBody,
   tryDecodeRawBody,

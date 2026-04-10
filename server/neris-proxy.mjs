@@ -1901,6 +1901,50 @@ async function cadInboundAllowlistDecision(tenantId, fromAddress) {
   return { allowed: false };
 }
 
+// ----- CAD ingest → message pipeline (Batch H): message rules → parsedMessageText on CadEmailIngest -----
+
+const CAD_MESSAGE_TEXT_MAX = 50000;
+
+async function cadIngestApplyMessagePipeline(tenantId, rawBody, emailRowId) {
+  if (!tenantId || !emailRowId) return;
+  try {
+    const settings = await prisma.cadParsingSettings.findUnique({
+      where: { tenantId },
+    });
+    if (!settings) return;
+
+    let rules;
+    try {
+      rules = parseCadRulesJson(settings.messageRulesJson);
+    } catch (e) {
+      console.warn("[CAD ingest] message rules invalid:", e instanceof Error ? e.message : e);
+      return;
+    }
+
+    const plain = getDispatchPlainTextFromRawBody(rawBody);
+    if (!plain) {
+      await prisma.cadEmailIngest.update({
+        where: { id: emailRowId },
+        data: { parsedMessageText: "" },
+      });
+      return;
+    }
+
+    const result = runCadRulePipeline(plain, rules);
+    const text = result.ok ? result.text : plain;
+    const slice = trimValue(String(text)).slice(0, CAD_MESSAGE_TEXT_MAX);
+    if (!result.ok) {
+      console.warn("[CAD ingest] message rule pipeline failed:", result.error);
+    }
+    await prisma.cadEmailIngest.update({
+      where: { id: emailRowId },
+      data: { parsedMessageText: slice },
+    });
+  } catch (e) {
+    console.warn("[CAD ingest] message pipeline error:", e instanceof Error ? e.message : e);
+  }
+}
+
 // ----- CAD ingest → incident automation (Batch G): after rules, create/update Incident by merge key -----
 
 const CAD_INCIDENT_FIELD_MAP_TARGETS = new Set([
@@ -2094,7 +2138,7 @@ app.post("/api/cad/inbound-email", async (request, response) => {
       return;
     }
 
-    await prisma.cadEmailIngest.create({
+    const ingestRow = await prisma.cadEmailIngest.create({
       data: {
         tenantId,
         fromAddress,
@@ -2102,7 +2146,14 @@ app.post("/api/cad/inbound-email", async (request, response) => {
         rawBody,
         headersJson,
       },
+      select: { id: true },
     });
+
+    try {
+      await cadIngestApplyMessagePipeline(tenantId, rawBody, ingestRow.id);
+    } catch (msgErr) {
+      console.error("[CAD ingest] message pipeline error:", msgErr);
+    }
 
     try {
       await cadIngestApplyIncidentAutomation(tenantId, rawBody);
@@ -2140,6 +2191,7 @@ app.get("/api/cad/emails", async (request, response) => {
         toAddress: true,
         rawBody: true,
         headersJson: true,
+        parsedMessageText: true,
         createdAt: true,
       },
     });
@@ -2149,6 +2201,7 @@ app.get("/api/cad/emails", async (request, response) => {
       toAddress: r.toAddress ?? "",
       rawBody: r.rawBody ?? "",
       headersJson: r.headersJson ?? null,
+      parsedMessageText: r.parsedMessageText ?? "",
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
     }));
     response.json({ ok: true, data: list });

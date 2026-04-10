@@ -37,11 +37,10 @@ function formatPreviewJson(result: CadRuleEngineResult): string {
   return JSON.stringify(result, null, 2);
 }
 
-export function DispatchParsingIncidentPanel() {
+export function DispatchParsingMessagePanel() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
-  const [enableIncidentCreation, setEnableIncidentCreation] = useState(false);
   const [rulesJson, setRulesJson] = useState<string>("[]");
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
@@ -64,8 +63,7 @@ export function DispatchParsingIncidentPanel() {
     getCadParsingConfig()
       .then((cfg) => {
         if (!cancelled) {
-          setEnableIncidentCreation(cfg.enableIncidentCreation);
-          setRulesJson(JSON.stringify(cfg.incidentRules ?? [], null, 2));
+          setRulesJson(JSON.stringify(cfg.messageRules ?? [], null, 2));
         }
       })
       .catch((e) => {
@@ -154,23 +152,20 @@ export function DispatchParsingIncidentPanel() {
     }
     setSaveBusy(true);
     try {
-      await patchCadParsingConfig({
-        enableIncidentCreation,
-        incidentRules: rules,
-      });
+      await patchCadParsingConfig({ messageRules: rules });
       setSaveOkAt(Date.now());
     } catch (e) {
       setSaveError(e instanceof Error ? e.message : String(e));
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, parseRulesFromEditor]);
+  }, [parseRulesFromEditor]);
 
   if (loading) {
     return (
       <header className="page-header dispatch-parsing-module-header">
         <div>
-          <h1>Incident Parsing</h1>
+          <h1>Message Parsing</h1>
           <p>Loading configuration…</p>
         </div>
       </header>
@@ -182,8 +177,8 @@ export function DispatchParsingIncidentPanel() {
       <>
         <header className="page-header dispatch-parsing-module-header">
           <div>
-            <h1>Incident Parsing</h1>
-            <p>Map dispatch text into incident fields using ordered rules.</p>
+            <h1>Message Parsing</h1>
+            <p>Rules for the parsed dispatch string used for future member notifications and stored on each ingest.</p>
           </div>
         </header>
         <p className="field-error">{loadError}</p>
@@ -195,11 +190,12 @@ export function DispatchParsingIncidentPanel() {
     <>
       <header className="page-header dispatch-parsing-module-header">
         <div>
-          <h1>Incident Parsing</h1>
+          <h1>Message Parsing</h1>
           <p>
-            Define <strong>incident rules</strong> as a JSON array (see <code>src/cadDispatch/ruleEngine.ts</code>
-            ). <strong>Save</strong> persists config; ingest runs the same pipeline on extracted plain text when{" "}
-            <strong>Enable automatic incident creation</strong> is on. Select a recent email below to preview.
+            Define <strong>message rules</strong> as a JSON array (same types as incident rules; see{" "}
+            <code>src/cadDispatch/ruleEngine.ts</code>). On each CAD email ingest, the server runs these rules on
+            extracted plain text and saves the result on the email row. Use <strong>Preview</strong> with a recent
+            email below. <strong>Save</strong> persists config for this tenant.
           </p>
         </div>
       </header>
@@ -207,21 +203,7 @@ export function DispatchParsingIncidentPanel() {
       <section className="cad-dispatch-h-top">
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
-            <h2>Automatic incident creation</h2>
-          </div>
-          <label className="cad-dispatch-checkbox-label">
-            <input
-              type="checkbox"
-              checked={enableIncidentCreation}
-              onChange={(e) => setEnableIncidentCreation(e.target.checked)}
-            />
-            <span>Enable automatic incident creation from CAD dispatch (when ingest applies rules)</span>
-          </label>
-        </article>
-
-        <article className="panel cad-dispatch-incident-card">
-          <div className="panel-header">
-            <h2>Incident rules (JSON array)</h2>
+            <h2>Message rules (JSON array)</h2>
           </div>
           <textarea
             className="cad-dispatch-rules-textarea"
@@ -229,7 +211,7 @@ export function DispatchParsingIncidentPanel() {
             value={rulesJson}
             onChange={(e) => setRulesJson(e.target.value)}
             rows={12}
-            aria-label="Incident rules JSON"
+            aria-label="Message rules JSON"
           />
           <div className="cad-dispatch-incident-actions">
             <button type="button" className="secondary-button" onClick={runPreview}>
@@ -295,7 +277,7 @@ export function DispatchParsingIncidentPanel() {
                 <h2>Dispatch plain text</h2>
               </div>
               <p className="panel-description">
-                From the selected email (extracted MIME → plain). Edit if needed before preview.
+                From the selected email (extracted MIME → plain). You can edit before preview.
               </p>
               <textarea
                 className="cad-dispatch-rules-textarea"
@@ -303,21 +285,37 @@ export function DispatchParsingIncidentPanel() {
                 value={plainText}
                 onChange={(e) => setPlainText(e.target.value)}
                 rows={14}
-                aria-label="Dispatch plain text for incident preview"
+                aria-label="Dispatch plain text for message preview"
               />
             </article>
 
-            <article className="panel cad-dispatch-incident-card">
-              <div className="panel-header">
-                <h2>Preview output</h2>
-              </div>
-              {previewError ? <p className="field-error">{previewError}</p> : null}
-              {previewResult ? (
-                <pre className="cad-dispatch-preview-pre">{formatPreviewJson(previewResult)}</pre>
-              ) : !previewError ? (
-                <p className="panel-description">Click Preview to run the incident rule pipeline.</p>
-              ) : null}
-            </article>
+            <div className="cad-dispatch-h-preview-stack">
+              <article className="panel cad-dispatch-incident-card">
+                <div className="panel-header">
+                  <h2>Preview output</h2>
+                </div>
+                {previewError ? <p className="field-error">{previewError}</p> : null}
+                {previewResult ? (
+                  <pre className="cad-dispatch-preview-pre">{formatPreviewJson(previewResult)}</pre>
+                ) : !previewError ? (
+                  <p className="panel-description">Click Preview to run the message rule pipeline.</p>
+                ) : null}
+              </article>
+
+              <article className="panel cad-dispatch-incident-card cad-dispatch-stored-ingest">
+                <div className="panel-header">
+                  <h2>Stored at ingest</h2>
+                </div>
+                <p className="panel-description">
+                  Read-only: value saved when this email was received (current saved message rules).
+                </p>
+                {selectedRow?.parsedMessageText ? (
+                  <pre className="cad-dispatch-preview-pre cad-dispatch-stored-pre">{selectedRow.parsedMessageText}</pre>
+                ) : (
+                  <p className="panel-description">Empty (no rules at ingest, or plain text could not be extracted).</p>
+                )}
+              </article>
+            </div>
           </div>
         </div>
       </section>

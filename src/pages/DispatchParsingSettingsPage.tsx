@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
 import {
-  extractPlainTextFromMime,
+  getDispatchPlainTextFromRawBody,
   tryDecodeRawBody,
 } from "../cadDispatch/extractDispatchPlainText.ts";
 import { DispatchParsingIncidentPanel } from "./DispatchParsingIncidentPanel.tsx";
+import { DispatchParsingMessagePanel } from "./DispatchParsingMessagePanel.tsx";
 
 export const DISPATCH_PARSING_ADMIN_MODULES = [
   {
@@ -130,7 +131,7 @@ function DispatchParsingRawEmailPanel() {
                       {(() => {
                         const decoded = tryDecodeRawBody(row.rawBody ?? "");
                         if (decoded !== null) {
-                          const plainText = extractPlainTextFromMime(decoded);
+                          const plainText = getDispatchPlainTextFromRawBody(row.rawBody ?? "");
                           return (
                             <>
                               {plainText ? (
@@ -181,23 +182,6 @@ function DispatchParsingRawEmailPanel() {
   );
 }
 
-function DispatchParsingPlaceholderModule({
-  title,
-  description,
-}: {
-  title: string;
-  description: string;
-}) {
-  return (
-    <header className="page-header dispatch-parsing-module-header">
-      <div>
-        <h1>{title}</h1>
-        <p>{description}</p>
-      </div>
-    </header>
-  );
-}
-
 function normalizePath(pathname: string): string {
   if (pathname === "/") return pathname;
   return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
@@ -242,12 +226,7 @@ export function DispatchParsingAdminPage() {
         </aside>
         <article className="panel neris-form-panel reporting-admin-content">
           {activeModuleId === "raw-email" ? <DispatchParsingRawEmailPanel /> : null}
-          {activeModuleId === "message-parsing" ? (
-            <DispatchParsingPlaceholderModule
-              title="Message Parsing"
-              description="Configure rules to build the parsed dispatch message for future member notifications. Rule builder and preview will be added in a later batch."
-            />
-          ) : null}
+          {activeModuleId === "message-parsing" ? <DispatchParsingMessagePanel /> : null}
           {activeModuleId === "incident-parsing" ? <DispatchParsingIncidentPanel /> : null}
         </article>
       </section>

@@ -42,3 +42,15 @@ Purpose: keep agent behavior consistent across model choices (including Auto) an
 - Update `docs/task-2-multitenant-domain-plan.md` when decisions change.
 - Add "Now vs Later" callouts for deferred items.
 - List blockers/assumptions explicitly.
+
+## 7) Operator-facing steps in chat (mandatory when the user must act)
+Whenever a response tells the user to **test**, **verify**, **migrate**, **deploy**, **run SQL**, or complete **any** operational step, include **numbered instructions** the user can follow without guessing:
+- **Where** to work (e.g. app path *Admin Functions → …*, *Render → service → Logs*, *Neon → SQL Editor*).
+- **What to click** (buttons, sidebar items, row expand).
+- **What to paste** — for **shell**, include the **full** `cd` using the **absolute project path** when known, plus the **exact** command(s) on their own lines (copy-paste ready). Do **not** substitute vague “go to the repo folder” / “project root” without a literal `cd /path/to/project`.
+- **What success looks like** (message text, HTTP status, UI state).
+Optional link to **`docs/procedures/EMAIL_AND_CAD_SETUP.md`** for background; **chat steps must be complete by themselves**.
+
+**Chat vs repo docs:** Instructions in chat so the user can **test or continue** do **not** require updating implementation plans or **`EMAIL_AND_CAD_SETUP.md`** unless the user explicitly asked to change those documents.
+
+**Cursor agents:** mirror `cursoragent-context.md` § Communication style (item 13).

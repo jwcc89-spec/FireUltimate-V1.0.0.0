@@ -8,6 +8,8 @@ export interface CadEmailIngestRow {
   toAddress: string;
   rawBody: string;
   headersJson: unknown;
+  /** Filled at ingest when message rules run (Batch H). */
+  parsedMessageText: string;
   createdAt: string;
 }
 

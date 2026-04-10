@@ -1444,6 +1444,132 @@ tbody tr:last-of-type td {
   color: #15803d;
 }
 
+/* Dispatch Parsing — Batch H: rules on top + email rail + side-by-side preview */
+.cad-dispatch-h-top {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.cad-dispatch-h-lower {
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) 1fr;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-h-lower {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-email-rail {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.65rem 0.5rem;
+  background: #fafafa;
+  max-height: 28rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cad-dispatch-email-rail-header {
+  margin: 0 0 0.35rem;
+  padding: 0 0.35rem;
+}
+
+.cad-dispatch-email-rail-header h2 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.cad-dispatch-email-rail-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+}
+
+.cad-dispatch-email-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.cad-dispatch-email-rail-list li {
+  margin: 0;
+  padding: 0;
+}
+
+.cad-dispatch-email-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  margin-bottom: 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  color: #334155;
+}
+
+.cad-dispatch-email-rail-item:hover {
+  border-color: #cbd5e1;
+}
+
+.cad-dispatch-email-rail-item.active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.cad-dispatch-email-rail-date {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.cad-dispatch-email-rail-from {
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+.cad-dispatch-h-right {
+  min-width: 0;
+}
+
+.cad-dispatch-h-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-h-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-h-preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.cad-dispatch-stored-ingest .cad-dispatch-stored-pre {
+  max-height: 10rem;
+}
+
 .dashboard-shortcut-list,
 .unit-status-list {
   margin: 0;

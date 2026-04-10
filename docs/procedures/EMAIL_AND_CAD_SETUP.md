@@ -46,8 +46,8 @@ When an email is sent to your CAD address (e.g. **cifpdil@cad.fireultimate.app**
 |-------|-----|
 | **Render (API logs)** | Render Dashboard → your API Web Service (e.g. fireultimate-api-staging or production) → **Logs**. Look for **POST /api/cad/inbound-email** with status **200**. This confirms the Worker called the API and the request was accepted. |
 | **Neon (database)** | **Neon** → your project → **SQL Editor**. Run a query against the **CadEmailIngest** table. Each row is one received email. Example to see latest emails with full body for parsing: |
-| | `SELECT id, "tenantId", "fromAddress", "toAddress", "rawBody", "headersJson", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 20;` |
-| | **Columns:** `fromAddress`, `toAddress` = sender and your CAD address; **`rawBody`** = full email body (use this for parsing/editing); `headersJson` = headers; `createdAt` = when it was stored. |
+| | `SELECT id, "tenantId", "fromAddress", "toAddress", "rawBody", "parsedMessageText", "headersJson", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 20;` |
+| | **Columns:** `fromAddress`, `toAddress` = sender and your CAD address; **`rawBody`** = stored payload (often base64-wrapped MIME); **`parsedMessageText`** = output of **Message Parsing** rules at ingest (Batch H); `headersJson` = headers; `createdAt` = when it was stored. |
 | **In-app UI** | **Admin Functions → Dispatch Parsing Settings.** Lists incoming CAD emails (From, To, received time); expand a row to view raw body. Product + implementation status: **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. |
 
 **Before giving the address to dispatch:** Run the B8 test (send a test email, then check Render logs or Neon) so you know emails are reaching the API and the **CadEmailIngest** table. After you send the address to the CAD Dispatch center, view incoming mail in **Admin Functions → Dispatch Parsing Settings** (or Neon); parsing/editing rules will be added in a later update.
@@ -213,9 +213,45 @@ node --env-file=.env.server -e "require('child_process').execSync('npx prisma mi
 - Success: you see migrations apply (including **`20260312200000_add_cad_email_ingest`** when not yet applied) and **“All migrations have been successfully applied.”**
 - **datasource.url property is required** → .env.server missing or DATABASE_URL empty. **Can’t reach database server** → check DATABASE_URL and network.
 
-### B6.5 — CAD parsing config + allowlist tables (after Batch C in code)
+### B6.5 — Run new migrations after pulling code (beginner walkthrough)
 
-The same **`prisma migrate deploy`** command applies **`20260409140000_add_cad_parsing_settings_and_allowlist`**, which creates **`CadParsingSettings`** and **`CadEmailAllowlistEntry`**. Run deploy against **each** environment’s database (staging Neon, production Neon, etc.) whenever you deploy an API build that includes those routes.
+Use this when the repo added a new file under **`prisma/migrations/`** (for example **`parsedMessageText`** on **`CadEmailIngest`**) and you need your **database** to match the code. You run the same **`prisma migrate deploy`** as in B6.4; this section explains **where and how** in plain steps.
+
+1. **Open a terminal**
+   - In **Cursor**: **Terminal → New Terminal** (or `` Ctrl+` `` / `` Cmd+` ``).
+
+2. **Confirm `.env.server` exists and has `DATABASE_URL`**
+   - In Cursor’s **file tree**, open **`.env.server`** (same folder as **`package.json`**).
+   - Find a line like **`DATABASE_URL="postgresql://..."`**. It must point to the **Neon database** you want to update (staging vs production — see step 5).
+
+3. **Run the migration (copy-paste this entire block)**
+
+   Use your real clone path if it differs. Example for this repo on this machine:
+
+   ```bash
+   cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0
+   node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy
+   ```
+
+   - **What this does:** Loads **`DATABASE_URL`** from **`.env.server`**, then applies any **pending** migration files to that database.
+   - **Success looks like:** Lines listing migration names, ending with **`All migrations have been successfully applied.`**
+   - **If it says “No pending migrations”:** That database is already up to date for the migrations it knows about.
+
+4. **If the command fails**
+   - **`Error: P1001` / can’t reach database:** Check **`DATABASE_URL`** in Neon (correct project, password, SSL mode).
+   - **`datasource.url` required:** **`.env.server`** is missing or **`DATABASE_URL`** is empty on the line.
+
+5. **Staging and production use different databases**
+   - **Neon** usually has a **staging** project and a **production** project (or two branches). Each has its own connection string.
+   - Run the command in **step 3** once per database you use: temporarily point **`DATABASE_URL`** in **`.env.server`** at **staging**, run deploy, then **edit** **`.env.server`** to the **production** URL and run deploy again (or keep two env files and swap carefully — never paste production secrets into chat).
+
+6. **Render (hosted API) does not run migrations for you**
+   - After migrations succeed locally against the **same** DB your **Render** service uses, **redeploy** or **restart** the API service if needed so it runs code that expects the new columns.
+   - In **Render Dashboard**: open your **Web Service** → confirm **Environment** has **`DATABASE_URL`** set to the Neon URL you migrated.
+
+### B6.6 — Which migrations this applies to (reference)
+
+The same **`prisma migrate deploy`** command applies **`20260409140000_add_cad_parsing_settings_and_allowlist`**, which creates **`CadParsingSettings`** and **`CadEmailAllowlistEntry`**. It also applies **`20260410180000_add_cad_email_parsed_message_text`**, which adds **`CadEmailIngest.parsedMessageText`** (Message Parsing at ingest). Run deploy against **each** environment’s database (staging Neon, production Neon, etc.) whenever you deploy an API build that includes those routes — use **§ B6.5** for the click-by-click terminal flow.
 
 **Tenant-scoped HTTP APIs** (browser on tenant host, `credentials: include`):
 
@@ -229,6 +265,8 @@ The same **`prisma migrate deploy`** command applies **`20260409140000_add_cad_p
 When **no enabled allowlist rows** exist for that tenant, **all** senders are accepted (same as before Batch D — add patterns only when you want to restrict).
 
 See **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
+
+**Message parsing (Batch H):** After insert, the API runs **message rules** on extracted plain text and stores the result in **`parsedMessageText`**. Configure under **Dispatch Parsing Settings → Message Parsing**.
 
 **Automatic incidents (Batch G):** After a CAD email is stored in **`CadEmailIngest`**, the API may run **incident rules** from **`CadParsingSettings`** and create or update an **`Incident`** when **`enableIncidentCreation`** is true. Merge key comes from rules (slots), e.g. **`incidentNumberExtractJson`** `{ "slot": "cfs" }` or default slots **`cfs`** / **`incidentNumber`**. Configure rules and toggle in **Admin Functions → Dispatch Parsing Settings → Incident Parsing**. Parse/automation errors are logged; **`POST /api/cad/inbound-email`** still returns **`{ ok: true }`** if the email row was saved.
 

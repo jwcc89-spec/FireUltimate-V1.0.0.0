@@ -110,13 +110,15 @@ model Incident {
 }
 
 model CadEmailIngest {
-  id          String   @id @default(cuid())
-  tenantId    String?
-  fromAddress String   @default("")
-  toAddress   String   @default("")
-  rawBody     String   @default("")
-  headersJson Json?
-  createdAt   DateTime @default(now())
+  id                 String   @id @default(cuid())
+  tenantId           String?
+  fromAddress        String   @default("")
+  toAddress          String   @default("")
+  rawBody            String   @default("")
+  headersJson        Json?
+  /// Output of message rules at ingest (Batch H); empty if no rules / failure.
+  parsedMessageText  String   @default("")
+  createdAt          DateTime @default(now())
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
