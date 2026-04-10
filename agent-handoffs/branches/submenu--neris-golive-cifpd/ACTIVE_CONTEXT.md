@@ -3,10 +3,13 @@
 ## Current branch
 - `submenu/neris-golive-cifpd`
 
-## Current focus (2026-04-09)
-- **CAD (2026-04-09):** Batches **E–G** — rule engine, Incident Parsing UI, **`cadIngestApplyIncidentAutomation`** + **`server/cadDispatchRuleEngine.mjs`**. **Next:** Batch **H** (Message Parsing UI). Handoff: **`sessions/2026-04-09-session.md`** · **`conversations/2026-04-09-session-summary.md`**.
+## Current focus (2026-04-09 — session end)
+- **HOLD:** User asked to **pause the rest of the CAD dispatch roadmap** for now. Do **not** start **Batch J / K** or other plan slices until the user **lifts the hold**. Bugfixes or small follow-ups they request are still in scope.
+- **CAD — last ship this session:** **Raw Email** expanded rows: copy **decoded MIME** (pre-rules), **replay JSON** for `POST /api/cad/inbound-email`, **base64 raw** — commit **`3fa8683`**, files `DispatchParsingSettingsPage.tsx`, `App.css`. See **`conversations/2026-04-09-session-summary.md`**.
+- **When hold lifts:** **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** — next planned work is **Batch J** (split create vs update — **requires explicit Prisma/schema approval**) → **Batch K** (user-friendly parsing UX). Confirm with user before migrations.
+- **Handoff:** **`sessions/2026-04-09-session.md`** · **`conversations/2026-04-09-session-summary.md`** · **`COPY_PASTE_START_PROMPT.md`** (points to ACTIVE_CONTEXT for hold status).
 - **Personnel Schedule (2026-03-19):** Segmentation + per-segment OT + OT roster filter + duplicate-segment grey-out + calendar/qual fixes committed on this branch. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. Session: `sessions/2026-03-19-schedule-segmentation-ux-session-end.md`.
-- **CAD (product):** Receiving verified; **Batch E** rule pipeline done in repo. **Later:** auto-create incident per **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`) when ready.
+- **CAD (product):** Receiving verified; ingest + rule pipelines + Dispatch Parsing admin UI per **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** through **Batch I**. **Further batches (J/K) on user hold.** When ready, point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`).
 - **NERIS cross-browser:** Phases 1–3 done. **View Exports Report Status** complete (staging): list shows **Exported** after successful submit, matches queue. See `NERIS_CROSS_BROWSER_FINDINGS.md`.
 - **Incident Detail:** Go-live item #1 verified — edits persist via API across browsers.
 - NERIS go-live for tenant cifpdil: continue staging/prod promotion as planned.
@@ -56,6 +59,7 @@
 - **Incident Detail lock when NERIS In Review/Exported:** When the NERIS report for an incident is In Review or Exported, Edit Incident (Incident Detail) is now locked: Assigned Units and all other incident fields are read-only or disabled; Save and Delete are disabled; a message explains that editing is locked until the report is back to Draft. Uses `readNerisDraft(callNumber)?.reportStatus` in `IncidentCallDetailPage` (`App.tsx`).
 
 ## Current blocker / status
+- **CAD dispatch roadmap:** **user hold** — do not start Batch J/K until user lifts it (see **Current focus**).
 - No code blocker. **2026-03-20:** Docs + `App.tsx` View Exports Report Status fix committed on this branch; verify in two browsers after deploy.
 - User chose Option B: Worker stays on staging until parsing is dialed in; then switch `CAD_INGEST_API_URL` to production.
 - User must run migration `20260314000000_add_neris_export_history` once if not yet run (see NERIS_CROSS_BROWSER_FINDINGS.md).
@@ -65,12 +69,12 @@
 - Remaining dependencies are deployment/environment readiness only (staging/prod release + migration + final live credential sanity checks).
 
 ## Now vs Later
-- **Now**:
-  - Commit + push 2026-03-18 work (local-only CORE + docs) on `submenu/neris-golive-cifpd`,
+- **Now (respecting CAD hold):**
+  - Treat **CAD batches J+** as **later** until the user **lifts the hold**; then re-read **`CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** and confirm **Batch J vs K** vs staging priorities.
+  - Optional: test **Raw Email** copy buttons (`3fa8683`) on staging after deploy.
   - confirm/save tenant entity source so staging `hasTenantEntityId=true`,
   - validate staging UX (Incidents Setup, Create Incident, Incident Detail, NERIS aid list with locals),
   - run staging validate/export proof,
-  - dial in CAD email parsing (Dispatch Parsing Settings shows extracted dispatch content).
 - **Later**:
   - Aid: exclude/grey tenant’s own FD in CORE list (#8); optional server allowlist check on export,
   - switch Worker **CAD_INGEST_API_URL** to production when parsing ready (per user choice),
@@ -78,9 +82,10 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (2026-04-09 — CAD + handoff structure)
-- **Scope:** Merged CAD plan docs; **Batch E** rule engine; **Batch F** Incident Parsing UI; **Batch G** ingest incident automation (`server/cadDispatchRuleEngine.mjs`, `cadIngestApplyIncidentAutomation`); handoff convention in **`COPY_PASTE_START_PROMPT.md`** / template; consolidated handoff files into **`sessions/2026-04-09-session.md`** and **`conversations/2026-04-09-session-summary.md`**.
-- **Next:** Batch **H** (Message Parsing UI).
+## Last session (2026-04-09 — CAD + handoff + hold)
+- **Earlier in day:** Merged CAD plan docs; **Batches E–I** per plan (rule engine, Incident/Message Parsing UI, ingest automation, G1 MIME, staging checklist docs — see **`CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**); handoff convention in **`COPY_PASTE_START_PROMPT.md`**; **`sessions/2026-04-09-session.md`** + **`conversations/2026-04-09-session-summary.md`**.
+- **Session end:** Raw Email **copy decoded MIME / replay JSON / base64** for ICOMM-style testing; commit **`3fa8683`** pushed. User: **hold** on further roadmap changes until they say otherwise.
+- **Next when unpaused:** **Batch J** (schema approval) → **Batch K** — confirm with user.
 
 ## Previous session (2026-03-19 — Personnel Schedule segmentation)
 - **Scope:** Timed segments per apparatus/support slot, `ScheduleSegment.overtime`, full OT roster (`name`+`shift` in Scheduler Personnel), qualification + calendar behavior for segmented slots, red **×** segment remove, **greyed** shift-dropdown options when a person is already on another segment of the same slot (OT segment uses full roster), drag-drop aligned with same rule, removed visible **“Segment”** label (tooltip + `aria-label` remain).
@@ -109,6 +114,7 @@
 - Branch confirmed; preflight and continuity docs read. Lint and build pass. Incident Detail editable + Save confirmed in code. User testing plan and STAGING_TEST_CHECKLIST_DETAILED.md added. CAD email ingest Part 2+3 implemented (Worker, /api/cad/inbound-email, CadEmailIngest). NERIS cross-browser findings doc added; priority updated.
 
 ## Recent key commits (latest first)
+- `3fa8683` feat(cad): raw email copy actions and replay JSON on dispatch parsing page
 - `2507a93` feat(schedule): segmentation, OT roster, duplicate grey-out, handoff docs
 - `c210d42` docs(handoff): expand COPY_PASTE_START_PROMPT with full doc list and when-to-read
 - `f757f52` NERIS CORE: aid department dropdown shows name only (export still uses FD ID)
@@ -125,7 +131,7 @@
 
 **Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; in-app email viewing (Dispatch Parsing Settings) implemented. NERIS cross-browser Phase 1 in branch (run migration if not done).
 
-**CAD (you):** For now Worker stays on staging (Option B) until parsing is dialed in; then set CAD_INGEST_API_URL to production (EMAIL_AND_CAD_SETUP.md §B11). View incoming emails in **Admin Functions → Dispatch Parsing Settings** (dispatch content now extracted from MIME). Parsing/auto-fill: **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
+**CAD (you):** **Hold** on new roadmap implementation until you say otherwise. Worker stays on staging (Option B) until parsing is dialed in; then set CAD_INGEST_API_URL to production (EMAIL_AND_CAD_SETUP.md B11). **Admin Functions → Dispatch Parsing Settings → Raw Email:** expand a row to **copy decoded MIME or replay JSON** for testing (`3fa8683`). Full plan: **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** (next when unpaused: **Batch J** → **K**).
 
 **NERIS cross-browser (you, once):** Run migration for Phase 1 — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Use same DATABASE_URL as your API (e.g. Render); then redeploy API if needed. Test: export in Browser A, check NERIS Exports in Browser B.
 
@@ -134,9 +140,9 @@
 **Staging/incident testing:** `docs/procedures/STAGING_TEST_CHECKLIST_DETAILED.md` (A1–A5). Incident Detail editable + Save already in code.
 
 ## Next agent should do this first
-1. Read **COPY_PASTE_START_PROMPT.md** (or user message: “read the COPY_PASTE_START_PROMPT for this branch”), then the docs it lists.
+1. Read **COPY_PASTE_START_PROMPT.md** (or user message: “read the COPY_PASTE_START_PROMPT for this branch”), then the docs it lists — **note CAD “hold” in this file (Current focus)**.
 2. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present) and this file (**ACTIVE_CONTEXT.md**).
-3. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
-4. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
-5. Read **sessions/2026-03-12-copy-paste-start-prompt-handoff.md** and **conversations/2026-03-12-copy-paste-start-prompt-session-summary.md** (and earlier sessions/conversations as needed).
-6. Continue from user’s current blocker only (CAD, NERIS cross-browser, staging tests, or next PRIORITY item). Do not redo completed work.
+3. Read **sessions/2026-04-09-session.md** and **conversations/2026-04-09-session-summary.md** for the latest CAD + hold + `3fa8683` details.
+4. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
+5. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
+6. **If CAD hold is still on:** do not start **Batch J/K** unless the user explicitly lifts the hold and names the next task. Otherwise continue from the user’s stated priority only. Do not redo completed work.

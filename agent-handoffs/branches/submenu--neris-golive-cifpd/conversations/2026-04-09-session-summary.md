@@ -25,11 +25,18 @@ Earlier today there were extra files (`batch-e-summary`, `cad-plan-merge`, dupli
 
 - After each stored CAD email, the API runs **`cadIngestApplyIncidentAutomation`** using **`server/cadDispatchRuleEngine.mjs`** (mirrors TS engine). If enabled, creates or updates **`Incident`** by merge key (slots `cfs` / `incidentNumber` or **`incidentNumberExtractJson.slot`**). See **`EMAIL_AND_CAD_SETUP.md`** after B6.5.
 
-## Next
+## Next (when you unpause)
 
-- **Batch H** — Message Parsing UI; optional message rules on ingest.
+- **Hold (2026-04-09 end):** Further CAD roadmap work is **on hold** until you say to continue. The next agent should **not** start new batches unless you lift this.
+- **After hold:** **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** — next planned engineering steps are **Batch J** (split create/update for incident automation; needs **schema approval**) and **Batch K** (user-friendly parsing UX). Confirm with you before any migration or big UI push.
+
+## Raw Email — copy for testing (2026-04-09 end)
+
+- **Admin Functions → Dispatch Parsing Settings → Raw Email:** expand a row. You can **copy the decoded MIME** (what arrived before parsing rules), **copy JSON** to replay `POST /api/cad/inbound-email` with your ingest secret, or **copy base64** `raw`.
+- **Commit:** `3fa8683` on **`submenu/neris-golive-cifpd`** (pushed).
 
 ## What you can verify
 
-- Run **`npm run test`** for the rule engine; run the app and open **Incident Parsing** — preview and save should persist (same tenant host + admin session as other Dispatch Parsing pages).
+- Run **`npm run test`** for the rule engine; run the app and open **Dispatch Parsing** tabs — **Message Parsing** / **Incident Parsing** preview and save should persist (same tenant host + admin session).
+- Expand **Raw Email** and use the copy buttons to paste into local tests or replay tools.
 - **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** is the single CAD plan reference.

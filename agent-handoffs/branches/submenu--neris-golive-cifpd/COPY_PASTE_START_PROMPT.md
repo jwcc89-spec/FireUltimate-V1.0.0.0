@@ -7,7 +7,7 @@ The agent will state at the end of each response **which agent/model was used** 
 **Relevant docs to read (in order):**
 1. `.cursor/project-context.md` (or `cursoragent-context.md` if present) — project constraints and time-format convention
 2. `cursoragent-context.md` — session handoff workflow and branch rules
-3. `agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md` — current focus, blocker, last session, next steps
+3. `agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md` — current focus, blocker, last session, next steps (**check here for user “hold / pause” on CAD or other work before starting new batches**)
 4. `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` — consolidated priority list and suggested order
 5. `docs/procedures/BACKLOG_INCIDENTS_NERIS_UX.md` — master list for incidents/NERIS UX (backlog #2–#11)
 6. `docs/agent-execution-contract.md` — preflight, delivery, verification, handoff rules
