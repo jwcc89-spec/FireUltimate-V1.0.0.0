@@ -16,7 +16,7 @@ Completed history is in the **Completed archive** section at the bottom.
 
 | Priority | Item | Guide / reference |
 |----------|------|-------------------|
-| **1** | **CAD email parsing + auto-create incident** | `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md` (see also `EMAIL_AND_CAD_SETUP.md`). After this: point Worker `CAD_INGEST_API_URL` to production. |
+| **1** | **CAD email parsing + auto-create incident** | `docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md` (see also `EMAIL_AND_CAD_SETUP.md`). After this: point Worker `CAD_INGEST_API_URL` to production. |
 | **2** | **NERIS / go-live backlog** | Open items from this file: **#11.5–#11.7**, **#12–#14.1**, **#15–#24**, **#26.1**, **#28**. (Platform CAD parsing / auto-create is **Priority 1** → **#29**.) Completed backlog history: `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`. See **Sources** at bottom of this file. |
 | 3+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
 
@@ -103,7 +103,7 @@ Completed history is in the **Completed archive** section at the bottom.
 | 26.1 | **Cross-browser settings persistence follow-up** | CROSS_BROWSER_AND_UX_NOTES | Persist NERIS Export Configuration via server API (tenant-scoped) if needed beyond localStorage-only behavior; monitor/report NERIS draft edge cases if encountered. |
 | 27 | ~~**Production endpoint checks and first controlled production export**~~ | GO_LIVE §3.6–3.7 | **Done.** Production tenant/context + neris/health/entity checks re-run; first controlled production export completed. |
 | 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
-| 29 | **CAD email parsing and auto-create incident** | CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN | Incident Settings → Parsing Data; per-tenant rules; auto-create draft incident; dedupe; optional sequencing. **Next major platform item** (NERIS cross-browser phases complete). |
+| 29 | **CAD email parsing and auto-create incident** | CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN | Dispatch Parsing Settings; per-tenant rules; auto-create draft incident; dedupe; optional sequencing. **Next major platform item** (NERIS cross-browser phases complete). |
 
 ### Expanded: NERIS cross-browser (#26) — resolved + follow-up
 

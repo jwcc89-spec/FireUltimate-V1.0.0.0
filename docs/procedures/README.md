@@ -21,4 +21,4 @@ Use these when performing setup, onboarding, or verification.
 | **INCIDENT_API_EXAMPLES.md** | Example API requests for incidents. |
 | **TENANTS_NERIS_AND_BRANCHES_EXPLAINED.md** | Tenants, NERIS, and branches overview. |
 | **CROSS_BROWSER_AND_UX_NOTES.md** | Cross-browser and UX notes. |
-| **CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md** | Planning: Incident Settings → Parsing Data; per-tenant parsing rules; auto-create incident from CAD email; apparatus match; dedupe; call sequencing. **After NERIS cross-browser Phase 2/3.** |
+| **CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md** | Single plan: product goals + implementation batches/phases for CAD email (Dispatch Parsing Settings, rules, auto-create incident, apparatus, dedupe, sequencing). **After NERIS cross-browser Phase 2/3.** |

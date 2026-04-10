@@ -1,109 +1,122 @@
-# CAD dispatch parsing — implementation plan (master)
+# CAD email dispatch — product & implementation plan
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress (Batches A–D done for CAD ingest path; **next:** Batch E rule engine)  
-**Related:** Product goals and rule types — `docs/plans/CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`  
-**Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md`
+**Status:** In progress — **implementation:** Batches A–F done; **next:** Batch G (ingest → parse → create/update incident). **Product:** auto-create on ingest + Message Parsing UI remain open (see batches G–I).  
+**Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md` · Migrations — `docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md` §**I.2**
+
+This file is the **single plan** for incoming CAD email: **what we want the product to do** and **how we are building it** (phases + batches). It replaces having separate “product” and “implementation” CAD plan documents.
+
+**Document maintenance:** Strike through completed phases/bullets/batch rows with `~~…~~`. Do **not** append per-batch operator handoffs or long test runbooks here — use chat/PR. **Agents:** update this file when a phase or batch ships; run `npm run lint` if CI could be affected.
 
 ---
 
-## How to update this document when work completes
+## Part 1 — Product goals & UX
 
-Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
+### 1.1 Goal
 
-1. When a **Phase** is fully done, strike through the **phase number and title** in the heading, e.g. `~~Phase 1 — …~~`.
-2. When individual **bullets or table rows** inside a phase are done, strike through those lines only (leave the phase header until the whole phase is done).
-3. When a **batch** row in the implementation batch table is done, strike through the **entire row** (all columns in that row).
+- **Where emails show up:** Admin Functions → **Dispatch Parsing Settings**. Incoming CAD emails are listed; expand a row for raw body / MIME / troubleshooting.
+- **Parsing configuration:** Per **tenant**. Each department defines its own rules (dispatch formats differ). Departments configure this, not the program owner.
+- **When parsing drives incidents:** When rules are applied on ingest, the app should **auto-create or update** incidents (draft) from parsed text where rules match; unmapped fields stay blank. Apparatus is matched to **Department Details → Apparatus**; unrecognized units are not added.
+- **Why:** (1) Inform responders during the call (address, units, notes; later routing). (2) Pre-populate NERIS flows. Auto-created incidents are **Draft**; NERIS export locking is separate.
 
-**Agents:** After completing a phase or batch, update this file in the same commit or immediately after merge, then run `npm run lint` if you touched anything that could affect CI.
+### 1.2 Email source and format
 
-**Agents:** After **every** implementation batch merged to this branch, add or update the **Current snapshot** section below with: (1) **What you need to complete** — numbered steps for deploy, migrations, env vars, Cloudflare, Neon, no jargon without explanation; (2) **What you need to test** — numbered checks the operator can run in the app or browser; (3) **What remains** — which batches/phases are still open in this sequence.
+- One dispatch system per tenant, but **formats may vary**; rules must support multiple shapes (e.g. different templates or ordered rule trials).
+- Raw mail is stored in **`CadEmailIngest`**; parsing reads normalized/plain text derived from that (or equivalent).
+
+### 1.3 Parsing rules — product design (priority)
+
+Build toward (order can overlap engineering phases):
+
+1. **A — Predefined labels** — e.g. `Nature:`, `Address:` → map label → incident field; only mapped fields apply.
+2. **C — Pattern-based rules** — regex / “line after X” where labels are inconsistent (aligns with engine primitives in Part 2 / Batch E).
+3. **B — Highlight and assign** — select text in a sample and map to a field (after A and C).
+
+**Stackable rules (example):** between 1st and 2nd hard return → **Address**; position/delimiter/target field as dropdowns in UI over time.
+
+### 1.4 Apparatus matching
+
+- **Source of truth:** Department Details apparatus list only.
+- Match text like `E4` to fleet; unmatched units are not added.
+
+### 1.5 Incomplete parsing & duplicate incidents
+
+- **Missing fields:** Prefer **create draft with blanks**; optional future: block “complete” until admin fills required fields.
+- **Multiple emails, one incident:** Do not create duplicate incidents for the same call; **dedupe** by CAD/CFS/incident number (and related signals) — see Part 2 Phase 5–6.
+
+### 1.6 Permissions
+
+| Action | Role |
+|--------|------|
+| View raw CAD emails + parsing config | Subadmin+ |
+| Create/approve incidents (including auto-created) | User+ |
+
+### 1.7 One email → one incident row; updates
+
+- One inbound email must not create two incidents.
+- Several emails may **update** the same incident when they refer to the same call.
+
+### 1.8 Auto-created incident UX
+
+- **Draft** state; **CAD source badge** near **Incident #** for auditing.
+
+### 1.9 Call sequencing (optional)
+
+- Optional tenant setting to sequence incident numbers (e.g. next after last manual number). Rules TBD in build.
+
+### 1.10 Product summary
+
+| Topic | Decision |
+|-------|----------|
+| Email source | Single dispatch system per tenant; formats vary |
+| Parsing config | Per tenant |
+| Rule types (direction) | Labels → patterns/regex → highlight-assign |
+| Apparatus | Department Details only |
+| Missing fields | Draft with blanks first; stricter gating optional later |
+| Duplicates | Dedupe / merge by incident/CFS identity |
+| Raw email / rules UI | Subadmin+ |
+| Incidents | User+ |
+| CAD-created incidents | Draft + badge |
 
 ---
 
-## Operator handoff template (fill in after each batch)
+## Part 2 — How to update when work completes
 
-Copy this block into **Current snapshot** (below) and replace the placeholders.
-
-### What you need to complete
-
-1. …
-2. …
-
-### What you need to test
-
-1. …
-2. …
-
-### What remains in this sequence
-
-- **Done:** …
-- **Not started yet:** … (see **Implementation batches** table)
+1. When a **Phase** is fully done, strike through the **phase number and title** in the heading.
+2. When individual **bullets** inside a phase are done, strike through those lines only.
+3. When a **batch** row is done, strike through the **entire row**.
 
 ---
 
-## Current snapshot — CAD dispatch sequence *(update after each batch)*
-
-**Code baseline:** Latest on branch **`submenu/neris-golive-cifpd`** including **Batch D** (allowlist enforced on ingest when ≥1 enabled row). **Migrations required for Batch C** are already documented in **`docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md`** §**I.2**.
-
-### What you need to complete
-
-1. **Deploy the API** on Render (staging and/or production) so the running service includes **Batch D** server code (merge/pull the branch, then **Manual Deploy** or auto-deploy).
-2. **No new database migration** for Batch D (only Batch C migration applies). If you have **not** yet run **`20260409140000_add_cad_parsing_settings_and_allowlist`**, do **§I.2** in **`TENANT_ONBOARDING_CHECKLIST.md`** first.
-3. **Allowlist is optional.** If you **do not** add any enabled allowlist rows, behavior is **unchanged** (all senders accepted). When you are ready to restrict senders, use **`PATCH /api/cad/allowlist`** (see **`docs/procedures/EMAIL_AND_CAD_SETUP.md`** §**B6.5**) while logged in on the tenant host, or call the API with your session. **Add your real dispatch domain first** (e.g. `domain_suffix` for the vendor’s domain) so you do not block legitimate mail.
-4. **Cloudflare Worker** does not need changes for Batch D (API-only enforcement).
-
-### What you need to test
-
-1. **Baseline (no allowlist rows or all disabled):** Send a test CAD email → **Render logs** show **`POST /api/cad/inbound-email`** with **200** and **`{ ok: true }`** → **Raw Email** in the app shows a new row → optional Neon: row in **`CadEmailIngest`**.
-2. **With restriction:** Add **one** enabled **`domain_suffix`** that matches your test sender → send again → still **200** + **`ok: true`** and a new row.
-3. **Rejection path:** Add patterns so the **From** address **does not** match → **200** with **`ok: false`**, **`code`: `"cad_allowlist"`** → **no** new **`CadEmailIngest`** row → Worker should **not** spin forever (queue acks).
-
-### What remains in this sequence
-
-| Batch | Status |
-|--------|--------|
-| A–D | **Done** (UI shell, secret, DB + APIs, allowlist enforce). |
-| **E** | Rule engine + unit tests (ICOMM samples). |
-| **F** | Incident Parsing UI + preview + Save. |
-| **G** | Ingest → parse → create/update **incidents** when enabled. |
-| **H** | Message Parsing UI + parsed message path. |
-| **I** | Docs polish, optional indexes/retention, staging verification. |
-
-**Phases still open in this doc:** **4** (rule engine), **5** (incident merge + mapping), **6** (full ingest pipeline with parsing), **7** (admin UI beyond placeholders), **8** (final docs/ops).
-
----
-
-## Phase 0 — Decisions and constraints
+## Phase 0 — Engineering decisions & constraints
 
 | Topic | Decision |
 |--------|-----------|
-| Tenant scope | All parsing config, rules, allowlists, and flags are **per-tenant** (`tenantId`). |
-| Incident identity | Merge/create key = **CAD/CFS incident number** extracted from message text (tenant-specific extraction rules). |
-| When rules run | **(A)** Admin UI: **preview** while editing (no incident writes from typing alone). **(B)** **Save** persists config for the tenant. **(C)** On each **ingest**, server loads **saved** rules and runs them automatically — no manual step after setup. Same engine for preview and ingest. |
-| End-user experience | Responders see **parsed outputs** (e.g. message text), not raw email or rule definitions. |
-| Persistence | Config stays until an admin changes it; applies to **all users** on that tenant. **Dedicated DB table(s)** for parsing config and allowlist (plus existing `CadEmailIngest` for raw mail). **Prisma schema/migrations require explicit approval** before merge. |
-| Time format | Parsed times use **24-hour `HH:MM:SS`**; dates consistent with app conventions. |
-| Secrets | **`CAD_INGEST_SECRET` required** in production API env; Cloudflare Worker sends **`X-Cad-Ingest-Secret`** on every POST to `/api/cad/inbound-email`. **No secrets** in `DepartmentDetails.payloadJson` or parsing rule JSON. |
-| Spam / abuse | **Allowlist / filtering** so junk does not become incidents or member messages (Worker and/or API — see Phase 2). |
+| Tenant scope | Parsing config, rules, allowlists, flags are **per-tenant** (`tenantId`). |
+| Incident identity | Merge/create key = **CAD/CFS incident number** from message text (tenant-specific extraction rules). |
+| When rules run | **(A)** Admin UI: **preview** while editing (no incident writes from typing alone). **(B)** **Save** persists config. **(C)** On **ingest**, server loads **saved** rules and runs them — same engine as preview. |
+| End-user experience | Responders see **parsed outputs**, not raw email or rule definitions. |
+| Persistence | **`CadParsingSettings`**, **`CadEmailAllowlistEntry`**, **`CadEmailIngest`**. **Prisma schema/migrations require explicit approval** before merge. |
+| Time format | Parsed times **24-hour `HH:MM:SS`**. |
+| Secrets | **`CAD_INGEST_SECRET`** in production API; Worker sends **`X-CAD-Ingest-Secret`**. **No secrets** in `DepartmentDetails.payloadJson` or parsing rule JSON. |
+| Spam / abuse | **Allowlist** so junk does not become incidents or member messages (see Phase 2). |
 
 ---
 
 ## ~~Phase 1 — Information architecture and routes~~
 
-1. ~~**Parent path:** `/admin-functions/dispatch-parsing-settings` → **redirect** default to **`/admin-functions/dispatch-parsing-settings/raw-email`** (unless product chooses another default later).~~
-2. ~~**Left sidebar** (same layout as Department Details / Reporting: `reporting-admin-layout` + sidebar nav):~~
+1. ~~**Parent path:** `/admin-functions/dispatch-parsing-settings` → **redirect** to **`/admin-functions/dispatch-parsing-settings/raw-email`**.~~
+2. ~~**Left sidebar:** Message Parsing, Incident Parsing, Raw Email (Raw Email last).~~
 
 | Child | Route | Purpose |
-|--------|--------|--------|
-| ~~Message Parsing~~ | ~~`/admin-functions/dispatch-parsing-settings/message-parsing`~~ | ~~Rules + side-by-side preview → **parsed message** string (future member notifications). Placeholder page until Batch H.~~ |
-| ~~Incident Parsing~~ | ~~`/admin-functions/dispatch-parsing-settings/incident-parsing`~~ | ~~Rules + field mapping + side-by-side **dispatch text vs parsed incident fields**; **Enable Incident Creation** at top of this page (or shared header). Placeholder page until Batch F.~~ |
-| ~~Raw Email~~ | ~~`/admin-functions/dispatch-parsing-settings/raw-email`~~ | ~~Current behavior: list, expand row, plain/MIME/base64 for troubleshooting. (Nav order: third, below Incident Parsing.)~~ |
+|--------|--------|---------|
+| ~~Message Parsing~~ | ~~`/admin-functions/dispatch-parsing-settings/message-parsing`~~ | ~~Parsed message string (Batch H).~~ |
+| ~~Incident Parsing~~ | ~~`/admin-functions/dispatch-parsing-settings/incident-parsing`~~ | ~~Dispatch text vs parsed fields; **Enable Incident Creation** (Batch F).~~ |
+| ~~Raw Email~~ | ~~`/admin-functions/dispatch-parsing-settings/raw-email`~~ | ~~List + MIME/base64 troubleshooting (Batch A).~~ |
 
-3. ~~**Legacy route:** Any old single URL for dispatch parsing → **redirect** into this tree (e.g. `raw-email`).~~
-4. ~~**Admin menu:** Entry points at parent; sidebar lists the three children.~~
+3. ~~Legacy dispatch parsing URLs → redirect into this tree.~~
 
-**~~Acceptance:~~** ~~All three routes render with sidebar; redirects work.~~ *(Batch A, 2026-04-09.)*
+**~~Acceptance:~~** ~~Three routes + sidebar + redirects.~~ *(Batch A, 2026-04-09.)*
 
 ---
 
@@ -111,70 +124,63 @@ Copy this block into **Current snapshot** (below) and replace the placeholders.
 
 ### ~~2a — Secret (mandatory)~~ *(Batch B, 2026-04-09)*
 
-- ~~Set **`CAD_INGEST_SECRET`** on API host (e.g. Render).~~
-- ~~Set matching secret on **cad-email-ingest-worker**; Worker sends **`X-CAD-Ingest-Secret`**.~~
-- ~~When **`NODE_ENV=production`**, API requires **`CAD_INGEST_SECRET`**; if unset → **503**; wrong/missing header → **401**.~~
-- ~~Documented in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**, **Worker README**, **`.env.server.example`**, **`TENANT_ONBOARDING_CHECKLIST.md`**.~~
+- ~~**`CAD_INGEST_SECRET`** on API; Worker **`X-CAD-Ingest-Secret`**.~~
+- ~~**`NODE_ENV=production`:** unset secret → **503**; bad header → **401**.~~
+- ~~Docs: **`EMAIL_AND_CAD_SETUP.md`**, Worker README, **`.env.server.example`**, onboarding.~~
 
-### ~~2b — Allowlist / spam filtering~~ *(Batch C storage + Batch D API enforcement)*
+### ~~2b — Allowlist / spam filtering~~ *(Batch C + D)*
 
-**Status:** **`CadEmailAllowlistEntry`** + **`GET/PATCH /api/cad/allowlist`** (Batch C). **`POST /api/cad/inbound-email`** enforces allowlist when **≥1 enabled** row exists (Batch D). **Empty allowlist** = **allow all** (backward compatible). Rejected sends return **200** + **`ok: false`**, **`code`: `"cad_allowlist"`** — no **`CadEmailIngest`** row; Worker still **acks**.
+**Implemented:** **`CadEmailAllowlistEntry`** + **`GET/PATCH /api/cad/allowlist`**. **`POST /api/cad/inbound-email`** enforces when **≥1 enabled** row. **Empty** = allow all. Reject → **200** + **`ok: false`**, **`code`: `"cad_allowlist"`**; no **`CadEmailIngest`** row; Worker **acks**.
 
-- ~~**Tenant-configurable allowlist** in DB (`CadEmailAllowlistEntry`: `pattern`, `patternType` = `domain_suffix` \| `exact_email` \| `regex`, `enabled`, `sortOrder`).~~
-- **Worker (first line):** Optionally drop before POST — *deferred / optional*.
-- ~~**API:** Match **`From`** (extract email from `Name <a@b.com>`) before **`CadEmailIngest.create`**.~~
-- **Default posture:** **No enabled rows** → allow all; **≥1 enabled row** → must match at least one pattern.
-- **Admin UI:** Manage allowlist — *later batch*.
+- ~~DB + API **`From`** match before **`CadEmailIngest.create`**.~~
+- **Worker (optional):** drop before POST — *deferred*.
+- **Admin UI** to manage allowlist — *later batch*.
 
-**Acceptance:** ~~Secret~~ *(B)*; ~~persistence~~ *(C)*; ~~enforce on ingest~~ *(D)*.
+**Acceptance:** ~~B / C / D~~ as marked.
 
 ---
 
-## ~~Phase 3 — Persistence model (dedicated tables)~~ *(Batch C, 2026-04-09)*
+## ~~Phase 3 — Persistence model~~ *(Batch C, 2026-04-09)*
 
-- ~~**`CadParsingSettings`** (one row per `tenantId`): `enableIncidentCreation`, `messageRulesJson`, `incidentRulesJson`, `incidentFieldMapJson`, `incidentNumberExtractJson`.~~
-- ~~**`CadEmailAllowlistEntry`**: `tenantId`, `pattern`, `patternType`, `enabled`, `sortOrder`.~~
-- ~~**APIs:** `GET` / `PATCH` **`/api/cad/parsing-config`**, `GET` / `PATCH` **`/api/cad/allowlist`** (tenant from host; same trust model as `/api/department-details`).~~
-- ~~**Client:** `src/api/cadDispatchConfig.ts` for later UI batches.~~
-- Optional later: `CadEmailIngest` status columns / indexes for quarantine filtering.
+- ~~**`CadParsingSettings`** per tenant: `enableIncidentCreation`, `messageRulesJson`, `incidentRulesJson`, `incidentFieldMapJson`, `incidentNumberExtractJson`.~~
+- ~~**`CadEmailAllowlistEntry`**.~~
+- ~~**APIs:** **`/api/cad/parsing-config`**, **`/api/cad/allowlist`**.~~
+- ~~**Client:** `src/api/cadDispatchConfig.ts`.~~
 
-**~~Acceptance:~~** ~~Migration `20260409140000_add_cad_parsing_settings_and_allowlist`; tenant isolation on all reads/writes.~~
+**~~Acceptance:~~** ~~Migration `20260409140000_add_cad_parsing_settings_and_allowlist`; tenant isolation.~~
 
 ---
 
-## Phase 4 — Rule engine (shared library)
+## ~~Phase 4 — Rule engine (shared library)~~ *(Batch E, 2026-04-09)*
 
-1. Input: normalized **dispatch text** (reuse existing plain-text extraction where applicable).
-2. Ordered **primitives** (extend over time): e.g. delete before Nth occurrence (case-sensitive option), trim, regex extract → named slots.
-3. Two **profiles** per tenant: **message** vs **incident** (separate ordered rule lists).
-4. **Unit tests** with ICOMM samples: initial dispatch email + close/update email sharing the same CFS number.
-5. **Preview:** Same engine in admin UI; **Save** updates what ingest uses next.
+- ~~**Normalize:** `src/cadDispatch/normalizeDispatchText.ts`.~~
+- ~~**Engine:** `src/cadDispatch/ruleEngine.ts` — `parseCadRulesJson`, `runCadRulePipeline`, primitives → **slots**.~~
+- ~~**Profiles:** **`messageRulesJson`** vs **`incidentRulesJson`** (UI/ingest wiring in F/G).~~
+- ~~**Tests:** `icommFixtures.ts`, **`npm run test`**.~~
+- **Server:** `neris-proxy.mjs` does not import TS yet — **Batch G** bridges the module into Node.
 
-**Acceptance:** Tests pass; single module used by ingest and UI preview.
+**~~Acceptance:~~** ~~`npm run test` passes.~~
 
 ---
 
 ## Phase 5 — Incident merge and Create Incident mapping
 
-1. Extract **incident number** from both short and long email shapes.
-2. **Enable Incident Creation** off → no auto create/update from parse (email may still ingest per policy).
-3. **On** + allowlist pass → **create** draft if new number; **update** if number exists (per-field merge: overwrite vs append — document).
-4. **CAD source badge** on incident (auditing).
-5. Only tenant-scoped **`POST` / `PATCH` /api/incidents**.
+1. Extract **incident number** from short/long email shapes.
+2. **Enable Incident Creation** off → no auto create/update from parse (ingest policy may still store email).
+3. **On** + allowlist → **create** draft if new number; **update** if exists (merge policy: document overwrite vs append).
+4. **CAD source badge** on incident.
+5. Tenant-scoped **`POST` / `PATCH` /api/incidents** only.
 
-**Acceptance:** First email creates; second email updates same incident; no duplicate CFS.
+**Acceptance:** First email creates; second updates same incident; no duplicate CFS.
 
 ---
 
 ## Phase 6 — Ingest pipeline orchestration
 
-1. Validate **secret** (Phase 2a).
-2. Resolve **tenant** from `to` address (existing behavior).
-3. **Allowlist** check (Phase 2b).
-4. **Insert** `CadEmailIngest` (and quarantine/reject policy if applicable).
-5. If allowed and **Enable Incident Creation**: run **incident** rules → create/update incident.
-6. Run **message** profile as designed (persist or attach per product decision).
-7. **Parse errors:** logged; ingest HTTP behavior aligned with Worker retries (prefer store email even if parse fails, if that is the policy).
+1. Secret (2a) → tenant → allowlist (2b) → **`CadEmailIngest`** insert.
+2. If allowed and **Enable Incident Creation**: **incident** rules → create/update incident.
+3. **Message** profile per product decision.
+4. Parse errors: logged; HTTP behavior compatible with Worker retries.
 
 **Acceptance:** Staging end-to-end: secret + allowlist + two-email scenario.
 
@@ -182,23 +188,23 @@ Copy this block into **Current snapshot** (below) and replace the placeholders.
 
 ## Phase 7 — Admin UI completion
 
-- **Message Parsing** and **Incident Parsing:** rule builder, reorder, **Save** → server persistence.
-- **Side-by-side:** text used for parsing | parsed output.
-- **Raw Email:** list + MIME/base64 for troubleshooting unchanged in purpose.
-- **Role gating:** Subadmin+ (or agreed role) for rules and allowlist.
+- Message Parsing: rule builder, reorder, **Save** — *still open (Batch H)*.
+- ~~Incident Parsing: JSON rules + preview + **Save** (`PATCH /api/cad/parsing-config`); sample text + ICOMM / latest email load.~~ *(Batch F, 2026-04-09)* — `DispatchParsingIncidentPanel.tsx`, `extractDispatchPlainText.ts` shared with Raw Email.
+- Side-by-side: source text | parsed output — *incident page uses two-column layout; visual rule builder may replace JSON later*.
+- Raw Email: troubleshooting unchanged.
+- Role gating: Subadmin+ for rules/allowlist.
 
-**Acceptance:** Admin can tune rules; **Save** applies to next inbound email automatically.
+**Acceptance:** **Save** persists tenant config; **ingest** applies on next email **after Batch G**.
 
 ---
 
 ## Phase 8 — Docs and operations
 
-- Update **`docs/procedures/EMAIL_AND_CAD_SETUP.md`** (secret, Worker header, allowlist).
-- Keep **`docs/plans/CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`** aligned or reference this doc as the phase/batch source of truth.
-- Staging checklist: Worker URL, secret, allowlist test senders.
-- Optional: retention/archival notes for high-volume `CadEmailIngest` (e.g. ~50+/day).
+- Keep **`EMAIL_AND_CAD_SETUP.md`** aligned (secret, Worker, allowlist).
+- Staging checklist: Worker URL, secret, allowlist testers.
+- Optional: **`CadEmailIngest`** retention/index notes.
 
-**Acceptance:** New operator can configure from docs alone.
+**Acceptance:** Operator can configure from runbooks + this plan.
 
 ---
 
@@ -206,16 +212,23 @@ Copy this block into **Current snapshot** (below) and replace the placeholders.
 
 | Batch | Content |
 |--------|---------|
-| ~~A~~ | ~~Routes + sidebar + move current page to **Raw Email** + redirects~~ |
-| ~~B~~ | ~~Enforce **`CAD_INGEST_SECRET`** when `NODE_ENV=production`; Worker README + EMAIL_AND_CAD_SETUP + onboarding + `.env.server.example`~~ |
-| ~~C~~ | ~~Prisma: **`CadParsingSettings`** + **`CadEmailAllowlistEntry`**; **`GET`/`PATCH` `/api/cad/parsing-config`** and **`/api/cad/allowlist`**; `src/api/cadDispatchConfig.ts`~~ |
-| ~~D~~ | ~~Allowlist on **`POST /api/cad/inbound-email`** when ≥1 enabled row; **200** + **`ok: false`** if rejected (Worker acks); empty list = allow all~~ |
-| E | Rule engine + unit tests (ICOMM fixtures) |
-| F | Incident Parsing UI + preview + Save |
+| ~~A~~ | ~~Routes + sidebar + **Raw Email** + redirects~~ |
+| ~~B~~ | ~~**`CAD_INGEST_SECRET`** in production; docs + Worker + `.env.server.example`~~ |
+| ~~C~~ | ~~**`CadParsingSettings`** + **`CadEmailAllowlistEntry`**; **`/api/cad/parsing-config`** + **`/api/cad/allowlist`**; `cadDispatchConfig.ts`~~ |
+| ~~D~~ | ~~Allowlist on **`POST /api/cad/inbound-email`**; **200** + **`ok: false`** if rejected~~ |
+| ~~E~~ | ~~Rule engine + tests (ICOMM fixtures); `src/cadDispatch/`~~ |
+| ~~F~~ | ~~Incident Parsing UI + preview + Save (`getCadParsingConfig` / `patchCadParsingConfig`, `runCadRulePipeline`)~~ |
 | G | Ingest → parse → create/update incident |
 | H | Message Parsing UI + parsed message path |
-| I | Docs, indexes/retention notes, staging verification |
+| I | Docs polish, indexes/retention, staging verification |
 
 ---
 
-*Last updated: 2026-04-09 — Operator handoff template + current snapshot; Batch D allowlist.*
+## Technical references (existing vs upcoming)
+
+- **Today:** `CadEmailIngest`; `POST /api/cad/inbound-email`; Worker → API; `GET /api/cad/emails` for Raw Email list; parsing config + allowlist APIs; `src/cadDispatch/` rule engine (Batch E); **Incident Parsing** UI + preview (Batch F).
+- **App entry:** Admin Functions → **Dispatch Parsing Settings** → **Incident Parsing**.
+
+---
+
+*Last updated: 2026-04-09 — Batch F Incident Parsing UI; merged CAD plan docs (earlier same day).*

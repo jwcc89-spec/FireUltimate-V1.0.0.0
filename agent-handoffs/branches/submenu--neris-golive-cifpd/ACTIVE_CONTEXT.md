@@ -3,9 +3,10 @@
 ## Current branch
 - `submenu/neris-golive-cifpd`
 
-## Current focus (2026-03-20)
+## Current focus (2026-04-09)
+- **CAD (2026-04-09):** Merged CAD plan docs; **Batch E** rule engine; **Batch F** Incident Parsing UI (`DispatchParsingIncidentPanel.tsx`, `extractDispatchPlainText.ts`). **Next:** Batch **G** (ingest → parse → incidents). Handoff: **`sessions/2026-04-09-session.md`** · **`conversations/2026-04-09-session-summary.md`**.
 - **Personnel Schedule (2026-03-19):** Segmentation + per-segment OT + OT roster filter + duplicate-segment grey-out + calendar/qual fixes committed on this branch. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. Session: `sessions/2026-03-19-schedule-segmentation-ux-session-end.md`.
-- **CAD:** **Receiving** path verified (emails stored). **Next:** parsing / auto-create incident (`#29`, `CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`). **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`).
+- **CAD (product):** Receiving verified; **Batch E** rule pipeline done in repo. **Later:** auto-create incident per **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. **Then** point Worker `CAD_INGEST_API_URL` to production (B11 in `EMAIL_AND_CAD_SETUP.md`) when ready.
 - **NERIS cross-browser:** Phases 1–3 done. **View Exports Report Status** complete (staging): list shows **Exported** after successful submit, matches queue. See `NERIS_CROSS_BROWSER_FINDINGS.md`.
 - **Incident Detail:** Go-live item #1 verified — edits persist via API across browsers.
 - NERIS go-live for tenant cifpdil: continue staging/prod promotion as planned.
@@ -77,7 +78,11 @@
   - PR branch -> `main`, deploy production, verify production endpoints,
   - run first controlled production export and 24-48h stabilization monitoring.
 
-## Last session (2026-03-19 — Personnel Schedule segmentation)
+## Last session (2026-04-09 — CAD + handoff structure)
+- **Scope:** Merged CAD plan docs; **Batch E** rule engine; **Batch F** Incident Parsing UI + shared `extractDispatchPlainText`; handoff convention in **`COPY_PASTE_START_PROMPT.md`** / **`COPY_PASTE_START_PROMPT_TEMPLATE.md`**; consolidated handoff files into **`sessions/2026-04-09-session.md`** and **`conversations/2026-04-09-session-summary.md`**.
+- **Next:** Batch **G** (ingest → incidents + TS bridge in `neris-proxy.mjs`).
+
+## Previous session (2026-03-19 — Personnel Schedule segmentation)
 - **Scope:** Timed segments per apparatus/support slot, `ScheduleSegment.overtime`, full OT roster (`name`+`shift` in Scheduler Personnel), qualification + calendar behavior for segmented slots, red **×** segment remove, **greyed** shift-dropdown options when a person is already on another segment of the same slot (OT segment uses full roster), drag-drop aligned with same rule, removed visible **“Segment”** label (tooltip + `aria-label` remain).
 - **Files (high level):** `PersonnelSchedulePage.tsx`, `PersonnelScheduleDayBlockModal.tsx`, `scheduleUtils.ts`, `scheduleStorage.ts`, `scheduleDomain.ts`, `App.css`, `App.tsx`; docs: `SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`, `task-2-multitenant-domain-plan.md` (pointer), `seed-and-tenant-reference.md`, `TENANT_ONBOARDING_CHECKLIST.md` (scheduler bullets).
 - **Verify:** `npm run lint`, `npm run build`.
@@ -120,7 +125,7 @@
 
 **Current priority:** See `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`. CAD ingest verified; in-app email viewing (Dispatch Parsing Settings) implemented. NERIS cross-browser Phase 1 in branch (run migration if not done).
 
-**CAD (you):** For now Worker stays on staging (Option B) until parsing is dialed in; then set CAD_INGEST_API_URL to production (EMAIL_AND_CAD_SETUP.md §B11). View incoming emails in **Admin Functions → Dispatch Parsing Settings** (dispatch content now extracted from MIME). Parsing/auto-fill module next (CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md).
+**CAD (you):** For now Worker stays on staging (Option B) until parsing is dialed in; then set CAD_INGEST_API_URL to production (EMAIL_AND_CAD_SETUP.md §B11). View incoming emails in **Admin Functions → Dispatch Parsing Settings** (dispatch content now extracted from MIME). Parsing/auto-fill: **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
 
 **NERIS cross-browser (you, once):** Run migration for Phase 1 — see `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` “Steps for you.” Use same DATABASE_URL as your API (e.g. Render); then redeploy API if needed. Test: export in Browser A, check NERIS Exports in Browser B.
 

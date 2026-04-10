@@ -3,10 +3,12 @@
  * UI wiring in later batches; APIs available after migration + deploy.
  */
 
+import type { CadRule } from "../cadDispatch/ruleEngine.ts";
+
 export interface CadParsingConfig {
   enableIncidentCreation: boolean;
-  messageRules: unknown[];
-  incidentRules: unknown[];
+  messageRules: CadRule[];
+  incidentRules: CadRule[];
   incidentFieldMap: Record<string, unknown>;
   incidentNumberExtract: Record<string, unknown> | null;
 }

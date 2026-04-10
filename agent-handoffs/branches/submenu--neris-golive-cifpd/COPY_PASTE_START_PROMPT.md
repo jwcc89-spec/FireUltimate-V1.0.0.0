@@ -18,8 +18,15 @@ The agent will state at the end of each response **which agent/model was used** 
 11. `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md` — when working on NERIS cross-browser
 12. `docs/procedures/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md` — go-live sequence and endpoint checks
 13. `docs/plans/ROLE_HIERARCHY_PHASE1_IMPLEMENTATION_GUIDE.md` — when touching roles/admin/superadmin (number-based hierarchy)
-14. Latest note in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`
-15. Recent files in `agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/`
+14. Latest **`sessions/YYYY-MM-DD-session.md`** (or the branch’s most recent session file in `agent-handoffs/branches/submenu--neris-golive-cifpd/sessions/`)
+15. Latest **`conversations/YYYY-MM-DD-session-summary.md`** in `agent-handoffs/branches/submenu--neris-golive-cifpd/conversations/` (user-readable summation of that session)
+
+**Sessions vs conversations (this branch):**
+
+| Folder | Audience | Content | Count per working session |
+|--------|----------|---------|---------------------------|
+| **`sessions/`** | Next agent | What shipped, paths, commands, verification, next steps | **One** session note — do **not** add a new file for every sub-task in the same session |
+| **`conversations/`** | User | Condensed summary of the **full** conversation (decisions, outcomes, what to test) | **One** file: **`YYYY-MM-DD-session-summary.md`** — not multiple micro-summaries for the same day/session |
 
 **When touching architecture, data, incidents/export, or CAD/NERIS/NEMSIS, also read:**
 - `docs/system_architecture.md`, `docs/data_model.md`, `docs/incident-lifecycle.md`, `docs/integrations.md`
@@ -47,8 +54,8 @@ Before doing any feature work, understand the Branch Rules:
    - include explicit **Risks vs Rewards** and better/alternative implementation path when applicable
 5) If preflight identifies meaningful risk, get explicit user confirmation before making edits.
 6) Follow beginner-friendly communication and explain commands clearly.
-7) After meaningful changes: update session note; keep ACTIVE_CONTEXT.md current.
-8) Before stopping: update ACTIVE_CONTEXT.md; finalize session note; commit + push on submenu/neris-golive-cifpd; report branch, commit hash, changed files, and next-step checklist.
+7) After meaningful changes: update **this session’s** single note in `sessions/` (see table above); keep ACTIVE_CONTEXT.md current.
+8) Before stopping: update ACTIVE_CONTEXT.md; finalize **this session’s** `sessions/YYYY-MM-DD-session.md` and (when ending a session) **`conversations/YYYY-MM-DD-session-summary.md`** for the user; commit + push on submenu/neris-golive-cifpd; report branch, commit hash, changed files, and next-step checklist.
 
 After acknowledging the rules above:
 1) Continue from the current blocker only (do not restart solved work).
@@ -58,8 +65,8 @@ After acknowledging the rules above:
 
 When the user says "this session is coming to an end":
 Before ending: 
-1) Update session note + ACTIVE_CONTEXT.md
-2) Add conversation summary to conversations/ 
+1) Update **one** session file in `sessions/` for this working session + ACTIVE_CONTEXT.md
+2) Add or refresh **one** `conversations/YYYY-MM-DD-session-summary.md` (condensed summation for the user)
 3) Review all docs and suggest any updates based on completed work this session; move docs to /completed if needed.
 After user acknowledges then:
 1) Commit + push; report branch, commit hash, changed files, next-step checklist; include **Now vs Later** callouts.
