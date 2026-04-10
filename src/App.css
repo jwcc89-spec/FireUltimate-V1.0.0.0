@@ -1802,6 +1802,111 @@ tbody tr:last-of-type td {
   background: #fff;
 }
 
+.cad-dispatch-field-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cad-dispatch-field-map-header .small-button {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.cad-dispatch-merge-key-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 24rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.cad-dispatch-merge-key-input {
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.45rem 0.5rem;
+  font: inherit;
+  font-size: 0.88rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.cad-incident-field-map-table-wrap {
+  overflow-x: auto;
+}
+
+.cad-incident-field-map-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.cad-incident-field-map-table th,
+.cad-incident-field-map-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cad-incident-field-map-table th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.cad-dispatch-incident-save-row {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.cad-dispatch-incident-preview-card {
+  margin: 0;
+}
+
+.cad-incident-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cad-incident-preview-block {
+  min-width: 0;
+}
+
+.cad-incident-slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.cad-incident-slot-table th {
+  width: 9rem;
+  text-align: left;
+  font-weight: 600;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  padding: 0.35rem 0.5rem;
+  background: #f8fafc;
+  vertical-align: top;
+}
+
+.cad-incident-slot-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.35rem 0.5rem;
+  word-break: break-word;
+}
+
+.cad-incident-merge-key-value {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
 .dashboard-shortcut-list,
 .unit-status-list {
   margin: 0;
