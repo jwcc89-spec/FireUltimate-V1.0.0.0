@@ -1822,6 +1822,79 @@ app.get("/api/tenant/context", (request, response) => {
   });
 });
 
+// ----- CAD inbound allowlist (Batch D): when tenant has ≥1 enabled entry, From must match one pattern -----
+function extractEmailFromCadFromField(fromRaw) {
+  const s = trimValue(fromRaw);
+  if (!s) return "";
+  const angle = s.match(/<([^>]+)>/);
+  const candidate = angle ? trimValue(angle[1]) : s;
+  const emailMatch = candidate.match(/([^\s<>]+@[^\s<>]+)/);
+  return emailMatch ? trimValue(emailMatch[1]).toLowerCase() : candidate.toLowerCase();
+}
+
+function emailLocalPartDomain(emailLower) {
+  const at = emailLower.lastIndexOf("@");
+  if (at <= 0) return { local: "", domain: "" };
+  return {
+    local: emailLower.slice(0, at),
+    domain: emailLower.slice(at + 1),
+  };
+}
+
+function matchesCadDomainSuffix(emailDomainLower, patternRaw) {
+  const p = trimValue(patternRaw).toLowerCase();
+  if (!p || !emailDomainLower) return false;
+  return emailDomainLower === p || emailDomainLower.endsWith("." + p);
+}
+
+function cadFromMatchesAllowlistEntry(fromRaw, emailLower, pattern, patternType) {
+  const p = trimValue(pattern);
+  if (!p) return false;
+  const type = trimValue(patternType).toLowerCase() || "domain_suffix";
+  if (type === "exact_email") {
+    return emailLower === p.toLowerCase();
+  }
+  if (type === "domain_suffix") {
+    const { domain } = emailLocalPartDomain(emailLower);
+    return matchesCadDomainSuffix(domain, p);
+  }
+  if (type === "regex") {
+    try {
+      const re = new RegExp(p, "i");
+      return re.test(fromRaw) || (emailLower && re.test(emailLower));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * @returns {Promise<{ allowed: boolean }>}
+ * If no enabled rows exist for tenant → allowed (allowlist not configured / permissive).
+ */
+async function cadInboundAllowlistDecision(tenantId, fromAddress) {
+  if (!tenantId) {
+    return { allowed: true };
+  }
+  const entries = await prisma.cadEmailAllowlistEntry.findMany({
+    where: { tenantId, enabled: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { pattern: true, patternType: true },
+  });
+  if (entries.length === 0) {
+    return { allowed: true };
+  }
+  const emailLower = extractEmailFromCadFromField(fromAddress);
+  const fromRaw = typeof fromAddress === "string" ? fromAddress : "";
+  for (const e of entries) {
+    if (cadFromMatchesAllowlistEntry(fromRaw, emailLower, e.pattern, e.patternType)) {
+      return { allowed: true };
+    }
+  }
+  return { allowed: false };
+}
+
 // ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
 const CAD_INGEST_SECRET = trimValue(process.env.CAD_INGEST_SECRET);
 const IS_PRODUCTION_NODE_ENV = trimValue(process.env.NODE_ENV) === "production";
@@ -1861,6 +1934,17 @@ app.post("/api/cad/inbound-email", async (request, response) => {
         });
         if (tenant) tenantId = tenant.id;
       }
+    }
+
+    const allow = await cadInboundAllowlistDecision(tenantId, fromAddress);
+    if (!allow.allowed) {
+      response.status(200).json({
+        ok: false,
+        rejected: true,
+        code: "cad_allowlist",
+        message: "Sender is not allowed by CAD allowlist.",
+      });
+      return;
     }
 
     await prisma.cadEmailIngest.create({

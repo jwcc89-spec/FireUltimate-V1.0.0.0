@@ -224,7 +224,11 @@ The same **`prisma migrate deploy`** command applies **`20260409140000_add_cad_p
 - **`GET /api/cad/allowlist`** — list allowlist entries.
 - **`PATCH /api/cad/allowlist`** — body `{ "entries": [ { "pattern", "patternType?", "enabled?", "sortOrder?" } ] }` replaces **all** rows for the tenant.
 
-**Allowlist enforcement** on ingest is **not** active until **Batch D**; see **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
+**Allowlist enforcement (Batch D):** When a tenant has **at least one enabled** row in **`CadEmailAllowlistEntry`**, **`POST /api/cad/inbound-email`** accepts the message only if **`From`** matches one of the patterns (`domain_suffix`, `exact_email`, or `regex`). If it does not match, the API returns **HTTP 200** with **`{ "ok": false, "rejected": true, "code": "cad_allowlist" }`** (so the Cloudflare Worker **acks** the queue and does not retry forever). **No row is written** to **`CadEmailIngest`**.
+
+When **no enabled allowlist rows** exist for that tenant, **all** senders are accepted (same as before Batch D — add patterns only when you want to restrict).
+
+See **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
 
 ---
 

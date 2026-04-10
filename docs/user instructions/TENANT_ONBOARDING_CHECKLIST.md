@@ -299,7 +299,7 @@ Use this when dispatch will send mail to **`<tenant-slug>@cad.fireultimate.app`*
   - **App:** Log in as admin → **Admin Functions** → **Dispatch Parsing Settings** (parent) → sidebar **Raw Email** → confirm a new row appears.
   - **Optional DB check:** Neon **SQL Editor** → `SELECT id, "toAddress", "fromAddress", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 5;`
 
-**Note:** **Sender allowlist / spam filtering** (per-tenant rules in the database) is **not** implemented yet; it is planned as **Phase 2b** / **Batches C–D** in **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. Until then, rely on a non-public CAD address and **`CAD_INGEST_SECRET`** to block random HTTP posts (not spoofed email to your CAD address).
+**Note (allowlist):** After **Batch D**, if the tenant has **at least one enabled** **`CadEmailAllowlistEntry`**, only **`From`** addresses matching a pattern are stored; others get **HTTP 200** with **`ok: false`** (no DB row). **No enabled rows** = all senders allowed. Configure allowlist via **`PATCH /api/cad/allowlist`** (admin UI in a later batch) or direct API. See **`docs/procedures/EMAIL_AND_CAD_SETUP.md`** §B6.5.
 
 ---
 

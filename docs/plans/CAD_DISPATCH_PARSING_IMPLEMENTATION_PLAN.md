@@ -1,7 +1,7 @@
 # CAD dispatch parsing — implementation plan (master)
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress (Batch C done — DB + GET/PATCH APIs; **next:** Batch D enforce allowlist on ingest)  
+**Status:** In progress (Batches A–D done for CAD ingest path; **next:** Batch E rule engine)  
 **Related:** Product goals and rule types — `docs/plans/CAD_EMAIL_PARSING_AND_INCIDENT_AUTOCREATE_PLAN.md`  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md`
 
@@ -61,17 +61,17 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 - ~~When **`NODE_ENV=production`**, API requires **`CAD_INGEST_SECRET`**; if unset → **503**; wrong/missing header → **401**.~~
 - ~~Documented in **`docs/procedures/EMAIL_AND_CAD_SETUP.md`**, **Worker README**, **`.env.server.example`**, **`TENANT_ONBOARDING_CHECKLIST.md`**.~~
 
-### 2b — Allowlist / spam filtering *(partial — storage in Batch C; enforcement in Batch D)*
+### ~~2b — Allowlist / spam filtering~~ *(Batch C storage + Batch D API enforcement)*
 
-**Status:** **`CadEmailAllowlistEntry`** + **`GET/PATCH /api/cad/allowlist`** shipped in **Batch C** (2026-04-09). **Enforcement** on **`POST /api/cad/inbound-email`** (reject or quarantine when sender does not match) is **Batch D** — not implemented yet. Until Batch D, filling the allowlist has **no effect** on ingest.
+**Status:** **`CadEmailAllowlistEntry`** + **`GET/PATCH /api/cad/allowlist`** (Batch C). **`POST /api/cad/inbound-email`** enforces allowlist when **≥1 enabled** row exists (Batch D). **Empty allowlist** = **allow all** (backward compatible). Rejected sends return **200** + **`ok: false`**, **`code`: `"cad_allowlist"`** — no **`CadEmailIngest`** row; Worker still **acks**.
 
 - ~~**Tenant-configurable allowlist** in DB (`CadEmailAllowlistEntry`: `pattern`, `patternType` = `domain_suffix` \| `exact_email` \| `regex`, `enabled`, `sortOrder`).~~
-- **Worker (first line):** Optionally drop or do not POST if sender not allowed (reduces noise) — *deferred / optional*.
-- **API (second line):** Re-check before storing/parsing/auto-incident — **Batch D**.
-- **Default posture:** Document whether **empty allowlist** means reject, quarantine-only row, or store-but-do-not-parse — **decide in Batch D**.
-- **Admin UI:** Manage allowlist — *Batch F/H or dedicated allowlist UI*.
+- **Worker (first line):** Optionally drop before POST — *deferred / optional*.
+- ~~**API:** Match **`From`** (extract email from `Name <a@b.com>`) before **`CadEmailIngest.create`**.~~
+- **Default posture:** **No enabled rows** → allow all; **≥1 enabled row** → must match at least one pattern.
+- **Admin UI:** Manage allowlist — *later batch*.
 
-**Acceptance:** ~~Secret required when `NODE_ENV=production`~~ *(done)*; ~~allowlist rows persist per tenant~~ *(Batch C)*; allowlist **enforced** on ingest *(pending Batch D)*.
+**Acceptance:** ~~Secret~~ *(B)*; ~~persistence~~ *(C)*; ~~enforce on ingest~~ *(D)*.
 
 ---
 
@@ -154,7 +154,7 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 | ~~A~~ | ~~Routes + sidebar + move current page to **Raw Email** + redirects~~ |
 | ~~B~~ | ~~Enforce **`CAD_INGEST_SECRET`** when `NODE_ENV=production`; Worker README + EMAIL_AND_CAD_SETUP + onboarding + `.env.server.example`~~ |
 | ~~C~~ | ~~Prisma: **`CadParsingSettings`** + **`CadEmailAllowlistEntry`**; **`GET`/`PATCH` `/api/cad/parsing-config`** and **`/api/cad/allowlist`**; `src/api/cadDispatchConfig.ts`~~ |
-| D | Allowlist enforcement on ingest (API; Worker optional) |
+| ~~D~~ | ~~Allowlist on **`POST /api/cad/inbound-email`** when ≥1 enabled row; **200** + **`ok: false`** if rejected (Worker acks); empty list = allow all~~ |
 | E | Rule engine + unit tests (ICOMM fixtures) |
 | F | Incident Parsing UI + preview + Save |
 | G | Ingest → parse → create/update incident |
@@ -163,4 +163,4 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 
 ---
 
-*Last updated: 2026-04-09 — Batch C: `CadParsingSettings`, `CadEmailAllowlistEntry`, parsing-config + allowlist APIs; run `prisma migrate deploy` on each DB (see TENANT_ONBOARDING §I).*
+*Last updated: 2026-04-09 — Batch D: allowlist enforcement on CAD inbound; see EMAIL_AND_CAD_SETUP §B6.5.*
