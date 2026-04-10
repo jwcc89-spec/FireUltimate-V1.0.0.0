@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
 import {
@@ -41,6 +41,126 @@ function formatDate(iso: string): string {
   }
 }
 
+/** Same shape the Worker POSTs to `/api/cad/inbound-email` (before message/incident parsing). */
+function buildCadInboundReplayJson(row: CadEmailIngestRow): string {
+  const headers =
+    row.headersJson && typeof row.headersJson === "object" && !Array.isArray(row.headersJson)
+      ? (row.headersJson as Record<string, unknown>)
+      : {};
+  return JSON.stringify(
+    {
+      from: row.fromAddress,
+      to: row.toAddress,
+      raw: row.rawBody,
+      headers,
+    },
+    null,
+    2,
+  );
+}
+
+function RawEmailExpandedBody({ row }: { row: CadEmailIngestRow }) {
+  const [copyHint, setCopyHint] = useState<string | null>(null);
+
+  const flash = useCallback((msg: string) => {
+    setCopyHint(msg);
+    window.setTimeout(() => setCopyHint(null), 2800);
+  }, []);
+
+  const copyText = useCallback(
+    async (text: string, okMsg: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        flash(okMsg);
+      } catch {
+        flash("Copy failed — select text manually or try another browser.");
+      }
+    },
+    [flash],
+  );
+
+  const decoded = tryDecodeRawBody(row.rawBody ?? "");
+  const plainText =
+    decoded !== null ? getDispatchPlainTextFromRawBody(row.rawBody ?? "") : "";
+
+  return (
+    <>
+      <div className="cad-email-meta">
+        <div>
+          <strong>From:</strong> {row.fromAddress || "—"}
+        </div>
+        <div>
+          <strong>To:</strong> {row.toAddress || "—"}
+        </div>
+        <div>
+          <strong>Received:</strong> {formatDate(row.createdAt)}
+        </div>
+      </div>
+
+      <div className="cad-email-worker-precopy">
+        <p className="panel-description cad-email-precopy-lead">
+          <strong>Before any parsing:</strong> the Worker sent <code>from</code>, <code>to</code>,{" "}
+          <code>headers</code>, and <code>raw</code> (base64 of the full message). What ICOMM actually sent is
+          represented by the <strong>decoded email</strong> below — same bytes, before Message/Incident rules run.
+        </p>
+        <div className="cad-email-copy-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={decoded === null}
+            onClick={() => decoded !== null && void copyText(decoded, "Decoded full email (MIME) copied.")}
+          >
+            Copy decoded email (full MIME)
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void copyText(buildCadInboundReplayJson(row), "JSON payload copied — use for curl/API replay.")}
+          >
+            Copy JSON payload (replay POST)
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void copyText(row.rawBody || "", "Raw base64 copied.")}
+          >
+            Copy raw (base64)
+          </button>
+        </div>
+        {copyHint ? (
+          <p className="cad-dispatch-save-ok" role="status">
+            {copyHint}
+          </p>
+        ) : null}
+      </div>
+
+      {decoded !== null ? (
+        <>
+          {plainText ? (
+            <>
+              <label className="cad-email-raw-label">Dispatch content (for parsing)</label>
+              <pre className="cad-email-raw-body cad-email-dispatch-content">{plainText}</pre>
+            </>
+          ) : null}
+          <details className="cad-email-raw-details">
+            <summary>{plainText ? "Show full MIME source" : "Show decoded MIME body"}</summary>
+            <pre className="cad-email-raw-body cad-email-decoded">{decoded}</pre>
+          </details>
+          <details className="cad-email-raw-details">
+            <summary>Show raw base64</summary>
+            <pre className="cad-email-raw-body">{row.rawBody || "(empty)"}</pre>
+          </details>
+        </>
+      ) : (
+        <>
+          <label className="cad-email-raw-label">Raw body (stored)</label>
+          <pre className="cad-email-raw-body">{row.rawBody || "(empty)"}</pre>
+        </>
+      )}
+    </>
+  );
+}
+
 function DispatchParsingRawEmailPanel() {
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,9 +191,9 @@ function DispatchParsingRawEmailPanel() {
           <h1>Raw Email</h1>
           <p>
             View incoming CAD dispatch emails sent to your department address (e.g.
-            cifpdil@cad.fireultimate.app). Expand a row for dispatch content, MIME source, and raw
-            base64 for troubleshooting. Parsing rules are configured under Message Parsing and
-            Incident Parsing.
+            cifpdil@cad.fireultimate.app). Expand a row to copy the <strong>decoded email as received</strong> (before
+            parsing) or the <strong>JSON payload</strong> to replay a test POST. Dispatch content and MIME details are
+            below; parsing rules are under Message Parsing and Incident Parsing.
           </p>
         </div>
       </header>
@@ -117,59 +237,7 @@ function DispatchParsingRawEmailPanel() {
                   </button>
                   {expandedId === row.id ? (
                     <div className="cad-email-body-panel">
-                      <div className="cad-email-meta">
-                        <div>
-                          <strong>From:</strong> {row.fromAddress || "—"}
-                        </div>
-                        <div>
-                          <strong>To:</strong> {row.toAddress || "—"}
-                        </div>
-                        <div>
-                          <strong>Received:</strong> {formatDate(row.createdAt)}
-                        </div>
-                      </div>
-                      {(() => {
-                        const decoded = tryDecodeRawBody(row.rawBody ?? "");
-                        if (decoded !== null) {
-                          const plainText = getDispatchPlainTextFromRawBody(row.rawBody ?? "");
-                          return (
-                            <>
-                              {plainText ? (
-                                <>
-                                  <label className="cad-email-raw-label">
-                                    Dispatch content (for parsing)
-                                  </label>
-                                  <pre className="cad-email-raw-body cad-email-dispatch-content">
-                                    {plainText}
-                                  </pre>
-                                </>
-                              ) : null}
-                              <details className="cad-email-raw-details">
-                                <summary>
-                                  {plainText ? "Show full MIME source" : "Show decoded MIME body"}
-                                </summary>
-                                <pre className="cad-email-raw-body cad-email-decoded">
-                                  {decoded}
-                                </pre>
-                              </details>
-                              <details className="cad-email-raw-details">
-                                <summary>Show raw base64</summary>
-                                <pre className="cad-email-raw-body">
-                                  {row.rawBody || "(empty)"}
-                                </pre>
-                              </details>
-                            </>
-                          );
-                        }
-                        return (
-                          <>
-                            <label className="cad-email-raw-label">Raw body (for parsing)</label>
-                            <pre className="cad-email-raw-body">
-                              {row.rawBody || "(empty)"}
-                            </pre>
-                          </>
-                        );
-                      })()}
+                      <RawEmailExpandedBody row={row} />
                     </div>
                   ) : null}
                 </div>

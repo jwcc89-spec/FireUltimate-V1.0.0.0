@@ -1347,6 +1347,27 @@ tbody tr:last-of-type td {
   color: #475569;
 }
 
+.cad-email-worker-precopy {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cad-email-precopy-lead {
+  margin-bottom: 0.65rem;
+}
+
+.cad-email-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.cad-email-copy-actions .secondary-button {
+  font-size: 0.82rem;
+}
+
 .cad-email-raw-label {
   display: block;
   font-size: 0.78rem;
