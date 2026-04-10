@@ -17,6 +17,61 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 
 **Agents:** After completing a phase or batch, update this file in the same commit or immediately after merge, then run `npm run lint` if you touched anything that could affect CI.
 
+**Agents:** After **every** implementation batch merged to this branch, add or update the **Current snapshot** section below with: (1) **What you need to complete** — numbered steps for deploy, migrations, env vars, Cloudflare, Neon, no jargon without explanation; (2) **What you need to test** — numbered checks the operator can run in the app or browser; (3) **What remains** — which batches/phases are still open in this sequence.
+
+---
+
+## Operator handoff template (fill in after each batch)
+
+Copy this block into **Current snapshot** (below) and replace the placeholders.
+
+### What you need to complete
+
+1. …
+2. …
+
+### What you need to test
+
+1. …
+2. …
+
+### What remains in this sequence
+
+- **Done:** …
+- **Not started yet:** … (see **Implementation batches** table)
+
+---
+
+## Current snapshot — CAD dispatch sequence *(update after each batch)*
+
+**Code baseline:** Latest on branch **`submenu/neris-golive-cifpd`** including **Batch D** (allowlist enforced on ingest when ≥1 enabled row). **Migrations required for Batch C** are already documented in **`docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md`** §**I.2**.
+
+### What you need to complete
+
+1. **Deploy the API** on Render (staging and/or production) so the running service includes **Batch D** server code (merge/pull the branch, then **Manual Deploy** or auto-deploy).
+2. **No new database migration** for Batch D (only Batch C migration applies). If you have **not** yet run **`20260409140000_add_cad_parsing_settings_and_allowlist`**, do **§I.2** in **`TENANT_ONBOARDING_CHECKLIST.md`** first.
+3. **Allowlist is optional.** If you **do not** add any enabled allowlist rows, behavior is **unchanged** (all senders accepted). When you are ready to restrict senders, use **`PATCH /api/cad/allowlist`** (see **`docs/procedures/EMAIL_AND_CAD_SETUP.md`** §**B6.5**) while logged in on the tenant host, or call the API with your session. **Add your real dispatch domain first** (e.g. `domain_suffix` for the vendor’s domain) so you do not block legitimate mail.
+4. **Cloudflare Worker** does not need changes for Batch D (API-only enforcement).
+
+### What you need to test
+
+1. **Baseline (no allowlist rows or all disabled):** Send a test CAD email → **Render logs** show **`POST /api/cad/inbound-email`** with **200** and **`{ ok: true }`** → **Raw Email** in the app shows a new row → optional Neon: row in **`CadEmailIngest`**.
+2. **With restriction:** Add **one** enabled **`domain_suffix`** that matches your test sender → send again → still **200** + **`ok: true`** and a new row.
+3. **Rejection path:** Add patterns so the **From** address **does not** match → **200** with **`ok: false`**, **`code`: `"cad_allowlist"`** → **no** new **`CadEmailIngest`** row → Worker should **not** spin forever (queue acks).
+
+### What remains in this sequence
+
+| Batch | Status |
+|--------|--------|
+| A–D | **Done** (UI shell, secret, DB + APIs, allowlist enforce). |
+| **E** | Rule engine + unit tests (ICOMM samples). |
+| **F** | Incident Parsing UI + preview + Save. |
+| **G** | Ingest → parse → create/update **incidents** when enabled. |
+| **H** | Message Parsing UI + parsed message path. |
+| **I** | Docs polish, optional indexes/retention, staging verification. |
+
+**Phases still open in this doc:** **4** (rule engine), **5** (incident merge + mapping), **6** (full ingest pipeline with parsing), **7** (admin UI beyond placeholders), **8** (final docs/ops).
+
 ---
 
 ## Phase 0 — Decisions and constraints
@@ -163,4 +218,4 @@ Use Markdown strikethrough: `~~text~~` so it renders as ~~text~~.
 
 ---
 
-*Last updated: 2026-04-09 — Batch D: allowlist enforcement on CAD inbound; see EMAIL_AND_CAD_SETUP §B6.5.*
+*Last updated: 2026-04-09 — Operator handoff template + current snapshot; Batch D allowlist.*
