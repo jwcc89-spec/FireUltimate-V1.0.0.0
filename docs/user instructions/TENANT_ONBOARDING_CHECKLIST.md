@@ -237,11 +237,63 @@ Use this when dispatch will send mail to **`<tenant-slug>@cad.fireultimate.app`*
   4. Create or edit the address whose **local part** equals **`<tenant-slug>`** (e.g. `cifpdil`), so the full address is **`cifpdil@cad.fireultimate.app`** or **`cifpdil@fireultimate.app`** as designed for your tenant.
   5. Set the action to **Send to a Worker** (or **Worker**) and choose **`cad-email-ingest-worker`**. Save.
 - [ ] **Database:** `CadEmailIngest` migration applied on the **same** database as this API (see **`EMAIL_AND_CAD_SETUP.md`** §B6).
-- [ ] **Database migration (CAD parsing / allowlist storage):** After pulling code that adds **Batch C**, run **`prisma migrate deploy`** against the **same** Postgres database this API uses (e.g. Neon), so tables **`CadParsingSettings`** and **`CadEmailAllowlistEntry`** exist. From the project root (with **`DATABASE_URL`** set to that DB, e.g. via **`.env.server`**):
-  ```bash
-  node --env-file=.env.server -e "require('child_process').execSync('npx prisma migrate deploy', {stdio:'inherit', env: process.env})"
-  ```
-  Then **redeploy** the Render service. Migration folder name: **`20260409140000_add_cad_parsing_settings_and_allowlist`**. Until this runs, **`GET/PATCH /api/cad/parsing-config`** and **`/api/cad/allowlist`** will error at runtime.
+- [ ] **Database migration (CAD parsing / allowlist storage — Batch C):** See **§I.2** below (staging first, then production). Until this runs on a given database, **`GET/PATCH /api/cad/parsing-config`** and **`/api/cad/allowlist`** will error for that environment.
+
+### I.2 Run Batch C migration: **staging first**, then **production**
+
+**Project root:** The folder on your computer that contains **`package.json`** and a **`prisma`** folder. Example: `FireUltimate-V1.0.0.0` (name or path may differ). Check in Terminal: `ls package.json prisma` — both files must exist in that directory.
+
+---
+
+#### Part A — Staging database (do this first)
+
+1. Open **[https://dashboard.render.com](https://dashboard.render.com)** and sign in.
+2. Open the **Web Service** that runs your **staging** API (the one tied to **`*.staging.fireultimate.app`** or your staging hostname).
+3. Click **Environment** in the left sidebar.
+4. Find **`DATABASE_URL`**. Reveal/copy the **full** value (it starts with `postgresql://`). This is the **staging** Postgres connection string (often a Neon URL).
+5. On your Mac, open **Terminal**.
+6. Go to the **project root**, for example:
+   ```bash
+   cd ~/CursorProjects/FireUltimate-V1.0.0.0
+   ```
+   Use your real path if different. Confirm:
+   ```bash
+   ls package.json prisma
+   ```
+   You should see both listed.
+7. In your editor, open **`.env.server`** in that same folder (copy from **`.env.server.example`** if you do not have it yet).
+8. Set this line to the **staging** URL you copied (one line, no spaces around `=`):
+   ```bash
+   DATABASE_URL=postgresql://...
+   ```
+   Save. **Do not commit** `.env.server` to git.
+9. Run the migration **from the project root**:
+   ```bash
+   node --env-file=.env.server -e "require('child_process').execSync('npx prisma migrate deploy', {stdio:'inherit', env: process.env})"
+   ```
+10. In the output, confirm you see **`20260409140000_add_cad_parsing_settings_and_allowlist`** applied (or “already applied”) and **“All migrations have been successfully applied.”**
+11. **Redeploy** your **staging** service on Render if the API code with Batch C is not already live (so the running app matches the updated database).
+
+---
+
+#### Part B — Production database (after staging is done)
+
+1. In **Render**, open the **Web Service** for **production** (the one that serves **`cifpdil.fireultimate.app`** or your live hostname — **not** the staging service).
+2. **Environment** → copy **`DATABASE_URL`** for **production**. It is usually **different** from staging (different Neon branch or project).
+3. Edit **`.env.server`** again. Replace the **`DATABASE_URL=`** line with the **production** connection string only. Save.
+4. In Terminal, **same project root**, run the **exact same command**:
+   ```bash
+   node --env-file=.env.server -e "require('child_process').execSync('npx prisma migrate deploy', {stdio:'inherit', env: process.env})"
+   ```
+5. Confirm success in the terminal again.
+6. **Redeploy** the **production** Render service if needed so the latest API code is running.
+
+---
+
+#### After both
+
+- Optionally change **`.env.server`** back to **staging** `DATABASE_URL` for day-to-day local work, or keep a private note of which database you pointed at last.
+- Never paste **`DATABASE_URL`** or secrets into public chat or commit them to the repo.
 - [ ] **Smoke test (email path):** Send a real test email to the CAD address from your inbox.
   - **Render:** Service → **Logs** → look for **`POST /api/cad/inbound-email`** with status **200** (not **503** / **401**).
   - **App:** Log in as admin → **Admin Functions** → **Dispatch Parsing Settings** (parent) → sidebar **Raw Email** → confirm a new row appears.
