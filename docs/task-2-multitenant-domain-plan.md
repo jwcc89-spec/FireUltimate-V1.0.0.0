@@ -370,6 +370,12 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 
 Use this section as the high-level backlog pointer. Track detailed deferred/future items in `docs/later-changes-backlog.md` going forward.
 
+### Repair plan (October 2026) — code version decision (Step 4)
+- **Decision (2026-10-28/29):** All repair work (Stages B–D) builds on staging's version, `submenu/neris-golive-cifpd` (`2d985fa`), in a separate practice branch (`cursor/stage-b-foundation-b5ff`). Re-verified: `main` (`3f9b97a`, production) has no code the staging branch lacks; merging `main` into it produces no difference.
+- **Production** stays on `main` until a planned release that follows the Data safety rules (fresh Neon backup, rehearsal on a copy of production, staging first).
+- **Now:** answer the open Decisions questions; then Stage B Step 5 (server-side session authentication), which needs explicit approval because it changes auth logic.
+- **Later:** Stage C (Fire Recovery) and Stage D (CAD) per the repair plan.
+
 ---
 
 ## Phase 5 — Tenant-Scoped APIs
