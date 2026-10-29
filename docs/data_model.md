@@ -79,7 +79,7 @@ Login account for a tenant. Auth is stored only in this table, not in `Departmen
 **Notes**
 
 - Passwords must be stored as bcrypt hashes.
-- Roles in use: `admin`, `user`.
+- Roles in use: `user`, `subadmin`, `admin`, `superadmin`. A higher role can do everything a lower role can do.
 
 ---
 
@@ -230,3 +230,43 @@ Some business/domain data currently lives in `DepartmentDetails.payloadJson` (an
 - reporting/export integrity
 
 Agents must **not** migrate JSON-backed structures into new database tables without explicit approval and a documented migration plan.
+
+---
+
+## 11. RolePermission
+
+One row per department per named action. It stores the lowest role allowed to do that action.
+
+**Key fields**
+
+- `id` (cuid)
+- `tenantId`
+- `permission` (for example `incidents.create` or `billing.submit`)
+- `minimumRole` (`user`, `subadmin`, `admin`, or `superadmin`)
+- `createdAt`, `updatedAt`
+
+**Notes**
+
+- Unique on `tenantId` + `permission`. If a department has no row, the server uses the built-in default.
+- Add-only. Approved October 29, 2026. Not applied to staging or production yet.
+
+---
+
+## 12. AccountAuditLog
+
+One row each time an account is created, edited, reset, or deleted.
+
+**Key fields**
+
+- `id` (cuid)
+- `tenantId`
+- `actorUserId` (optional; the person who made the change)
+- `actorUsername`
+- `action`
+- `targetUsername`
+- `detail` (plain text; never a password)
+- `createdAt`
+
+**Notes**
+
+- Add-only. Approved October 29, 2026. Not applied to staging or production yet.

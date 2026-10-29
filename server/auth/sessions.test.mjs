@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import bcrypt from "bcryptjs";
-import { PUBLIC_API_ROUTES } from "./sessions.mjs";
+import { PUBLIC_API_ROUTES, normalizeRole } from "./sessions.mjs";
 
 const DATABASE_URL = "postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable";
 const databaseHost = new URL(DATABASE_URL).hostname;
@@ -22,6 +22,8 @@ const APPROVED_PUBLIC = new Set([
 ]);
 
 test("server sign-in passes", async () => {
+  assert.equal(normalizeRole("super_admin"), "superadmin");
+  assert.equal(normalizeRole("sub-admin"), "subadmin");
   assert.deepEqual([...PUBLIC_API_ROUTES].sort(), [...APPROVED_PUBLIC].sort());
 
   execFileSync("npx", ["prisma", "generate"], { stdio: "inherit", env: process.env });
@@ -41,6 +43,9 @@ test("server sign-in passes", async () => {
   });
   const user = await prisma.user.create({
     data: { tenantId: demo.id, username: "chief", passwordHash, role: "user" },
+  });
+  const ff = await prisma.user.create({
+    data: { tenantId: demo.id, username: "ff", passwordHash, role: "user" },
   });
   const other = await prisma.tenant.create({
     data: { slug: "other", name: "Other Fire", status: "active" },
@@ -150,6 +155,121 @@ test("server sign-in passes", async () => {
     const promoted = await call("/api/auth/session", { cookie: first.pair });
     assert.equal(promoted.status, 200);
     assert.equal(promoted.json.user.role, "admin");
+
+    const ffLogin = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "ff", password },
+    });
+    assert.equal(ffLogin.status, 200);
+    assert.equal(ffLogin.json.user.role, "user");
+    const ffCookie = sessionCookie(ffLogin.setCookie);
+    const deniedIncident = await call("/api/incidents", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { incidentType: "Not allowed" },
+    });
+    assert.equal(deniedIncident.status, 403);
+    assert.equal(deniedIncident.json.code, "FORBIDDEN");
+    const deniedExport = await call("/api/neris/export", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: {},
+    });
+    assert.equal(deniedExport.status, 403);
+    assert.equal(deniedExport.json.code, "FORBIDDEN");
+    const deniedBilling = await call("/api/fire-recovery/submit", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { callNumber: "1" },
+    });
+    assert.equal(deniedBilling.status, 403);
+    const deniedUser = await call("/api/users", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { username: "newbie", password: "Password1!", userType: "User", name: "New Person" },
+    });
+    assert.equal(deniedUser.status, 403);
+
+    const adminIncident = await call("/api/incidents", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { incidentType: "Admin created" },
+    });
+    assert.equal(adminIncident.status, 201);
+    const deniedSuper = await call("/api/users", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { username: "boss", password: "Password1!", userType: "Super Admin", name: "Boss" },
+    });
+    assert.equal(deniedSuper.status, 403);
+    const createdUser = await call("/api/users", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { username: "newbie", password: "Password1!", userType: "User", name: "New Person" },
+    });
+    assert.equal(createdUser.status, 201);
+    const audit = await prisma.accountAuditLog.findFirst({
+      where: { tenantId: demo.id, targetUsername: "newbie", action: "create" },
+    });
+    assert.ok(audit);
+    assert.equal(audit.actorUsername, "chief");
+    assert.doesNotMatch(`${audit.detail} ${audit.action}`, /Password1/);
+    const keptSettings = await call("/api/department-details", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { departmentName: "Demo Fire", userRecords: [] },
+    });
+    assert.equal(keptSettings.status, 200);
+    const ffStillThere = await prisma.user.findUnique({ where: { id: ff.id } });
+    assert.ok(ffStillThere);
+    const lowered = await call("/api/permissions/policy", {
+      method: "PUT",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { permission: "incidents.create", minimumRole: "user" },
+    });
+    assert.equal(lowered.status, 200);
+    const ffCreated = await call("/api/incidents", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { incidentType: "Firefighter created" },
+    });
+    assert.equal(ffCreated.status, 201);
+    const debugChange = await call("/api/permissions/policy", {
+      method: "PUT",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { permission: "neris.debug", minimumRole: "admin" },
+    });
+    assert.equal(debugChange.status, 403);
+    const renamed = await call(`/api/users/${ff.id}`, {
+      method: "PATCH",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { name: "Firefighter" },
+    });
+    assert.equal(renamed.status, 200);
+    const owner = await prisma.user.create({
+      data: { tenantId: demo.id, username: "owner", passwordHash, role: "superadmin" },
+    });
+    const blockedDelete = await call(`/api/users/${owner.id}`, {
+      method: "DELETE",
+      cookie: first.pair,
+      requestOrigin: origin,
+    });
+    assert.equal(blockedDelete.status, 403);
+    const ownerRemains = await prisma.user.findUnique({ where: { id: owner.id } });
+    assert.ok(ownerRemains);
 
     const second = await call("/api/auth/login", {
       method: "POST",

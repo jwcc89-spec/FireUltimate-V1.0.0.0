@@ -111,6 +111,8 @@ import {
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
 import { getRecurrenceIntervalDays, toDateKey } from "./scheduleUtils";
 import { onSessionExpired } from "./api/http";
+import { RolePermissionsPanel } from "./RolePermissionsPanel";
+import { useMyPermissions } from "./useMyPermissions";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -3071,10 +3073,14 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const visibleMenus = useMemo(
-    () => getVisibleMenus(session.role),
-    [session.role],
-  );
+  const permissionGrants = useMyPermissions();
+  const visibleMenus = useMemo(() => {
+    const menus = getVisibleMenus(session.role);
+    if (permissionGrants && permissionGrants["incidents.view"] === false) {
+      return menus.filter((menu) => menu.id !== "incidentsMapping");
+    }
+    return menus;
+  }, [permissionGrants, session.role]);
   const activeMenu = useMemo(
     () => getMainMenuByPath(location.pathname),
     [location.pathname],
@@ -3771,6 +3777,8 @@ function IncidentsListPage({
   onCreateIncidentCall,
 }: IncidentsListPageProps) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canCreateIncident = permissionGrants?.["incidents.create"] === true;
   const isDemoTenant = useIsDemoTenant();
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [fieldEditorError, setFieldEditorError] = useState("");
@@ -4169,9 +4177,11 @@ function IncidentsListPage({
               Export Call Queue
             </button>
           ) : null}
-          <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
-            Create Incident
-          </button>
+          {canCreateIncident ? (
+            <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
+              Create Incident
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -4284,7 +4294,8 @@ function IncidentsListPage({
                   <tr>
                     <td colSpan={2}>
                       <div className="empty-message">
-                        No incidents yet. Click Create Incident to start a live record.
+                        No incidents yet.
+                        {canCreateIncident ? " Click Create Incident to start a live record." : ""}
                       </div>
                     </td>
                   </tr>
@@ -5812,6 +5823,8 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
 
 function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canSubmitBilling = permissionGrants?.["billing.submit"] === true;
   const [frSending, setFrSending] = useState(false);
   const incident =
     getIncidentCallDetail(callNumber) ??
@@ -5880,14 +5893,16 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </p>
         </div>
         <div className="header-actions">
-          <button
-            type="button"
-            className="primary-button compact-button"
-            disabled={frSending}
-            onClick={handleSendFireRecovery}
-          >
-            {frSending ? "Sending…" : "Send to Fire Recovery"}
-          </button>
+          {canSubmitBilling ? (
+            <button
+              type="button"
+              className="primary-button compact-button"
+              disabled={frSending}
+              onClick={handleSendFireRecovery}
+            >
+              {frSending ? "Sending…" : "Send to Fire Recovery"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondary-button compact-button"
@@ -9297,6 +9312,7 @@ function DepartmentDetailsPage({
                   <div className="panel-header">
                     <h2>Access / Restrictions</h2>
                   </div>
+                  <RolePermissionsPanel />
                   <div className="department-collection-grid">
                     {accessCards.map((definition) => (
                       <div key={definition.key} className="department-collection-card">
@@ -13426,37 +13442,17 @@ function App() {
         dispatchInfo: patch.dispatchInfo,
       };
       try {
-        const updated = await updateIncident(callNumber, apiPatch);
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) =>
-            entry.callNumber === callNumber ? updated : entry,
-          );
-          writeIncidentQueue(next);
-          return next;
-        });
-      } catch {
-        const patchEntries = Object.entries(patch) as Array<[keyof IncidentCallSummary, unknown]>;
-        setIncidentCalls((previous) => {
-          let didChange = false;
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            const hasRealChange = patchEntries.some(
-              ([key, value]) => value !== undefined && !Object.is(entry[key], value),
-            );
-            if (!hasRealChange) return entry;
-            didChange = true;
-            return {
-              ...entry,
-              ...patch,
-              callNumber: entry.callNumber,
-              lastUpdated: "Just now",
-            };
-          });
-          if (!didChange) return previous;
-          writeIncidentQueue(next);
-          return next;
-        });
-      }
+      const updated = await updateIncident(callNumber, apiPatch);
+      setIncidentCalls((previous) => {
+        const next = previous.map((entry) =>
+          entry.callNumber === callNumber ? updated : entry,
+        );
+        writeIncidentQueue(next);
+        return next;
+      });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "The incident was not updated.");
+    }
     },
     [],
   );
@@ -13496,22 +13492,8 @@ function App() {
           writeIncidentQueue(next);
           return next;
         });
-      } catch {
-        const nowIso = new Date().toISOString();
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            return {
-              ...entry,
-              deletedAt: nowIso,
-              deletedBy: actor,
-              deletedReason: reason?.trim() || "Deleted by user.",
-              lastUpdated: "Just now",
-            };
-          });
-          writeIncidentQueue(next);
-          return next;
-        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The incident was not deleted.");
       }
     } else {
       try {
@@ -13525,21 +13507,8 @@ function App() {
           writeIncidentQueue(next);
           return next;
         });
-      } catch {
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            return {
-              ...entry,
-              deletedAt: undefined,
-              deletedBy: undefined,
-              deletedReason: undefined,
-              lastUpdated: "Just now",
-            };
-          });
-          writeIncidentQueue(next);
-          return next;
-        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The incident was not restored.");
       }
     }
   };

@@ -32,6 +32,8 @@ model Tenant {
   nerisDrafts             NerisDraft[]
   fireRecoveryIncidentBillings FireRecoveryIncidentBilling[]
   sessions                    Session[]
+  rolePermissions             RolePermission[]
+  accountAuditLogs            AccountAuditLog[]
 }
 
 /// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.
@@ -109,6 +111,37 @@ model Session {
   @@index([tenantId])
   @@index([userId])
   @@index([expiresAt])
+}
+
+/// One row per department per action: the lowest role allowed to do that action.
+model RolePermission {
+  id          String   @id @default(cuid())
+  tenantId    String
+  permission  String
+  minimumRole String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, permission])
+  @@index([tenantId])
+}
+
+/// Who changed an account, and what changed. Never stores a password.
+model AccountAuditLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  actorUserId    String?
+  actorUsername  String
+  action         String
+  targetUsername String
+  detail         String   @default("")
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
 }
 
 model DepartmentDetails {

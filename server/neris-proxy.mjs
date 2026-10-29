@@ -38,6 +38,19 @@ import {
   revokeAllSessions,
   revokeOtherSessions,
 } from "./auth/sessions.mjs";
+import {
+  PERMISSIONS,
+  accountChangeError,
+  canonicalRole,
+  isSelfNameOnlyUserPatch,
+  loadPolicy,
+  minimumRoleFor,
+  parseRole,
+  permissionForRequest,
+  policyChangeError,
+  roleLevel,
+  writeAccountAudit,
+} from "./auth/permissions.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -246,104 +259,11 @@ function validatePasswordPolicy(password) {
 }
 
 function mapUserTypeToRole(userType) {
-  const normalized = trimValue(userType).toLowerCase();
-  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
-    return "superadmin";
-  }
-  return normalized.includes("admin") ? "admin" : "user";
-}
-
-async function hashAndSyncTenantUsers(tenantId, payload) {
-  if (!payload || typeof payload !== "object" || !Array.isArray(payload.userRecords)) {
-    return payload;
-  }
-
-  const incomingUserRecords = payload.userRecords;
-  const existingUsers = await prisma.user.findMany({
-    where: { tenantId },
-  });
-  const existingUsersByUsername = new Map(
-    existingUsers.map((user) => [user.username.trim().toLowerCase(), user]),
-  );
-
-  const seenUsernames = new Set();
-  const nextUserRecords = [];
-
-  for (const candidate of incomingUserRecords) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const normalizedName = trimValue(candidate.name);
-    const normalizedUsername = trimValue(candidate.username).toLowerCase();
-    const userType = trimValue(candidate.userType) || "User";
-    if (!normalizedUsername) {
-      continue;
-    }
-
-    const existingUser = existingUsersByUsername.get(normalizedUsername);
-    const incomingPassword = String(candidate.password ?? "").trim();
-    let passwordHash = "";
-
-    if (incomingPassword) {
-      passwordHash = isBcryptHash(incomingPassword)
-        ? incomingPassword
-        : await hashPassword(incomingPassword);
-    } else if (existingUser?.passwordHash) {
-      // Preserve existing hash when editing non-password user fields.
-      passwordHash = String(existingUser.passwordHash);
-    } else {
-      // Skip users that have no password and no existing hash.
-      continue;
-    }
-
-    const savedUser = await prisma.user.upsert({
-      where: {
-        tenantId_username: {
-          tenantId,
-          username: normalizedUsername,
-        },
-      },
-      update: {
-        role: mapUserTypeToRole(userType),
-        passwordHash,
-      },
-      create: {
-        tenantId,
-        username: normalizedUsername,
-        role: mapUserTypeToRole(userType),
-        passwordHash,
-      },
-    });
-    if (existingUser && String(existingUser.passwordHash) !== passwordHash) {
-      await revokeAllSessions(prisma, savedUser.id);
-    }
-
-    seenUsernames.add(normalizedUsername);
-    nextUserRecords.push({
-      ...candidate,
-      name: normalizedName,
-      username: normalizedUsername,
-      userType,
-      // Store hashed passwords in DepartmentDetails payload.
-      password: passwordHash,
-    });
-  }
-
-  // Keep auth table aligned with Department Access user list.
-  await prisma.user.deleteMany({
-    where: {
-      tenantId,
-      username: {
-        notIn: Array.from(seenUsernames),
-      },
-    },
-  });
-
-  return {
-    ...payload,
-    userRecords: nextUserRecords,
-  };
+  const normalized = trimValue(userType).toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "super_admin" || normalized === "superadmin") return "superadmin";
+  if (normalized === "sub_admin" || normalized === "subadmin") return "subadmin";
+  if (normalized === "admin" || normalized.includes("admin")) return "admin";
+  return "user";
 }
 
 function normalizeHostname(hostname) {
@@ -1881,6 +1801,42 @@ app.use(async (request, response, next) => {
   }
 });
 
+app.use(async (request, response, next) => {
+  try {
+    if (!request.auth) {
+      next();
+      return;
+    }
+    let permission = permissionForRequest(request.method, request.path, request.body);
+    if (
+      permission === "users.manage" &&
+      isSelfNameOnlyUserPatch(request.method, request.path, request.body, request.auth)
+    ) {
+      permission = null;
+    }
+    if (!permission) {
+      next();
+      return;
+    }
+    const minimumRole = await minimumRoleFor(prisma, request.tenant.id, permission);
+    const allowed = minimumRole != null && roleLevel(request.auth.role) >= roleLevel(minimumRole);
+    if (!allowed) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "You do not have permission to do that.",
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Permission check failed.",
+    });
+  }
+});
+
 app.get("/api/neris/health", async (request, response) => {
   const config = getProxyConfig();
   const requiresUserCredentials = config.grantType === "password";
@@ -1926,6 +1882,109 @@ app.post("/api/auth/logout", async (request, response) => {
   }
   clearSessionCookie(response, request);
   response.json({ ok: true });
+});
+
+app.get("/api/permissions", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const { grants } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), grants });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not load permissions.",
+    });
+  }
+});
+
+app.get("/api/permissions/policy", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const { policy } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), policy });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not load the permission list.",
+    });
+  }
+});
+
+app.put("/api/permissions/policy", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const permission = trimValue(body.permission);
+    const known = PERMISSIONS.some((item) => item.key === permission);
+    if (!known) {
+      response.status(400).json({ ok: false, message: "Unknown permission." });
+      return;
+    }
+    const nextMinimum = parseRole(body.minimumRole);
+    if (!nextMinimum) {
+      response.status(400).json({ ok: false, message: "Unknown role." });
+      return;
+    }
+    const currentMinimum = await minimumRoleFor(prisma, tenantId, permission);
+    const denial = policyChangeError(request.auth.role, currentMinimum, nextMinimum);
+    if (denial) {
+      response.status(403).json({ ok: false, code: "FORBIDDEN", message: denial });
+      return;
+    }
+    await prisma.rolePermission.upsert({
+      where: { tenantId_permission: { tenantId, permission } },
+      update: { minimumRole: nextMinimum },
+      create: { tenantId, permission, minimumRole: nextMinimum },
+    });
+    const { policy } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), policy });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not save the permission.",
+    });
+  }
+});
+
+app.get("/api/account-audit", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const entries = await prisma.accountAuditLog.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        actorUsername: true,
+        action: true,
+        targetUsername: true,
+        detail: true,
+        createdAt: true,
+      },
+    });
+    response.json({ ok: true, entries });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not load the account log.",
+    });
+  }
 });
 
 app.get("/api/tenant/context", (request, response) => {
@@ -3772,8 +3831,9 @@ app.post("/api/department-details", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const payloadWithSyncedUsers = await hashAndSyncTenantUsers(tenantId, body);
-    const { userRecords: _dropped, ...payloadWithoutAuth } = payloadWithSyncedUsers;
+    // Accounts change only through /api/users. Saving department settings never creates, edits, or deletes them.
+    const payloadToStore = { ...body };
+    delete payloadToStore.userRecords;
     const existingDetails = await prisma.departmentDetails.findUnique({
       where: { tenantId },
       select: { payloadJson: true },
@@ -3782,7 +3842,6 @@ app.post("/api/department-details", async (request, response) => {
       existingDetails?.payloadJson && typeof existingDetails.payloadJson === "object"
         ? existingDetails.payloadJson
         : {};
-    const payloadToStore = _dropped !== undefined ? payloadWithoutAuth : payloadWithSyncedUsers;
     const tenantEntityIdFromPayload = readTenantEntityIdFromDepartmentPayload(payloadToStore);
     // Keep non-auth user profile metadata when saving department details.
     if (
@@ -4206,10 +4265,29 @@ async function removeTenantUserTypeLabel(tenantId, username) {
 }
 
 function roleToUserTypeLabel(role) {
-  const r = trimValue(role || "").toLowerCase();
+  const r = trimValue(role || "").toLowerCase().replace(/[\s-]+/g, "_");
   if (r === "superadmin" || r === "super_admin") return "Super Admin";
+  if (r === "subadmin" || r === "sub_admin") return "Subadmin";
   if (r === "admin") return "Admin";
   return "User";
+}
+
+async function refuseAccountChange(response, tenantId, actor, change) {
+  const denial = await accountChangeError(prisma, tenantId, actor, change);
+  if (!denial) return false;
+  response.status(403).json({ ok: false, code: "FORBIDDEN", message: denial });
+  return true;
+}
+
+async function auditAccountChange(tenantId, actor, action, targetUsername, detail) {
+  await writeAccountAudit(prisma, {
+    tenantId,
+    actorUserId: actor?.userId ?? null,
+    actorUsername: actor?.username ?? "",
+    action,
+    targetUsername,
+    detail,
+  });
 }
 
 function toUserResponse(user, fullNameMap = {}, userTypeLabelMap = {}) {
@@ -4275,17 +4353,32 @@ app.post("/api/users", async (request, response) => {
       response.status(400).json({ ok: false, message: passwordPolicyError });
       return;
     }
+    const nextRole = mapUserTypeToRole(userType);
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "create",
+      target: null,
+      nextRole,
+    })) {
+      return;
+    }
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
       data: {
         tenantId,
         username,
         passwordHash,
-        role: mapUserTypeToRole(userType),
+        role: nextRole,
       },
     });
     await setTenantUserFullName(tenantId, username, fullName);
     await setTenantUserTypeLabel(tenantId, username, userType);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "create",
+      username,
+      `Created account with role ${nextRole}.`,
+    );
     response.status(201).json({
       ok: true,
       user: toUserResponse(user, { [username]: fullName }, { [username]: userType }),
@@ -4354,6 +4447,20 @@ app.patch("/api/users/:id", async (request, response) => {
       }
       updates.passwordHash = await hashPassword(nextPassword);
     }
+    const nameOnlySelf =
+      request.auth?.userId === existing.id &&
+      updates.username === undefined &&
+      updates.role === undefined &&
+      updates.passwordHash === undefined;
+    if (!nameOnlySelf) {
+      if (await refuseAccountChange(response, tenantId, request.auth, {
+        action: "update",
+        target: existing,
+        nextRole: updates.role ?? existing.role,
+      })) {
+        return;
+      }
+    }
     const user = await prisma.user.update({
       where: { id },
       data: updates,
@@ -4375,6 +4482,21 @@ app.patch("/api/users/:id", async (request, response) => {
       nextUserTypeLabel || roleToUserTypeLabel(user.role),
       trimValue(existing.username).toLowerCase(),
     );
+    const changes = [];
+    if (updates.username) changes.push("Changed username.");
+    if (updates.role) changes.push(`Changed role to ${canonicalRole(user.role)}.`);
+    if (updates.passwordHash) changes.push("Changed password.");
+    if (body.name !== undefined) changes.push("Changed display name.");
+    if (body.userType !== undefined && !updates.role) changes.push("Changed user type label.");
+    if (changes.length > 0) {
+      await auditAccountChange(
+        tenantId,
+        request.auth,
+        "update",
+        nextUsername,
+        changes.join(" "),
+      );
+    }
     response.json({
       ok: true,
       user: toUserResponse(
@@ -4424,10 +4546,16 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
     }
     const existing = await prisma.user.findFirst({
       where: { id, tenantId },
-      select: { id: true },
     });
     if (!existing) {
       response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "reset-password",
+      target: existing,
+      nextRole: existing.role,
+    })) {
       return;
     }
     await prisma.user.update({
@@ -4435,6 +4563,13 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
       data: { passwordHash: await hashPassword(newPassword) },
     });
     await revokeAllSessions(prisma, existing.id);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "reset-password",
+      existing.username,
+      "Reset password.",
+    );
     response.status(200).json({ ok: true, message: "Password reset." });
   } catch (error) {
     response.status(500).json({
@@ -4464,9 +4599,23 @@ app.delete("/api/users/:id", async (request, response) => {
       response.status(404).json({ ok: false, message: "User not found." });
       return;
     }
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "delete",
+      target: existing,
+      nextRole: null,
+    })) {
+      return;
+    }
     await prisma.user.delete({ where: { id } });
     await removeTenantUserFullName(tenantId, existing.username);
     await removeTenantUserTypeLabel(tenantId, existing.username);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "delete",
+      existing.username,
+      `Deleted account with role ${canonicalRole(existing.role)}.`,
+    );
     response.status(204).send();
   } catch (error) {
     response.status(500).json({

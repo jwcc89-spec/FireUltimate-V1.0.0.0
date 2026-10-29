@@ -57,10 +57,10 @@ const capabilities = [
   ["users.manage", "Create, edit, reset, delete accounts", "Admin", "Today: no login needed. Superadmin accounts protected from admins (existing plan)."],
   ["settings.department", "Save Department Details", "Admin", "Saving settings will no longer create, change or delete accounts."],
   ["incidents.view", "See the Incidents tab", "User", "Decided Oct 28: admin chooses roles. Default keeps today's behavior."],
-  ["incidents.create", "Create incidents by hand", "Open question", "Decided Oct 28: admin chooses roles."],
+  ["incidents.create", "Create incidents by hand", "Admin", "Approved Oct 29. A department admin can lower it."],
   ["incidents.delete", "Delete incidents", "Admin", "Decided Oct 28."],
   ["reports.edit", "Edit run reports (NERIS drafts)", "User", "Locked reports enforced in Step 9A."],
-  ["neris.export", "Export to NERIS", "Open question", "Today anyone can."],
+  ["neris.export", "Send a NERIS report", "Admin", "Approved Oct 29. A department admin can lower it."],
   ["neris.settings", "NERIS settings and entity refresh", "Admin", ""],
   ["neris.debug", "NERIS debug tools", "Superadmin", "Troubleshooting only."],
   ["billing.submit", "Send to Fire Recovery", "Admin", "Decided Oct 29."],
@@ -71,9 +71,10 @@ const capabilities = [
 ];
 
 const files = [
-  ["prisma/schema.prisma + one new migration", "Add a Session table (add-only; nothing existing changes).", "Built. Not applied to staging or production."],
+  ["prisma/schema.prisma + add-only migrations", "Add Session, RolePermission, and AccountAuditLog. Nothing existing changes.", "Built. Not applied to staging or production."],
   ["server/auth/sessions.mjs (new)", "Create, look up and cancel passes; cookie handling; request-origin check; failed-login lockout.", "New"],
-  ["server/neris-proxy.mjs", "Turn on the sign-in check for every route except the public list; login sets the cookie; add session and logout routes; change-password uses the signed-in person; password reset and account delete cancel passes; login returns the role from the user table only.", "Built"],
+  ["server/auth/permissions.mjs (new)", "Named permissions, minimum roles, account-change safety rules, and the account-change log.", "Built in Step 6"],
+  ["server/neris-proxy.mjs", "Sign-in check, then a permission check. Department settings no longer create or delete accounts. Account changes are logged and cannot remove the last admin or superadmin.", "Built"],
   ["src/App.tsx", "Ask the server 'who am I' on load; logout calls the server; show a sign-in box over the current screen on any refused request.", "Changed"],
   ["src/api/http.ts (new) or src/main.tsx", "One place that notices a refused request and opens the sign-in box.", "New"],
   ["server/auth/sessions.test.mjs (new) + package.json test list", "Automated tests.", "New"],
@@ -90,6 +91,8 @@ const tests = [
   ["6 wrong passwords", "Locked for 15 minutes", "Approved Oct 29"],
   ["Browser closed and reopened", "Sign-in box shown", "Approved Oct 29"],
   ["Normal login, browse, save, logout", "Works", "Manual check on staging"],
+  ["Regular user creates an incident, sends a NERIS report, or sends billing", "Refused (403)", "Built in Step 6"],
+  ["Admin saves department settings with an empty user list", "Accounts stay", "Built in Step 6"],
 ];
 
 const decisions = [
@@ -98,12 +101,9 @@ const decisions = [
   ["3", "Lock an account for 15 minutes after 5 wrong passwords in a row?", "Approved Oct 29: Yes"],
   ["4", "On logout, clear cached department data from the browser (protects shared station computers)?", "Approved Oct 29: Yes, and closing the browser also signs the person out"],
   ["5", "Approve the server and app changes in 'What changes' (they touch authentication logic).", "Approved Oct 29 and built on the practice branch."],
-];
-
-const later = [
-  ["Who may export to NERIS by default: all users, or admins only?", "Step 6"],
-  ["Who may create incidents by hand by default: all users, or admins only?", "Step 6"],
-  ["Approve a table for each department's role permissions and a table for the account-change log (both add-only).", "Step 6"],
+  ["6", "Who may send a NERIS report by default?", "Approved Oct 29: admins only. Sending a NERIS report for billing is also admin-only."],
+  ["7", "Who may create incidents by hand by default?", "Approved Oct 29: admins only."],
+  ["8", "Approve a permission list and an account-change log (both add-only).", "Approved Oct 29 and built on the practice branch. Not applied to staging or production."],
 ];
 
 function Overview() {
@@ -186,13 +186,12 @@ function Access() {
 function Changes() {
   return (
     <Stack gap={16}>
-      <H2>What changes in Step 5</H2>
+      <H2>What changed</H2>
       <Table headers={["File", "Change", "Type"]} rows={files} striped />
-      <H2>Not in Step 5</H2>
+      <H2>Still later</H2>
       <Table
         headers={["Item", "Where it happens"]}
         rows={[
-          ["Permission checks per action, account-change log, department settings no longer changing accounts", "Step 6"],
           ["Trusting only Render's address information (X-Forwarded-Host)", "Step 7"],
           ["Server tests against a temporary database on every GitHub change", "Step 9"],
           ["Render or production settings", "Not touched; production keeps running main until a planned release"],
@@ -224,8 +223,8 @@ function Testing() {
         headers={["Stage", "What happens", "Data touched"]}
         rows={[
           ["Practice branch", "Build and test; you review the pull request.", "None"],
-          ["Staging", "After your approval: backup, add the Session table to staging, combine into the staging branch, everyone signs in again, you run a short checklist.", "Staging database: one new empty table"],
-          ["Production", "Only in the planned release (Step 18) with a fresh backup and a rehearsal on a copy.", "Production database: one new empty table"],
+          ["Staging", "After your approval: backup, add the Session, RolePermission, and AccountAuditLog tables to staging, combine into the staging branch, everyone signs in again, you run a short checklist.", "Staging database: three new empty tables"],
+          ["Production", "Only in the planned release (Step 18) with a fresh backup and a rehearsal on a copy.", "Production database: the same three new empty tables"],
         ]}
       />
     </Stack>
@@ -237,8 +236,6 @@ function Decisions() {
     <Stack gap={16}>
       <H2>Decisions — all answered</H2>
       <Table headers={["#", "Question", "Status"]} rows={decisions} striped />
-      <H2>Can wait until Step 6</H2>
-      <Table headers={["Question", "Step"]} rows={later} />
     </Stack>
   );
 }
@@ -251,7 +248,7 @@ export default function Design() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Step 5 built on the practice branch October 29, 2026 · Not on staging or production · Step 6 not started · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/step-5-6-secure-sessions-design.canvas.tsx</Text>
+        <Text size="small" tone="tertiary">Steps 5 and 6 built on the practice branch October 29, 2026 · Not on staging or production · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/step-5-6-secure-sessions-design.canvas.tsx</Text>
         <H1>Secure sessions and access controls — design</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

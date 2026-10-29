@@ -57,12 +57,12 @@ const stages: StageDef[] = [
         fix: "After a correct password, the server issues a secure sign-in pass. Every later request must present it. Approved October 29: signed out after 60 minutes with no activity, locked for 15 minutes after 5 wrong passwords, cached department data cleared on logout, and closing the browser signs the person out.",
         who: "Me.",
         done: "Built on the practice branch October 29, 2026. Automated tests prove requests without a valid pass are refused. Not on staging or production until a planned release." },
-      { n: "6", title: "Check permissions on the server, not just the screen", status: "Updated",
+      { n: "6", title: "Check permissions on the server, not just the screen", status: "Done",
         problem: "The user's role is stored in the web browser and trusted. Admin buttons are hidden, but the actions behind them are not protected. Users can be created, promoted to admin, reset or deleted without logging in; saving department settings can also change user accounts; and anyone can trigger a NERIS export.",
         why: "Hiding a button is like hiding a key under the mat.",
-        fix: "The server looks up each person's real role and department for every action. User management becomes admin-only with a log of every account change, department settings saves no longer change user accounts, and NERIS export is limited to approved roles. Add Admin Functions settings where each department's admin chooses which roles may see the Incidents tab, create incidents by hand, and delete incidents (deleting is admin-only by default) — all decided October 28. Decided October 29: the same admin-grantable pattern applies to submitting Fire Recovery billing, changing CAD rules, and changing Fire Recovery settings — admin only by default, and the department admin may grant or revoke each one for other roles. The server enforces the same choices.",
+        fix: "The server looks up each person's real role and department for every action. User management becomes admin-only with a log of every account change, department settings saves no longer change user accounts, and NERIS export is limited to approved roles. Add Admin Functions settings where each department's admin chooses which roles may see the Incidents tab, create incidents by hand, and delete incidents (deleting is admin-only by default) — all decided October 28. Decided October 29: the same admin-grantable pattern applies to submitting Fire Recovery billing, changing CAD rules, and changing Fire Recovery settings — admin only by default, and the department admin may grant or revoke each one for other roles. The server enforces the same choices. Approved October 29: sending a NERIS report and sending a NERIS report for billing are admin-only by default, and creating an incident by hand is admin-only by default.",
         who: "Me; role defaults are decided (admin only, grantable by the department admin).",
-        done: "Tests prove regular users cannot perform admin actions, account changes appear in a log, and roles without permission cannot see the Incidents tab, create incidents by hand, or delete incidents." },
+        done: "Built on the practice branch October 29, 2026. Tests prove a regular user cannot create an incident, send a NERIS report, send billing, or create an account, and that saving department settings does not delete accounts. Not on staging or production until a planned release." },
       { n: "7", title: "Prove departments are fully separated", status: "Updated",
         problem: "Records are tagged by department, but separation relies only on the web address, which may be fakeable. All departments also share one set of NERIS login credentials.",
         why: "With hundreds of departments, an admin change in one must never affect another.",
@@ -277,6 +277,7 @@ const decided = [
   ["October 29, 2026", "Fire Recovery", "Corrections are expected to happen in Recovery Hub (therecoveryhub.com); confirm with Fire Recovery after testing.", "12"],
   ["October 29, 2026", "Fire Recovery", "All open Fire Recovery questions go in one combined email, drafted after sandbox testing.", "17"],
   ["October 29, 2026", "Sign-in", "Session table approved. Signed out after 60 minutes with no activity. Locked for 15 minutes after 5 wrong passwords. Logout clears cached department data, and closing the browser signs the person out.", "5"],
+  ["October 29, 2026", "Permissions", "Only admins can send a NERIS report, and only admins can send a NERIS report for billing. Only admins can create an incident by hand. The permission list and the account-change log are approved. Both are add-only. A department admin can lower a permission to their own role or a lower role.", "6"],
 ];
 
 const decisions = [
@@ -601,7 +602,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–5 done, Step 6 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
+        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–6 done, Step 7 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

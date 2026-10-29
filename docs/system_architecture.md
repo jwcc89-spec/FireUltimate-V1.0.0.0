@@ -68,7 +68,7 @@ There is a single backend process; no additional services. Tenant logic and NERI
 **Key behavior:**
 
 - **Tenant resolution (middleware)** — Resolves tenant from `Host` / `X-Forwarded-Host` via `TenantDomain`; localhost → demo tenant. Sets `request.tenant` for all `/api/*` routes (except admin).
-- **Auth** — After a correct password, the server stores a sign-in pass as a fingerprint in the `Session` table and hands the pass to the browser in an HttpOnly cookie. The cookie ends when the browser closes. Every `/api` route requires a valid pass except `POST /api/auth/login`, `GET /api/tenant/context`, `POST /api/cad/inbound-email` (shared secret), and `/api/admin` (platform admin key). The pass expires after 60 minutes with no activity. Five wrong passwords lock that account for 15 minutes. The role is read from the `User` table on every request. Routes: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`, `POST /api/auth/change-password`.
+- **Auth** — After a correct password, the server stores a sign-in pass as a fingerprint in the `Session` table and hands the pass to the browser in an HttpOnly cookie. The cookie ends when the browser closes. Every `/api` route requires a valid pass except `POST /api/auth/login`, `GET /api/tenant/context`, `POST /api/cad/inbound-email` (shared secret), and `/api/admin` (platform admin key). The pass expires after 60 minutes with no activity. Five wrong passwords lock that account for 15 minutes. The role is read from the `User` table on every request. Each action then checks a named permission against `RolePermission` (or the built-in default if that department has not changed it). Account creates, edits, password resets, and deletes are written to `AccountAuditLog` with no password. Saving department settings does not create or delete accounts. Routes: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`, `POST /api/auth/change-password`, `GET /api/permissions`, `GET /api/permissions/policy`, `PUT /api/permissions/policy`, `GET /api/account-audit`.
 - **Tenant/config** — `GET /api/tenant/context`, `GET|POST /api/department-details` (tenant-scoped).
 - **Users** — `GET|POST /api/users`, `PATCH|DELETE /api/users/:id`, `POST /api/users/:id/reset-password` (tenant-scoped).
 - **Scheduling** — `GET|POST /api/schedule-assignments` (tenant-scoped).
@@ -108,6 +108,8 @@ prisma.user.findMany({
 | TenantDomain | Hostname → tenant mapping for domain-based routing |
 | User | Tenant-scoped auth; username, passwordHash, role |
 | Session | Sign-in sheet. One row per login. Stores a fingerprint of the pass, not the pass itself. Add-only; nothing else in the database changes. |
+| RolePermission | One row per department per action: the lowest role allowed to do that action. Missing rows use the built-in default. Add-only. |
+| AccountAuditLog | Who changed an account, what changed, and when. Never stores a password. Add-only. |
 | DepartmentDetails | One per tenant; `payloadJson` holds department config — do not store auth secrets here |
 | ScheduleAssignments | Tenant-scoped schedule data by shiftType and dateKey |
 

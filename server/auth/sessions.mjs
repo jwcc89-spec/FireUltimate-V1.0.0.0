@@ -19,7 +19,12 @@ export const PUBLIC_API_ROUTES = new Set([
 const loginFailures = new Map();
 
 export function normalizeRole(role) {
-  const value = String(role ?? "").trim().toLowerCase();
+  const value = String(role ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+  if (value === "super_admin") return "superadmin";
+  if (value === "sub_admin") return "subadmin";
   return ROLES.has(value) ? value : "user";
 }
 
