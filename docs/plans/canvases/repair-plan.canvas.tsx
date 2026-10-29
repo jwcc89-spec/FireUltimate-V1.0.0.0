@@ -51,12 +51,12 @@ const stages: StageDef[] = [
     id: "B", name: "Stage B — The minimum foundation Fire Recovery and CAD need",
     summary: "These are the locks and safety checks that Fire Recovery and CAD both depend on. They also protect Crescent's live NERIS data in production and the real dispatch emails held on staging.",
     steps: [
-      { n: "5", title: "Make the server actually remember who logged in", status: "Next",
+      { n: "5", title: "Make the server actually remember who logged in", status: "Done",
         problem: "After login, the server forgets who you are and accepts requests from anyone who knows the department's web address.",
         why: "It is like a guard who checks your badge at the front door while every inner office stays unlocked. Fire Recovery must not go live before this is fixed.",
-        fix: "After a correct password, the server issues a secure, tamper-proof sign-in pass. Every later request must present it. Daily use barely changes; people may be asked to log in again after inactivity.",
+        fix: "After a correct password, the server issues a secure sign-in pass. Every later request must present it. Approved October 29: signed out after 60 minutes with no activity, locked for 15 minutes after 5 wrong passwords, cached department data cleared on logout, and closing the browser signs the person out.",
         who: "Me.",
-        done: "Automated tests prove requests without a valid pass are refused." },
+        done: "Built on the practice branch October 29, 2026. Automated tests prove requests without a valid pass are refused. Not on staging or production until a planned release." },
       { n: "6", title: "Check permissions on the server, not just the screen", status: "Updated",
         problem: "The user's role is stored in the web browser and trusted. Admin buttons are hidden, but the actions behind them are not protected. Users can be created, promoted to admin, reset or deleted without logging in; saving department settings can also change user accounts; and anyone can trigger a NERIS export.",
         why: "Hiding a button is like hiding a key under the mat.",
@@ -276,6 +276,7 @@ const decided = [
   ["October 29, 2026", "Fire Recovery", "Party information comes from the Reporting tab's Person/Owner > Vehicle section; its required fields are enforced for vehicle accidents.", "15"],
   ["October 29, 2026", "Fire Recovery", "Corrections are expected to happen in Recovery Hub (therecoveryhub.com); confirm with Fire Recovery after testing.", "12"],
   ["October 29, 2026", "Fire Recovery", "All open Fire Recovery questions go in one combined email, drafted after sandbox testing.", "17"],
+  ["October 29, 2026", "Sign-in", "Session table approved. Signed out after 60 minutes with no activity. Locked for 15 minutes after 5 wrong passwords. Logout clears cached department data, and closing the browser signs the person out.", "5"],
 ];
 
 const decisions = [
@@ -600,7 +601,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–4 done, Step 5 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
+        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–5 done, Step 6 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

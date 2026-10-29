@@ -23,6 +23,21 @@ import {
   postAddNerisIncidentForBilling,
   postIncidentBillingStatus,
 } from "./fireRecoveryClient.mjs";
+import {
+  PUBLIC_API_ROUTES,
+  applySessionCookie,
+  clearLoginLockouts,
+  clearSessionCookie,
+  createSession,
+  loginLockStatus,
+  noteLoginFailure,
+  noteLoginSuccess,
+  normalizeRole,
+  originAllowed,
+  readAuthFromRequest,
+  revokeAllSessions,
+  revokeOtherSessions,
+} from "./auth/sessions.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -282,7 +297,7 @@ async function hashAndSyncTenantUsers(tenantId, payload) {
       continue;
     }
 
-    await prisma.user.upsert({
+    const savedUser = await prisma.user.upsert({
       where: {
         tenantId_username: {
           tenantId,
@@ -300,6 +315,9 @@ async function hashAndSyncTenantUsers(tenantId, payload) {
         passwordHash,
       },
     });
+    if (existingUser && String(existingUser.passwordHash) !== passwordHash) {
+      await revokeAllSessions(prisma, savedUser.id);
+    }
 
     seenUsernames.add(normalizedUsername);
     nextUserRecords.push({
@@ -1605,27 +1623,6 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   return payload;
 }
 
-app.get("/api/neris/health", async (request, response) => {
-  const config = getProxyConfig();
-  const requiresUserCredentials = config.grantType === "password";
-  const tenantId = trimValue(request.tenant?.id);
-  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
-  response.json({
-    ok: true,
-    proxyPort: config.proxyPort,
-    baseUrl: config.baseUrl,
-    grantType: config.grantType,
-    requiresUserCredentials,
-    createIncidentUrlPrefix: config.createIncidentUrlPrefix,
-    usingStaticToken: Boolean(config.staticAccessToken),
-    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
-    hasUserCredentials: Boolean(config.username && config.password),
-    hasDefaultEntityId: Boolean(config.defaultEntityId),
-    hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
-    hasTenantEntityId: Boolean(tenantEntityId),
-  });
-});
-
 const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
 const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
 
@@ -1828,6 +1825,107 @@ app.use(async (request, response, next) => {
       message: error instanceof Error ? error.message : "Tenant resolution failed.",
     });
   }
+});
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+app.use(async (request, response, next) => {
+  try {
+    if (!request.path.startsWith("/api")) {
+      next();
+      return;
+    }
+    // Program-owner tools keep the platform admin key. CAD inbound keeps its shared secret.
+    if (request.path.startsWith("/api/admin") || request.path === "/api/cad/inbound-email") {
+      next();
+      return;
+    }
+    const routeKey = `${request.method} ${request.path}`;
+    const isPublic = PUBLIC_API_ROUTES.has(routeKey);
+    const mutating = MUTATING_METHODS.has(request.method);
+    if (isPublic) {
+      if (mutating && !originAllowed(request)) {
+        response.status(403).json({
+          ok: false,
+          message: "This action must come from the department's own website.",
+        });
+        return;
+      }
+      next();
+      return;
+    }
+    const auth = await readAuthFromRequest(prisma, request);
+    if (!auth) {
+      clearSessionCookie(response, request);
+      response.status(401).json({
+        ok: false,
+        code: "AUTH_REQUIRED",
+        message: "Sign in required.",
+      });
+      return;
+    }
+    if (mutating && !originAllowed(request)) {
+      response.status(403).json({
+        ok: false,
+        message: "This action must come from the department's own website.",
+      });
+      return;
+    }
+    request.auth = auth;
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Sign-in check failed.",
+    });
+  }
+});
+
+app.get("/api/neris/health", async (request, response) => {
+  const config = getProxyConfig();
+  const requiresUserCredentials = config.grantType === "password";
+  const tenantId = trimValue(request.tenant?.id);
+  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
+  response.json({
+    ok: true,
+    proxyPort: config.proxyPort,
+    baseUrl: config.baseUrl,
+    grantType: config.grantType,
+    requiresUserCredentials,
+    createIncidentUrlPrefix: config.createIncidentUrlPrefix,
+    usingStaticToken: Boolean(config.staticAccessToken),
+    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
+    hasUserCredentials: Boolean(config.username && config.password),
+    hasDefaultEntityId: Boolean(config.defaultEntityId),
+    hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
+    hasTenantEntityId: Boolean(tenantEntityId),
+  });
+});
+
+app.get("/api/auth/session", async (request, response) => {
+  const tenantId = request.tenant?.id;
+  const fullNameMap = tenantId ? await getTenantUserFullNameMap(tenantId) : {};
+  const username = request.auth.username;
+  const name = trimValue(fullNameMap[username.toLowerCase()]) || username;
+  response.json({
+    ok: true,
+    user: {
+      username,
+      name,
+      role: request.auth.role,
+    },
+  });
+});
+
+app.post("/api/auth/logout", async (request, response) => {
+  if (request.auth?.sessionId) {
+    await prisma.session.update({
+      where: { id: request.auth.sessionId },
+      data: { revokedAt: new Date() },
+    }).catch(() => {});
+  }
+  clearSessionCookie(response, request);
+  response.json({ ok: true });
 });
 
 app.get("/api/tenant/context", (request, response) => {
@@ -3546,7 +3644,15 @@ app.post("/api/auth/login", (request, response) => {
   }
 
   (async () => {
-    // Preferred path: tenant-scoped users table.
+    const lock = loginLockStatus(tenantId, submittedUsername);
+    if (lock.locked) {
+      response.status(429).json({
+        ok: false,
+        message: "Too many failed sign-in attempts. Try again in 15 minutes.",
+      });
+      return;
+    }
+
     const dbUser = await prisma.user.findUnique({
       where: {
         tenantId_username: {
@@ -3556,43 +3662,36 @@ app.post("/api/auth/login", (request, response) => {
       },
     });
 
-    if (dbUser) {
-      const storedHash = String(dbUser.passwordHash ?? "");
-      const valid = await verifyPassword(submittedPassword, storedHash);
-      if (!valid) {
-        response.status(401).json({
-          ok: false,
-          message: "Invalid username or password.",
-        });
-        return;
-      }
-      // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
-      if (!isBcryptHash(storedHash)) {
-        hashPassword(submittedPassword).then((hash) => {
-          prisma.user.update({
-            where: { id: dbUser.id },
-            data: { passwordHash: hash },
-          }).catch(() => {});
-        });
-      }
-      const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
-      const userType =
-        userTypeLabelMap[submittedUsername] ||
-        roleToUserTypeLabel(dbUser.role);
-      response.status(200).json({
-        ok: true,
-        user: {
-          name: dbUser.username,
-          userType,
-          username: dbUser.username,
-        },
+    const storedHash = dbUser ? String(dbUser.passwordHash ?? "") : "";
+    const valid = dbUser ? await verifyPassword(submittedPassword, storedHash) : false;
+    if (!dbUser || !valid) {
+      noteLoginFailure(tenantId, submittedUsername);
+      response.status(401).json({
+        ok: false,
+        message: "Invalid username or password.",
       });
       return;
     }
-
-    response.status(401).json({
-      ok: false,
-      message: "Invalid username or password.",
+    // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
+    if (!isBcryptHash(storedHash)) {
+      hashPassword(submittedPassword).then((hash) => {
+        prisma.user.update({
+          where: { id: dbUser.id },
+          data: { passwordHash: hash },
+        }).catch(() => {});
+      });
+    }
+    noteLoginSuccess(tenantId, submittedUsername);
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const token = await createSession(prisma, { tenantId, userId: dbUser.id });
+    applySessionCookie(response, token, request);
+    response.status(200).json({
+      ok: true,
+      user: {
+        name: trimValue(fullNameMap[submittedUsername]) || dbUser.username,
+        username: dbUser.username,
+        role: normalizeRole(dbUser.role),
+      },
     });
   })().catch((error) => {
     response.status(500).json({
@@ -3611,13 +3710,13 @@ app.post("/api/auth/change-password", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const username = trimValue(String(body.username ?? "")).toLowerCase();
+    const username = trimValue(request.auth?.username).toLowerCase();
     const currentPassword = String(body.currentPassword ?? "");
     const newPassword = String(body.newPassword ?? "");
     if (!username || !currentPassword || !newPassword) {
       response.status(400).json({
         ok: false,
-        message: "Username, current password, and new password are required.",
+        message: "Current password and new password are required.",
       });
       return;
     }
@@ -3651,6 +3750,7 @@ app.post("/api/auth/change-password", async (request, response) => {
       where: { id: user.id },
       data: { passwordHash: nextHash },
     });
+    await revokeOtherSessions(prisma, user.id, request.auth?.sessionId ?? null);
     response.status(200).json({ ok: true, message: "Password updated." });
   } catch (error) {
     response.status(500).json({
@@ -4258,6 +4358,10 @@ app.patch("/api/users/:id", async (request, response) => {
       where: { id },
       data: updates,
     });
+    if (updates.passwordHash) {
+      const keepSessionId = request.auth?.userId === user.id ? request.auth.sessionId : null;
+      await revokeOtherSessions(prisma, user.id, keepSessionId);
+    }
     const nextUsername = trimValue(user.username).toLowerCase();
     await setTenantUserFullName(
       tenantId,
@@ -4330,6 +4434,7 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
       where: { id: existing.id },
       data: { passwordHash: await hashPassword(newPassword) },
     });
+    await revokeAllSessions(prisma, existing.id);
     response.status(200).json({ ok: true, message: "Password reset." });
   } catch (error) {
     response.status(500).json({
@@ -5091,6 +5196,7 @@ app.post("/api/neris/export", async (request, response) => {
 
 const config = getProxyConfig();
 const __filename = fileURLToPath(import.meta.url);
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 const __dirname = path.dirname(__filename);
 const frontendDistDir = path.resolve(__dirname, "../dist");
 const frontendIndexPath = path.join(frontendDistDir, "index.html");
@@ -5107,15 +5213,19 @@ if (hasFrontendBuild) {
   });
 }
 
-app.listen(config.proxyPort, () => {
-  console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
-  console.log(`NERIS base URL: ${config.baseUrl}`);
-  if (IS_PRODUCTION_NODE_ENV && !CAD_INGEST_SECRET) {
-    console.warn(
-      "[CAD ingest] NODE_ENV=production but CAD_INGEST_SECRET is unset — POST /api/cad/inbound-email returns 503 until configured.",
-    );
-  }
-  if (hasFrontendBuild) {
-    console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
-  }
-});
+if (invokedDirectly) {
+  app.listen(config.proxyPort, () => {
+    console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
+    console.log(`NERIS base URL: ${config.baseUrl}`);
+    if (IS_PRODUCTION_NODE_ENV && !CAD_INGEST_SECRET) {
+      console.warn(
+        "[CAD ingest] NODE_ENV=production but CAD_INGEST_SECRET is unset — POST /api/cad/inbound-email returns 503 until configured.",
+      );
+    }
+    if (hasFrontendBuild) {
+      console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
+    }
+  });
+}
+
+export { app, prisma, clearLoginLockouts };

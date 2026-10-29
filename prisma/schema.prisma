@@ -31,6 +31,7 @@ model Tenant {
   nerisExportHistory      NerisExportHistory[]
   nerisDrafts             NerisDraft[]
   fireRecoveryIncidentBillings FireRecoveryIncidentBilling[]
+  sessions                    Session[]
 }
 
 /// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.
@@ -84,10 +85,30 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions Session[]
 
   @@unique([tenantId, username])
   @@index([tenantId])
+}
+
+/// Sign-in sheet. One row per login. The browser holds the pass; this table holds only its fingerprint.
+model Session {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  tenantId     String
+  userId       String
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([expiresAt])
 }
 
 model DepartmentDetails {

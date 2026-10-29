@@ -110,6 +110,7 @@ import {
 } from "./NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
 import { getRecurrenceIntervalDays, toDateKey } from "./scheduleUtils";
+import { onSessionExpired } from "./api/http";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -2127,6 +2128,50 @@ function writeSession(session: SessionState): void {
   );
 }
 
+const DEPARTMENT_CACHE_PREFIXES = [
+  "fire-ultimate-department-details",
+  "fire-ultimate-department-logo",
+  "fire-ultimate-neris-drafts",
+  "fire-ultimate-neris-export-settings",
+  "fire-ultimate-neris-export-history",
+  "fire-ultimate-incident-queue",
+  "fire-ultimate-schedule-",
+  "fire-ultimate-trade-requests",
+  "fire-ultimate-session",
+  "stationboss-mimic-session",
+  "stationboss-mimic-neris-",
+];
+
+function clearCachedDepartmentData(): void {
+  if (typeof window === "undefined") return;
+  const keys: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key) continue;
+    if (DEPARTMENT_CACHE_PREFIXES.some((prefix) => key === prefix || key.startsWith(prefix))) {
+      keys.push(key);
+    }
+  }
+  for (const key of keys) {
+    window.localStorage.removeItem(key);
+  }
+}
+
+function roleFromServer(role: string): UserRole {
+  const normalized = role.trim().toLowerCase();
+  if (normalized === "superadmin" || normalized === "admin") return normalized;
+  return "user";
+}
+
+function sessionFromServerUser(user: { username?: string; role?: string }, unit = ""): SessionState {
+  return {
+    isAuthenticated: true,
+    username: String(user.username ?? "").trim(),
+    unit,
+    role: roleFromServer(String(user.role ?? "")),
+  };
+}
+
 function readDisplayCardConfig(): DisplayCardConfig {
   if (typeof window === "undefined") {
     return {};
@@ -2769,14 +2814,6 @@ function getNerisQueueFieldValue(
   return getCallFieldValue(call, fieldId);
 }
 
-function mapUserTypeToRole(userType: string): UserRole {
-  const normalized = userType.trim().toLowerCase();
-  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
-    return "superadmin";
-  }
-  return normalized.includes("admin") ? "admin" : "user";
-}
-
 function validatePasswordPolicyClient(password: string): string | null {
   const value = password.trim();
   if (value.length < 8) {
@@ -2838,6 +2875,68 @@ function applyNameTemplate(template: string, firstName: string, lastName: string
     }
     return base;
   });
+}
+
+function SessionReauthDialog({
+  message,
+  onLogin,
+}: {
+  message: string;
+  onLogin: AuthPageProps["onLogin"];
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage("Please provide username and password.");
+      return;
+    }
+    setErrorMessage("");
+    setIsSubmitting(true);
+    const loginError = await onLogin("", username.trim(), password);
+    if (loginError) setErrorMessage(loginError);
+    setIsSubmitting(false);
+  };
+
+  return (
+    <div className="session-reauth-overlay" role="dialog" aria-modal="true" aria-labelledby="session-reauth-title">
+      <form className="auth-form" onSubmit={handleSubmit}>
+        <div className="auth-form-header">
+          <ShieldCheck size={24} />
+          <div>
+            <h2 id="session-reauth-title">{message}</h2>
+            <p>Sign in to continue. What you typed on this screen is still here.</p>
+          </div>
+        </div>
+        <label htmlFor="reauth-username">Username</label>
+        <input
+          id="reauth-username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+        <label htmlFor="reauth-password">Password</label>
+        <input
+          id="reauth-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+        <button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </div>
+  );
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
@@ -13072,10 +13171,46 @@ function RouteResolver({
 }
 
 function App() {
-  const [session, setSession] = useState<SessionState>(() => readSession());
+  const [session, setSession] = useState<SessionState>(EMPTY_SESSION);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [reauthMessage, setReauthMessage] = useState("");
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   const [incidentCalls, setIncidentCalls] = useState<IncidentCallSummary[]>(() =>
     readIncidentQueue(),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((json: { ok?: boolean; user?: { username?: string; role?: string } } | null) => {
+        if (cancelled) return;
+        if (json?.ok && json.user?.username) {
+          const nextSession = sessionFromServerUser(json.user);
+          writeSession(nextSession);
+          setSession(nextSession);
+        } else {
+          writeSession(EMPTY_SESSION);
+          setSession(EMPTY_SESSION);
+        }
+        setSessionReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => onSessionExpired(() => {
+    if (sessionRef.current.isAuthenticated) {
+      setReauthMessage("Your session expired");
+    }
+  }), []);
 
   useEffect(() => {
     if (!session.isAuthenticated) return;
@@ -13151,20 +13286,19 @@ function App() {
       const json = (await response.json()) as {
         ok?: boolean;
         message?: string;
-        user?: { name?: string; userType?: string; username?: string };
+        user?: { name?: string; username?: string; role?: string };
       };
       if (!response.ok || !json?.ok || !json.user) {
         return json?.message ?? "Login failed.";
       }
-      const nextSession: SessionState = {
-        isAuthenticated: true,
-        username: String(json.user.username ?? username).trim(),
-        unit: department || "",
-        role: mapUserTypeToRole(String(json.user.userType ?? "")),
-      };
+      const nextSession = sessionFromServerUser(
+        json.user,
+        department || sessionRef.current.unit,
+      );
+      writeSession(nextSession);
       setSession(nextSession);
       setIncidentDisplaySettings(readIncidentDisplaySettings(nextSession.username));
-      writeSession(nextSession);
+      setReauthMessage("");
       return null;
     } catch {
       return "Unable to reach login service.";
@@ -13172,7 +13306,16 @@ function App() {
   };
 
   const handleLogout = () => {
+    void fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => {});
+    clearCachedDepartmentData();
     setSession(EMPTY_SESSION);
+    setReauthMessage("");
+    setIncidentCalls([]);
+    setNerisExportHistory([]);
     setIncidentDisplaySettings(readIncidentDisplaySettings(""));
     writeSession(EMPTY_SESSION);
   };
@@ -13401,8 +13544,15 @@ function App() {
     }
   };
 
+  if (!sessionReady) {
+    return <div className="session-checking">Checking sign-in…</div>;
+  }
+
   return (
     <BrowserRouter>
+      {reauthMessage && session.isAuthenticated ? (
+        <SessionReauthDialog message={reauthMessage} onLogin={handleLogin} />
+      ) : null}
       <Routes>
         <Route
           path="/auth"

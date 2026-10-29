@@ -6081,3 +6081,21 @@ body.printing-neris .neris-print-root {
     grid-template-columns: minmax(0, 1fr);
   }
 }
+
+.session-checking {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #334155;
+  font-weight: 600;
+}
+
+.session-reauth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
+}

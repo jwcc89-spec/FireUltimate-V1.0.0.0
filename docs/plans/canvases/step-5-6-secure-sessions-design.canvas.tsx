@@ -71,9 +71,9 @@ const capabilities = [
 ];
 
 const files = [
-  ["prisma/schema.prisma + one new migration", "Add a Session table (add-only; nothing existing changes).", "Needs your database approval"],
+  ["prisma/schema.prisma + one new migration", "Add a Session table (add-only; nothing existing changes).", "Built. Not applied to staging or production."],
   ["server/auth/sessions.mjs (new)", "Create, look up and cancel passes; cookie handling; request-origin check; failed-login lockout.", "New"],
-  ["server/neris-proxy.mjs", "Turn on the sign-in check for every route except the public list; login sets the cookie; add session and logout routes; change-password uses the signed-in person; password reset and account delete cancel passes; login returns the role from the user table only.", "Auth logic — needs your approval"],
+  ["server/neris-proxy.mjs", "Turn on the sign-in check for every route except the public list; login sets the cookie; add session and logout routes; change-password uses the signed-in person; password reset and account delete cancel passes; login returns the role from the user table only.", "Built"],
   ["src/App.tsx", "Ask the server 'who am I' on load; logout calls the server; show a sign-in box over the current screen on any refused request.", "Changed"],
   ["src/api/http.ts (new) or src/main.tsx", "One place that notices a refused request and opens the sign-in box.", "New"],
   ["server/auth/sessions.test.mjs (new) + package.json test list", "Automated tests.", "New"],
@@ -93,11 +93,11 @@ const tests = [
 ];
 
 const decisions = [
-  ["1", "Approve adding a Session table to the database (add-only migration; rehearsed on a copy of production before any release).", "Open — explained Oct 29; waiting on approval"],
-  ["2", "How long may someone stay signed in?", "Answered Oct 29: 60 minutes. Proposed meaning: signed out after 60 minutes with no activity (confirm)"],
-  ["3", "Lock an account for 15 minutes after 5 wrong passwords in a row?", "Answered Oct 29: Yes"],
-  ["4", "On logout, clear cached department data from the browser (protects shared station computers)?", "Answered Oct 29: Yes, and closing the browser also signs the person out"],
-  ["5", "Approve the server and app changes in 'What changes' (they touch authentication logic).", "Open"],
+  ["1", "Approve adding a Session table to the database (add-only migration; rehearsed on a copy of production before any release).", "Approved Oct 29. Built on the practice branch. Not applied to staging or production."],
+  ["2", "How long may someone stay signed in?", "Approved Oct 29: signed out after 60 minutes with no activity."],
+  ["3", "Lock an account for 15 minutes after 5 wrong passwords in a row?", "Approved Oct 29: Yes"],
+  ["4", "On logout, clear cached department data from the browser (protects shared station computers)?", "Approved Oct 29: Yes, and closing the browser also signs the person out"],
+  ["5", "Approve the server and app changes in 'What changes' (they touch authentication logic).", "Approved Oct 29 and built on the practice branch."],
 ];
 
 const later = [
@@ -113,11 +113,12 @@ function Overview() {
         After a correct password, the server hands the browser a sign-in pass that cannot be read by page scripts, cannot be used on another department's address, and can be cancelled at any time. Every request must show a valid pass, and the server — not the browser — decides who you are and what role you have. Step 6 then checks permissions for each action on the server.
       </Callout>
       <Row gap={24}>
-        <Stat value="45" label="API routes today" />
-        <Stat value="0" label="that check for a signed-in person" tone="danger" />
-        <Stat value="5" label="groups stay public after Step 5" />
+        <Stat value="45" label="API routes" />
+        <Stat value="All others" label="require a signed-in person on the practice branch" tone="success" />
+        <Stat value="5" label="groups stay public" />
       </Row>
-      <H2>What is wrong today</H2>
+      <H2>What is still wrong on the live site</H2>
+      <Text>The practice branch has the fix. The live Crescent site stays the same until a planned release.</Text>
       <Table headers={["Area", "How it works now", "Risk"]} rows={today} striped />
       <H2>What changes for people using the app</H2>
       <Grid columns={3} gap={12}>
@@ -234,7 +235,7 @@ function Testing() {
 function Decisions() {
   return (
     <Stack gap={16}>
-      <H2>Your decisions needed before coding</H2>
+      <H2>Decisions — all answered</H2>
       <Table headers={["#", "Question", "Status"]} rows={decisions} striped />
       <H2>Can wait until Step 6</H2>
       <Table headers={["Question", "Step"]} rows={later} />
@@ -250,7 +251,7 @@ export default function Design() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Design only — no code changed · October 29, 2026 · Repair plan Steps 5 and 6 · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/step-5-6-secure-sessions-design.canvas.tsx</Text>
+        <Text size="small" tone="tertiary">Step 5 built on the practice branch October 29, 2026 · Not on staging or production · Step 6 not started · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/step-5-6-secure-sessions-design.canvas.tsx</Text>
         <H1>Secure sessions and access controls — design</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

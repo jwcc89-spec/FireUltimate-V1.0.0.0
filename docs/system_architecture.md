@@ -68,7 +68,7 @@ There is a single backend process; no additional services. Tenant logic and NERI
 **Key behavior:**
 
 - **Tenant resolution (middleware)** — Resolves tenant from `Host` / `X-Forwarded-Host` via `TenantDomain`; localhost → demo tenant. Sets `request.tenant` for all `/api/*` routes (except admin).
-- **Auth** — `POST /api/auth/login`, `POST /api/auth/change-password`; session not shown in this doc (see implementation).
+- **Auth** — After a correct password, the server stores a sign-in pass as a fingerprint in the `Session` table and hands the pass to the browser in an HttpOnly cookie. The cookie ends when the browser closes. Every `/api` route requires a valid pass except `POST /api/auth/login`, `GET /api/tenant/context`, `POST /api/cad/inbound-email` (shared secret), and `/api/admin` (platform admin key). The pass expires after 60 minutes with no activity. Five wrong passwords lock that account for 15 minutes. The role is read from the `User` table on every request. Routes: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`, `POST /api/auth/change-password`.
 - **Tenant/config** — `GET /api/tenant/context`, `GET|POST /api/department-details` (tenant-scoped).
 - **Users** — `GET|POST /api/users`, `PATCH|DELETE /api/users/:id`, `POST /api/users/:id/reset-password` (tenant-scoped).
 - **Scheduling** — `GET|POST /api/schedule-assignments` (tenant-scoped).
@@ -107,6 +107,7 @@ prisma.user.findMany({
 | Tenant | Tenant record; slug, name, status, optional `nerisEntityId` |
 | TenantDomain | Hostname → tenant mapping for domain-based routing |
 | User | Tenant-scoped auth; username, passwordHash, role |
+| Session | Sign-in sheet. One row per login. Stores a fingerprint of the pass, not the pass itself. Add-only; nothing else in the database changes. |
 | DepartmentDetails | One per tenant; `payloadJson` holds department config — do not store auth secrets here |
 | ScheduleAssignments | Tenant-scoped schedule data by shiftType and dateKey |
 
@@ -174,6 +175,7 @@ For detailed multi-tenant and domain setup, see `docs/task-2-multitenant-domain-
 ## Security Rules
 
 - Passwords must be stored using **bcrypt** hashing (never plain text).
+- Sign-in passes are stored only as a SHA-256 fingerprint in `Session`. The browser cookie is HttpOnly, SameSite=Strict, and host-only. It is not readable by page scripts and is not sent to other departments' addresses.
 - **Secrets must never be stored in `DepartmentDetails.payloadJson`.** Auth lives in the `User` table and env/config only.
 - Tenant isolation must be **enforced server-side** on every tenant-scoped read/write.
 - Client code must **not** contain API secrets (e.g. NERIS client secret). Use the server proxy and env vars.
