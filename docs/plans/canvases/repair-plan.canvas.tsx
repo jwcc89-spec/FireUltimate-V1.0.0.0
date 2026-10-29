@@ -114,39 +114,39 @@ const stages: StageDef[] = [
       { n: "12", title: "Prevent double billing",
         problem: "Submitting again sends the incident again and overwrites the previous tracking number.",
         why: "A double-click or retry could bill twice and lose the original tracking number.",
-        fix: "On Confirm, the incident is marked Submitting so repeats are ignored. Corrections require a separate Correct/Resubmit action with a reason that follows Fire Recovery's rules and keeps the original tracking number on record. Checked October 29: neither the repo's Fire Recovery reference (docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md) nor the vendor's public API guide describes corrections, and the API has no update or cancel method — only add, attachments, and billing status. The correction policy must come from Fire Recovery USA.",
-        who: "Me; Fire Recovery USA defines the correction policy.",
+        fix: "On Confirm, the incident is marked Submitting so repeats are ignored. Corrections require a separate Correct/Resubmit action with a reason that follows Fire Recovery's rules and keeps the original tracking number on record. The API has no update or cancel method — only add, attachments, and billing status. Your understanding (October 29): corrections are made by logging in to Fire Recovery's Recovery Hub (therecoveryhub.com) directly. After sandbox testing we confirm this with Fire Recovery in the single combined email (see 'Decisions'), then the Correct/Resubmit action becomes a guided 'correct this in Recovery Hub' step that records who, when and why in our history.",
+        who: "Me; Fire Recovery USA confirms the correction process.",
         done: "Tests prove repeated clicks create only one submission." },
-      { n: "13", title: "Protect the Fire Recovery password and confirm the vendor address",
-        problem: "Vendor passwords are stored as readable text. The documents disagree about where credentials live. Staging has no Fire Recovery address setting in Render, so the code defaults to Fire Recovery's real address, although you recall entering test and live addresses somewhere.",
-        why: "An exposed database would expose vendor logins, and a staging test could create a real billing record.",
-        fix: "Encrypt stored passwords and make staging use only the vendor's test site. Found October 29 in docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md: test site process-dev.firerecoveryusa.com, live site process.firerecoveryusa.com. Still needed from Fire Recovery: a test account (username and password, entered only in the app's settings screen, never in chat). Until then, do not submit to Fire Recovery from staging.",
-        who: "Me; you obtain a test account from Fire Recovery.",
-        done: "Passwords are encrypted, and staging is proven to talk only to the vendor's test site." },
+      { n: "13", title: "Protect the Fire Recovery password and use the sandbox department ID for testing", status: "Updated",
+        problem: "Vendor passwords are stored as readable text. Fire Recovery confirmed October 29 that testing happens on their real address (process.firerecoveryusa.com) using a sandbox department NERIS ID, FD12345678; there is no separate test site for us. Today the app always sends the department's own NERIS ID (the same one used for NERIS exports), so a test from staging would send Crescent's real ID to Fire Recovery's real system.",
+        why: "With one shared address, the department ID is the only thing separating a test from a real bill.",
+        fix: "Encrypt stored passwords. Add a per-department 'Fire Recovery department ID' setting, separate from the NERIS export ID, so staging can use FD12345678 while NERIS exports keep the real ID. Staging refuses to submit with any ID other than the sandbox ID, and every submission screen shows which ID will be used. No subscription key is needed for this method. Fire Recovery sets up the sandbox after you reply with the account email; the Welcome Message holds the API login, which is entered only in the app's settings screen, never in chat.",
+        who: "Me; the new setting may need your approval for a database change; you reply to Fire Recovery with the account email.",
+        done: "Passwords are encrypted, and tests prove staging can only submit with sandbox ID FD12345678." },
       { n: "14", title: "Handle vendor outages and errors clearly",
         problem: "If Fire Recovery is slow or down, a request can hang. The screen only shows not sent or DataSent.",
         why: "Staff need to know whether a bill went out, failed, or needs attention.",
         fix: "Add time limits; statuses Not sent, Submitting, Sent, Failed, Needs review, and Paid/Balance due; plus a history of every attempt showing who, when, what was sent and what came back. Flag 'Billing may be out of date' if a billed report is later edited—never re-bill automatically.",
         who: "Me; you approve status wording.",
         done: "Simulated outages show a clear Failed status and no duplicate bill." },
-      { n: "15", title: "Confirm every billing field with the vendor",
-        problem: "Some fields are filled by guesses. Today the law-enforcement number falls back to the dispatch final disposition, personnel is counted from unit staffing (or 1 per unit), and involved parties are always sent empty.",
-        why: "Incorrect fields can cause rejected or inaccurate invoices.",
-        fix: "Your definitions (October 29): Law Enforcement Number is the report number from the state police or county police agency present on scene, with no fallback. Personnel on Scene is the count of people selected on the run report for units that arrived on scene. Involved parties are the people the department documents, such as vehicle occupants, with name, address, phone, insurance, vehicle VIN, make, model and year. The vendor's party format also includes license plate, date of birth, policy number, at-fault and owner fields; confirm with Fire Recovery which are required.",
-        who: "You defined the fields; Fire Recovery confirms required party details; I implement them.",
-        done: "A signed-off field list, with each field tested." },
+      { n: "15", title: "Send every field Fire Recovery requires, from the Reporting tab", status: "Updated",
+        problem: "Checked October 29 against the code: the billing request sends only a small block (incident number, NERIS ID, type, personnel count, filed-by). It never sends the call details or any parties. The report form has no Law Enforcement Number field, so the code falls back to the dispatch final disposition. Personnel is counted from unit staffing, not the people selected. The Person/Owner > Vehicle section is never read for billing, none of its fields are required, and there is no 'Is Resident' field anywhere. Fire Recovery's current documentation accepts all of these details in the same request.",
+        why: "Missing required fields lead to rejected or unpaid invoices.",
+        fix: "Fire Recovery's requirements (from you, October 29). Call details, required: date of incident, time alarm received, time call cleared, run number, personnel on scene (people selected on the run report for units that arrived on scene), and incident location. Call details, helpful: Law Enforcement Agency Report Number and NFIRS code. Parties: one per vehicle (a 2-vehicle accident has 2 parties). Each party requires first name, last name, address, Is Resident (yes/no), insurance company, and vehicle make and model. Helpful: phone, policy number, insurance contact number, VIN and license plate. All of this comes from the Reporting tab's Person/Owner > Vehicle section. Changes: add the 'Is Resident' question, mark the required party fields as required when the incident is a vehicle accident, decide where the incident-level Law Enforcement Number lives (the Vehicle section has a per-vehicle police report number today), and map every field into the billing request.",
+        who: "Me; you approve the Reporting tab changes.",
+        done: "The preview shows every required field filled, a 2-vehicle test incident sends 2 parties, and missing required fields block submission with a clear message." },
       { n: "16", title: "Build automated billing tests with a fake vendor",
         problem: "Billing has no tests.",
         why: "We should never need real invoices to discover a bug.",
         fix: "Create a pretend Fire Recovery service to test success, failure, timeouts and repeats.",
         who: "Me.",
         done: "Billing tests run automatically on every change." },
-      { n: "17", title: "Test on staging with the vendor's test account",
-        problem: "There is no record of a successful real-world test.",
-        why: "Passing tests still need one controlled real-world check.",
-        fix: "I write a click-by-click checklist; you run it on staging with Fire Recovery's test environment.",
-        who: "You, with my checklist.",
-        done: "Checklist completed and the vendor confirms the test incidents." },
+      { n: "17", title: "Test on staging with Fire Recovery's sandbox, then send one combined email", status: "Updated",
+        problem: "There is no record of a successful real-world test, and several questions for Fire Recovery are still open.",
+        why: "Passing tests still need one controlled real-world check, and one clear email gets better answers than several partial ones.",
+        fix: "I write a click-by-click checklist; you run it on staging using the sandbox department ID FD12345678, including a billing status check with the returned tracking ID. Afterwards I draft one email to Fire Recovery with the test results and every open question (listed in 'Decisions').",
+        who: "You, with my checklist and email draft.",
+        done: "Checklist completed, Fire Recovery confirms the sandbox incidents, and the combined email is sent." },
       { n: "18", title: "Release Fire Recovery to production", status: "Updated",
         problem: "Production does not have this feature yet. Releasing also brings the CAD Batches A–I code and four database additions that production has never received.",
         why: "Release only after every earlier step passes, including Stage B.",
@@ -192,8 +192,8 @@ const stages: StageDef[] = [
       { n: "23", title: "Control who can send CAD emails", status: "Updated",
         problem: "An empty sender allowlist accepts everyone, unknown addresses create department-less records, and there is no screen to manage senders.",
         why: "Spam or a mistaken email could become an incident, and later a false alert to responders.",
-        fix: "Reject unknown addresses, decide the empty-list rule, and add an admin screen for allowed senders. Crescent's only sender is dispatch@co.iroquois.il.us. The empty-list question in plain words: each department has a list of email addresses allowed to send it CAD emails. When a new department has not typed in any address yet, should the system accept CAD emails from anyone, or from no one until an address is added? Recommended: no one, so spam or a stray forward can never create an incident.",
-        who: "Me; you decide the empty-list rule.",
+        fix: "Reject unknown addresses and add an admin screen for allowed senders. Decided October 29: when a department has no allowed senders listed, CAD emails are accepted from no one until an address is added. Crescent's only sender is dispatch@co.iroquois.il.us.",
+        who: "Me.",
         done: "Unapproved senders are rejected and admins manage the list themselves." },
       { n: "24", title: "Never silently lose dispatch emails",
         problem: "Confirmed October 28: Cloudflare has no dead letter queue, so an email that fails 10 times has nowhere to go. Very large emails are cut off mid-message.",
@@ -268,15 +268,29 @@ const decided = [
   ["October 29, 2026", "CAD (Crescent)", "The county CAD number (for example 26017007) matches emails to incidents and fills the dispatch number. 'Department CFS' is not used. Crescent's incident number (for example 26-079, resetting November 1) and the NERIS number are typed by hand.", "20, 21A"],
   ["October 29, 2026", "CAD (Crescent)", "Crescent units: 1871, 1881, 1832, 18Car18 (Car18). 1801 is the chief. Crescent28 is Crescent EMS, a separate agency. Units match Department Apparatus.", "21A, 28"],
   ["October 29, 2026", "CAD (Crescent)", "Calls where only Crescent EMS is dispatched create no incident and no run report.", "21A, 28"],
-  ["October 29, 2026", "Scheduling", "Crescent does not rely on the schedule today, but Watseka and Kankakee will use it for work days and trades.", "Parked & future"],
+  ["October 29, 2026", "Scheduling", "Crescent does not rely on the schedule today, but Watseka and Kankakee will use it for work days and trades. Scheduling is reviewed in the near future, but not during the Fire Recovery and CAD work.", "Parked & future"],
+  ["October 29, 2026", "CAD", "When no allowed senders are listed, CAD emails are accepted from no one until an address is added.", "23"],
+  ["October 29, 2026", "Fire Recovery", "Testing uses Fire Recovery's real address (process.firerecoveryusa.com) with sandbox department NERIS ID FD12345678. No subscription key is needed for NERIS incident billing.", "13, 17"],
+  ["October 29, 2026", "Fire Recovery", "Each vehicle is one party. Required per party: first and last name, address, Is Resident (yes/no), insurance company, vehicle make and model. Helpful: phone, policy number, insurance contact number, VIN, license plate.", "15"],
+  ["October 29, 2026", "Fire Recovery", "Required call details: date of incident, time alarm received, time call cleared, run number, personnel on scene, incident location. Helpful: Law Enforcement Agency Report Number, NFIRS code.", "15"],
+  ["October 29, 2026", "Fire Recovery", "Party information comes from the Reporting tab's Person/Owner > Vehicle section; its required fields are enforced for vehicle accidents.", "15"],
+  ["October 29, 2026", "Fire Recovery", "Corrections are expected to happen in Recovery Hub (therecoveryhub.com); confirm with Fire Recovery after testing.", "12"],
+  ["October 29, 2026", "Fire Recovery", "All open Fire Recovery questions go in one combined email, drafted after sandbox testing.", "17"],
 ];
 
 const decisions = [
-  ["Fire Recovery", "How should corrections or resubmissions work? Not described in the repo or in the vendor's public API guide, and the API has no update method. Ask Fire Recovery USA."],
-  ["Fire Recovery", "Which involved-party details are required (for example license plate, date of birth, policy number, at-fault, owner)? Ask Fire Recovery USA."],
-  ["Fire Recovery", "Request a test account for the vendor's test site (process-dev.firerecoveryusa.com). Enter the credentials only in the app's settings, never in chat."],
-  ["CAD", "When a department has not listed any allowed sender addresses yet, should CAD emails be accepted from anyone, or from no one until an address is added? (Recommended: no one.)"],
-  ["Scheduling", "Should the scheduling review move ahead of Stage C or D, given that Watseka and Kankakee will use it for real work?"],
+  ["Fire Recovery", "Reply to Fire Recovery with the account email for the sandbox Welcome Message. Their reply mentions support@fireultimatehq.com as the existing account; confirm whether to use it."],
+  ["Fire Recovery", "Approve the Reporting tab changes in Step 15: add 'Is Resident', mark the required party fields as required for vehicle accidents, and decide where the incident-level Law Enforcement Number lives."],
+];
+
+const fireRecoveryEmail = [
+  ["Corrections", "Are corrections and resubmissions made only in Recovery Hub (therecoveryhub.com), or is there an API method? How should a corrected report be matched to the original tracking ID?"],
+  ["Billing status", "When does billing status become available after submission, and how often may we check it?"],
+  ["Parties", "Confirm the required party fields (first and last name, address, Is Resident, insurance company, vehicle make and model). Are date of birth, at-fault, owner and occupant needed for vehicle accidents?"],
+  ["Call details", "Should the run number go in IncidentNumber, IncidentID, or both? Is the NFIRS code expected in IncidentType or PrincipleIncidentType?"],
+  ["Law enforcement", "If more than one police agency reports, should we send one number or several?"],
+  ["Sandbox", "Confirm that submissions using FD12345678 are never billed, and whether sandbox incidents can be cleared after testing."],
+  ["Test results", "Summary of the sandbox submissions and any errors returned (added after Step 17)."],
 ];
 
 function StepCard({ s }: { s: Step }) {
@@ -506,8 +520,11 @@ function DecisionsTab() {
     <Stack gap={14}>
       <H2>Decided</H2>
       <Table headers={["Date", "Area", "Decision", "Step"]} rows={decided} striped />
-      <H2>Still open — only you or the vendor can answer</H2>
+      <H2>Still open — only you can answer</H2>
       <Table headers={["Area", "Question"]} rows={decisions} striped />
+      <H2>Questions for Fire Recovery — sent as one email after sandbox testing</H2>
+      <Text tone="secondary">Collected here as they come up. The email is drafted at Step 17, with the test results.</Text>
+      <Table headers={["Topic", "Question"]} rows={fireRecoveryEmail} striped />
     </Stack>
   );
 }
@@ -534,7 +551,7 @@ function Safety() {
           ["Staging is private", "Staging holds real dispatch emails, including caller names and phone numbers in CAD notes, and must be protected like production."],
           ["Redact samples", "When sharing CAD emails, replace names, addresses, phone numbers and medical details inside CAD notes too."],
           ["Don't save on settings screens while reviewing", "Looking at Dispatch Parsing Settings is safe; clicking Save or changing the auto-create box is not, until the matching step."],
-          ["No Fire Recovery tests on staging yet", "Until Step 13 confirms staging uses the vendor's test site."],
+          ["Fire Recovery tests use only the sandbox ID", "Fire Recovery testing happens on their real address, so every test must use sandbox department ID FD12345678. No Fire Recovery tests from staging until Step 13 makes staging refuse any other ID."],
           ["No secrets in chat", "Share names, version codes and yes/no answers only—never passwords or database addresses."],
         ]}
         striped
@@ -563,8 +580,8 @@ function Parked() {
       <Divider />
       <H2>Set aside for now: scheduling</H2>
       <Text>Scheduling (rotation, D shifts, staffing, Kelly days, vacation, trades) is parked for a separate review and possible rebuild. None of these steps change scheduling features.</Text>
-      <Callout tone="warning" title="Scheduling needs a decision (October 29)">
-        Crescent does not use the schedule today, but Watseka and Kankakee will use it for work days and trades. Step 5 automatically protects the scheduling pages. Separately, saving the schedule today can erase days missing from someone's open browser tab, so the small protective fix should happen before either department relies on it. Decide whether the scheduling review moves ahead of Stage C or D (see 'Decisions').
+      <Callout tone="warning" title="Scheduling is next after Fire Recovery and CAD (decided October 29)">
+        Crescent does not use the schedule today, but Watseka and Kankakee will use it for work days and trades. Scheduling is reviewed in the near future, but not during the Fire Recovery and CAD work. Step 5 automatically protects the scheduling pages. Saving the schedule today can erase days missing from someone's open browser tab, so that fix must be part of the scheduling review before either department relies on it.
       </Callout>
       <Divider />
       <H2>Later: turn older plan documents into canvas plans</H2>
@@ -583,7 +600,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–4 done, Step 5 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling parked</Text>
+        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–4 done, Step 5 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
