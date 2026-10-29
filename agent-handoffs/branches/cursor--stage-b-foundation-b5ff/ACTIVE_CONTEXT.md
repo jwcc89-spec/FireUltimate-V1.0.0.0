@@ -12,8 +12,8 @@
 - PRs from this branch target `submenu/neris-golive-cifpd`, never `main` directly. `main` is what production runs and only changes in a planned release.
 
 ## Current focus
-- Repair plan (canvas "Fire Ultimate — Beginner Repair Plan"), Stage A Step 4 complete on the code side.
-- Waiting on the user's answers to the open questions in the plan's Decisions tab.
+- Repair plan canvas: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136 (repo copy: `docs/plans/canvases/repair-plan.canvas.tsx`). Canvas plans are the standard; see `.cursor/rules/planning-canvas.mdc`.
+- Stage A (Steps 1–4) complete. User answered the Decisions questions on 2026-10-29; they are recorded in the canvas Decisions tab.
 - Next: Stage B Step 5 (server-side sign-in pass / session authentication) — requires explicit approval because it changes authentication logic.
 
 ## Latest known status
@@ -22,7 +22,7 @@
 - Baseline on this branch: `npm run lint` pass, `npm run build` pass, `npm test` 15/15 pass.
 
 ## Current blocker / status
-- No code blocker. Waiting on user decisions (Decisions tab) and approval to start Step 5.
+- No code blocker. Waiting on approval to start Step 5. Open items (vendor answers, empty sender-list rule, scheduling priority) are listed in the canvas Decisions tab.
 
 ## External dependency status
 - Render, Neon, Cloudflare: not touched by this branch. No production or Render setting changes without user approval.

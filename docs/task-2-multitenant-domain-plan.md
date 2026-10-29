@@ -373,8 +373,15 @@ Use this section as the high-level backlog pointer. Track detailed deferred/futu
 ### Repair plan (October 2026) — code version decision (Step 4)
 - **Decision (2026-10-28/29):** All repair work (Stages B–D) builds on staging's version, `submenu/neris-golive-cifpd` (`2d985fa`), in a separate practice branch (`cursor/stage-b-foundation-b5ff`). Re-verified: `main` (`3f9b97a`, production) has no code the staging branch lacks; merging `main` into it produces no difference.
 - **Production** stays on `main` until a planned release that follows the Data safety rules (fresh Neon backup, rehearsal on a copy of production, staging first).
-- **Now:** answer the open Decisions questions; then Stage B Step 5 (server-side session authentication), which needs explicit approval because it changes auth logic.
-- **Later:** Stage C (Fire Recovery) and Stage D (CAD) per the repair plan.
+- **Planning standard (2026-10-29):** The repair plan canvas is the source of truth for status and decisions. Its source is copied to `docs/plans/canvases/repair-plan.canvas.tsx`; see `docs/plans/canvases/README.md` and `.cursor/rules/planning-canvas.mdc`.
+- **Decisions recorded 2026-10-29** (full list in the canvas Decisions tab):
+  - Role defaults: submitting Fire Recovery billing, changing CAD rules, and changing Fire Recovery settings are admin-only by default; the department admin can grant or revoke each one for other roles (stored per tenant, enforced on the server).
+  - Fire Recovery fields: Law Enforcement Number = state or county police report number; Personnel on Scene = people selected on the run report for units that arrived on scene; Parties = documented occupants with contact, insurance and vehicle details.
+  - CAD: the standard field list is an expandable catalog that varies by CAD system; caller name and phone are standard incident fields; department admins enable auto-create themselves once mapping is complete.
+  - Crescent: the county CAD number matches emails and fills the dispatch number; "Department CFS" is not used; the incident and NERIS numbers are typed by hand. Own units are 1871, 1881, 1832 and 18Car18; 1801 is the chief; Crescent28 is Crescent EMS (a separate agency); EMS-only calls create no incident.
+- **Still open:** Fire Recovery correction policy, required party details, and a test account (ask the vendor); the rule for an empty CAD sender list; whether scheduling moves earlier because Watseka and Kankakee will use it.
+- **Now:** Stage B Step 5 (server-side session authentication), which needs explicit approval because it changes auth logic.
+- **Later:** Stage C (Fire Recovery) and Stage D (CAD) per the repair plan; convert the older plans in `docs/plans`, `docs/procedures` and `docs/user instructions` into canvas plans.
 
 ---
 
