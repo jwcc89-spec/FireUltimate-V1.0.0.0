@@ -14,7 +14,8 @@
 ## Current focus
 - Repair plan canvas: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136 (repo copy: `docs/plans/canvases/repair-plan.canvas.tsx`). Canvas plans are the standard; see `.cursor/rules/planning-canvas.mdc`.
 - Stage A (Steps 1–4) complete. User answered the Decisions questions on 2026-10-29; they are recorded in the canvas Decisions tab.
-- Next: Stage B Step 5 (server-side sign-in pass / session authentication) — requires explicit approval because it changes authentication logic.
+- Stage B Step 5: design done (no code yet). Design canvas: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618 (repo copy: `docs/plans/canvases/step-5-6-secure-sessions-design.canvas.tsx`). Covers Step 5 sessions and the Step 6 permission design.
+- Next: user answers the 5 decisions in the design canvas Decisions tab (Session table, timeouts, lockout, clear cache on logout, approve auth changes). Do not code Step 5 before that approval.
 
 ## Latest known status
 - Base commit: `2d985fa` - `feat(ui): Setup/Configuration, Fire Recovery tenant JWT only`
@@ -22,7 +23,7 @@
 - Baseline on this branch: `npm run lint` pass, `npm run build` pass, `npm test` 15/15 pass.
 
 ## Current blocker / status
-- No code blocker. Waiting on approval to start Step 5. Open items (vendor answers, empty sender-list rule, scheduling priority) are listed in the canvas Decisions tab.
+- No code blocker. Waiting on the Step 5 design decisions before coding. Note: this VM has no local Postgres or Docker; Step 5 tests need a throwaway local Postgres installed (e.g. via apt), never Neon. Open items (vendor answers, empty sender-list rule, scheduling priority) are listed in the canvas Decisions tab.
 
 ## External dependency status
 - Render, Neon, Cloudflare: not touched by this branch. No production or Render setting changes without user approval.
