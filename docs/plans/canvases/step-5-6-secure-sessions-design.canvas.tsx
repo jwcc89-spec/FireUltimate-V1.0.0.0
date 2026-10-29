@@ -4,7 +4,7 @@ import {
 } from "cursor/canvas";
 
 const today = [
-  ["Login", "Server checks the password, then forgets you. Nothing proves later requests came from a logged-in person.", "Anyone who knows a department's web address can read or change its data without logging in."],
+  ["Login", "The login screen hides the app's pages, but the server checks the password and then forgets you. Nothing proves later requests for data came from a logged-in person.", "Anyone who asks the server directly can read or change a department's data without logging in. Confirmed Oct 29 (read-only check): the live Crescent site returned its list of 21 accounts to a request that was not signed in."],
   ["Role", "Stored in the browser and trusted. At login the server also prefers a 'user type' label from department settings over the real role in the user table.", "Anyone who can edit browser storage or department settings can make themselves admin."],
   ["Change password", "The browser says which username to change.", "Works only because the current password is also required; still identifies the person from the browser, not the server."],
   ["Logout", "Only clears the browser's copy.", "Nothing to revoke on the server; a copied login cannot be cancelled."],
@@ -15,7 +15,7 @@ const flow = [
   ["1. Log in", "You enter username and password as today. The server checks them against the user table for this department's web address."],
   ["2. Sign-in pass issued", "The server creates a long random pass (like a one-time ticket number), stores only a scrambled fingerprint of it in the database, and hands the pass to the browser in a protected cookie."],
   ["3. Every request", "The browser automatically sends the cookie. The server looks up the fingerprint, confirms it is not expired or cancelled, confirms it belongs to this department, and loads the person's current role from the user table."],
-  ["4. Idle or too old", "If the pass has not been used for the idle limit, or is older than the maximum, the server refuses it and the app shows a sign-in box over the current screen with 'Your session expired'. Signing back in continues where you were."],
+  ["4. Idle for 60 minutes or browser closed", "If the pass has not been used for 60 minutes, the server refuses it and the app shows a sign-in box over the current screen with 'Your session expired'. Signing back in continues where you were."],
   ["5. Log out", "The server cancels the pass immediately and the browser clears cached department data."],
   ["6. Password changed or reset", "All other passes for that person are cancelled, so a lost or shared login stops working everywhere."],
 ];
@@ -27,6 +27,17 @@ const cookie = [
   ["Host-only (no Domain)", "A pass for cifpdil.fireultimate.app is never sent to demo.fireultimate.app or any other department."],
   ["Stored as a fingerprint", "The database holds only a SHA-256 fingerprint. A database leak does not reveal usable passes, and no new secret key is needed in Render."],
   ["Bound to the department", "A pass created on one department's address is refused on every other department's address."],
+  ["Ends when the browser closes", "The pass has no expiry date in the browser, so closing the browser throws it away. Some browsers restore it when 'continue where you left off' is on; the server's 60-minute inactivity limit still applies."],
+];
+
+const sessionColumns = [
+  ["Pass fingerprint", "A scrambled copy of the pass the browser holds. Like keeping a photo of a key instead of the key itself: it can confirm a match, but cannot be used to open the door."],
+  ["Department", "Which department's address the person signed in on. The pass only works there."],
+  ["Person", "Which user account signed in (a link to the existing user list)."],
+  ["Signed in at", "Date and time of login."],
+  ["Last active", "Updated as the person uses the app. Used for the 60-minute inactivity limit."],
+  ["Expires at", "When the pass stops working if unused."],
+  ["Cancelled at", "Filled in on logout, password change or account removal. A cancelled pass is refused immediately."],
 ];
 
 const publicRoutes = [
@@ -76,16 +87,17 @@ const tests = [
   ["Changed password", "Other devices' passes refused", ""],
   ["Role changed in the user table", "Takes effect on the next request", "No re-login needed"],
   ["Request from another website", "Refused (403)", "Origin check"],
-  ["6 wrong passwords", "Temporarily locked", "If you approve the lockout"],
+  ["6 wrong passwords", "Locked for 15 minutes", "Approved Oct 29"],
+  ["Browser closed and reopened", "Sign-in box shown", "Approved Oct 29"],
   ["Normal login, browse, save, logout", "Works", "Manual check on staging"],
 ];
 
 const decisions = [
-  ["1", "Approve adding a Session table to the database (add-only migration; rehearsed on a copy of production before any release).", "Yes"],
-  ["2", "How long may someone stay signed in? Recommended: signed out after 12 hours without activity, and always after 24 hours (one shift). Departments can adjust later.", "12 h idle / 24 h max"],
-  ["3", "Lock an account for 15 minutes after 5 wrong passwords in a row?", "Yes"],
-  ["4", "On logout, clear cached department data from the browser (protects shared station computers)?", "Yes"],
-  ["5", "Approve the server and app changes in 'What changes' (they touch authentication logic).", "Yes"],
+  ["1", "Approve adding a Session table to the database (add-only migration; rehearsed on a copy of production before any release).", "Open — explained Oct 29; waiting on approval"],
+  ["2", "How long may someone stay signed in?", "Answered Oct 29: 60 minutes. Proposed meaning: signed out after 60 minutes with no activity (confirm)"],
+  ["3", "Lock an account for 15 minutes after 5 wrong passwords in a row?", "Answered Oct 29: Yes"],
+  ["4", "On logout, clear cached department data from the browser (protects shared station computers)?", "Answered Oct 29: Yes, and closing the browser also signs the person out"],
+  ["5", "Approve the server and app changes in 'What changes' (they touch authentication logic).", "Open"],
 ];
 
 const later = [
@@ -110,7 +122,7 @@ function Overview() {
       <H2>What changes for people using the app</H2>
       <Grid columns={3} gap={12}>
         <Card><CardHeader>Same login screen</CardHeader><CardBody><Text size="small">Username and password as today. Everyone signs in once after the change is released.</Text></CardBody></Card>
-        <Card><CardHeader>Signed out after inactivity</CardHeader><CardBody><Text size="small">After the idle limit or the daily maximum, a sign-in box appears over the current screen with a clear message. Signing back in continues where they were, so unsaved typing is not lost.</Text></CardBody></Card>
+        <Card><CardHeader>Signed out after inactivity</CardHeader><CardBody><Text size="small">After 60 minutes with no activity, or after closing the browser, a sign-in box appears over the current screen with a clear message. Signing back in continues where they were, so unsaved typing is not lost.</Text></CardBody></Card>
         <Card><CardHeader>Logout really logs out</CardHeader><CardBody><Text size="small">Important on shared station and apparatus computers.</Text></CardBody></Card>
       </Grid>
     </Stack>
@@ -122,6 +134,14 @@ function SignIn() {
     <Stack gap={16}>
       <H2>How sign-in will work</H2>
       <Table headers={["Moment", "What happens"]} rows={flow} />
+      <H2>What the Session table is</H2>
+      <Text>A new list in the database, like a sign-in sheet at the station door. Each time someone logs in, one line is added. Nothing already in the database changes.</Text>
+      <Table
+        headers={["Column", "Plain meaning"]}
+        rows={sessionColumns}
+        striped
+      />
+      <Text tone="secondary" size="small">It holds no passwords and nothing personal beyond which account signed in. Old lines are removed automatically after they expire.</Text>
       <H2>Protections on the sign-in pass</H2>
       <Table headers={["Protection", "Plain meaning"]} rows={cookie} striped />
       <H2>Secure by default</H2>
@@ -215,7 +235,7 @@ function Decisions() {
   return (
     <Stack gap={16}>
       <H2>Your decisions needed before coding</H2>
-      <Table headers={["#", "Question", "Recommended"]} rows={decisions} striped />
+      <Table headers={["#", "Question", "Status"]} rows={decisions} striped />
       <H2>Can wait until Step 6</H2>
       <Table headers={["Question", "Step"]} rows={later} />
     </Stack>

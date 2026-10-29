@@ -21,6 +21,13 @@
 4. Clear cached department data on logout.
 5. Approve the auth code changes listed in the "What changes" tab.
 
+## User answers (2026-10-29, ~01:48 CDT)
+- Questioned the "no sign-in needed" claim (the page showed a login screen). Verified with a read-only request: `GET https://cifpdil.fireultimate.app/api/users` without signing in returned HTTP 200 with 21 accounts (only the count was printed). The login screen hides pages in the browser; the server does not check. No writes were tested on production.
+- Timeout: 60 minutes. Recorded as 60 minutes of inactivity, pending user confirmation (vs a hard 60-minute limit).
+- Lockout: yes (5 wrong / 15 minutes).
+- Clear cached data on logout: yes. Also sign out when the browser closes (session cookie with no Max-Age, plus the server inactivity limit).
+- Still open: decision 1 (Session table; plain explanation added to the canvas) and decision 5 (approve auth code changes).
+
 ## Can wait until Step 6
 - Default for NERIS export and manual incident creation (all users vs admins).
 - Approve role-permission and account-change-log tables (add-only).
