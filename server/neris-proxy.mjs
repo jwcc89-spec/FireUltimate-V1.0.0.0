@@ -34,6 +34,7 @@ import {
   noteLoginSuccess,
   normalizeRole,
   originAllowed,
+  publicHostname,
   readAuthFromRequest,
   revokeAllSessions,
   revokeOtherSessions,
@@ -1693,10 +1694,7 @@ app.use(async (request, response, next) => {
       return;
     }
 
-    const host =
-      normalizeHostname(request.headers["x-forwarded-host"]) ||
-      normalizeHostname(request.headers.host) ||
-      normalizeHostname(request.hostname);
+    const host = publicHostname(request) || normalizeHostname(request.hostname);
 
     const localHosts = new Set(["localhost", "127.0.0.1"]);
     if (localHosts.has(host)) {
@@ -2089,8 +2087,8 @@ async function cadIngestApplyMessagePipeline(tenantId, rawBody, emailRowId) {
 
     const plain = getDispatchPlainTextFromRawBody(rawBody);
     if (!plain) {
-      await prisma.cadEmailIngest.update({
-        where: { id: emailRowId },
+      await prisma.cadEmailIngest.updateMany({
+        where: { id: emailRowId, tenantId },
         data: { parsedMessageText: "" },
       });
       return;
@@ -2102,8 +2100,8 @@ async function cadIngestApplyMessagePipeline(tenantId, rawBody, emailRowId) {
     if (!result.ok) {
       console.warn("[CAD ingest] message rule pipeline failed:", result.error);
     }
-    await prisma.cadEmailIngest.update({
-      where: { id: emailRowId },
+    await prisma.cadEmailIngest.updateMany({
+      where: { id: emailRowId, tenantId },
       data: { parsedMessageText: slice },
     });
   } catch (e) {
@@ -2846,10 +2844,18 @@ app.patch("/api/incidents/:id", async (request, response) => {
       const v = body.apparatusJson ?? body.apparatus;
       update.apparatusJson = v == null ? null : (typeof v === "object" ? v : null);
     }
-    const updated = await prisma.incident.update({
-      where: { id },
-      data: update,
-    });
+    let updated = existing;
+    if (Object.keys(update).length > 0) {
+      const written = await prisma.incident.updateMany({
+        where: { id, tenantId },
+        data: update,
+      });
+      if (written.count !== 1) {
+        response.status(404).json({ ok: false, message: "Incident not found." });
+        return;
+      }
+      updated = await prisma.incident.findFirst({ where: { id, tenantId } });
+    }
     response.json({ ok: true, data: incidentRowToApi(updated) });
   } catch (error) {
     response.status(500).json({
@@ -2877,14 +2883,19 @@ app.delete("/api/incidents/:id", async (request, response) => {
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const deletedBy = trimValue(body.deletedBy) || null;
     const deletedReason = trimValue(body.deletedReason) || null;
-    const updated = await prisma.incident.update({
-      where: { id },
+    const written = await prisma.incident.updateMany({
+      where: { id, tenantId },
       data: {
         deletedAt: new Date(),
         deletedBy,
         deletedReason,
       },
     });
+    if (written.count !== 1) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const updated = await prisma.incident.findFirst({ where: { id, tenantId } });
     response.json({ ok: true, data: incidentRowToApi(updated) });
   } catch (error) {
     response.status(500).json({
@@ -4022,11 +4033,9 @@ app.post("/api/schedule-assignments", async (request, response) => {
       .map((row) => row.id);
 
     await prisma.$transaction([
-      ...deletions.map((id) =>
-        prisma.scheduleAssignments.delete({
-          where: { id },
-        }),
-      ),
+      prisma.scheduleAssignments.deleteMany({
+        where: { tenantId, id: { in: deletions } },
+      }),
       ...parsedRows.map((row) =>
         prisma.scheduleAssignments.upsert({
           where: {
@@ -4461,10 +4470,18 @@ app.patch("/api/users/:id", async (request, response) => {
         return;
       }
     }
-    const user = await prisma.user.update({
-      where: { id },
-      data: updates,
-    });
+    let user = existing;
+    if (Object.keys(updates).length > 0) {
+      const written = await prisma.user.updateMany({
+        where: { id, tenantId },
+        data: updates,
+      });
+      if (written.count !== 1) {
+        response.status(404).json({ ok: false, message: "User not found." });
+        return;
+      }
+      user = await prisma.user.findFirst({ where: { id, tenantId } });
+    }
     if (updates.passwordHash) {
       const keepSessionId = request.auth?.userId === user.id ? request.auth.sessionId : null;
       await revokeOtherSessions(prisma, user.id, keepSessionId);
@@ -4558,10 +4575,14 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
     })) {
       return;
     }
-    await prisma.user.update({
-      where: { id: existing.id },
+    const written = await prisma.user.updateMany({
+      where: { id: existing.id, tenantId },
       data: { passwordHash: await hashPassword(newPassword) },
     });
+    if (written.count !== 1) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
     await revokeAllSessions(prisma, existing.id);
     await auditAccountChange(
       tenantId,
@@ -4606,7 +4627,11 @@ app.delete("/api/users/:id", async (request, response) => {
     })) {
       return;
     }
-    await prisma.user.delete({ where: { id } });
+    const removed = await prisma.user.deleteMany({ where: { id, tenantId } });
+    if (removed.count !== 1) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
     await removeTenantUserFullName(tenantId, existing.username);
     await removeTenantUserTypeLabel(tenantId, existing.username);
     await auditAccountChange(
@@ -4716,6 +4741,7 @@ app.post("/api/admin/neris/entities/refresh", async (request, response) => {
 });
 
 app.get("/api/neris/debug/entity-check", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const requestedNerisId =
     readQueryValue(request.query.nerisId) ||
@@ -4850,6 +4876,7 @@ async function resolveTenantEntityId(tenantId) {
 }
 
 app.get("/api/neris/debug/incident", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const requestedIncidentNerisId =
     readQueryValue(request.query.incidentNerisId) ||
@@ -4900,6 +4927,17 @@ app.get("/api/neris/debug/incident", async (request, response) => {
         "Invalid incident NERIS ID format. Expected FD########|incident-number|##########.",
       submittedEntityId: requestedEntityId,
       incidentNerisId: requestedIncidentNerisId,
+    });
+    return;
+  }
+  const tenantEntityId = trimValue(request.tenant?.id)
+    ? await resolveTenantEntityId(request.tenant.id)
+    : "";
+  if (request.tenant?.id && incidentEntityFromId && incidentEntityFromId !== tenantEntityId) {
+    response.status(403).json({
+      ok: false,
+      code: "TENANT_ENTITY_MISMATCH",
+      message: "This department can only use its own NERIS entity ID.",
     });
     return;
   }
@@ -4963,7 +5001,48 @@ app.get("/api/neris/debug/incident", async (request, response) => {
   }
 });
 
+function clientSuppliedEntityIds(request) {
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const integration =
+    body.integration && typeof body.integration === "object" ? body.integration : {};
+  const values = [
+    integration.entityId,
+    request.headers?.["x-neris-entity-id"],
+    request.headers?.["x-neris-vendor-code"],
+    readQueryValue(request.query?.entityId),
+    readQueryValue(request.query?.nerisId),
+    readQueryValue(request.query?.neris_id),
+  ];
+  return values.map((value) => trimValue(value)).filter((value) => NERIS_ENTITY_ID_PATTERN.test(value));
+}
+
+/** A department may only act as its own NERIS entity. Returns true when the response was sent. */
+async function rejectForeignNerisEntity(request, response) {
+  const tenantId = trimValue(request.tenant?.id);
+  if (!tenantId) return false;
+  const supplied = clientSuppliedEntityIds(request);
+  if (supplied.length === 0) return false;
+  const tenantEntityId = await resolveTenantEntityId(tenantId);
+  if (supplied.every((value) => value === tenantEntityId)) return false;
+  response.status(403).json({
+    ok: false,
+    code: "TENANT_ENTITY_MISMATCH",
+    message: "This department can only use its own NERIS entity ID.",
+  });
+  return true;
+}
+
 async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, tenant) {
+  const tenantId = trimValue(tenant?.id);
+  if (tenantId) {
+    const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
+    if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
+      return tenantEntityIdFromContext;
+    }
+    // Fail-closed for tenant traffic: never use a caller-supplied id or the global env value.
+    return resolveTenantEntityId(tenantId);
+  }
+
   const integration =
     requestBody?.integration && typeof requestBody.integration === "object"
       ? requestBody.integration
@@ -4972,25 +5051,7 @@ async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, t
     trimValue(requestHeaders["x-neris-entity-id"]) ||
     trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  if (bodyEntityId) {
-    return bodyEntityId;
-  }
-  if (headerEntityId) {
-    return headerEntityId;
-  }
-
-  const tenantId = trimValue(tenant?.id);
-  const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
-  if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
-    return tenantEntityIdFromContext;
-  }
-  if (tenantId) {
-    const tenantEntityId = await resolveTenantEntityId(tenantId);
-    // Fail-closed for tenant traffic: never fallback to global env value.
-    return tenantEntityId;
-  }
-
-  return config.defaultEntityId;
+  return bodyEntityId || headerEntityId || config.defaultEntityId;
 }
 
 function readNerisDetailString(responseBody) {
@@ -5110,6 +5171,7 @@ function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
 }
 
 app.post("/api/neris/validate", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const entityId = await resolveEntityIdFromRequest(
     request.body,
@@ -5191,6 +5253,7 @@ app.post("/api/neris/validate", async (request, response) => {
 });
 
 app.post("/api/neris/export", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const entityId = await resolveEntityIdFromRequest(
     request.body,

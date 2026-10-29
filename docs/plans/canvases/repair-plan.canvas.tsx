@@ -63,19 +63,19 @@ const stages: StageDef[] = [
         fix: "The server looks up each person's real role and department for every action. User management becomes admin-only with a log of every account change, department settings saves no longer change user accounts, and NERIS export is limited to approved roles. Add Admin Functions settings where each department's admin chooses which roles may see the Incidents tab, create incidents by hand, and delete incidents (deleting is admin-only by default) — all decided October 28. Decided October 29: the same admin-grantable pattern applies to submitting Fire Recovery billing, changing CAD rules, and changing Fire Recovery settings — admin only by default, and the department admin may grant or revoke each one for other roles. The server enforces the same choices. Approved October 29: sending a NERIS report and sending a NERIS report for billing are admin-only by default, and creating an incident by hand is admin-only by default.",
         who: "Me; role defaults are decided (admin only, grantable by the department admin).",
         done: "Built on the practice branch October 29, 2026. Tests prove a regular user cannot create an incident, send a NERIS report, send billing, or create an account, and that saving department settings does not delete accounts. Not on staging or production until a planned release." },
-      { n: "7", title: "Prove departments are fully separated", status: "Updated",
+      { n: "7", title: "Prove departments are fully separated", status: "Done",
         problem: "Records are tagged by department, but separation relies only on the web address, which may be fakeable. All departments also share one set of NERIS login credentials.",
         why: "With hundreds of departments, an admin change in one must never affect another.",
         fix: "Tie every account to one department, accept only trusted address information from Render, and add automated tests that create two pretend departments and prove neither can see or change the other's data. Review the shared NERIS credentials before onboarding additional departments.",
         who: "Me.",
-        done: "Department-separation tests run and pass on every change." },
-      { n: "8", title: "Update outdated software pieces",
+        done: "Built on the practice branch October 29, 2026. Two pretend departments cannot see or change each other's incidents, reports, accounts, settings, billing, schedule, or CAD emails. A forged address header does not switch departments. A department cannot send a NERIS report as another department's entity ID. The shared NERIS login is unchanged and still needs a decision before more departments join. Not on staging or production." },
+      { n: "8", title: "Update outdated software pieces", status: "Done",
         problem: "Some third-party components have publicly known security flaws, one rated critical.",
         why: "Known flaws are the first thing attackers try.",
         fix: "Upgrade and re-test everything.",
         who: "Me.",
-        done: "The security scan shows no critical or high issues in the running app." },
-      { n: "9", title: "Turn on automatic checks and safe release rules",
+        done: "Upgraded on the practice branch October 29, 2026. The security scan reports no remaining issues, including the critical proxy-addr flaw. Not on staging or production." },
+      { n: "9", title: "Turn on automatic checks and safe release rules", status: "Next",
         problem: "Existing tests never run automatically, and there is no written release procedure that protects live data.",
         why: "Tests catch accidental breakage; release rules protect Crescent's data.",
         fix: "Run all tests on every change, add a temporary practice database for server tests, and follow the rules in the 'Data safety' tab for every release.",
@@ -240,7 +240,7 @@ const productionItems = [
   ["Department settings save", "Can also create, change or delete user accounts", "6"],
   ["Default test accounts", "admin/admin and demo/demo may exist", "9B"],
   ["Browser-only settings", "Some settings differ between computers", "9B"],
-  ["Underlying software", "Known security flaws, one critical", "8"],
+  ["Underlying software", "Fixed on the practice branch October 29. The scan is clean. Not released yet.", "8 (done)"],
   ["Backups", "6-hour restore window", "2 (done), Data safety"],
 ];
 
@@ -278,11 +278,15 @@ const decided = [
   ["October 29, 2026", "Fire Recovery", "All open Fire Recovery questions go in one combined email, drafted after sandbox testing.", "17"],
   ["October 29, 2026", "Sign-in", "Session table approved. Signed out after 60 minutes with no activity. Locked for 15 minutes after 5 wrong passwords. Logout clears cached department data, and closing the browser signs the person out.", "5"],
   ["October 29, 2026", "Permissions", "Only admins can send a NERIS report, and only admins can send a NERIS report for billing. Only admins can create an incident by hand. The permission list and the account-change log are approved. Both are add-only. A department admin can lower a permission to their own role or a lower role.", "6"],
+  ["October 29, 2026", "Departments", "The department comes from the Host address. A fake X-Forwarded-Host is ignored unless TRUST_PROXY=1, and that switch stays off until Render is confirmed to replace the header. A department can only use its own NERIS entity ID.", "7"],
+  ["October 29, 2026", "Software", "Packages with known flaws were upgraded on the practice branch. The security scan reports no remaining issues. Not deployed.", "8"],
 ];
 
 const decisions = [
   ["Fire Recovery", "Reply to Fire Recovery with the account email for the sandbox Welcome Message. Their reply mentions support@fireultimatehq.com as the existing account; confirm whether to use it."],
   ["Fire Recovery", "Approve the Reporting tab changes in Step 15: add 'Is Resident', mark the required party fields as required for vehicle accidents, and decide where the incident-level Law Enforcement Number lives."],
+  ["NERIS logins", "Before another department is added, decide whether each department gets its own NERIS login. Today every department shares the one login stored on the server. Reports are locked to that department's own NERIS entity ID. The shared login can still read NERIS's public department directory, which the mutual-aid list uses."],
+  ["Release checklist", "Approve the Step 9 release checklist wording."],
 ];
 
 const fireRecoveryEmail = [
@@ -602,7 +606,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–6 done, Step 7 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
+        <Text size="small" tone="tertiary">Updated October 29, 2026 · Steps 1–8 done, Step 9 next · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

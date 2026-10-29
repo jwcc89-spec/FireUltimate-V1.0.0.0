@@ -67,7 +67,7 @@ There is a single backend process; no additional services. Tenant logic and NERI
 
 **Key behavior:**
 
-- **Tenant resolution (middleware)** — Resolves tenant from `Host` / `X-Forwarded-Host` via `TenantDomain`; localhost → demo tenant. Sets `request.tenant` for all `/api/*` routes (except admin).
+- **Tenant resolution (middleware)** — Resolves the tenant from the `Host` header via `TenantDomain`; localhost → demo tenant. `X-Forwarded-Host` is ignored unless `TRUST_PROXY=1` (leave that off until Render is confirmed to replace the header). Sets `request.tenant` for routes after the platform-admin routes. A sign-in pass is accepted only for the department it was created in. NERIS export, validate, and debug use that department's own entity ID and refuse a different one.
 - **Auth** — After a correct password, the server stores a sign-in pass as a fingerprint in the `Session` table and hands the pass to the browser in an HttpOnly cookie. The cookie ends when the browser closes. Every `/api` route requires a valid pass except `POST /api/auth/login`, `GET /api/tenant/context`, `POST /api/cad/inbound-email` (shared secret), and `/api/admin` (platform admin key). The pass expires after 60 minutes with no activity. Five wrong passwords lock that account for 15 minutes. The role is read from the `User` table on every request. Each action then checks a named permission against `RolePermission` (or the built-in default if that department has not changed it). Account creates, edits, password resets, and deletes are written to `AccountAuditLog` with no password. Saving department settings does not create or delete accounts. Routes: `POST /api/auth/login`, `GET /api/auth/session`, `POST /api/auth/logout`, `POST /api/auth/change-password`, `GET /api/permissions`, `GET /api/permissions/policy`, `PUT /api/permissions/policy`, `GET /api/account-audit`.
 - **Tenant/config** — `GET /api/tenant/context`, `GET|POST /api/department-details` (tenant-scoped).
 - **Users** — `GET|POST /api/users`, `PATCH|DELETE /api/users/:id`, `POST /api/users/:id/reset-password` (tenant-scoped).
@@ -166,8 +166,9 @@ Future architecture may introduce a relational Incident table. **Agents must not
 
 ## Tenant Strategy
 
-- **Resolution:** Tenant is determined by request host (via `TenantDomain`). Localhost uses the `demo` tenant.
-- **Scoping:** All domain data is tenant-scoped. Every query that reads or writes tenant-specific data must use `tenantId` (from `request.tenant.id`).
+- **Resolution:** Tenant is determined by the `Host` header (via `TenantDomain`). Localhost uses the `demo` tenant. `X-Forwarded-Host` is not trusted unless `TRUST_PROXY=1`.
+- **Scoping:** All domain data is tenant-scoped. Every query that reads or writes tenant-specific data must use `tenantId` (from `request.tenant.id`). Updates and deletes of incidents, accounts, and schedule rows include `tenantId` in the write, not only in the earlier lookup.
+- **NERIS login:** Every department currently uses the one NERIS client id and secret on the server. Each department may only submit as its own NERIS entity ID. Per-department NERIS logins are an open decision before more departments are added.
 - **Convention:** All domain entities that belong to a tenant have a `tenantId` column and an index on `tenantId`. No cross-tenant data access.
 
 For detailed multi-tenant and domain setup, see `docs/task-2-multitenant-domain-plan.md`.

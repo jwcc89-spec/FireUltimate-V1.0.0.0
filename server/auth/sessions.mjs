@@ -72,13 +72,31 @@ function hostnameOf(value) {
   return first.split(":")[0] || "";
 }
 
+/** Right-most name. A trusted proxy appends its own value at the end. */
+function nearestForwardedHostname(value) {
+  const raw = typeof value === "string" ? value.trim().toLowerCase() : "";
+  if (!raw) return "";
+  const parts = raw
+    .split(",")
+    .map((part) => part.trim().split(":")[0])
+    .filter(Boolean);
+  return parts[parts.length - 1] || "";
+}
+
+/**
+ * The department address for this request.
+ * A visitor can set X-Forwarded-Host themselves, so it is ignored unless
+ * TRUST_PROXY=1. Set that only on Render, and only if Render replaces the
+ * header. Everywhere else, including this practice copy, the Host header is used.
+ */
+export function publicHostname(request) {
+  const direct = hostnameOf(request.headers?.host);
+  if (process.env.TRUST_PROXY !== "1") return direct;
+  return nearestForwardedHostname(request.headers?.["x-forwarded-host"]) || direct;
+}
+
 export function requestHostname(request) {
-  return (
-    request.tenant?.host ||
-    hostnameOf(request.headers["x-forwarded-host"]) ||
-    hostnameOf(request.headers.host) ||
-    ""
-  );
+  return request.tenant?.host || publicHostname(request);
 }
 
 export function isLocalHostname(hostname) {

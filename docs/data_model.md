@@ -58,7 +58,7 @@ Maps a hostname to a tenant for domain-based routing.
 
 **Notes**
 
-- Used for host-based tenant resolution (request `Host` / `X-Forwarded-Host`). Localhost resolves to the `demo` tenant.
+- Used for host-based tenant resolution (request `Host`). `X-Forwarded-Host` is ignored unless `TRUST_PROXY=1`. Localhost resolves to the `demo` tenant.
 - A hostname may belong to only one tenant.
 
 ---
