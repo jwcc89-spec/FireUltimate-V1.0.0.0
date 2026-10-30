@@ -32,7 +32,12 @@ jobs:
           cache: npm
 
       - name: Install dependencies
-        run: npm ci
+        # Prisma itself supports Node 20.19. A nested helper, @prisma/streams-local,
+        # is only used by Prisma's local database tool, which this app does not run,
+        # and that helper declares Node 22. .npmrc sets engine-strict=true, and
+        # --ignore-engines does not override that file. Turn the check off for
+        # this install only, keep Node 20.19, and then run lint, build, and tests.
+        run: npm ci --engine-strict=false
 
       - name: Lint
         run: npm run lint

@@ -7,7 +7,7 @@ Use this for every release to staging or production. A release means telling Ren
 ## Before anything else
 
 1. Name the release in one sentence: what will change, and which site (staging or production).
-2. Confirm the practice branch tests passed: lint, build, and `npm test`.
+2. Confirm the practice branch tests passed: lint, build, and `npm test`. The GitHub check uses Node 20.19. It installs with `npm ci --engine-strict=false` because an unused Prisma helper declares Node 22, and the project's `.npmrc` would otherwise stop the install. If the Render service is still on Node 20, its install command needs the same flag.
 3. List every database change. Each one must only add something. No deleting or renaming existing tables or columns.
 4. Write how to undo it: which previous code copy Render should run, and that the database additions can stay in place because they are unused by the older code.
 

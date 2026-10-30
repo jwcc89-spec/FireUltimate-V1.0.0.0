@@ -12,6 +12,7 @@ Date: 2026-10-30 (America/Chicago)
 - `npm run lint`: pass
 - `npm run build`: pass (existing chunk-size warning only)
 - The live app was not clicked. This environment has no `.env.server`, so the screens were not opened.
+- The first GitHub run stopped at install: `.npmrc` has `engine-strict=true`, and `@prisma/streams-local` (pulled in by Prisma's unused local-database helper) declares Node 22. `--ignore-engines` does not override that file. CI stays on Node 20.19 and installs with `npm ci --engine-strict=false`. The app does not load that helper.
 
 ## Not done
 - Do not touch staging, production, Neon, or Render.
