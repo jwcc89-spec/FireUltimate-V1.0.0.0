@@ -4,6 +4,7 @@ Use these when performing setup, onboarding, or verification.
 
 | Doc | Purpose |
 |-----|--------|
+| **RELEASE_CHECKLIST.md** | Approved 2026-10-30. Follow for every release to staging or production: backup, staging first, sign-in check, rollback. |
 | **GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md** | Resume point for go-live; pre-export verification; NERIS notes. |
 | **STAGING_AND_DEPLOYMENT.md** | Staging branch (`submenu/neris-golive-cifpd`), Render, latest commit; “push” vs “redeploy on Render” explained. |
 | **STAGING_VS_PRODUCTION_DATA.md** | Why incidents/export history from staging don't show on production (separate databases). |

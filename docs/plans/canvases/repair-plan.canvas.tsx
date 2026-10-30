@@ -78,15 +78,15 @@ const stages: StageDef[] = [
       { n: "9", title: "Turn on automatic checks and safe release rules", status: "Next",
         problem: "Existing tests never run automatically, and there is no written release procedure that protects live data.",
         why: "Tests catch accidental breakage; release rules protect Crescent's data.",
-        fix: "Run all tests on every change, add a temporary practice database for server tests, and follow the rules in the 'Data safety' tab for every release.",
+        fix: "Run all tests on every change, add a temporary practice database for server tests, and follow the rules in the 'Data safety' tab for every release. The release checklist wording was approved October 30 and saved as docs/procedures/RELEASE_CHECKLIST.md.",
         who: "Me.",
-        done: "Every change shows pass or fail in GitHub, and the release checklist exists." },
+        done: "Every change shows pass or fail in GitHub, and the release checklist exists. The checklist is saved; the automatic GitHub test run is not built yet." },
       { n: "9A", title: "Protect incidents and NERIS reports on the server", status: "Updated",
         problem: "The 'locked when In Review or Exported' rule is enforced only on screen, so the server still accepts edits. If two people edit the same report, the last save silently wins, and there is no change history. Changing the NERIS Entity ID in Admin Functions can leave export using the old ID.",
         why: "A submitted NERIS report could be changed behind the scenes, and one person's edits could silently erase another's.",
-        fix: "Approved October 30. The server refuses edits when a report is In Review (Validate passed) or Exported. A Draft stays editable by anyone who can edit reports. After Validate or Export, only an admin can unlock. If two people edit at once, the second save stops with: 'Someone else saved this report while you were editing. Reload to see their changes before saving again.' A new add-only history list records who saved, when, which report, and which field names changed (not the old and new text). History is kept forever and is shown inside that report. Deleting requires the report to be unlocked first, and only an admin can delete. Saving the NERIS Entity ID in Admin Functions updates the ID export uses.",
+        fix: "Approved October 30. The server refuses edits when a report is In Review (Validate passed) or Exported. A Draft stays editable by anyone who can edit reports. Anyone who can edit reports can unlock an In Review report that has not been exported, so a firefighter can fix it. Once a report is Exported, only an admin can unlock it. If two people edit at once, the second save stops with: 'Someone else saved this report while you were editing. Reload to see their changes before saving again.' A new add-only history list records who saved, when, which report, and which field names changed (not the old and new text). History is kept forever and is shown inside that report. Deleting requires the report to be unlocked first, and only an admin can delete. Saving the NERIS Entity ID in Admin Functions updates the ID export uses.",
         who: "Me.",
-        done: "Tests prove a validated report cannot be edited or deleted until an admin unlocks it, a second simultaneous save is refused, and export uses the entity ID last saved by an admin." },
+        done: "Tests prove a locked report cannot be edited or deleted until it is unlocked, a firefighter can unlock an In Review report but not an Exported one, a second simultaneous save is refused, and export uses the entity ID last saved by an admin." },
       { n: "9B", title: "Clean up production leftovers", status: "Updated",
         problem: "Test accounts admin/admin and demo/demo may exist from initial setup; NODE_ENV is not set on either Render service; some settings exist only in one person's browser.",
         why: "NODE_ENV turns on the stricter production check for CAD email, and browser-only settings differ between computers. The starter accounts stay, by your choice on October 30.",
@@ -281,7 +281,8 @@ const decided = [
   ["October 29, 2026", "Departments", "The department comes from the Host address. A fake X-Forwarded-Host is ignored unless TRUST_PROXY=1, and that switch stays off until Render is confirmed to replace the header. A department can only use its own NERIS entity ID.", "7"],
   ["October 29, 2026", "Software", "Packages with known flaws were upgraded on the practice branch. The security scan reports no remaining issues. Not deployed.", "8"],
   ["October 30, 2026", "NERIS", "Departments do not log in to NERIS. One vendor key stays on the server. Each department exports only under the NERIS Entity ID an admin sets in Admin Functions. Export uses that saved ID.", "7, 9A"],
-  ["October 30, 2026", "Reports", "The server refuses edits to In Review and Exported reports. Draft stays editable. After Validate or Export, only an admin can unlock.", "9A"],
+  ["October 30, 2026", "Reports", "The server refuses edits to In Review and Exported reports. Draft stays editable. Anyone who can edit reports can unlock an In Review report that has not been exported. Only an admin can unlock an Exported report.", "9A"],
+  ["October 30, 2026", "Releases", "The Step 9 release checklist wording is approved and saved as docs/procedures/RELEASE_CHECKLIST.md.", "9"],
   ["October 30, 2026", "Reports", "If someone else saved first, the save stops with: 'Someone else saved this report while you were editing. Reload to see their changes before saving again.'", "9A"],
   ["October 30, 2026", "Reports", "A new add-only history list stores who, when, which report, and which field names changed. Old and new text are not stored. History is kept forever and shown inside that report.", "9A"],
   ["October 30, 2026", "Reports", "A report must be unlocked before it can be deleted. Only an admin can delete.", "9A"],
@@ -292,7 +293,6 @@ const decided = [
 const decisions = [
   ["Fire Recovery", "Reply to Fire Recovery with the account email for the sandbox Welcome Message. Their reply mentions support@fireultimatehq.com as the existing account; confirm whether to use it."],
   ["Fire Recovery", "Approve the Reporting tab changes in Step 15: add 'Is Resident', mark the required party fields as required for vehicle accidents, and decide where the incident-level Law Enforcement Number lives."],
-  ["Release checklist", "Approve the Step 9 release checklist wording."],
 ];
 
 const fireRecoveryEmail = [
@@ -612,7 +612,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 30, 2026 · Steps 1–8 done, Steps 9A and 9B approved, not built · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
+        <Text size="small" tone="tertiary">Updated October 30, 2026 · Steps 1–8 done · Step 9 next (checklist approved; automatic tests not built) · Steps 9A and 9B approved, not built · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
