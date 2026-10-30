@@ -45,7 +45,8 @@ import {
   getNerisExportHistory,
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
-import { getNerisDraft, patchNerisDraft } from "./api/nerisDrafts";
+import { getNerisDraft, patchNerisDraft, unlockNerisDraft } from "./api/nerisDrafts";
+import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
   getFireRecoveryIncidents,
@@ -3475,6 +3476,12 @@ function MenuDisplayCards({
     readDisplayCardConfig(),
   );
 
+  useEffect(() => {
+    const syncCards = () => setDisplayConfig(readDisplayCardConfig());
+    window.addEventListener("department-display-cards-updated", syncCards);
+    return () => window.removeEventListener("department-display-cards-updated", syncCards);
+  }, []);
+
   const defaultCards = useMemo(
     () =>
       menu.submenus.filter(
@@ -3528,7 +3535,7 @@ function MenuDisplayCards({
   ];
 
   const updateMenuCardSelection = (path: string) => {
-    if (defaultPathSet.has(path)) {
+    if (defaultPathSet.has(path) || !isAdminOrHigher(role)) {
       return;
     }
 
@@ -3547,6 +3554,11 @@ function MenuDisplayCards({
       }
 
       writeDisplayCardConfig(normalized);
+      void patchSharedDepartmentSettings({ displayCards: normalized }).catch((error: unknown) => {
+        writeDisplayCardConfig(previous);
+        setDisplayConfig(previous);
+        window.alert(error instanceof Error ? error.message : "Submenu cards were not saved.");
+      });
       return normalized;
     });
   };
@@ -3561,7 +3573,7 @@ function MenuDisplayCards({
           </p>
         </div>
 
-        <div className="edit-display-wrap">
+        {isAdminOrHigher(role) ? <div className="edit-display-wrap">
           <button
             type="button"
             className="edit-display-link"
@@ -3601,7 +3613,7 @@ function MenuDisplayCards({
               </small>
             </div>
           ) : null}
-        </div>
+        </div> : null}
       </div>
 
       {cards.length > 0 ? (
@@ -6069,6 +6081,8 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
     undefined,
   );
   const [draftLoadStatus, setDraftLoadStatus] = useState<"loading" | "done">("loading");
+  const draftUpdatedAtRef = useRef("");
+  const draftSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!callNumber) {
@@ -6083,9 +6097,10 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       if (!cancelled) setDraftLoadStatus("loading");
     });
     getNerisDraft(callNumber)
-      .then((payload) => {
+      .then((record) => {
         if (cancelled) return;
-        const normalized = payload ? normalizeApiDraftPayload(payload, callNumber) : null;
+        draftUpdatedAtRef.current = record?.updatedAt ?? "";
+        const normalized = record ? normalizeApiDraftPayload(record.draft, callNumber) : null;
         setServerDraft(normalized ?? null);
         setDraftLoadStatus("done");
       })
@@ -6114,10 +6129,28 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
     (cn: string, draft: NerisStoredDraft) => {
       writeNerisDraft(cn, draft);
       if (cn === callNumber) setServerDraft(draft);
-      patchNerisDraft(cn, draft).catch(() => {});
+      const run = draftSaveChainRef.current.then(async () => {
+        const saved = await patchNerisDraft(cn, draft, draftUpdatedAtRef.current);
+        draftUpdatedAtRef.current = saved.updatedAt;
+      });
+      draftSaveChainRef.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     },
     [callNumber],
   );
+
+  const unlockNerisDraftForForm = useCallback(async () => {
+    const saved = await unlockNerisDraft(callNumber, draftUpdatedAtRef.current);
+    draftUpdatedAtRef.current = saved.updatedAt;
+    const normalized = normalizeApiDraftPayload(saved.draft, callNumber);
+    if (normalized) {
+      writeNerisDraft(callNumber, normalized);
+      setServerDraft(normalized);
+    }
+  }, [callNumber]);
 
   const getExportHistory = () =>
     props.exportHistory && props.exportHistory.length > 0
@@ -6142,6 +6175,7 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       {...props}
       readNerisDraft={readNerisDraftForForm}
       writeNerisDraft={writeNerisDraftForForm}
+      unlockNerisDraft={unlockNerisDraftForForm}
       appendNerisExportRecord={appendAndSync}
       parseAssignedUnits={parseAssignedUnits}
       inferResourceUnitTypeValue={inferResourceUnitTypeValue}
@@ -7806,6 +7840,10 @@ function DepartmentDetailsPage({
     if (!file) {
       return;
     }
+    if (file.size > 500 * 1024) {
+      window.alert("The department logo must be 500 KB or smaller.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof window === "undefined") {
@@ -7814,6 +7852,9 @@ function DepartmentDetailsPage({
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
       window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, dataUrl);
       window.dispatchEvent(new Event("department-logo-updated"));
+      void patchSharedDepartmentSettings({ logoDataUrl: dataUrl }).catch((error: unknown) => {
+        window.alert(error instanceof Error ? error.message : "The department logo was not saved.");
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -13283,6 +13324,73 @@ function App() {
     () => readSubmenuVisibility(),
   );
 
+  useEffect(() => {
+    if (!session.isAuthenticated || typeof window === "undefined") return;
+    let cancelled = false;
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        if (cancelled || !json?.ok || !json.data) return;
+        const raw = json.data.sharedDepartmentSettings;
+        const shared =
+          raw && typeof raw === "object" && !Array.isArray(raw)
+            ? (raw as Record<string, unknown>)
+            : {};
+        if (typeof shared.logoDataUrl === "string") {
+          window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, shared.logoDataUrl);
+          window.dispatchEvent(new Event("department-logo-updated"));
+        }
+        if (Array.isArray(shared.workflowStates)) {
+          const states = dedupeAndCleanStrings(
+            shared.workflowStates.filter((item): item is string => typeof item === "string"),
+          );
+          if (states.length) {
+            writeWorkflowStates(states);
+            setWorkflowStates(states);
+          }
+        }
+        if (shared.submenuVisibility && typeof shared.submenuVisibility === "object") {
+          const source = shared.submenuVisibility as Record<string, unknown>;
+          const next = getDefaultSubmenuVisibilityMap();
+          for (const path of ALL_SUBMENU_PATHS) {
+            if (typeof source[path] === "boolean") next[path] = source[path];
+          }
+          writeSubmenuVisibility(next);
+          setSubmenuVisibility(next);
+        }
+        if (shared.displayCards && typeof shared.displayCards === "object" && !Array.isArray(shared.displayCards)) {
+          writeDisplayCardConfig(shared.displayCards as DisplayCardConfig);
+          window.dispatchEvent(new Event("department-display-cards-updated"));
+        }
+        if (!isAdminOrHigher(session.role)) return;
+        const seed: {
+          workflowStates?: string[];
+          submenuVisibility?: SubmenuVisibilityMap;
+          displayCards?: Record<string, string[]>;
+        } = {};
+        if (!Array.isArray(shared.workflowStates)) seed.workflowStates = readWorkflowStates();
+        if (!shared.submenuVisibility || typeof shared.submenuVisibility !== "object") {
+          seed.submenuVisibility = readSubmenuVisibility();
+        }
+        if (!shared.displayCards || typeof shared.displayCards !== "object") {
+          seed.displayCards = readDisplayCardConfig();
+        }
+        if (Object.keys(seed).length > 0) {
+          void patchSharedDepartmentSettings(seed).catch(() => {});
+        }
+        if (typeof shared.logoDataUrl !== "string") {
+          const localLogo = window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "";
+          if (localLogo.startsWith("data:image/") && localLogo.length < 680_000) {
+            void patchSharedDepartmentSettings({ logoDataUrl: localLogo }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session.isAuthenticated, session.role]);
+
   const apparatusFromDepartmentDetails = useMemo(
     () => readApparatusFromDepartmentDetails(),
     [],
@@ -13343,6 +13451,9 @@ function App() {
     }
     setWorkflowStates(normalized);
     writeWorkflowStates(normalized);
+    void patchSharedDepartmentSettings({ workflowStates: normalized }).catch((error: unknown) => {
+      window.alert(error instanceof Error ? error.message : "Workflow states were not saved.");
+    });
   };
 
   const handleSaveIncidentDisplaySettings = (
@@ -13366,6 +13477,9 @@ function App() {
     };
     setSubmenuVisibility(normalized);
     writeSubmenuVisibility(normalized);
+    void patchSharedDepartmentSettings({ submenuVisibility: normalized }).catch((error: unknown) => {
+      window.alert(error instanceof Error ? error.message : "Submenu visibility was not saved.");
+    });
   };
 
   const handleSaveNerisExportSettings = (nextSettings: NerisExportSettings) => {
@@ -13466,11 +13580,9 @@ function App() {
     if (deleted) {
       try {
         const draft = await getNerisDraft(callNumber);
-        const status = draft?.reportStatus?.trim();
+        const status = draft?.draft.reportStatus?.trim();
         if (status === "In Review" || status === "Exported") {
-          alert(
-            "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance.",
-          );
+          alert("This report is locked. Unlock it before deleting.");
           return;
         }
       } catch {

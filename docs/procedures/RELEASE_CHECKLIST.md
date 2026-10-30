@@ -21,7 +21,7 @@ Use this for every release to staging or production. A release means telling Ren
 ## Staging first
 
 9. Apply database additions to the staging database only after the backup exists and you have said yes in writing.
-10. Release the code to the staging Render service only after those tables exist.
+10. Release the code to the staging Render service only after those tables exist. As part of that release, set `NODE_ENV` to `production` on the staging Render service.
 11. Sign in on the department's own staging address and check the change: sign in and out, a wrong password locks after 5 tries, a regular user cannot create an incident or send a NERIS report, and one department cannot open another department's incident.
 12. Stop if staging fails. Leave production as it is.
 
@@ -30,13 +30,14 @@ Use this for every release to staging or production. A release means telling Ren
 13. Take a new production backup the same way. A staging backup does not cover production.
 14. Say yes in writing for production.
 15. Apply the same database additions to production.
-16. Release the code to the production Render service.
+16. Release the code to the production Render service. As part of that release, set `NODE_ENV` to `production` on the production Render service.
 17. Sign in as Crescent and confirm the department still sees its own incidents and can open a NERIS report.
 18. Leave CAD auto-create off until Stage D. Leave Fire Recovery submissions off until Stage C says otherwise.
 
 ## Never
 
 - Run the script that creates `admin/admin` or `demo/demo` against production.
+- Delete the admin or demo accounts. They stay on purpose.
 - Point Render production at a branch other than `main` without this checklist and a fresh backup.
 - Put passwords, database addresses, or API secrets in chat, in the checklist, or in department settings JSON.
 - Test Fire Recovery with any department ID other than sandbox ID `FD12345678`.

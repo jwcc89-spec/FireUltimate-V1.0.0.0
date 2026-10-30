@@ -75,24 +75,24 @@ const stages: StageDef[] = [
         fix: "Upgrade and re-test everything.",
         who: "Me.",
         done: "Upgraded on the practice branch October 29, 2026. The security scan reports no remaining issues, including the critical proxy-addr flaw. Not on staging or production." },
-      { n: "9", title: "Turn on automatic checks and safe release rules", status: "Next",
+      { n: "9", title: "Turn on automatic checks and safe release rules", status: "Done",
         problem: "Existing tests never run automatically, and there is no written release procedure that protects live data.",
         why: "Tests catch accidental breakage; release rules protect Crescent's data.",
         fix: "Run all tests on every change, add a temporary practice database for server tests, and follow the rules in the 'Data safety' tab for every release. The release checklist wording was approved October 30 and saved as docs/procedures/RELEASE_CHECKLIST.md.",
         who: "Me.",
-        done: "Every change shows pass or fail in GitHub, and the release checklist exists. The checklist is saved; the automatic GitHub test run is not built yet." },
-      { n: "9A", title: "Protect incidents and NERIS reports on the server", status: "Updated",
+        done: "Built on the practice branch October 30, 2026. GitHub runs lint, build, and the automated tests against a throwaway Postgres database that is discarded after the run. The release checklist is saved. Not on staging or production." },
+      { n: "9A", title: "Protect incidents and NERIS reports on the server", status: "Done",
         problem: "The 'locked when In Review or Exported' rule is enforced only on screen, so the server still accepts edits. If two people edit the same report, the last save silently wins, and there is no change history. Changing the NERIS Entity ID in Admin Functions can leave export using the old ID.",
         why: "A submitted NERIS report could be changed behind the scenes, and one person's edits could silently erase another's.",
         fix: "Approved October 30. The server refuses edits when a report is In Review (Validate passed) or Exported. A Draft stays editable by anyone who can edit reports. Anyone who can edit reports can unlock an In Review report that has not been exported, so a firefighter can fix it. Once a report is Exported, only an admin can unlock it. If two people edit at once, the second save stops with: 'Someone else saved this report while you were editing. Reload to see their changes before saving again.' A new add-only history list records who saved, when, which report, and which field names changed (not the old and new text). History is kept forever and is shown inside that report. Deleting requires the report to be unlocked first, and only an admin can delete. Saving the NERIS Entity ID in Admin Functions updates the ID export uses.",
         who: "Me.",
-        done: "Tests prove a locked report cannot be edited or deleted until it is unlocked, a firefighter can unlock an In Review report but not an Exported one, a second simultaneous save is refused, and export uses the entity ID last saved by an admin." },
-      { n: "9B", title: "Clean up production leftovers", status: "Updated",
+        done: "Built on the practice branch October 30, 2026. Tests prove a locked report cannot be edited or deleted until it is unlocked, a firefighter can unlock an In Review report but not an Exported one, a second simultaneous save is refused, change history stores field names only, and export uses the entity ID last saved by an admin. Not on staging or production." },
+      { n: "9B", title: "Clean up production leftovers", status: "Done",
         problem: "Test accounts admin/admin and demo/demo may exist from initial setup; NODE_ENV is not set on either Render service; some settings exist only in one person's browser.",
         why: "NODE_ENV turns on the stricter production check for CAD email, and browser-only settings differ between computers. The starter accounts stay, by your choice on October 30.",
         fix: "Approved October 30. Keep the admin and demo accounts; do not delete them. During a planned release, set NODE_ENV=production on both Render services. Move these to the server so the whole department shares them: department logo (500 KB limit), dispatch workflow states, submenu display settings, and submenu cards. Leave each person's incident list layout and sidebar width on their own computer. Shift trades wait for the scheduling review.",
         who: "Me, with you confirming in Render and the app.",
-        done: "NODE_ENV is set on both live servers during a release, shared settings match on every computer, and the admin and demo accounts were kept on purpose." },
+        done: "Built on the practice branch October 30, 2026. The department logo (500 KB limit), dispatch workflow states, submenu visibility, and submenu cards are stored on the server for the whole department. Incident list layout and sidebar width stay on each computer. The admin and demo accounts were kept. NODE_ENV=production is written into the release checklist and is set only during a planned release. Not on staging or production." },
     ],
   },
   {
@@ -234,12 +234,12 @@ const productionItems = [
   ["User management", "Accounts can be created, promoted, reset or deleted without logging in", "6"],
   ["NERIS export history", "Browser writes 'export succeeded' records", "10"],
   ["NERIS export button", "Server does not check who exports", "6"],
-  ["Report edit lock", "Lock enforced only on screen", "9A"],
-  ["Report editing", "Last save silently wins; no change history", "9A"],
+  ["Report edit lock", "Fixed on the practice branch October 30. The server enforces the lock. Not released.", "9A (done)"],
+  ["Report editing", "Fixed on the practice branch October 30. A second save is refused and change history is kept. Not released.", "9A (done)"],
   ["CAD email intake (production)", "Secret optional in the production code version; no sender allowlist on main", "23, 9B (secret confirmed set)"],
   ["Department settings save", "Can also create, change or delete user accounts", "6"],
   ["Default test accounts", "Kept on purpose October 30. Guessable passwords remain a risk until you change them in the app.", "9B"],
-  ["Browser-only settings", "Some settings differ between computers", "9B"],
+  ["Browser-only settings", "Logo, workflow, submenu visibility, and submenu cards moved to the server on the practice branch. Incident layout and sidebar width stay on each computer. Not released.", "9B (done)"],
   ["Underlying software", "Fixed on the practice branch October 29. The scan is clean. Not released yet.", "8 (done)"],
   ["Backups", "6-hour restore window", "2 (done), Data safety"],
 ];
@@ -288,6 +288,7 @@ const decided = [
   ["October 30, 2026", "Reports", "A report must be unlocked before it can be deleted. Only an admin can delete.", "9A"],
   ["October 30, 2026", "Production", "Keep the admin and demo accounts. Set NODE_ENV=production on both Render services during a planned release.", "9B"],
   ["October 30, 2026", "Settings", "Move the department logo (500 KB limit), dispatch workflow states, submenu visibility, and submenu cards to the server. Incident list layout and sidebar width stay on each computer. Shift trades wait.", "9B"],
+  ["October 30, 2026", "Practice branch", "Steps 9, 9A, and 9B are built on the practice branch. GitHub runs lint, build, and the tests on a throwaway database. This is not on staging or production.", "9, 9A, 9B"],
 ];
 
 const decisions = [
@@ -612,7 +613,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 30, 2026 · Steps 1–8 done · Step 9 next (checklist approved; automatic tests not built) · Steps 9A and 9B approved, not built · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
+        <Text size="small" tone="tertiary">Updated October 30, 2026 · Steps 1–9B done on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

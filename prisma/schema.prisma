@@ -30,6 +30,7 @@ model Tenant {
   cadEmailAllowlist       CadEmailAllowlistEntry[]
   nerisExportHistory      NerisExportHistory[]
   nerisDrafts             NerisDraft[]
+  nerisReportChanges      NerisReportChange[]
   fireRecoveryIncidentBillings FireRecoveryIncidentBilling[]
   sessions                    Session[]
   rolePermissions             RolePermission[]
@@ -293,4 +294,19 @@ model NerisDraft {
 
   @@unique([tenantId, callNumber])
   @@index([tenantId])
+}
+
+/// Who saved a NERIS report, and which field names changed. Add-only. No old or new text.
+model NerisReportChange {
+  id            String   @id @default(cuid())
+  tenantId      String
+  callNumber    String
+  actorUserId   String?
+  actorUsername String
+  fieldNames    Json
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, callNumber, createdAt])
 }

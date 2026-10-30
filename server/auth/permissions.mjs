@@ -79,6 +79,15 @@ export function permissionForRequest(method, path, body) {
   if ((verb === "GET" || verb === "PATCH") && /^\/api\/neris\/drafts\/[^/]+$/.test(route)) {
     return "reports.edit";
   }
+  if (verb === "GET" && /^\/api\/neris\/drafts\/[^/]+\/history$/.test(route)) {
+    return "reports.edit";
+  }
+  if (verb === "POST" && /^\/api\/neris\/drafts\/[^/]+\/unlock$/.test(route)) {
+    return "reports.edit";
+  }
+  if (verb === "PATCH" && route === "/api/department-shared-settings") {
+    return "settings.department";
+  }
   if (
     verb === "POST" &&
     (route === "/api/neris/export" || route === "/api/neris/validate" || route === "/api/neris/export-history")

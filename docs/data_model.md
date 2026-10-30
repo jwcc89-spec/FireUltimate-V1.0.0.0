@@ -270,3 +270,24 @@ One row each time an account is created, edited, reset, or deleted.
 **Notes**
 
 - Add-only. Approved October 29, 2026. Not applied to staging or production yet.
+
+---
+
+## 13. NerisReportChange
+
+One row each time a NERIS report is saved or unlocked. It records who, when, which report, and which field names changed. It does not store the old or new text.
+
+**Key fields**
+
+- `id` (cuid)
+- `tenantId`
+- `callNumber` (the incident id the report is saved under)
+- `actorUserId` (optional)
+- `actorUsername`
+- `fieldNames` (list of names only)
+- `createdAt`
+
+**Notes**
+
+- Add-only. Rows are kept forever and shown inside that report. Approved and built October 30, 2026. Not applied to staging or production yet.
+- Department logo, dispatch workflow states, submenu visibility, and submenu cards are stored in `DepartmentDetails.payloadJson.sharedDepartmentSettings`. That object holds no passwords. The logo is limited to 500 KB.

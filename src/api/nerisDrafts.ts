@@ -11,45 +11,84 @@ export interface NerisDraftPayload {
   additionalNonFdAidEntries?: Array<{ aidType?: string }>;
 }
 
+export interface NerisDraftRecord {
+  draft: NerisDraftPayload;
+  updatedAt: string;
+}
+
+export interface NerisReportChangeEntry {
+  id: string;
+  createdAt: string;
+  actorUsername: string;
+  fieldNames: string[];
+}
+
 const fetchOptions: RequestInit = { credentials: "include" };
 
-async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
-  const res = await fetch(url, {
-    ...fetchOptions,
-    ...options,
-    headers: { "Content-Type": "application/json", ...options?.headers },
-  });
-  const json = (await res.json()) as { ok?: boolean; data?: T; message?: string };
-  if (!res.ok) {
-    throw new Error(json?.message ?? `HTTP ${res.status}`);
-  }
-  return json.data as T;
+async function readJson(res: Response): Promise<{ ok?: boolean; data?: unknown; message?: string; updatedAt?: string }> {
+  return (await res.json()) as { ok?: boolean; data?: unknown; message?: string; updatedAt?: string };
 }
 
 /**
  * Fetch the NERIS draft for an incident. Returns null if no draft exists (404).
  * Sends credentials so the same tenant/session is used in every browser.
  */
-export async function getNerisDraft(callNumber: string): Promise<NerisDraftPayload | null> {
+export async function getNerisDraft(callNumber: string): Promise<NerisDraftRecord | null> {
   const encoded = encodeURIComponent(callNumber);
   const res = await fetch(`/api/neris/drafts/${encoded}`, { credentials: "include" });
   if (res.status === 404) return null;
-  const json = (await res.json()) as { ok?: boolean; data?: NerisDraftPayload; message?: string };
+  const json = await readJson(res);
   if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
-  return json.data ?? null;
+  return {
+    draft: (json.data ?? {}) as NerisDraftPayload,
+    updatedAt: typeof json.updatedAt === "string" ? json.updatedAt : "",
+  };
 }
 
 /**
  * Save (upsert) the NERIS draft for an incident.
+ * baseUpdatedAt is the updatedAt from the last load or save. The server refuses the save if someone else saved first.
  */
 export async function patchNerisDraft(
   callNumber: string,
   draft: NerisDraftPayload,
-): Promise<NerisDraftPayload> {
+  baseUpdatedAt = "",
+): Promise<NerisDraftRecord> {
   const encoded = encodeURIComponent(callNumber);
-  const data = await apiJson<NerisDraftPayload>(`/api/neris/drafts/${encoded}`, {
+  const res = await fetch(`/api/neris/drafts/${encoded}`, {
+    ...fetchOptions,
     method: "PATCH",
-    body: JSON.stringify(draft),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ payload: draft, baseUpdatedAt }),
   });
-  return data;
+  const json = await readJson(res);
+  if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
+  return {
+    draft: (json.data ?? draft) as NerisDraftPayload,
+    updatedAt: typeof json.updatedAt === "string" ? json.updatedAt : baseUpdatedAt,
+  };
+}
+
+export async function unlockNerisDraft(callNumber: string, baseUpdatedAt: string): Promise<NerisDraftRecord> {
+  const encoded = encodeURIComponent(callNumber);
+  const res = await fetch(`/api/neris/drafts/${encoded}/unlock`, {
+    ...fetchOptions,
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ baseUpdatedAt }),
+  });
+  const json = await readJson(res);
+  if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
+  return {
+    draft: (json.data ?? {}) as NerisDraftPayload,
+    updatedAt: typeof json.updatedAt === "string" ? json.updatedAt : "",
+  };
+}
+
+export async function getNerisDraftHistory(callNumber: string): Promise<NerisReportChangeEntry[]> {
+  const encoded = encodeURIComponent(callNumber);
+  const res = await fetch(`/api/neris/drafts/${encoded}/history`, { credentials: "include" });
+  const json = await readJson(res);
+  if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
+  return Array.isArray(json.data) ? (json.data as NerisReportChangeEntry[]) : [];
 }

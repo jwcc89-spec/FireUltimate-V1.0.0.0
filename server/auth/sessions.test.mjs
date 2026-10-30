@@ -432,6 +432,210 @@ test("server sign-in passes", async () => {
     assert.equal((await call(`/api/incidents/${otherIncident.id}`, { cookie: first.pair })).status, 404);
     assert.equal((await callHost("/api/incidents", { host: "other.test", cookie: first.pair })).status, 401);
 
+    const reportIncident = await call("/api/incidents", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { incidentType: "Lock test" },
+    });
+    assert.equal(reportIncident.status, 201);
+    const reportId = reportIncident.json.data.id;
+    const secretValue = "SHOULD-NOT-APPEAR-IN-HISTORY";
+    const createdDraft = await call(`/api/neris/drafts/${reportId}`, {
+      method: "PATCH",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { payload: { reportStatus: "Draft", formValues: { secret_field: secretValue } } },
+    });
+    assert.equal(createdDraft.status, 200, JSON.stringify(createdDraft.json));
+    const reviewed = await call(`/api/neris/drafts/${reportId}`, {
+      method: "PATCH",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: createdDraft.json.updatedAt,
+        payload: { reportStatus: "In Review", formValues: { secret_field: secretValue } },
+      },
+    });
+    assert.equal(reviewed.status, 200, JSON.stringify(reviewed.json));
+    const lockedEdit = await call(`/api/neris/drafts/${reportId}`, {
+      method: "PATCH",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: reviewed.json.updatedAt,
+        payload: { reportStatus: "In Review", formValues: { secret_field: "changed" } },
+      },
+    });
+    assert.equal(lockedEdit.status, 409);
+    assert.equal(lockedEdit.json.code, "REPORT_LOCKED");
+    const staleSave = await call(`/api/neris/drafts/${reportId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: createdDraft.json.updatedAt,
+        payload: { reportStatus: "In Review", formValues: { secret_field: secretValue } },
+      },
+    });
+    assert.equal(staleSave.status, 409);
+    assert.equal(
+      staleSave.json.message,
+      "Someone else saved this report while you were editing. Reload to see their changes before saving again.",
+    );
+    const unlocked = await call(`/api/neris/drafts/${reportId}/unlock`, {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { baseUpdatedAt: reviewed.json.updatedAt },
+    });
+    assert.equal(unlocked.status, 200, JSON.stringify(unlocked.json));
+    assert.equal(unlocked.json.data.reportStatus, "Draft");
+    const reviewedAgain = await call(`/api/neris/drafts/${reportId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: unlocked.json.updatedAt,
+        payload: { reportStatus: "In Review", formValues: { secret_field: secretValue } },
+      },
+    });
+    assert.equal(reviewedAgain.status, 200, JSON.stringify(reviewedAgain.json));
+    const exported = await call(`/api/neris/drafts/${reportId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: reviewedAgain.json.updatedAt,
+        payload: { reportStatus: "Exported", formValues: { secret_field: secretValue } },
+      },
+    });
+    assert.equal(exported.status, 200, JSON.stringify(exported.json));
+    const firefighterUnlockExported = await call(`/api/neris/drafts/${reportId}/unlock`, {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { baseUpdatedAt: exported.json.updatedAt },
+    });
+    assert.equal(firefighterUnlockExported.status, 403);
+    assert.match(firefighterUnlockExported.json.message, /Only an admin can unlock an exported report/);
+    const lockedDelete = await call(`/api/incidents/${reportId}`, {
+      method: "DELETE",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { deletedReason: "too soon" },
+    });
+    assert.equal(lockedDelete.status, 409);
+    assert.equal(lockedDelete.json.code, "REPORT_LOCKED");
+    const adminUnlock = await call(`/api/neris/drafts/${reportId}/unlock`, {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { baseUpdatedAt: exported.json.updatedAt },
+    });
+    assert.equal(adminUnlock.status, 200);
+    assert.equal(adminUnlock.json.data.reportStatus, "Draft");
+    await call("/api/permissions/policy", {
+      method: "PUT",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { permission: "incidents.delete", minimumRole: "user" },
+    });
+    const firefighterDelete = await call(`/api/incidents/${reportId}`, {
+      method: "DELETE",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { deletedReason: "no" },
+    });
+    assert.equal(firefighterDelete.status, 403);
+    assert.match(firefighterDelete.json.message, /Only an admin can delete a report/);
+    const history = await call(`/api/neris/drafts/${reportId}/history`, { cookie: ffCookie.pair });
+    assert.equal(history.status, 200);
+    const reportHistoryText = JSON.stringify(history.json);
+    assert.match(reportHistoryText, /secret_field/);
+    assert.match(reportHistoryText, /reportStatus/);
+    assert.doesNotMatch(reportHistoryText, /SHOULD-NOT-APPEAR-IN-HISTORY/);
+    const otherHistory = await callHost(`/api/neris/drafts/${reportId}/history`, {
+      host: "other.test",
+      cookie: bravo.pair,
+    });
+    assert.equal(JSON.stringify(otherHistory.json).includes("secret_field"), false);
+    const deletedReport = await call(`/api/incidents/${reportId}`, {
+      method: "DELETE",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { deletedReason: "unlocked" },
+    });
+    assert.equal(deletedReport.status, 200);
+    const historyAfterDelete = await call(`/api/neris/drafts/${reportId}/history`, { cookie: first.pair });
+    assert.ok(historyAfterDelete.json.data.length > 0);
+
+    const entitySave = await call("/api/neris/settings", {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { vendorCode: "fd33333333" },
+    });
+    assert.equal(entitySave.status, 200, JSON.stringify(entitySave.json));
+    assert.equal(entitySave.json.data.vendorCode, "FD33333333");
+    const tenantAfterSave = await prisma.tenant.findUnique({ where: { id: demo.id } });
+    assert.equal(tenantAfterSave.nerisEntityId, "FD33333333");
+    const staleExport = await call("/api/neris/export", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { integration: { entityId: "FD11111111" } },
+    });
+    assert.equal(staleExport.status, 403);
+    assert.equal(staleExport.json.code, "TENANT_ENTITY_MISMATCH");
+
+    const sharedDenied = await call("/api/department-shared-settings", {
+      method: "PATCH",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { workflowStates: ["Nope"] },
+    });
+    assert.equal(sharedDenied.status, 403);
+    const tooBigLogo = `data:image/png;base64,${Buffer.alloc(500 * 1024 + 8).toString("base64")}`;
+    const tooBig = await call("/api/department-shared-settings", {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { logoDataUrl: tooBigLogo },
+    });
+    assert.equal(tooBig.status, 400);
+    assert.match(tooBig.json.message, /500 KB/);
+    const tinyPng = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==";
+    const sharedSaved = await call("/api/department-shared-settings", {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        logoDataUrl: tinyPng,
+        workflowStates: ["Demo Only State", "On Scene"],
+        submenuVisibility: { "/reporting/neris": false },
+        displayCards: { incidents: ["/reporting/neris"] },
+      },
+    });
+    assert.equal(sharedSaved.status, 200, JSON.stringify(sharedSaved.json));
+    const sharedRead = await call("/api/department-details", { cookie: ffCookie.pair });
+    assert.equal(sharedRead.json.data.sharedDepartmentSettings.workflowStates[0], "Demo Only State");
+    assert.equal(sharedRead.json.data.sharedDepartmentSettings.submenuVisibility["/reporting/neris"], false);
+    assert.equal(sharedRead.json.data.sharedDepartmentSettings.displayCards.incidents[0], "/reporting/neris");
+    assert.equal(sharedRead.json.data.sharedDepartmentSettings.logoDataUrl, tinyPng);
+    const detailsPost = await call("/api/department-details", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { departmentName: "Demo Fire", marker: "STILL-HERE" },
+    });
+    assert.equal(detailsPost.status, 200);
+    const afterDetailsPost = await call("/api/department-details", { cookie: first.pair });
+    assert.equal(afterDetailsPost.json.data.marker, "STILL-HERE");
+    assert.equal(afterDetailsPost.json.data.sharedDepartmentSettings.workflowStates[0], "Demo Only State");
+    const otherShared = await callHost("/api/department-details", { host: "other.test", cookie: bravo.pair });
+    assert.equal(JSON.stringify(otherShared.json).includes("Demo Only State"), false);
+
     const second = await call("/api/auth/login", {
       method: "POST",
       requestOrigin: origin,
