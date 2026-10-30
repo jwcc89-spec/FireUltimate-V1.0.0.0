@@ -216,7 +216,7 @@ The following collections live inside `DepartmentDetails.payloadJson` under the 
 
 - NERIS-related tenant configuration must resolve from tenant-scoped data (e.g. tenant’s `nerisEntityId`, department details, selected mutual aid).
 - Do not fall back to global environment defaults for tenant traffic unless explicitly intended and documented.
-- Tenant entity ID is stored on `Tenant.nerisEntityId`; department reporting metadata and options live in `DepartmentDetails.payloadJson` or derived from it.
+- Tenant entity ID is stored on `Tenant.nerisEntityId`. An admin sets it in Admin Functions (NERIS Export Configuration). Saving that screen must copy it onto `Tenant.nerisEntityId`, and export must use that value. Department reporting metadata and options live in `DepartmentDetails.payloadJson` or derived from it. Departments do not have their own NERIS logins; the vendor client id and secret stay in server env.
 
 ---
 

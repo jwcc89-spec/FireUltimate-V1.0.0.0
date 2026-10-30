@@ -168,7 +168,7 @@ Future architecture may introduce a relational Incident table. **Agents must not
 
 - **Resolution:** Tenant is determined by the `Host` header (via `TenantDomain`). Localhost uses the `demo` tenant. `X-Forwarded-Host` is not trusted unless `TRUST_PROXY=1`.
 - **Scoping:** All domain data is tenant-scoped. Every query that reads or writes tenant-specific data must use `tenantId` (from `request.tenant.id`). Updates and deletes of incidents, accounts, and schedule rows include `tenantId` in the write, not only in the earlier lookup.
-- **NERIS login:** Every department currently uses the one NERIS client id and secret on the server. Each department may only submit as its own NERIS entity ID. Per-department NERIS logins are an open decision before more departments are added.
+- **NERIS connection:** Departments do not log in to NERIS. FireUltimate keeps one vendor client id and secret on the server. Each department exports only under the NERIS Entity ID an admin sets in Admin Functions (stored on the server). Export must use that saved ID and must refuse any other ID.
 - **Convention:** All domain entities that belong to a tenant have a `tenantId` column and an index on `tenantId`. No cross-tenant data access.
 
 For detailed multi-tenant and domain setup, see `docs/task-2-multitenant-domain-plan.md`.

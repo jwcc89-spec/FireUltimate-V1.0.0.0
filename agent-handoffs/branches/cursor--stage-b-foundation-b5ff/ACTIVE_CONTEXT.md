@@ -19,7 +19,7 @@
 - Step 7: department comes from the Host header. `X-Forwarded-Host` is ignored unless `TRUST_PROXY=1` (leave off). Two-department tests cover incidents, reports, accounts, settings, billing, schedule, and CAD email. NERIS calls use only that department's entity ID.
 - Step 8: package upgrades. `npm audit` is clean. No database change. Prisma stayed on 7.x.
 - Design canvas: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618
-- Next: Step 9 (automatic checks and the release checklist). The checklist wording is waiting on approval. Do not apply the Session, RolePermission, or AccountAuditLog migrations to staging or production without an explicit release approval and a fresh backup. Do not merge the practice branch into staging until those tables exist there. Do not set `TRUST_PROXY=1` until Render is confirmed to replace `X-Forwarded-Host`.
+- Next: Build Step 9A on this branch. Steps 9A and 9B were approved October 30 and are not built. The Step 9 release checklist wording is still waiting on approval. Do not apply the Session, RolePermission, or AccountAuditLog migrations to staging or production without an explicit release approval and a fresh backup. Do not merge the practice branch into staging until those tables exist there. Do not set `TRUST_PROXY=1` until Render is confirmed to replace `X-Forwarded-Host`. Do not set `NODE_ENV=production` until a planned release.
 
 ## Latest known status
 - Base commit: `2d985fa` - `feat(ui): Setup/Configuration, Fire Recovery tenant JWT only`
@@ -28,7 +28,10 @@
 
 ## Current blocker / status
 - No code blocker. Tests use throwaway local database `fu_session_test` on 127.0.0.1, never Neon. `npm test` needs that local Postgres running.
-- Open items that are not Step 9: confirm the Fire Recovery Welcome Message email; approve Step 15 Reporting tab changes; one combined Fire Recovery email after sandbox testing (Step 17); decide whether each department gets its own NERIS login before more departments join.
+- NERIS (decided October 30): departments do not log in. One vendor key stays on the server. Each department exports only under the NERIS Entity ID an admin sets in Admin Functions. Saving that screen must update the ID export uses. Today a later change on that screen can leave export on the old ID; fix that in 9A.
+- 9A (approved, not built): server refuses edits to In Review and Exported reports. Draft stays editable. After Validate or Export, only an admin can unlock. Conflict message is approved. New add-only history list: who, when, report, field names only, kept forever, shown inside that report. Delete requires unlock and is admin-only.
+- 9B (approved, not built, and not applied to Render): keep admin and demo accounts. Set NODE_ENV=production only during a planned release. Move logo (500 KB), workflow states, submenu visibility, and submenu cards to the server. Incident layout and sidebar width stay personal. Shift trades wait.
+- Open items: Step 9 release checklist wording; Fire Recovery Welcome Message email; Step 15 Reporting tab changes; one combined Fire Recovery email after sandbox testing (Step 17).
 
 ## External dependency status
 - Render, Neon, Cloudflare: not touched by this branch. No production or Render setting changes without user approval.
