@@ -2883,9 +2883,11 @@ app.delete("/api/incidents/:id", async (request, response) => {
     const reportCallNumbers = [id];
     const incidentNumber = trimValue(existing.incidentNumber);
     if (incidentNumber && incidentNumber !== id) reportCallNumbers.push(incidentNumber);
-    const linkedReports = await prisma.nerisDraft.findMany({
-      where: { tenantId, callNumber: { in: reportCallNumbers } },
-    });
+    const linkedReports = (
+      await prisma.nerisDraft.findMany({
+        where: { tenantId, callNumber: { in: reportCallNumbers } },
+      })
+    ).filter((row) => !isReportRemoved(row.payload));
     if (linkedReports.length > 0 && roleLevel(request.auth?.role) < roleLevel("admin")) {
       response.status(403).json({
         ok: false,
@@ -3052,6 +3054,12 @@ function reportStatusOf(payload) {
   return "Draft";
 }
 
+function isReportRemoved(payload) {
+  return Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && payload.reportRemoved === true);
+}
+
+const REMOVED_REPORT_PAYLOAD = { reportRemoved: true, reportStatus: "Draft", formValues: {} };
+
 function draftPayloadFromBody(body) {
   const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
   const nested =
@@ -3061,7 +3069,19 @@ function draftPayloadFromBody(body) {
   const payload = { ...nested };
   delete payload.baseUpdatedAt;
   delete payload.payload;
+  delete payload.seedFormValues;
+  delete payload.reportRemoved;
   return payload;
+}
+
+function seedFormValuesFromBody(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body.seedFormValues : null;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const seed = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value === "string" || typeof value === "number") seed[key] = String(value);
+  }
+  return seed;
 }
 
 function revisionMatches(updatedAt, baseUpdatedAt) {
@@ -3070,26 +3090,57 @@ function revisionMatches(updatedAt, baseUpdatedAt) {
   return Number.isFinite(expected) && Number.isFinite(actual) && expected === actual;
 }
 
-function changedFieldNames(previous, next) {
-  const prev = previous && typeof previous === "object" && !Array.isArray(previous) ? previous : {};
-  const nxt = next && typeof next === "object" && !Array.isArray(next) ? next : {};
+const HISTORY_SKIP_KEYS = new Set([
+  "formValues",
+  "baseUpdatedAt",
+  "lastSavedAt",
+  "payload",
+  "reportRemoved",
+  "seedFormValues",
+]);
+
+function plainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function isEmptyHistoryValue(value) {
+  if (value == null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function changedFieldNames(previous, next, seedFormValues) {
+  const prev = plainObject(previous);
+  const nxt = plainObject(next);
+  const seed = plainObject(seedFormValues);
   const names = new Set();
-  const prevForm =
-    prev.formValues && typeof prev.formValues === "object" && !Array.isArray(prev.formValues)
-      ? prev.formValues
-      : {};
-  const nextForm =
-    nxt.formValues && typeof nxt.formValues === "object" && !Array.isArray(nxt.formValues)
-      ? nxt.formValues
-      : {};
+  const prevForm = plainObject(prev.formValues);
+  const nextForm = plainObject(nxt.formValues);
   for (const key of new Set([...Object.keys(prevForm), ...Object.keys(nextForm)])) {
-    if (String(prevForm[key] ?? "") !== String(nextForm[key] ?? "")) names.add(key);
+    const previousValue = String(prevForm[key] ?? "");
+    const nextValue = String(nextForm[key] ?? "");
+    if (previousValue === nextValue) continue;
+    const copiedFromIncident =
+      !Object.prototype.hasOwnProperty.call(prevForm, key) &&
+      Object.prototype.hasOwnProperty.call(seed, key) &&
+      String(seed[key] ?? "") === nextValue;
+    if (copiedFromIncident) continue;
+    names.add(key);
   }
   for (const key of new Set([...Object.keys(prev), ...Object.keys(nxt)])) {
-    if (key === "formValues" || key === "baseUpdatedAt" || key === "lastSavedAt" || key === "payload") {
+    if (HISTORY_SKIP_KEYS.has(key)) continue;
+    if (key === "reportStatus") {
+      const nextStatus = trimValue(nxt.reportStatus) || "Draft";
+      if (!trimValue(prev.reportStatus) && nextStatus === "Draft") continue;
+      if ((trimValue(prev.reportStatus) || "Draft") !== nextStatus) names.add(key);
       continue;
     }
-    if (JSON.stringify(prev[key] ?? null) !== JSON.stringify(nxt[key] ?? null)) names.add(key);
+    const prevValue = prev[key] ?? null;
+    const nextValue = nxt[key] ?? null;
+    if (JSON.stringify(prevValue) === JSON.stringify(nextValue)) continue;
+    if (isEmptyHistoryValue(prevValue) && isEmptyHistoryValue(nextValue)) continue;
+    names.add(key);
   }
   return [...names].sort();
 }
@@ -3185,6 +3236,30 @@ function sharedSettingsPatch(body) {
   return { patch };
 }
 
+// Call numbers whose NERIS report was deleted. The incident itself stays.
+app.get("/api/neris/removed-reports", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.nerisDraft.findMany({
+      where: {
+        tenantId,
+        payload: { path: ["reportRemoved"], equals: true },
+      },
+      select: { callNumber: true },
+    });
+    response.json({ ok: true, data: { callNumbers: rows.map((row) => row.callNumber) } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected removed report list error.",
+    });
+  }
+});
+
 // ----- /api/neris/drafts/:callNumber (NERIS report drafts, cross-browser) -----
 app.get("/api/neris/drafts/:callNumber", async (request, response) => {
   try {
@@ -3201,7 +3276,7 @@ app.get("/api/neris/drafts/:callNumber", async (request, response) => {
     const row = await prisma.nerisDraft.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
     });
-    if (!row) {
+    if (!row || isReportRemoved(row.payload)) {
       response.status(404).json({ ok: false, message: "No draft found for this incident." });
       return;
     }
@@ -3261,17 +3336,21 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const payload = draftPayloadFromBody(body);
+    const seedFormValues = seedFormValuesFromBody(body);
     const existing = await prisma.nerisDraft.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
     });
-    if (existing && !revisionMatches(existing.updatedAt, body.baseUpdatedAt)) {
+    const active = existing && !isReportRemoved(existing.payload) ? existing : null;
+    if (active && !revisionMatches(active.updatedAt, body.baseUpdatedAt)) {
       response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
       return;
     }
-    if (existing) {
-      const previousStatus = reportStatusOf(existing.payload);
+    if (active) {
+      const previousStatus = reportStatusOf(active.payload);
       const nextStatus = reportStatusOf(payload);
-      const contentChanges = changedFieldNames(existing.payload, payload).filter((name) => name !== "reportStatus");
+      const contentChanges = changedFieldNames(active.payload, payload, seedFormValues).filter(
+        (name) => name !== "reportStatus",
+      );
       if (nextStatus === "Exported" && previousStatus !== "Exported") {
         const minimumRole = await minimumRoleFor(prisma, tenantId, "neris.export");
         if (roleLevel(request.auth?.role) < roleLevel(minimumRole)) {
@@ -3299,7 +3378,7 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
       tenantId,
       callNumber,
       request.auth,
-      changedFieldNames(existing?.payload ?? {}, payload),
+      changedFieldNames(active?.payload ?? {}, payload, seedFormValues),
     );
     response.json(draftJson(row));
   } catch (error) {
@@ -3326,7 +3405,7 @@ app.post("/api/neris/drafts/:callNumber/unlock", async (request, response) => {
     const existing = await prisma.nerisDraft.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
     });
-    if (!existing) {
+    if (!existing || isReportRemoved(existing.payload)) {
       response.status(404).json({ ok: false, message: "No draft found for this incident." });
       return;
     }
@@ -3388,11 +3467,7 @@ app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
     const existing = await prisma.nerisDraft.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
     });
-    if (!existing) {
-      response.json({ ok: true });
-      return;
-    }
-    if (reportStatusOf(existing.payload) !== "Draft") {
+    if (existing && !isReportRemoved(existing.payload) && reportStatusOf(existing.payload) !== "Draft") {
       response.status(409).json({
         ok: false,
         code: "REPORT_LOCKED",
@@ -3400,8 +3475,10 @@ app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
       });
       return;
     }
-    await prisma.nerisDraft.delete({
+    await prisma.nerisDraft.upsert({
       where: { tenantId_callNumber: { tenantId, callNumber } },
+      create: { tenantId, callNumber, payload: REMOVED_REPORT_PAYLOAD },
+      update: { payload: REMOVED_REPORT_PAYLOAD },
     });
     response.json({ ok: true });
   } catch (error) {

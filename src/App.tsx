@@ -45,7 +45,13 @@ import {
   getNerisExportHistory,
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
-import { deleteNerisDraft, getNerisDraft, patchNerisDraft, unlockNerisDraft } from "./api/nerisDrafts";
+import {
+  deleteNerisDraft,
+  getNerisDraft,
+  getRemovedNerisReportCallNumbers,
+  patchNerisDraft,
+  unlockNerisDraft,
+} from "./api/nerisDrafts";
 import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
@@ -5491,9 +5497,26 @@ function PersonnelTradesPage() {
 
 function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
+  const [removedCallNumbers, setRemovedCallNumbers] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    getRemovedNerisReportCallNumbers()
+      .then((callNumbers) => {
+        if (!cancelled) setRemovedCallNumbers(new Set(callNumbers));
+      })
+      .catch(() => {
+        if (!cancelled) setRemovedCallNumbers(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const queueCalls = useMemo(
-    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls],
+    () =>
+      incidentCalls.filter(
+        (entry) => !isIncidentHiddenFromQueue(entry) && !removedCallNumbers.has(entry.callNumber),
+      ),
+    [incidentCalls, removedCallNumbers],
   );
   const fieldLabelById = useMemo(
     () =>
@@ -6084,11 +6107,16 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
   );
 
   const writeNerisDraftForForm = useCallback(
-    (cn: string, draft: NerisStoredDraft) => {
+    (cn: string, draft: NerisStoredDraft, seedFormValues?: Record<string, string>) => {
       writeNerisDraft(cn, draft);
       if (cn === callNumber) setServerDraft(draft);
       const run = draftSaveChainRef.current.then(async () => {
-        const saved = await patchNerisDraft(cn, draft, draftUpdatedAtRef.current);
+        const saved = await patchNerisDraft(
+          cn,
+          draft,
+          draftUpdatedAtRef.current,
+          seedFormValues,
+        );
         draftUpdatedAtRef.current = saved.updatedAt;
       });
       draftSaveChainRef.current = run.then(

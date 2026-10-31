@@ -68,7 +68,11 @@ export interface NerisReportFormPageProps {
   onDeleteIncidentCall: (callNumber: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
-  writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void | Promise<void>;
+  writeNerisDraft: (
+    callNumber: string,
+    draft: NerisStoredDraft,
+    seedFormValues?: Record<string, string>,
+  ) => void | Promise<void>;
   unlockNerisDraft?: () => Promise<void>;
   appendNerisExportRecord: (record: NerisExportRecord) => void;
   parseAssignedUnits: (value: string) => string[];
@@ -461,6 +465,12 @@ function NerisReportFormPage({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
   }));
+  const autoFillSeedRef = useRef<NerisFormValues>({ ...defaultFormValues });
+  const userEditedReportRef = useRef(false);
+  useEffect(() => {
+    if (userEditedReportRef.current) return;
+    autoFillSeedRef.current = { ...formValues };
+  }, [formValues]);
   const lastSyncedIncidentIdPair = useRef("");
   const previousIncidentIdPair = useRef("");
   const hasInitializedIncidentIdSync = useRef(false);
@@ -1696,6 +1706,20 @@ function NerisReportFormPage({
       >,
     [allNerisFields],
   );
+  const historyFieldLabel = (fieldId: string): string => {
+    const extraLabels: Record<string, string> = {
+      reportStatus: "Report status",
+      additionalAidEntries: "Additional aid",
+      additionalNonFdAidEntries: "Additional non-FD aid",
+      resource_units_json: "Units",
+      emerging_haz_electrocution_items_json: "Electrical hazards",
+      emerging_haz_power_generation_items_json: "Power generation hazards",
+      risk_reduction_fire_suppression_systems_json: "Suppression systems",
+    };
+    const named = nerisFieldLabelById[fieldId] || extraLabels[fieldId];
+    const text = named && named.trim() ? named : fieldId.replace(/_/g, " ");
+    return text.replace(/_/g, " ");
+  };
   const nerisFieldSectionById = useMemo(
     () =>
       Object.fromEntries(
@@ -1869,6 +1893,7 @@ function NerisReportFormPage({
   }, [nerisExportSettings.vendorCode, formValues.fd_neris_id]);
 
   const updateFieldValue = (fieldId: string, value: string) => {
+    userEditedReportRef.current = true;
     const sanitizedValue =
       fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
     const shouldClearNoAction =
@@ -2107,6 +2132,7 @@ function NerisReportFormPage({
   };
 
   const markNerisFormDirty = () => {
+    userEditedReportRef.current = true;
     setSaveMessage("");
     setErrorMessage("");
     setValidationIssues([]);
@@ -2944,7 +2970,7 @@ function NerisReportFormPage({
   };
 
   const persistNerisDraft = (draft: NerisStoredDraft) => {
-    const result = writeNerisDraft(callNumber, draft);
+    const result = writeNerisDraft(callNumber, draft, autoFillSeedRef.current);
     if (result && typeof result.then === "function") {
       void result.catch((error: unknown) => {
         setSaveMessage("");
@@ -5527,7 +5553,10 @@ function NerisReportFormPage({
                         minute: "2-digit",
                         hour12: false,
                       });
-                  const fields = entry.fieldNames.length > 0 ? entry.fieldNames.join(", ") : "Saved";
+                  const fields =
+                    entry.fieldNames.length > 0
+                      ? entry.fieldNames.map((fieldId) => historyFieldLabel(fieldId)).join(", ")
+                      : "Saved";
                   return (
                     <li key={entry.id}>
                       {label} — {entry.actorUsername} — {fields}
@@ -5749,8 +5778,8 @@ function NerisReportFormPage({
           <div className="validation-modal panel">
             <h2>Delete this report?</h2>
             <p>
-              This removes the saved NERIS report. The incident stays in the incident list. The
-              change history is kept.
+              This removes the report from the NERIS list. The incident stays on the Incidents
+              tab. The change history is kept.
             </p>
             <div className="validation-modal-actions">
               <button

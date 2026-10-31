@@ -53,13 +53,18 @@ export async function patchNerisDraft(
   callNumber: string,
   draft: NerisDraftPayload,
   baseUpdatedAt = "",
+  seedFormValues?: Record<string, string>,
 ): Promise<NerisDraftRecord> {
   const encoded = encodeURIComponent(callNumber);
   const res = await fetch(`/api/neris/drafts/${encoded}`, {
     ...fetchOptions,
     method: "PATCH",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ payload: draft, baseUpdatedAt }),
+    body: JSON.stringify({
+      payload: draft,
+      baseUpdatedAt,
+      ...(seedFormValues ? { seedFormValues } : {}),
+    }),
   });
   const json = await readJson(res);
   if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
@@ -69,7 +74,18 @@ export async function patchNerisDraft(
   };
 }
 
-/** Remove the saved NERIS report. The incident and the change history stay. */
+/** Call numbers removed from the NERIS list. The incidents stay. */
+export async function getRemovedNerisReportCallNumbers(): Promise<string[]> {
+  const res = await fetch("/api/neris/removed-reports", { credentials: "include" });
+  const json = await readJson(res);
+  if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
+  const data = json.data as { callNumbers?: unknown } | undefined;
+  return Array.isArray(data?.callNumbers)
+    ? data.callNumbers.filter((value): value is string => typeof value === "string")
+    : [];
+}
+
+/** Remove the saved NERIS report from the NERIS list. The incident and the change history stay. */
 export async function deleteNerisDraft(callNumber: string): Promise<void> {
   const encoded = encodeURIComponent(callNumber);
   const res = await fetch(`/api/neris/drafts/${encoded}`, {

@@ -76,6 +76,7 @@ export function permissionForRequest(method, path, body) {
     return "incidents.create";
   }
 
+  if (verb === "GET" && route === "/api/neris/removed-reports") return "incidents.view";
   if ((verb === "GET" || verb === "PATCH" || verb === "DELETE") && /^\/api\/neris\/drafts\/[^/]+$/.test(route)) {
     return "reports.edit";
   }

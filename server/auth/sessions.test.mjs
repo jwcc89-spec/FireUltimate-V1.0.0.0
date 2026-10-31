@@ -629,6 +629,87 @@ test("server sign-in passes", async () => {
     assert.equal(incidentKept.json.data.deletedAt ?? null, null);
     const historyKept = await call(`/api/neris/drafts/${keepId}/history`, { cookie: first.pair });
     assert.ok(historyKept.json.data.length > 0);
+    const removedList = await call("/api/neris/removed-reports", { cookie: first.pair });
+    assert.equal(removedList.status, 200, JSON.stringify(removedList.json));
+    assert.ok(removedList.json.data.callNumbers.includes(keepId));
+    const otherRemoved = await callHost("/api/neris/removed-reports", {
+      host: "other.test",
+      cookie: bravo.pair,
+    });
+    assert.equal(JSON.stringify(otherRemoved.json.data?.callNumbers ?? []).includes(keepId), false);
+    const restarted = await call(`/api/neris/drafts/${keepId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { payload: { reportStatus: "Draft", formValues: { notes: "again" } } },
+    });
+    assert.equal(restarted.status, 200, JSON.stringify(restarted.json));
+    const removedAfterRestart = await call("/api/neris/removed-reports", { cookie: first.pair });
+    assert.equal(removedAfterRestart.json.data.callNumbers.includes(keepId), false);
+    const draftBack = await call(`/api/neris/drafts/${keepId}`, { cookie: first.pair });
+    assert.equal(draftBack.status, 200);
+
+    const seedIncident = await call("/api/incidents", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { incidentType: "Seed test" },
+    });
+    assert.equal(seedIncident.status, 201);
+    const seedId = seedIncident.json.data.id;
+    const seededSave = await call(`/api/neris/drafts/${seedId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        payload: {
+          reportStatus: "Draft",
+          formValues: {
+            incident_internal_id: "AUTO-1",
+            dispatch_center_id: "0000",
+            notes: "typed by hand",
+          },
+          additionalAidEntries: [],
+        },
+        seedFormValues: {
+          incident_internal_id: "AUTO-1",
+          dispatch_center_id: "0000",
+          notes: "",
+        },
+      },
+    });
+    assert.equal(seededSave.status, 200, JSON.stringify(seededSave.json));
+    const seedHistory = await call(`/api/neris/drafts/${seedId}/history`, { cookie: first.pair });
+    const seedNames = seedHistory.json.data.flatMap((row) => row.fieldNames);
+    assert.ok(seedNames.includes("notes"));
+    assert.equal(seedNames.includes("incident_internal_id"), false);
+    assert.equal(seedNames.includes("dispatch_center_id"), false);
+    assert.equal(seedNames.includes("additionalAidEntries"), false);
+    assert.equal(seedNames.includes("reportStatus"), false);
+    const editedSeed = await call(`/api/neris/drafts/${seedId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: seededSave.json.updatedAt,
+        payload: {
+          reportStatus: "Draft",
+          formValues: {
+            incident_internal_id: "AUTO-1",
+            dispatch_center_id: "0000",
+            notes: "edited",
+          },
+        },
+        seedFormValues: {
+          incident_internal_id: "AUTO-1",
+          dispatch_center_id: "0000",
+          notes: "",
+        },
+      },
+    });
+    assert.equal(editedSeed.status, 200, JSON.stringify(editedSeed.json));
+    const editedHistory = await call(`/api/neris/drafts/${seedId}/history`, { cookie: first.pair });
+    assert.deepEqual(editedHistory.json.data[0].fieldNames, ["notes"]);
 
     const entitySave = await call("/api/neris/settings", {
       method: "PATCH",
