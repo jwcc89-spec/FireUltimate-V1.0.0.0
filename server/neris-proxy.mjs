@@ -23,6 +23,35 @@ import {
   postAddNerisIncidentForBilling,
   postIncidentBillingStatus,
 } from "./fireRecoveryClient.mjs";
+import {
+  PUBLIC_API_ROUTES,
+  applySessionCookie,
+  clearLoginLockouts,
+  clearSessionCookie,
+  createSession,
+  loginLockStatus,
+  noteLoginFailure,
+  noteLoginSuccess,
+  normalizeRole,
+  originAllowed,
+  publicHostname,
+  readAuthFromRequest,
+  revokeAllSessions,
+  revokeOtherSessions,
+} from "./auth/sessions.mjs";
+import {
+  PERMISSIONS,
+  accountChangeError,
+  canonicalRole,
+  isSelfNameOnlyUserPatch,
+  loadPolicy,
+  minimumRoleFor,
+  parseRole,
+  permissionForRequest,
+  policyChangeError,
+  roleLevel,
+  writeAccountAudit,
+} from "./auth/permissions.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -231,101 +260,11 @@ function validatePasswordPolicy(password) {
 }
 
 function mapUserTypeToRole(userType) {
-  const normalized = trimValue(userType).toLowerCase();
-  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
-    return "superadmin";
-  }
-  return normalized.includes("admin") ? "admin" : "user";
-}
-
-async function hashAndSyncTenantUsers(tenantId, payload) {
-  if (!payload || typeof payload !== "object" || !Array.isArray(payload.userRecords)) {
-    return payload;
-  }
-
-  const incomingUserRecords = payload.userRecords;
-  const existingUsers = await prisma.user.findMany({
-    where: { tenantId },
-  });
-  const existingUsersByUsername = new Map(
-    existingUsers.map((user) => [user.username.trim().toLowerCase(), user]),
-  );
-
-  const seenUsernames = new Set();
-  const nextUserRecords = [];
-
-  for (const candidate of incomingUserRecords) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const normalizedName = trimValue(candidate.name);
-    const normalizedUsername = trimValue(candidate.username).toLowerCase();
-    const userType = trimValue(candidate.userType) || "User";
-    if (!normalizedUsername) {
-      continue;
-    }
-
-    const existingUser = existingUsersByUsername.get(normalizedUsername);
-    const incomingPassword = String(candidate.password ?? "").trim();
-    let passwordHash = "";
-
-    if (incomingPassword) {
-      passwordHash = isBcryptHash(incomingPassword)
-        ? incomingPassword
-        : await hashPassword(incomingPassword);
-    } else if (existingUser?.passwordHash) {
-      // Preserve existing hash when editing non-password user fields.
-      passwordHash = String(existingUser.passwordHash);
-    } else {
-      // Skip users that have no password and no existing hash.
-      continue;
-    }
-
-    await prisma.user.upsert({
-      where: {
-        tenantId_username: {
-          tenantId,
-          username: normalizedUsername,
-        },
-      },
-      update: {
-        role: mapUserTypeToRole(userType),
-        passwordHash,
-      },
-      create: {
-        tenantId,
-        username: normalizedUsername,
-        role: mapUserTypeToRole(userType),
-        passwordHash,
-      },
-    });
-
-    seenUsernames.add(normalizedUsername);
-    nextUserRecords.push({
-      ...candidate,
-      name: normalizedName,
-      username: normalizedUsername,
-      userType,
-      // Store hashed passwords in DepartmentDetails payload.
-      password: passwordHash,
-    });
-  }
-
-  // Keep auth table aligned with Department Access user list.
-  await prisma.user.deleteMany({
-    where: {
-      tenantId,
-      username: {
-        notIn: Array.from(seenUsernames),
-      },
-    },
-  });
-
-  return {
-    ...payload,
-    userRecords: nextUserRecords,
-  };
+  const normalized = trimValue(userType).toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "super_admin" || normalized === "superadmin") return "superadmin";
+  if (normalized === "sub_admin" || normalized === "subadmin") return "subadmin";
+  if (normalized === "admin" || normalized.includes("admin")) return "admin";
+  return "user";
 }
 
 function normalizeHostname(hostname) {
@@ -1605,27 +1544,6 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   return payload;
 }
 
-app.get("/api/neris/health", async (request, response) => {
-  const config = getProxyConfig();
-  const requiresUserCredentials = config.grantType === "password";
-  const tenantId = trimValue(request.tenant?.id);
-  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
-  response.json({
-    ok: true,
-    proxyPort: config.proxyPort,
-    baseUrl: config.baseUrl,
-    grantType: config.grantType,
-    requiresUserCredentials,
-    createIncidentUrlPrefix: config.createIncidentUrlPrefix,
-    usingStaticToken: Boolean(config.staticAccessToken),
-    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
-    hasUserCredentials: Boolean(config.username && config.password),
-    hasDefaultEntityId: Boolean(config.defaultEntityId),
-    hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
-    hasTenantEntityId: Boolean(tenantEntityId),
-  });
-});
-
 const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
 const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
 
@@ -1776,10 +1694,7 @@ app.use(async (request, response, next) => {
       return;
     }
 
-    const host =
-      normalizeHostname(request.headers["x-forwarded-host"]) ||
-      normalizeHostname(request.headers.host) ||
-      normalizeHostname(request.hostname);
+    const host = publicHostname(request) || normalizeHostname(request.hostname);
 
     const localHosts = new Set(["localhost", "127.0.0.1"]);
     if (localHosts.has(host)) {
@@ -1826,6 +1741,246 @@ app.use(async (request, response, next) => {
     response.status(500).json({
       ok: false,
       message: error instanceof Error ? error.message : "Tenant resolution failed.",
+    });
+  }
+});
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+app.use(async (request, response, next) => {
+  try {
+    if (!request.path.startsWith("/api")) {
+      next();
+      return;
+    }
+    // Program-owner tools keep the platform admin key. CAD inbound keeps its shared secret.
+    if (request.path.startsWith("/api/admin") || request.path === "/api/cad/inbound-email") {
+      next();
+      return;
+    }
+    const routeKey = `${request.method} ${request.path}`;
+    const isPublic = PUBLIC_API_ROUTES.has(routeKey);
+    const mutating = MUTATING_METHODS.has(request.method);
+    if (isPublic) {
+      if (mutating && !originAllowed(request)) {
+        response.status(403).json({
+          ok: false,
+          message: "This action must come from the department's own website.",
+        });
+        return;
+      }
+      next();
+      return;
+    }
+    const auth = await readAuthFromRequest(prisma, request);
+    if (!auth) {
+      clearSessionCookie(response, request);
+      response.status(401).json({
+        ok: false,
+        code: "AUTH_REQUIRED",
+        message: "Sign in required.",
+      });
+      return;
+    }
+    if (mutating && !originAllowed(request)) {
+      response.status(403).json({
+        ok: false,
+        message: "This action must come from the department's own website.",
+      });
+      return;
+    }
+    request.auth = auth;
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Sign-in check failed.",
+    });
+  }
+});
+
+app.use(async (request, response, next) => {
+  try {
+    if (!request.auth) {
+      next();
+      return;
+    }
+    let permission = permissionForRequest(request.method, request.path, request.body);
+    if (
+      permission === "users.manage" &&
+      isSelfNameOnlyUserPatch(request.method, request.path, request.body, request.auth)
+    ) {
+      permission = null;
+    }
+    if (!permission) {
+      next();
+      return;
+    }
+    const minimumRole = await minimumRoleFor(prisma, request.tenant.id, permission);
+    const allowed = minimumRole != null && roleLevel(request.auth.role) >= roleLevel(minimumRole);
+    if (!allowed) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "You do not have permission to do that.",
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Permission check failed.",
+    });
+  }
+});
+
+app.get("/api/neris/health", async (request, response) => {
+  const config = getProxyConfig();
+  const requiresUserCredentials = config.grantType === "password";
+  const tenantId = trimValue(request.tenant?.id);
+  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
+  response.json({
+    ok: true,
+    proxyPort: config.proxyPort,
+    baseUrl: config.baseUrl,
+    grantType: config.grantType,
+    requiresUserCredentials,
+    createIncidentUrlPrefix: config.createIncidentUrlPrefix,
+    usingStaticToken: Boolean(config.staticAccessToken),
+    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
+    hasUserCredentials: Boolean(config.username && config.password),
+    hasDefaultEntityId: Boolean(config.defaultEntityId),
+    hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
+    hasTenantEntityId: Boolean(tenantEntityId),
+  });
+});
+
+app.get("/api/auth/session", async (request, response) => {
+  const tenantId = request.tenant?.id;
+  const fullNameMap = tenantId ? await getTenantUserFullNameMap(tenantId) : {};
+  const username = request.auth.username;
+  const name = trimValue(fullNameMap[username.toLowerCase()]) || username;
+  response.json({
+    ok: true,
+    user: {
+      username,
+      name,
+      role: request.auth.role,
+    },
+  });
+});
+
+app.post("/api/auth/logout", async (request, response) => {
+  if (request.auth?.sessionId) {
+    await prisma.session.update({
+      where: { id: request.auth.sessionId },
+      data: { revokedAt: new Date() },
+    }).catch(() => {});
+  }
+  clearSessionCookie(response, request);
+  response.json({ ok: true });
+});
+
+app.get("/api/permissions", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const { grants } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), grants });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not load permissions.",
+    });
+  }
+});
+
+app.get("/api/permissions/policy", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const { policy } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), policy });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not load the permission list.",
+    });
+  }
+});
+
+app.put("/api/permissions/policy", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const permission = trimValue(body.permission);
+    const known = PERMISSIONS.some((item) => item.key === permission);
+    if (!known) {
+      response.status(400).json({ ok: false, message: "Unknown permission." });
+      return;
+    }
+    const nextMinimum = parseRole(body.minimumRole);
+    if (!nextMinimum) {
+      response.status(400).json({ ok: false, message: "Unknown role." });
+      return;
+    }
+    const currentMinimum = await minimumRoleFor(prisma, tenantId, permission);
+    const denial = policyChangeError(request.auth.role, currentMinimum, nextMinimum);
+    if (denial) {
+      response.status(403).json({ ok: false, code: "FORBIDDEN", message: denial });
+      return;
+    }
+    await prisma.rolePermission.upsert({
+      where: { tenantId_permission: { tenantId, permission } },
+      update: { minimumRole: nextMinimum },
+      create: { tenantId, permission, minimumRole: nextMinimum },
+    });
+    const { policy } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), policy });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not save the permission.",
+    });
+  }
+});
+
+app.get("/api/account-audit", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const entries = await prisma.accountAuditLog.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        actorUsername: true,
+        action: true,
+        targetUsername: true,
+        detail: true,
+        createdAt: true,
+      },
+    });
+    response.json({ ok: true, entries });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Could not load the account log.",
     });
   }
 });
@@ -1932,8 +2087,8 @@ async function cadIngestApplyMessagePipeline(tenantId, rawBody, emailRowId) {
 
     const plain = getDispatchPlainTextFromRawBody(rawBody);
     if (!plain) {
-      await prisma.cadEmailIngest.update({
-        where: { id: emailRowId },
+      await prisma.cadEmailIngest.updateMany({
+        where: { id: emailRowId, tenantId },
         data: { parsedMessageText: "" },
       });
       return;
@@ -1945,8 +2100,8 @@ async function cadIngestApplyMessagePipeline(tenantId, rawBody, emailRowId) {
     if (!result.ok) {
       console.warn("[CAD ingest] message rule pipeline failed:", result.error);
     }
-    await prisma.cadEmailIngest.update({
-      where: { id: emailRowId },
+    await prisma.cadEmailIngest.updateMany({
+      where: { id: emailRowId, tenantId },
       data: { parsedMessageText: slice },
     });
   } catch (e) {
@@ -2559,6 +2714,7 @@ app.get("/api/incidents", async (request, response) => {
     const reportStatusByCall = new Map();
     for (const d of drafts) {
       const payload = d.payload && typeof d.payload === "object" ? d.payload : {};
+      if (payload.reportRemoved === true) continue;
       const status =
         typeof payload.reportStatus === "string" && payload.reportStatus.trim()
           ? payload.reportStatus.trim()
@@ -2689,10 +2845,18 @@ app.patch("/api/incidents/:id", async (request, response) => {
       const v = body.apparatusJson ?? body.apparatus;
       update.apparatusJson = v == null ? null : (typeof v === "object" ? v : null);
     }
-    const updated = await prisma.incident.update({
-      where: { id },
-      data: update,
-    });
+    let updated = existing;
+    if (Object.keys(update).length > 0) {
+      const written = await prisma.incident.updateMany({
+        where: { id, tenantId },
+        data: update,
+      });
+      if (written.count !== 1) {
+        response.status(404).json({ ok: false, message: "Incident not found." });
+        return;
+      }
+      updated = await prisma.incident.findFirst({ where: { id, tenantId } });
+    }
     response.json({ ok: true, data: incidentRowToApi(updated) });
   } catch (error) {
     response.status(500).json({
@@ -2717,17 +2881,46 @@ app.delete("/api/incidents/:id", async (request, response) => {
       response.status(404).json({ ok: false, message: "Incident not found." });
       return;
     }
+    const reportCallNumbers = [id];
+    const incidentNumber = trimValue(existing.incidentNumber);
+    if (incidentNumber && incidentNumber !== id) reportCallNumbers.push(incidentNumber);
+    const linkedReports = (
+      await prisma.nerisDraft.findMany({
+        where: { tenantId, callNumber: { in: reportCallNumbers } },
+      })
+    ).filter((row) => !isReportRemoved(row.payload));
+    if (linkedReports.length > 0 && roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can delete a report.",
+      });
+      return;
+    }
+    if (linkedReports.some((row) => reportStatusOf(row.payload) !== "Draft")) {
+      response.status(409).json({
+        ok: false,
+        code: "REPORT_LOCKED",
+        message: "This report is locked. Unlock it before deleting.",
+      });
+      return;
+    }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const deletedBy = trimValue(body.deletedBy) || null;
     const deletedReason = trimValue(body.deletedReason) || null;
-    const updated = await prisma.incident.update({
-      where: { id },
+    const written = await prisma.incident.updateMany({
+      where: { id, tenantId },
       data: {
         deletedAt: new Date(),
         deletedBy,
         deletedReason,
       },
     });
+    if (written.count !== 1) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const updated = await prisma.incident.findFirst({ where: { id, tenantId } });
     response.json({ ok: true, data: incidentRowToApi(updated) });
   } catch (error) {
     response.status(500).json({
@@ -2851,6 +3044,229 @@ app.post("/api/neris/export-history", async (request, response) => {
   }
 });
 
+const REPORT_CONFLICT_MESSAGE =
+  "Someone else saved this report while you were editing. Reload to see their changes before saving again.";
+const REPORT_LOCKED_MESSAGE = "This report is locked. Unlock it before saving changes.";
+const LOGO_MAX_BYTES = 500 * 1024;
+
+function reportStatusOf(payload) {
+  const status = trimValue(payload && typeof payload === "object" ? payload.reportStatus : "");
+  if (status === "In Review" || status === "Exported") return status;
+  return "Draft";
+}
+
+function isReportRemoved(payload) {
+  return Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && payload.reportRemoved === true);
+}
+
+function removedReportPayload(existing) {
+  const previous =
+    existing?.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? existing.payload
+      : {};
+  return { ...previous, reportRemoved: true, reportStatus: "Draft" };
+}
+
+function draftPayloadFromBody(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  const nested =
+    source.payload && typeof source.payload === "object" && !Array.isArray(source.payload)
+      ? source.payload
+      : source;
+  const payload = { ...nested };
+  delete payload.baseUpdatedAt;
+  delete payload.payload;
+  delete payload.seedFormValues;
+  delete payload.reportRemoved;
+  return payload;
+}
+
+function seedFormValuesFromBody(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body.seedFormValues : null;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const seed = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value === "string" || typeof value === "number") seed[key] = String(value);
+  }
+  return seed;
+}
+
+function revisionMatches(updatedAt, baseUpdatedAt) {
+  const expected = Date.parse(String(baseUpdatedAt ?? ""));
+  const actual = updatedAt instanceof Date ? updatedAt.getTime() : Date.parse(String(updatedAt ?? ""));
+  return Number.isFinite(expected) && Number.isFinite(actual) && expected === actual;
+}
+
+const HISTORY_SKIP_KEYS = new Set([
+  "formValues",
+  "baseUpdatedAt",
+  "lastSavedAt",
+  "payload",
+  "reportRemoved",
+  "seedFormValues",
+]);
+
+function plainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function isEmptyHistoryValue(value) {
+  if (value == null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function changedFieldNames(previous, next, seedFormValues) {
+  const prev = plainObject(previous);
+  const nxt = plainObject(next);
+  const seed = plainObject(seedFormValues);
+  const names = new Set();
+  const prevForm = plainObject(prev.formValues);
+  const nextForm = plainObject(nxt.formValues);
+  for (const key of new Set([...Object.keys(prevForm), ...Object.keys(nextForm)])) {
+    const previousValue = String(prevForm[key] ?? "");
+    const nextValue = String(nextForm[key] ?? "");
+    if (previousValue === nextValue) continue;
+    const copiedFromIncident =
+      !Object.prototype.hasOwnProperty.call(prevForm, key) &&
+      Object.prototype.hasOwnProperty.call(seed, key) &&
+      String(seed[key] ?? "") === nextValue;
+    if (copiedFromIncident) continue;
+    names.add(key);
+  }
+  for (const key of new Set([...Object.keys(prev), ...Object.keys(nxt)])) {
+    if (HISTORY_SKIP_KEYS.has(key)) continue;
+    if (key === "reportStatus") {
+      const nextStatus = trimValue(nxt.reportStatus) || "Draft";
+      if (!trimValue(prev.reportStatus) && nextStatus === "Draft") continue;
+      if ((trimValue(prev.reportStatus) || "Draft") !== nextStatus) names.add(key);
+      continue;
+    }
+    const prevValue = prev[key] ?? null;
+    const nextValue = nxt[key] ?? null;
+    if (JSON.stringify(prevValue) === JSON.stringify(nextValue)) continue;
+    if (isEmptyHistoryValue(prevValue) && isEmptyHistoryValue(nextValue)) continue;
+    names.add(key);
+  }
+  return [...names].sort();
+}
+
+async function recordReportChange(tenantId, callNumber, auth, fieldNames) {
+  if (!fieldNames.length) return;
+  await prisma.nerisReportChange.create({
+    data: {
+      tenantId,
+      callNumber,
+      actorUserId: auth?.userId ?? null,
+      actorUsername: trimValue(auth?.username) || "unknown",
+      fieldNames,
+    },
+  });
+}
+
+function draftJson(row) {
+  const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload : {};
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt);
+  return { ok: true, data: payload, updatedAt: updatedAt.toISOString() };
+}
+
+function imageDataUrlBytes(dataUrl) {
+  const match = /^data:image\/[a-z0-9.+-]+;base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[1].replace(/\s/g, ""), "base64").length;
+  } catch {
+    return null;
+  }
+}
+
+function sharedSettingsPatch(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  const patch = {};
+  if (Object.prototype.hasOwnProperty.call(source, "logoDataUrl")) {
+    if (typeof source.logoDataUrl !== "string") {
+      return { error: "The department logo must be an image file." };
+    }
+    const logo = source.logoDataUrl.trim();
+    if (logo === "") {
+      patch.logoDataUrl = "";
+    } else {
+      const bytes = imageDataUrlBytes(logo);
+      if (bytes === null) return { error: "The department logo must be an image file." };
+      if (bytes > LOGO_MAX_BYTES) return { error: "The department logo must be 500 KB or smaller." };
+      patch.logoDataUrl = logo;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "workflowStates")) {
+    if (!Array.isArray(source.workflowStates)) return { error: "Workflow states must be a list." };
+    const states = [];
+    for (const item of source.workflowStates) {
+      const text = trimValue(item);
+      if (!text || text.length > 80 || states.includes(text)) continue;
+      states.push(text);
+      if (states.length >= 40) break;
+    }
+    if (!states.length) return { error: "Keep at least one workflow state." };
+    patch.workflowStates = states;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "submenuVisibility")) {
+    const raw = source.submenuVisibility;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { error: "Submenu visibility must be a set of on or off choices." };
+    }
+    const visibility = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value !== "boolean") continue;
+      const path = trimValue(key);
+      if (!path.startsWith("/") || path.length > 120) continue;
+      visibility[path] = value;
+    }
+    patch.submenuVisibility = visibility;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "displayCards")) {
+    const raw = source.displayCards;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { error: "Submenu cards must be a list." };
+    }
+    const cards = {};
+    for (const [key, value] of Object.entries(raw)) {
+      const menuId = trimValue(key);
+      if (!menuId || menuId.length > 40 || !Array.isArray(value)) continue;
+      cards[menuId] = value
+        .map((item) => trimValue(item))
+        .filter((item) => item.startsWith("/") && item.length <= 120)
+        .slice(0, 40);
+    }
+    patch.displayCards = cards;
+  }
+  return { patch };
+}
+
+// Call numbers whose NERIS report was deleted. The incident itself stays.
+app.get("/api/neris/removed-reports", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.nerisDraft.findMany({
+      where: {
+        tenantId,
+        payload: { path: ["reportRemoved"], equals: true },
+      },
+      select: { callNumber: true },
+    });
+    response.json({ ok: true, data: { callNumbers: rows.map((row) => row.callNumber) } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected removed report list error.",
+    });
+  }
+});
+
 // ----- /api/neris/drafts/:callNumber (NERIS report drafts, cross-browser) -----
 app.get("/api/neris/drafts/:callNumber", async (request, response) => {
   try {
@@ -2865,21 +3281,50 @@ app.get("/api/neris/drafts/:callNumber", async (request, response) => {
       return;
     }
     const row = await prisma.nerisDraft.findUnique({
-      where: {
-        tenantId_callNumber: { tenantId, callNumber },
-      },
+      where: { tenantId_callNumber: { tenantId, callNumber } },
     });
     if (!row) {
       response.status(404).json({ ok: false, message: "No draft found for this incident." });
       return;
     }
-    const payload =
-      row.payload && typeof row.payload === "object" ? row.payload : {};
-    response.json({ ok: true, data: payload });
+    response.json(draftJson(row));
   } catch (error) {
     response.status(500).json({
       ok: false,
       message: error instanceof Error ? error.message : "Unexpected draft get error.",
+    });
+  }
+});
+
+app.get("/api/neris/drafts/:callNumber/history", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const rows = await prisma.nerisReportChange.findMany({
+      where: { tenantId, callNumber },
+      orderBy: { createdAt: "desc" },
+    });
+    response.json({
+      ok: true,
+      data: rows.map((row) => ({
+        id: row.id,
+        createdAt: row.createdAt.toISOString(),
+        actorUsername: row.actorUsername,
+        fieldNames: Array.isArray(row.fieldNames) ? row.fieldNames.filter((name) => typeof name === "string") : [],
+      })),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected report history error.",
     });
   }
 });
@@ -2897,30 +3342,212 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const payload =
-      body.payload && typeof body.payload === "object"
-        ? body.payload
-        : body && typeof body === "object"
-          ? body
-          : {};
+    const payload = draftPayloadFromBody(body);
+    const seedFormValues = seedFormValuesFromBody(body);
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    const removed = Boolean(existing && isReportRemoved(existing.payload));
+    const active = existing && !removed ? existing : null;
+    const sentRevision = trimValue(body.baseUpdatedAt);
+    if (active && !revisionMatches(active.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    if (removed && sentRevision && !revisionMatches(existing.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    if (active) {
+      const previousStatus = reportStatusOf(active.payload);
+      const nextStatus = reportStatusOf(payload);
+      const contentChanges = changedFieldNames(active.payload, payload, seedFormValues).filter(
+        (name) => name !== "reportStatus",
+      );
+      if (nextStatus === "Exported" && previousStatus !== "Exported") {
+        const minimumRole = await minimumRoleFor(prisma, tenantId, "neris.export");
+        if (roleLevel(request.auth?.role) < roleLevel(minimumRole)) {
+          response.status(403).json({
+            ok: false,
+            code: "FORBIDDEN",
+            message: "You do not have permission to do that.",
+          });
+          return;
+        }
+      }
+      if (previousStatus !== "Draft") {
+        if (contentChanges.length > 0 || (nextStatus !== previousStatus && nextStatus !== "Exported")) {
+          response.status(409).json({ ok: false, code: "REPORT_LOCKED", message: REPORT_LOCKED_MESSAGE });
+          return;
+        }
+      }
+    }
     const row = await prisma.nerisDraft.upsert({
-      where: {
-        tenantId_callNumber: { tenantId, callNumber },
-      },
-      create: {
-        tenantId,
-        callNumber,
-        payload,
-      },
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      create: { tenantId, callNumber, payload },
       update: { payload },
     });
-    const out =
-      row.payload && typeof row.payload === "object" ? row.payload : {};
-    response.json({ ok: true, data: out });
+    await recordReportChange(
+      tenantId,
+      callNumber,
+      request.auth,
+      changedFieldNames(existing?.payload ?? {}, payload, seedFormValues),
+    );
+    response.json(draftJson(row));
   } catch (error) {
     response.status(500).json({
       ok: false,
       message: error instanceof Error ? error.message : "Unexpected draft save error.",
+    });
+  }
+});
+
+app.post("/api/neris/drafts/:callNumber/unlock", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (!existing || isReportRemoved(existing.payload)) {
+      response.status(404).json({ ok: false, message: "No draft found for this incident." });
+      return;
+    }
+    if (!revisionMatches(existing.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    const status = reportStatusOf(existing.payload);
+    if (status === "Draft") {
+      response.json(draftJson(existing));
+      return;
+    }
+    if (status === "Exported" && roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can unlock an exported report.",
+      });
+      return;
+    }
+    const previous =
+      existing.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+        ? existing.payload
+        : {};
+    const row = await prisma.nerisDraft.update({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      data: { payload: { ...previous, reportStatus: "Draft" } },
+    });
+    await recordReportChange(tenantId, callNumber, request.auth, ["reportStatus"]);
+    response.json(draftJson(row));
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected unlock error.",
+    });
+  }
+});
+
+app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    if (roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can delete a report.",
+      });
+      return;
+    }
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (existing && !isReportRemoved(existing.payload) && reportStatusOf(existing.payload) !== "Draft") {
+      response.status(409).json({
+        ok: false,
+        code: "REPORT_LOCKED",
+        message: "This report is locked. Unlock it before deleting.",
+      });
+      return;
+    }
+    await prisma.nerisDraft.upsert({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      create: { tenantId, callNumber, payload: removedReportPayload(existing) },
+      update: { payload: removedReportPayload(existing) },
+    });
+    response.json({ ok: true });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected report delete error.",
+    });
+  }
+});
+
+app.patch("/api/department-shared-settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const parsed = sharedSettingsPatch(request.body);
+    if (parsed.error) {
+      response.status(400).json({ ok: false, message: parsed.error });
+      return;
+    }
+    if (Object.keys(parsed.patch).length === 0) {
+      response.status(400).json({ ok: false, message: "No shared settings were sent." });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true, departmentName: true },
+    });
+    const existingPayload =
+      details?.payloadJson && typeof details.payloadJson === "object" && !Array.isArray(details.payloadJson)
+        ? { ...details.payloadJson }
+        : {};
+    const current =
+      existingPayload.sharedDepartmentSettings &&
+      typeof existingPayload.sharedDepartmentSettings === "object" &&
+      !Array.isArray(existingPayload.sharedDepartmentSettings)
+        ? existingPayload.sharedDepartmentSettings
+        : {};
+    const shared = { ...current, ...parsed.patch };
+    const payloadToStore = { ...existingPayload, sharedDepartmentSettings: shared };
+    await prisma.departmentDetails.upsert({
+      where: { tenantId },
+      update: { payloadJson: payloadToStore },
+      create: {
+        tenantId,
+        departmentName: details?.departmentName || request.tenant?.name || "Unknown",
+        payloadJson: payloadToStore,
+      },
+    });
+    response.json({ ok: true, data: shared });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected shared settings error.",
     });
   }
 });
@@ -3012,6 +3639,14 @@ app.patch("/api/neris/settings", async (request, response) => {
     const merged = { ...existingNeris };
     for (const key of NERIS_SETTINGS_KEYS) {
       if (typeof body[key] === "string") merged[key] = body[key];
+    }
+    const savedEntityId = trimValue(merged.vendorCode).toUpperCase();
+    if (savedEntityId && NERIS_ENTITY_ID_PATTERN.test(savedEntityId)) {
+      merged.vendorCode = savedEntityId;
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: { nerisEntityId: savedEntityId },
+      });
     }
     const payloadToStore = { ...existingPayload, nerisExportSettings: merged };
     await prisma.departmentDetails.upsert({
@@ -3546,7 +4181,15 @@ app.post("/api/auth/login", (request, response) => {
   }
 
   (async () => {
-    // Preferred path: tenant-scoped users table.
+    const lock = loginLockStatus(tenantId, submittedUsername);
+    if (lock.locked) {
+      response.status(429).json({
+        ok: false,
+        message: "Too many failed sign-in attempts. Try again in 15 minutes.",
+      });
+      return;
+    }
+
     const dbUser = await prisma.user.findUnique({
       where: {
         tenantId_username: {
@@ -3556,43 +4199,36 @@ app.post("/api/auth/login", (request, response) => {
       },
     });
 
-    if (dbUser) {
-      const storedHash = String(dbUser.passwordHash ?? "");
-      const valid = await verifyPassword(submittedPassword, storedHash);
-      if (!valid) {
-        response.status(401).json({
-          ok: false,
-          message: "Invalid username or password.",
-        });
-        return;
-      }
-      // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
-      if (!isBcryptHash(storedHash)) {
-        hashPassword(submittedPassword).then((hash) => {
-          prisma.user.update({
-            where: { id: dbUser.id },
-            data: { passwordHash: hash },
-          }).catch(() => {});
-        });
-      }
-      const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
-      const userType =
-        userTypeLabelMap[submittedUsername] ||
-        roleToUserTypeLabel(dbUser.role);
-      response.status(200).json({
-        ok: true,
-        user: {
-          name: dbUser.username,
-          userType,
-          username: dbUser.username,
-        },
+    const storedHash = dbUser ? String(dbUser.passwordHash ?? "") : "";
+    const valid = dbUser ? await verifyPassword(submittedPassword, storedHash) : false;
+    if (!dbUser || !valid) {
+      noteLoginFailure(tenantId, submittedUsername);
+      response.status(401).json({
+        ok: false,
+        message: "Invalid username or password.",
       });
       return;
     }
-
-    response.status(401).json({
-      ok: false,
-      message: "Invalid username or password.",
+    // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
+    if (!isBcryptHash(storedHash)) {
+      hashPassword(submittedPassword).then((hash) => {
+        prisma.user.update({
+          where: { id: dbUser.id },
+          data: { passwordHash: hash },
+        }).catch(() => {});
+      });
+    }
+    noteLoginSuccess(tenantId, submittedUsername);
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const token = await createSession(prisma, { tenantId, userId: dbUser.id });
+    applySessionCookie(response, token, request);
+    response.status(200).json({
+      ok: true,
+      user: {
+        name: trimValue(fullNameMap[submittedUsername]) || dbUser.username,
+        username: dbUser.username,
+        role: normalizeRole(dbUser.role),
+      },
     });
   })().catch((error) => {
     response.status(500).json({
@@ -3611,13 +4247,13 @@ app.post("/api/auth/change-password", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const username = trimValue(String(body.username ?? "")).toLowerCase();
+    const username = trimValue(request.auth?.username).toLowerCase();
     const currentPassword = String(body.currentPassword ?? "");
     const newPassword = String(body.newPassword ?? "");
     if (!username || !currentPassword || !newPassword) {
       response.status(400).json({
         ok: false,
-        message: "Username, current password, and new password are required.",
+        message: "Current password and new password are required.",
       });
       return;
     }
@@ -3651,6 +4287,7 @@ app.post("/api/auth/change-password", async (request, response) => {
       where: { id: user.id },
       data: { passwordHash: nextHash },
     });
+    await revokeOtherSessions(prisma, user.id, request.auth?.sessionId ?? null);
     response.status(200).json({ ok: true, message: "Password updated." });
   } catch (error) {
     response.status(500).json({
@@ -3672,8 +4309,9 @@ app.post("/api/department-details", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const payloadWithSyncedUsers = await hashAndSyncTenantUsers(tenantId, body);
-    const { userRecords: _dropped, ...payloadWithoutAuth } = payloadWithSyncedUsers;
+    // Accounts change only through /api/users. Saving department settings never creates, edits, or deletes them.
+    const payloadToStore = { ...body };
+    delete payloadToStore.userRecords;
     const existingDetails = await prisma.departmentDetails.findUnique({
       where: { tenantId },
       select: { payloadJson: true },
@@ -3682,7 +4320,6 @@ app.post("/api/department-details", async (request, response) => {
       existingDetails?.payloadJson && typeof existingDetails.payloadJson === "object"
         ? existingDetails.payloadJson
         : {};
-    const payloadToStore = _dropped !== undefined ? payloadWithoutAuth : payloadWithSyncedUsers;
     const tenantEntityIdFromPayload = readTenantEntityIdFromDepartmentPayload(payloadToStore);
     // Keep non-auth user profile metadata when saving department details.
     if (
@@ -3708,6 +4345,14 @@ app.post("/api/department-details", async (request, response) => {
       !Array.isArray(existingPayload.nerisExportSettings)
     ) {
       payloadToStore.nerisExportSettings = existingPayload.nerisExportSettings;
+    }
+    if (
+      existingPayload.sharedDepartmentSettings &&
+      payloadToStore.sharedDepartmentSettings === undefined &&
+      typeof existingPayload.sharedDepartmentSettings === "object" &&
+      !Array.isArray(existingPayload.sharedDepartmentSettings)
+    ) {
+      payloadToStore.sharedDepartmentSettings = existingPayload.sharedDepartmentSettings;
     }
     await prisma.departmentDetails.upsert({
       where: { tenantId },
@@ -3863,11 +4508,9 @@ app.post("/api/schedule-assignments", async (request, response) => {
       .map((row) => row.id);
 
     await prisma.$transaction([
-      ...deletions.map((id) =>
-        prisma.scheduleAssignments.delete({
-          where: { id },
-        }),
-      ),
+      prisma.scheduleAssignments.deleteMany({
+        where: { tenantId, id: { in: deletions } },
+      }),
       ...parsedRows.map((row) =>
         prisma.scheduleAssignments.upsert({
           where: {
@@ -4106,10 +4749,29 @@ async function removeTenantUserTypeLabel(tenantId, username) {
 }
 
 function roleToUserTypeLabel(role) {
-  const r = trimValue(role || "").toLowerCase();
+  const r = trimValue(role || "").toLowerCase().replace(/[\s-]+/g, "_");
   if (r === "superadmin" || r === "super_admin") return "Super Admin";
+  if (r === "subadmin" || r === "sub_admin") return "Subadmin";
   if (r === "admin") return "Admin";
   return "User";
+}
+
+async function refuseAccountChange(response, tenantId, actor, change) {
+  const denial = await accountChangeError(prisma, tenantId, actor, change);
+  if (!denial) return false;
+  response.status(403).json({ ok: false, code: "FORBIDDEN", message: denial });
+  return true;
+}
+
+async function auditAccountChange(tenantId, actor, action, targetUsername, detail) {
+  await writeAccountAudit(prisma, {
+    tenantId,
+    actorUserId: actor?.userId ?? null,
+    actorUsername: actor?.username ?? "",
+    action,
+    targetUsername,
+    detail,
+  });
 }
 
 function toUserResponse(user, fullNameMap = {}, userTypeLabelMap = {}) {
@@ -4175,17 +4837,32 @@ app.post("/api/users", async (request, response) => {
       response.status(400).json({ ok: false, message: passwordPolicyError });
       return;
     }
+    const nextRole = mapUserTypeToRole(userType);
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "create",
+      target: null,
+      nextRole,
+    })) {
+      return;
+    }
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
       data: {
         tenantId,
         username,
         passwordHash,
-        role: mapUserTypeToRole(userType),
+        role: nextRole,
       },
     });
     await setTenantUserFullName(tenantId, username, fullName);
     await setTenantUserTypeLabel(tenantId, username, userType);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "create",
+      username,
+      `Created account with role ${nextRole}.`,
+    );
     response.status(201).json({
       ok: true,
       user: toUserResponse(user, { [username]: fullName }, { [username]: userType }),
@@ -4254,10 +4931,36 @@ app.patch("/api/users/:id", async (request, response) => {
       }
       updates.passwordHash = await hashPassword(nextPassword);
     }
-    const user = await prisma.user.update({
-      where: { id },
-      data: updates,
-    });
+    const nameOnlySelf =
+      request.auth?.userId === existing.id &&
+      updates.username === undefined &&
+      updates.role === undefined &&
+      updates.passwordHash === undefined;
+    if (!nameOnlySelf) {
+      if (await refuseAccountChange(response, tenantId, request.auth, {
+        action: "update",
+        target: existing,
+        nextRole: updates.role ?? existing.role,
+      })) {
+        return;
+      }
+    }
+    let user = existing;
+    if (Object.keys(updates).length > 0) {
+      const written = await prisma.user.updateMany({
+        where: { id, tenantId },
+        data: updates,
+      });
+      if (written.count !== 1) {
+        response.status(404).json({ ok: false, message: "User not found." });
+        return;
+      }
+      user = await prisma.user.findFirst({ where: { id, tenantId } });
+    }
+    if (updates.passwordHash) {
+      const keepSessionId = request.auth?.userId === user.id ? request.auth.sessionId : null;
+      await revokeOtherSessions(prisma, user.id, keepSessionId);
+    }
     const nextUsername = trimValue(user.username).toLowerCase();
     await setTenantUserFullName(
       tenantId,
@@ -4271,6 +4974,21 @@ app.patch("/api/users/:id", async (request, response) => {
       nextUserTypeLabel || roleToUserTypeLabel(user.role),
       trimValue(existing.username).toLowerCase(),
     );
+    const changes = [];
+    if (updates.username) changes.push("Changed username.");
+    if (updates.role) changes.push(`Changed role to ${canonicalRole(user.role)}.`);
+    if (updates.passwordHash) changes.push("Changed password.");
+    if (body.name !== undefined) changes.push("Changed display name.");
+    if (body.userType !== undefined && !updates.role) changes.push("Changed user type label.");
+    if (changes.length > 0) {
+      await auditAccountChange(
+        tenantId,
+        request.auth,
+        "update",
+        nextUsername,
+        changes.join(" "),
+      );
+    }
     response.json({
       ok: true,
       user: toUserResponse(
@@ -4320,16 +5038,34 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
     }
     const existing = await prisma.user.findFirst({
       where: { id, tenantId },
-      select: { id: true },
     });
     if (!existing) {
       response.status(404).json({ ok: false, message: "User not found." });
       return;
     }
-    await prisma.user.update({
-      where: { id: existing.id },
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "reset-password",
+      target: existing,
+      nextRole: existing.role,
+    })) {
+      return;
+    }
+    const written = await prisma.user.updateMany({
+      where: { id: existing.id, tenantId },
       data: { passwordHash: await hashPassword(newPassword) },
     });
+    if (written.count !== 1) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    await revokeAllSessions(prisma, existing.id);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "reset-password",
+      existing.username,
+      "Reset password.",
+    );
     response.status(200).json({ ok: true, message: "Password reset." });
   } catch (error) {
     response.status(500).json({
@@ -4359,9 +5095,27 @@ app.delete("/api/users/:id", async (request, response) => {
       response.status(404).json({ ok: false, message: "User not found." });
       return;
     }
-    await prisma.user.delete({ where: { id } });
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "delete",
+      target: existing,
+      nextRole: null,
+    })) {
+      return;
+    }
+    const removed = await prisma.user.deleteMany({ where: { id, tenantId } });
+    if (removed.count !== 1) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
     await removeTenantUserFullName(tenantId, existing.username);
     await removeTenantUserTypeLabel(tenantId, existing.username);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "delete",
+      existing.username,
+      `Deleted account with role ${canonicalRole(existing.role)}.`,
+    );
     response.status(204).send();
   } catch (error) {
     response.status(500).json({
@@ -4462,6 +5216,7 @@ app.post("/api/admin/neris/entities/refresh", async (request, response) => {
 });
 
 app.get("/api/neris/debug/entity-check", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const requestedNerisId =
     readQueryValue(request.query.nerisId) ||
@@ -4596,6 +5351,7 @@ async function resolveTenantEntityId(tenantId) {
 }
 
 app.get("/api/neris/debug/incident", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const requestedIncidentNerisId =
     readQueryValue(request.query.incidentNerisId) ||
@@ -4646,6 +5402,17 @@ app.get("/api/neris/debug/incident", async (request, response) => {
         "Invalid incident NERIS ID format. Expected FD########|incident-number|##########.",
       submittedEntityId: requestedEntityId,
       incidentNerisId: requestedIncidentNerisId,
+    });
+    return;
+  }
+  const tenantEntityId = trimValue(request.tenant?.id)
+    ? await resolveTenantEntityId(request.tenant.id)
+    : "";
+  if (request.tenant?.id && incidentEntityFromId && incidentEntityFromId !== tenantEntityId) {
+    response.status(403).json({
+      ok: false,
+      code: "TENANT_ENTITY_MISMATCH",
+      message: "This department can only use its own NERIS entity ID.",
     });
     return;
   }
@@ -4709,7 +5476,48 @@ app.get("/api/neris/debug/incident", async (request, response) => {
   }
 });
 
+function clientSuppliedEntityIds(request) {
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const integration =
+    body.integration && typeof body.integration === "object" ? body.integration : {};
+  const values = [
+    integration.entityId,
+    request.headers?.["x-neris-entity-id"],
+    request.headers?.["x-neris-vendor-code"],
+    readQueryValue(request.query?.entityId),
+    readQueryValue(request.query?.nerisId),
+    readQueryValue(request.query?.neris_id),
+  ];
+  return values.map((value) => trimValue(value)).filter((value) => NERIS_ENTITY_ID_PATTERN.test(value));
+}
+
+/** A department may only act as its own NERIS entity. Returns true when the response was sent. */
+async function rejectForeignNerisEntity(request, response) {
+  const tenantId = trimValue(request.tenant?.id);
+  if (!tenantId) return false;
+  const supplied = clientSuppliedEntityIds(request);
+  if (supplied.length === 0) return false;
+  const tenantEntityId = await resolveTenantEntityId(tenantId);
+  if (supplied.every((value) => value === tenantEntityId)) return false;
+  response.status(403).json({
+    ok: false,
+    code: "TENANT_ENTITY_MISMATCH",
+    message: "This department can only use its own NERIS entity ID.",
+  });
+  return true;
+}
+
 async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, tenant) {
+  const tenantId = trimValue(tenant?.id);
+  if (tenantId) {
+    const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
+    if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
+      return tenantEntityIdFromContext;
+    }
+    // Fail-closed for tenant traffic: never use a caller-supplied id or the global env value.
+    return resolveTenantEntityId(tenantId);
+  }
+
   const integration =
     requestBody?.integration && typeof requestBody.integration === "object"
       ? requestBody.integration
@@ -4718,25 +5526,7 @@ async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, t
     trimValue(requestHeaders["x-neris-entity-id"]) ||
     trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  if (bodyEntityId) {
-    return bodyEntityId;
-  }
-  if (headerEntityId) {
-    return headerEntityId;
-  }
-
-  const tenantId = trimValue(tenant?.id);
-  const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
-  if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
-    return tenantEntityIdFromContext;
-  }
-  if (tenantId) {
-    const tenantEntityId = await resolveTenantEntityId(tenantId);
-    // Fail-closed for tenant traffic: never fallback to global env value.
-    return tenantEntityId;
-  }
-
-  return config.defaultEntityId;
+  return bodyEntityId || headerEntityId || config.defaultEntityId;
 }
 
 function readNerisDetailString(responseBody) {
@@ -4856,6 +5646,7 @@ function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
 }
 
 app.post("/api/neris/validate", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const entityId = await resolveEntityIdFromRequest(
     request.body,
@@ -4937,6 +5728,7 @@ app.post("/api/neris/validate", async (request, response) => {
 });
 
 app.post("/api/neris/export", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const entityId = await resolveEntityIdFromRequest(
     request.body,
@@ -5091,6 +5883,7 @@ app.post("/api/neris/export", async (request, response) => {
 
 const config = getProxyConfig();
 const __filename = fileURLToPath(import.meta.url);
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 const __dirname = path.dirname(__filename);
 const frontendDistDir = path.resolve(__dirname, "../dist");
 const frontendIndexPath = path.join(frontendDistDir, "index.html");
@@ -5107,15 +5900,19 @@ if (hasFrontendBuild) {
   });
 }
 
-app.listen(config.proxyPort, () => {
-  console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
-  console.log(`NERIS base URL: ${config.baseUrl}`);
-  if (IS_PRODUCTION_NODE_ENV && !CAD_INGEST_SECRET) {
-    console.warn(
-      "[CAD ingest] NODE_ENV=production but CAD_INGEST_SECRET is unset — POST /api/cad/inbound-email returns 503 until configured.",
-    );
-  }
-  if (hasFrontendBuild) {
-    console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
-  }
-});
+if (invokedDirectly) {
+  app.listen(config.proxyPort, () => {
+    console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
+    console.log(`NERIS base URL: ${config.baseUrl}`);
+    if (IS_PRODUCTION_NODE_ENV && !CAD_INGEST_SECRET) {
+      console.warn(
+        "[CAD ingest] NODE_ENV=production but CAD_INGEST_SECRET is unset — POST /api/cad/inbound-email returns 503 until configured.",
+      );
+    }
+    if (hasFrontendBuild) {
+      console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
+    }
+  });
+}
+
+export { app, prisma, clearLoginLockouts };

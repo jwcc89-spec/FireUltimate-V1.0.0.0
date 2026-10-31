@@ -25,6 +25,8 @@ The structured API details below were **captured from the Fire Recovery Postman 
 
 All paths below are appended to the base host (e.g. `.../Primary/REST/...`).
 
+**Fire Ultimate testing (confirmed by Fire Recovery, 2026-10-29):** We do **not** have access to `process-dev`. Fire Recovery provides a **sandbox inside production**: use the production base URL `https://process.firerecoveryusa.com` with the sandbox department NERIS ID **`FD12345678`** as `NERISDepartmentId`. No subscription key is required for **Add NERIS Incident for Billing**. API login details arrive in Fire Recovery's Welcome Message to the account email; enter them only in the app's settings, never in docs or chat. Because tests and real bills share one host, the department ID is the only separation: never test with a real department's NERIS ID. Corrections are expected to be made in Recovery Hub (`https://therecoveryhub.com/users/login`); confirm with Fire Recovery.
+
 ---
 
 ## Overview (vendor “Getting Started”)
@@ -95,6 +97,10 @@ Vendor documentation states:
   - `IncidentsToBill` (object)
     - `incident` (object)
       - `CostRecovery` (object): `PrincipleIncidentType`, `NerisIdIncident`, `IncidentNumber`, `LawEnforcementNumber`, `CatchCreated` (ISO 8601), `TotalPersonnelOnScene`, `FiledBy` (`First`, `Last`, `Middle`), `Parties` (array; may be empty).
+      - **Added in the current vendor docs (checked 2026-10-29), same `incident` object:** `AlarmDateTime`, `FirstUnitOnSceneDateTime`, `ClearedDateTime`, `CanceledInRoute`, `IncidentID`, `IncidentType`, `IncidentTypeDescription`, `Narrative`, `HazmatNarrative`, `Location` (`LocationID`, `Address`, `City`, `State`, `Zip`), `Occupancydata`, `Stations.Station`, `IncidentActionsTaken[]`, `RespondingUnits[]` (unit number, type, on-scene/clear times, canceled en route, actions, narrative).
+      - **`Parties[]` item shape:** `{ "Party": { First, Middle, Last, Address, City, State, Zip, Phone, Email, DOB, SSNumber, PartySSN, Isresident (bool), AtFault (bool), InvolvementType, InvolTypeDescript, Occupant, Vehicle: { VehicleYear, VehicleMake, VehicleModel, VehicleVIN, LicensePlate, VehicleOther, CommercialVehicle (bool), Owner (bool), CompanyName, InsuranceCompanyName, InsuranceContactNumber, PolicyNumber, DOTNumber } } }`. One party per vehicle.
+      - **Fire Recovery minimums (from the department, 2026-10-29):** per party: first and last name, address, Is Resident, insurance company, vehicle make and model (helpful: phone, policy number, insurance contact number, VIN, license plate). Per call: incident date, alarm time, cleared time, run number, personnel on scene, location (helpful: law enforcement report number, NFIRS code).
+      - **Current gap:** `server/fireRecoveryMapping.mjs` sends only `CostRecovery` with empty `Parties`. Tracked as repair plan Step 15.
 
 **Success response (example shape):**
 

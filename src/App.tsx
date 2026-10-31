@@ -45,7 +45,14 @@ import {
   getNerisExportHistory,
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
-import { getNerisDraft, patchNerisDraft } from "./api/nerisDrafts";
+import {
+  deleteNerisDraft,
+  getNerisDraft,
+  getRemovedNerisReportCallNumbers,
+  patchNerisDraft,
+  unlockNerisDraft,
+} from "./api/nerisDrafts";
+import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
   getFireRecoveryIncidents,
@@ -63,7 +70,6 @@ import {
   DASHBOARD_STATS,
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
-  INCIDENT_CALLS,
   INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
@@ -110,6 +116,9 @@ import {
 } from "./NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
 import { getRecurrenceIntervalDays, toDateKey } from "./scheduleUtils";
+import { onSessionExpired } from "./api/http";
+import { RolePermissionsPanel } from "./RolePermissionsPanel";
+import { useMyPermissions } from "./useMyPermissions";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -252,6 +261,7 @@ interface NerisStoredDraft {
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
   additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
+  reportRemoved?: boolean;
 }
 
 interface NerisExportSettings {
@@ -2127,6 +2137,50 @@ function writeSession(session: SessionState): void {
   );
 }
 
+const DEPARTMENT_CACHE_PREFIXES = [
+  "fire-ultimate-department-details",
+  "fire-ultimate-department-logo",
+  "fire-ultimate-neris-drafts",
+  "fire-ultimate-neris-export-settings",
+  "fire-ultimate-neris-export-history",
+  "fire-ultimate-incident-queue",
+  "fire-ultimate-schedule-",
+  "fire-ultimate-trade-requests",
+  "fire-ultimate-session",
+  "stationboss-mimic-session",
+  "stationboss-mimic-neris-",
+];
+
+function clearCachedDepartmentData(): void {
+  if (typeof window === "undefined") return;
+  const keys: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key) continue;
+    if (DEPARTMENT_CACHE_PREFIXES.some((prefix) => key === prefix || key.startsWith(prefix))) {
+      keys.push(key);
+    }
+  }
+  for (const key of keys) {
+    window.localStorage.removeItem(key);
+  }
+}
+
+function roleFromServer(role: string): UserRole {
+  const normalized = role.trim().toLowerCase();
+  if (normalized === "superadmin" || normalized === "admin") return normalized;
+  return "user";
+}
+
+function sessionFromServerUser(user: { username?: string; role?: string }, unit = ""): SessionState {
+  return {
+    isAuthenticated: true,
+    username: String(user.username ?? "").trim(),
+    unit,
+    role: roleFromServer(String(user.role ?? "")),
+  };
+}
+
 function readDisplayCardConfig(): DisplayCardConfig {
   if (typeof window === "undefined") {
     return {};
@@ -2546,6 +2600,13 @@ function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
   writeNerisDraftStore(store);
 }
 
+function removeNerisDraft(callNumber: string): void {
+  const store = readNerisDraftStore();
+  if (!Object.prototype.hasOwnProperty.call(store, callNumber)) return;
+  delete store[callNumber];
+  writeNerisDraftStore(store);
+}
+
 /** Normalize API draft payload to NerisStoredDraft for form consumption. */
 function normalizeApiDraftPayload(
   payload: unknown,
@@ -2588,7 +2649,7 @@ function normalizeApiDraftPayload(
         return acc;
       }, [])
     : [];
-  return {
+    return {
     formValues,
     reportStatus:
       typeof candidate.reportStatus === "string"
@@ -2598,6 +2659,7 @@ function normalizeApiDraftPayload(
       typeof candidate.lastSavedAt === "string" ? candidate.lastSavedAt : "Not saved",
     additionalAidEntries,
     additionalNonFdAidEntries,
+    reportRemoved: candidate.reportRemoved === true,
   };
 }
 
@@ -2762,19 +2824,13 @@ function getNerisQueueFieldValue(
   fieldId: IncidentCallFieldId,
 ): string {
   if (fieldId === "status") {
+    const localStatus = readNerisDraft(call.callNumber)?.reportStatus?.trim();
+    if (localStatus) return localStatus;
     const serverStatus = call.nerisReportStatus?.trim();
     if (serverStatus) return serverStatus;
-    return getNerisReportStatus(call.callNumber);
+    return "Draft";
   }
   return getCallFieldValue(call, fieldId);
-}
-
-function mapUserTypeToRole(userType: string): UserRole {
-  const normalized = userType.trim().toLowerCase();
-  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
-    return "superadmin";
-  }
-  return normalized.includes("admin") ? "admin" : "user";
 }
 
 function validatePasswordPolicyClient(password: string): string | null {
@@ -2838,6 +2894,68 @@ function applyNameTemplate(template: string, firstName: string, lastName: string
     }
     return base;
   });
+}
+
+function SessionReauthDialog({
+  message,
+  onLogin,
+}: {
+  message: string;
+  onLogin: AuthPageProps["onLogin"];
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage("Please provide username and password.");
+      return;
+    }
+    setErrorMessage("");
+    setIsSubmitting(true);
+    const loginError = await onLogin("", username.trim(), password);
+    if (loginError) setErrorMessage(loginError);
+    setIsSubmitting(false);
+  };
+
+  return (
+    <div className="session-reauth-overlay" role="dialog" aria-modal="true" aria-labelledby="session-reauth-title">
+      <form className="auth-form" onSubmit={handleSubmit}>
+        <div className="auth-form-header">
+          <ShieldCheck size={24} />
+          <div>
+            <h2 id="session-reauth-title">{message}</h2>
+            <p>Sign in to continue. What you typed on this screen is still here.</p>
+          </div>
+        </div>
+        <label htmlFor="reauth-username">Username</label>
+        <input
+          id="reauth-username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+        <label htmlFor="reauth-password">Password</label>
+        <input
+          id="reauth-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+        <button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </div>
+  );
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
@@ -2972,10 +3090,14 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const visibleMenus = useMemo(
-    () => getVisibleMenus(session.role),
-    [session.role],
-  );
+  const permissionGrants = useMyPermissions();
+  const visibleMenus = useMemo(() => {
+    const menus = getVisibleMenus(session.role);
+    if (permissionGrants && permissionGrants["incidents.view"] === false) {
+      return menus.filter((menu) => menu.id !== "incidentsMapping");
+    }
+    return menus;
+  }, [permissionGrants, session.role]);
   const activeMenu = useMemo(
     () => getMainMenuByPath(location.pathname),
     [location.pathname],
@@ -3370,6 +3492,12 @@ function MenuDisplayCards({
     readDisplayCardConfig(),
   );
 
+  useEffect(() => {
+    const syncCards = () => setDisplayConfig(readDisplayCardConfig());
+    window.addEventListener("department-display-cards-updated", syncCards);
+    return () => window.removeEventListener("department-display-cards-updated", syncCards);
+  }, []);
+
   const defaultCards = useMemo(
     () =>
       menu.submenus.filter(
@@ -3423,7 +3551,7 @@ function MenuDisplayCards({
   ];
 
   const updateMenuCardSelection = (path: string) => {
-    if (defaultPathSet.has(path)) {
+    if (defaultPathSet.has(path) || !isAdminOrHigher(role)) {
       return;
     }
 
@@ -3442,6 +3570,11 @@ function MenuDisplayCards({
       }
 
       writeDisplayCardConfig(normalized);
+      void patchSharedDepartmentSettings({ displayCards: normalized }).catch((error: unknown) => {
+        writeDisplayCardConfig(previous);
+        setDisplayConfig(previous);
+        window.alert(error instanceof Error ? error.message : "Submenu cards were not saved.");
+      });
       return normalized;
     });
   };
@@ -3456,7 +3589,7 @@ function MenuDisplayCards({
           </p>
         </div>
 
-        <div className="edit-display-wrap">
+        {isAdminOrHigher(role) ? <div className="edit-display-wrap">
           <button
             type="button"
             className="edit-display-link"
@@ -3496,7 +3629,7 @@ function MenuDisplayCards({
               </small>
             </div>
           ) : null}
-        </div>
+        </div> : null}
       </div>
 
       {cards.length > 0 ? (
@@ -3576,8 +3709,60 @@ function MenuDisplayCards({
   );
 }
 
+const DASHBOARD_WIDGET_OPTIONS = [
+  { id: "active-calls", label: "Active Calls" },
+  { id: "units-available", label: "Units Available" },
+  { id: "pending-reports", label: "Pending Reports" },
+  { id: "unread-messages", label: "Unread Messages" },
+  { id: "priority-shortcuts", label: "Priority Shortcuts" },
+  { id: "live-alerts", label: "Live Alerts" },
+] as const;
+
+type DashboardWidgetId = (typeof DASHBOARD_WIDGET_OPTIONS)[number]["id"];
+
+const DASHBOARD_WIDGET_IDS = new Set<string>(DASHBOARD_WIDGET_OPTIONS.map((item) => item.id));
+const DASHBOARD_HIDDEN_WIDGETS_KEY = "fire-ultimate-dashboard-hidden-widgets";
+
+function readHiddenDashboardWidgets(): DashboardWidgetId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_HIDDEN_WIDGETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is DashboardWidgetId => typeof id === "string" && DASHBOARD_WIDGET_IDS.has(id));
+  } catch {
+    return [];
+  }
+}
+
+function writeHiddenDashboardWidgets(hidden: DashboardWidgetId[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DASHBOARD_HIDDEN_WIDGETS_KEY, JSON.stringify(hidden));
+}
+
 function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
+  const [widgetEditorOpen, setWidgetEditorOpen] = useState(false);
+  const [hiddenWidgets, setHiddenWidgets] = useState<DashboardWidgetId[]>(() =>
+    readHiddenDashboardWidgets(),
+  );
+  const hiddenWidgetSet = useMemo(() => new Set(hiddenWidgets), [hiddenWidgets]);
+  const visibleDashboardStats = DASHBOARD_STATS.filter((stat) => {
+    const match = DASHBOARD_WIDGET_OPTIONS.find((item) => item.label === stat.label);
+    return !match || !hiddenWidgetSet.has(match.id);
+  });
+  const showPriorityShortcuts = !hiddenWidgetSet.has("priority-shortcuts");
+  const showLiveAlerts = !hiddenWidgetSet.has("live-alerts");
+
+  const toggleDashboardWidget = (id: DashboardWidgetId) => {
+    setHiddenWidgets((previous) => {
+      const next = previous.includes(id)
+        ? previous.filter((item) => item !== id)
+        : [...previous, id];
+      writeHiddenDashboardWidgets(next);
+      return next;
+    });
+  };
 
   return (
     <section className="page-section neris-report-page">
@@ -3590,6 +3775,39 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
           </p>
         </div>
         <div className="header-actions">
+          <div className="edit-display-wrap">
+            <button
+              type="button"
+              className="edit-display-link"
+              onClick={() => setWidgetEditorOpen((previous) => !previous)}
+            >
+              Edit display
+            </button>
+            {widgetEditorOpen ? (
+              <div className="edit-display-dropdown">
+                <p>Choose which dashboard boxes to show.</p>
+                <ul>
+                  {DASHBOARD_WIDGET_OPTIONS.map((widget) => (
+                    <li key={widget.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={!hiddenWidgetSet.has(widget.id)}
+                          onChange={() => toggleDashboardWidget(widget.id)}
+                        />
+                        <span>{widget.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <small>
+                  Active Calls, Units Available, Pending Reports, Unread Messages, and Live
+                  Alerts use sample numbers. They are not connected to live incidents yet.
+                  This choice stays on this computer.
+                </small>
+              </div>
+            ) : null}
+          </div>
           <NavLink className="secondary-button button-link" to="/calendar/events">
             Open Calendar
           </NavLink>
@@ -3599,17 +3817,21 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
         </div>
       </header>
 
-      <section className="stat-grid">
-        {DASHBOARD_STATS.map((stat) => (
-          <article key={stat.label} className="stat-card">
-            <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
-            <span className={toToneClass(stat.tone)}>{stat.detail}</span>
-          </article>
-        ))}
-      </section>
+      {visibleDashboardStats.length > 0 ? (
+        <section className="stat-grid">
+          {visibleDashboardStats.map((stat) => (
+            <article key={stat.label} className="stat-card">
+              <p>{stat.label}</p>
+              <strong>{stat.value}</strong>
+              <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+            </article>
+          ))}
+        </section>
+      ) : null}
 
+      {showPriorityShortcuts || showLiveAlerts ? (
       <section className="panel-grid two-column">
+        {showPriorityShortcuts ? (
         <article className="panel">
           <div className="panel-header">
             <h2>Priority Shortcuts</h2>
@@ -3633,7 +3855,9 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
             ))}
           </ul>
         </article>
+        ) : null}
 
+        {showLiveAlerts ? (
         <article className="panel">
           <div className="panel-header">
             <h2>Live Alerts</h2>
@@ -3651,7 +3875,9 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
             ))}
           </ul>
         </article>
+        ) : null}
       </section>
+      ) : null}
 
       {dashboardMenu ? (
         <MenuDisplayCards
@@ -3672,7 +3898,8 @@ function IncidentsListPage({
   onCreateIncidentCall,
 }: IncidentsListPageProps) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
+  const permissionGrants = useMyPermissions();
+  const canCreateIncident = permissionGrants?.["incidents.create"] === true;
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [fieldEditorError, setFieldEditorError] = useState("");
   const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
@@ -3772,11 +3999,8 @@ function IncidentsListPage({
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
   };
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const resetCreateIncidentDraft = () => {
     setCreateIncidentDraft({
@@ -4070,9 +4294,11 @@ function IncidentsListPage({
               Export Call Queue
             </button>
           ) : null}
-          <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
-            Create Incident
-          </button>
+          {canCreateIncident ? (
+            <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
+              Create Incident
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -4185,7 +4411,8 @@ function IncidentsListPage({
                   <tr>
                     <td colSpan={2}>
                       <div className="empty-message">
-                        No incidents yet. Click Create Incident to start a live record.
+                        No incidents yet.
+                        {canCreateIncident ? " Click Create Incident to start a live record." : ""}
                       </div>
                     </td>
                   </tr>
@@ -4761,10 +4988,21 @@ function IncidentCallDetailPage({
           <NavLink className="secondary-button button-link" to="/incidents-mapping/incidents">
             Back to Incidents
           </NavLink>
-          <button type="button" className="primary-button">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`)}
+          >
+            Open NERIS report
+          </button>
+          <button type="button" className="secondary-button">
             Add Note
           </button>
         </div>
+        <p className="field-hint">
+          The NERIS list hides a deleted report. Use Open NERIS report on this page, then
+          click Save, to put that report back on the NERIS list.
+        </p>
       </header>
 
       <section className="panel-grid">
@@ -5365,51 +5603,28 @@ function PersonnelTradesPage() {
   );
 }
 
-function useIsDemoTenant(): boolean {
-  const [isDemoTenant, setIsDemoTenant] = useState(() =>
-    window.location.hostname.toLowerCase().includes("demo"),
-  );
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadTenantContext = async () => {
-      try {
-        const response = await fetch("/api/tenant/context");
-        if (!response.ok || !isMounted) return;
-
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          tenant?: { slug?: string };
-        };
-        const slug = String(payload?.tenant?.slug ?? "").toLowerCase();
-        if (slug) {
-          setIsDemoTenant(slug.includes("demo"));
-        }
-      } catch {
-        // Keep hostname-based default when tenant context cannot be read.
-      }
-    };
-
-    void loadTenantContext();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  return isDemoTenant;
-}
-
 function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
+  const [removedCallNumbers, setRemovedCallNumbers] = useState<Set<string>>(() => new Set());
+  useEffect(() => {
+    let cancelled = false;
+    getRemovedNerisReportCallNumbers()
+      .then((callNumbers) => {
+        if (!cancelled) setRemovedCallNumbers(new Set(callNumbers));
+      })
+      .catch(() => {
+        if (!cancelled) setRemovedCallNumbers(new Set());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const queueCalls = useMemo(
     () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+      incidentCalls.filter(
+        (entry) => !isIncidentHiddenFromQueue(entry) && !removedCallNumbers.has(entry.callNumber),
+      ),
+    [incidentCalls, removedCallNumbers],
   );
   const fieldLabelById = useMemo(
     () =>
@@ -5550,15 +5765,11 @@ interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
 
 function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPagePropsWithHistory) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
   const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
 
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const latestExportByCall = useMemo(() => {
     const map = new Map<string, NerisExportRecord>();
@@ -5713,6 +5924,8 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
 
 function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canSubmitBilling = permissionGrants?.["billing.submit"] === true;
   const [frSending, setFrSending] = useState(false);
   const incident =
     getIncidentCallDetail(callNumber) ??
@@ -5781,14 +5994,16 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </p>
         </div>
         <div className="header-actions">
-          <button
-            type="button"
-            className="primary-button compact-button"
-            disabled={frSending}
-            onClick={handleSendFireRecovery}
-          >
-            {frSending ? "Sending…" : "Send to Fire Recovery"}
-          </button>
+          {canSubmitBilling ? (
+            <button
+              type="button"
+              className="primary-button compact-button"
+              disabled={frSending}
+              onClick={handleSendFireRecovery}
+            >
+              {frSending ? "Sending…" : "Send to Fire Recovery"}
+            </button>
+          ) : null}
           <button
             type="button"
             className="secondary-button compact-button"
@@ -5939,7 +6154,7 @@ interface NerisReportFormRouteProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
-  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
+  onDeleteIncidentCall: (callNumber: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   apparatusFromDepartmentDetails: { unit: string; unitId: string; commonName: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
@@ -5955,6 +6170,8 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
     undefined,
   );
   const [draftLoadStatus, setDraftLoadStatus] = useState<"loading" | "done">("loading");
+  const draftUpdatedAtRef = useRef("");
+  const draftSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!callNumber) {
@@ -5969,9 +6186,10 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       if (!cancelled) setDraftLoadStatus("loading");
     });
     getNerisDraft(callNumber)
-      .then((payload) => {
+      .then((record) => {
         if (cancelled) return;
-        const normalized = payload ? normalizeApiDraftPayload(payload, callNumber) : null;
+        draftUpdatedAtRef.current = record?.updatedAt ?? "";
+        const normalized = record ? normalizeApiDraftPayload(record.draft, callNumber) : null;
         setServerDraft(normalized ?? null);
         setDraftLoadStatus("done");
       })
@@ -5997,13 +6215,36 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
   );
 
   const writeNerisDraftForForm = useCallback(
-    (cn: string, draft: NerisStoredDraft) => {
+    (cn: string, draft: NerisStoredDraft, seedFormValues?: Record<string, string>) => {
       writeNerisDraft(cn, draft);
       if (cn === callNumber) setServerDraft(draft);
-      patchNerisDraft(cn, draft).catch(() => {});
+      const run = draftSaveChainRef.current.then(async () => {
+        const saved = await patchNerisDraft(
+          cn,
+          draft,
+          draftUpdatedAtRef.current,
+          seedFormValues,
+        );
+        draftUpdatedAtRef.current = saved.updatedAt;
+      });
+      draftSaveChainRef.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     },
     [callNumber],
   );
+
+  const unlockNerisDraftForForm = useCallback(async () => {
+    const saved = await unlockNerisDraft(callNumber, draftUpdatedAtRef.current);
+    draftUpdatedAtRef.current = saved.updatedAt;
+    const normalized = normalizeApiDraftPayload(saved.draft, callNumber);
+    if (normalized) {
+      writeNerisDraft(callNumber, normalized);
+      setServerDraft(normalized);
+    }
+  }, [callNumber]);
 
   const getExportHistory = () =>
     props.exportHistory && props.exportHistory.length > 0
@@ -6028,6 +6269,7 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       {...props}
       readNerisDraft={readNerisDraftForForm}
       writeNerisDraft={writeNerisDraftForForm}
+      unlockNerisDraft={unlockNerisDraftForForm}
       appendNerisExportRecord={appendAndSync}
       parseAssignedUnits={parseAssignedUnits}
       inferResourceUnitTypeValue={inferResourceUnitTypeValue}
@@ -7692,6 +7934,10 @@ function DepartmentDetailsPage({
     if (!file) {
       return;
     }
+    if (file.size > 500 * 1024) {
+      window.alert("The department logo must be 500 KB or smaller.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof window === "undefined") {
@@ -7700,6 +7946,9 @@ function DepartmentDetailsPage({
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
       window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, dataUrl);
       window.dispatchEvent(new Event("department-logo-updated"));
+      void patchSharedDepartmentSettings({ logoDataUrl: dataUrl }).catch((error: unknown) => {
+        window.alert(error instanceof Error ? error.message : "The department logo was not saved.");
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -9198,6 +9447,7 @@ function DepartmentDetailsPage({
                   <div className="panel-header">
                     <h2>Access / Restrictions</h2>
                   </div>
+                  <RolePermissionsPanel />
                   <div className="department-collection-grid">
                     {accessCards.map((definition) => (
                       <div key={definition.key} className="department-collection-card">
@@ -12268,7 +12518,7 @@ function CustomizationPage({
         >
           <div className="settings-form">
             {workflowDraft.map((state, index) => (
-              <div key={`${state}-${index}`} className="state-edit-row">
+              <div key={index} className="state-edit-row">
                 <input
                   type="text"
                   value={state}
@@ -12891,9 +13141,10 @@ function RouteResolver({
         username={username}
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
-        onDeleteIncidentCall={(targetCallNumber: string, reason?: string) =>
-          onSetIncidentDeleted(targetCallNumber, true, reason ?? "Deleted from NERIS report form.")
-        }
+        onDeleteIncidentCall={async (targetCallNumber: string) => {
+          await deleteNerisDraft(targetCallNumber);
+          removeNerisDraft(targetCallNumber);
+        }}
         nerisExportSettings={nerisExportSettings}
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
         exportHistory={nerisExportHistory}
@@ -13072,10 +13323,46 @@ function RouteResolver({
 }
 
 function App() {
-  const [session, setSession] = useState<SessionState>(() => readSession());
+  const [session, setSession] = useState<SessionState>(EMPTY_SESSION);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [reauthMessage, setReauthMessage] = useState("");
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   const [incidentCalls, setIncidentCalls] = useState<IncidentCallSummary[]>(() =>
     readIncidentQueue(),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((json: { ok?: boolean; user?: { username?: string; role?: string } } | null) => {
+        if (cancelled) return;
+        if (json?.ok && json.user?.username) {
+          const nextSession = sessionFromServerUser(json.user);
+          writeSession(nextSession);
+          setSession(nextSession);
+        } else {
+          writeSession(EMPTY_SESSION);
+          setSession(EMPTY_SESSION);
+        }
+        setSessionReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => onSessionExpired(() => {
+    if (sessionRef.current.isAuthenticated) {
+      setReauthMessage("Your session expired");
+    }
+  }), []);
 
   useEffect(() => {
     if (!session.isAuthenticated) return;
@@ -13132,6 +13419,73 @@ function App() {
     () => readSubmenuVisibility(),
   );
 
+  useEffect(() => {
+    if (!session.isAuthenticated || typeof window === "undefined") return;
+    let cancelled = false;
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        if (cancelled || !json?.ok || !json.data) return;
+        const raw = json.data.sharedDepartmentSettings;
+        const shared =
+          raw && typeof raw === "object" && !Array.isArray(raw)
+            ? (raw as Record<string, unknown>)
+            : {};
+        if (typeof shared.logoDataUrl === "string") {
+          window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, shared.logoDataUrl);
+          window.dispatchEvent(new Event("department-logo-updated"));
+        }
+        if (Array.isArray(shared.workflowStates)) {
+          const states = dedupeAndCleanStrings(
+            shared.workflowStates.filter((item): item is string => typeof item === "string"),
+          );
+          if (states.length) {
+            writeWorkflowStates(states);
+            setWorkflowStates(states);
+          }
+        }
+        if (shared.submenuVisibility && typeof shared.submenuVisibility === "object") {
+          const source = shared.submenuVisibility as Record<string, unknown>;
+          const next = getDefaultSubmenuVisibilityMap();
+          for (const path of ALL_SUBMENU_PATHS) {
+            if (typeof source[path] === "boolean") next[path] = source[path];
+          }
+          writeSubmenuVisibility(next);
+          setSubmenuVisibility(next);
+        }
+        if (shared.displayCards && typeof shared.displayCards === "object" && !Array.isArray(shared.displayCards)) {
+          writeDisplayCardConfig(shared.displayCards as DisplayCardConfig);
+          window.dispatchEvent(new Event("department-display-cards-updated"));
+        }
+        if (!isAdminOrHigher(session.role)) return;
+        const seed: {
+          workflowStates?: string[];
+          submenuVisibility?: SubmenuVisibilityMap;
+          displayCards?: Record<string, string[]>;
+        } = {};
+        if (!Array.isArray(shared.workflowStates)) seed.workflowStates = readWorkflowStates();
+        if (!shared.submenuVisibility || typeof shared.submenuVisibility !== "object") {
+          seed.submenuVisibility = readSubmenuVisibility();
+        }
+        if (!shared.displayCards || typeof shared.displayCards !== "object") {
+          seed.displayCards = readDisplayCardConfig();
+        }
+        if (Object.keys(seed).length > 0) {
+          void patchSharedDepartmentSettings(seed).catch(() => {});
+        }
+        if (typeof shared.logoDataUrl !== "string") {
+          const localLogo = window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "";
+          if (localLogo.startsWith("data:image/") && localLogo.length < 680_000) {
+            void patchSharedDepartmentSettings({ logoDataUrl: localLogo }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session.isAuthenticated, session.role]);
+
   const apparatusFromDepartmentDetails = useMemo(
     () => readApparatusFromDepartmentDetails(),
     [],
@@ -13151,20 +13505,19 @@ function App() {
       const json = (await response.json()) as {
         ok?: boolean;
         message?: string;
-        user?: { name?: string; userType?: string; username?: string };
+        user?: { name?: string; username?: string; role?: string };
       };
       if (!response.ok || !json?.ok || !json.user) {
         return json?.message ?? "Login failed.";
       }
-      const nextSession: SessionState = {
-        isAuthenticated: true,
-        username: String(json.user.username ?? username).trim(),
-        unit: department || "",
-        role: mapUserTypeToRole(String(json.user.userType ?? "")),
-      };
+      const nextSession = sessionFromServerUser(
+        json.user,
+        department || sessionRef.current.unit,
+      );
+      writeSession(nextSession);
       setSession(nextSession);
       setIncidentDisplaySettings(readIncidentDisplaySettings(nextSession.username));
-      writeSession(nextSession);
+      setReauthMessage("");
       return null;
     } catch {
       return "Unable to reach login service.";
@@ -13172,7 +13525,16 @@ function App() {
   };
 
   const handleLogout = () => {
+    void fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => {});
+    clearCachedDepartmentData();
     setSession(EMPTY_SESSION);
+    setReauthMessage("");
+    setIncidentCalls([]);
+    setNerisExportHistory([]);
     setIncidentDisplaySettings(readIncidentDisplaySettings(""));
     writeSession(EMPTY_SESSION);
   };
@@ -13184,6 +13546,9 @@ function App() {
     }
     setWorkflowStates(normalized);
     writeWorkflowStates(normalized);
+    void patchSharedDepartmentSettings({ workflowStates: normalized }).catch((error: unknown) => {
+      window.alert(error instanceof Error ? error.message : "Workflow states were not saved.");
+    });
   };
 
   const handleSaveIncidentDisplaySettings = (
@@ -13207,6 +13572,9 @@ function App() {
     };
     setSubmenuVisibility(normalized);
     writeSubmenuVisibility(normalized);
+    void patchSharedDepartmentSettings({ submenuVisibility: normalized }).catch((error: unknown) => {
+      window.alert(error instanceof Error ? error.message : "Submenu visibility was not saved.");
+    });
   };
 
   const handleSaveNerisExportSettings = (nextSettings: NerisExportSettings) => {
@@ -13283,37 +13651,17 @@ function App() {
         dispatchInfo: patch.dispatchInfo,
       };
       try {
-        const updated = await updateIncident(callNumber, apiPatch);
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) =>
-            entry.callNumber === callNumber ? updated : entry,
-          );
-          writeIncidentQueue(next);
-          return next;
-        });
-      } catch {
-        const patchEntries = Object.entries(patch) as Array<[keyof IncidentCallSummary, unknown]>;
-        setIncidentCalls((previous) => {
-          let didChange = false;
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            const hasRealChange = patchEntries.some(
-              ([key, value]) => value !== undefined && !Object.is(entry[key], value),
-            );
-            if (!hasRealChange) return entry;
-            didChange = true;
-            return {
-              ...entry,
-              ...patch,
-              callNumber: entry.callNumber,
-              lastUpdated: "Just now",
-            };
-          });
-          if (!didChange) return previous;
-          writeIncidentQueue(next);
-          return next;
-        });
-      }
+      const updated = await updateIncident(callNumber, apiPatch);
+      setIncidentCalls((previous) => {
+        const next = previous.map((entry) =>
+          entry.callNumber === callNumber ? updated : entry,
+        );
+        writeIncidentQueue(next);
+        return next;
+      });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "The incident was not updated.");
+    }
     },
     [],
   );
@@ -13327,11 +13675,9 @@ function App() {
     if (deleted) {
       try {
         const draft = await getNerisDraft(callNumber);
-        const status = draft?.reportStatus?.trim();
+        const status = draft?.draft.reportStatus?.trim();
         if (status === "In Review" || status === "Exported") {
-          alert(
-            "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance.",
-          );
+          alert("This report is locked. Unlock it before deleting.");
           return;
         }
       } catch {
@@ -13353,22 +13699,8 @@ function App() {
           writeIncidentQueue(next);
           return next;
         });
-      } catch {
-        const nowIso = new Date().toISOString();
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            return {
-              ...entry,
-              deletedAt: nowIso,
-              deletedBy: actor,
-              deletedReason: reason?.trim() || "Deleted by user.",
-              lastUpdated: "Just now",
-            };
-          });
-          writeIncidentQueue(next);
-          return next;
-        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The incident was not deleted.");
       }
     } else {
       try {
@@ -13382,27 +13714,21 @@ function App() {
           writeIncidentQueue(next);
           return next;
         });
-      } catch {
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            return {
-              ...entry,
-              deletedAt: undefined,
-              deletedBy: undefined,
-              deletedReason: undefined,
-              lastUpdated: "Just now",
-            };
-          });
-          writeIncidentQueue(next);
-          return next;
-        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The incident was not restored.");
       }
     }
   };
 
+  if (!sessionReady) {
+    return <div className="session-checking">Checking sign-in…</div>;
+  }
+
   return (
     <BrowserRouter>
+      {reauthMessage && session.isAuthenticated ? (
+        <SessionReauthDialog message={reauthMessage} onLogin={handleLogin} />
+      ) : null}
       <Routes>
         <Route
           path="/auth"

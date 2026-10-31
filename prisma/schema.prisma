@@ -30,7 +30,11 @@ model Tenant {
   cadEmailAllowlist       CadEmailAllowlistEntry[]
   nerisExportHistory      NerisExportHistory[]
   nerisDrafts             NerisDraft[]
+  nerisReportChanges      NerisReportChange[]
   fireRecoveryIncidentBillings FireRecoveryIncidentBilling[]
+  sessions                    Session[]
+  rolePermissions             RolePermission[]
+  accountAuditLogs            AccountAuditLog[]
 }
 
 /// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.
@@ -84,10 +88,61 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions Session[]
 
   @@unique([tenantId, username])
   @@index([tenantId])
+}
+
+/// Sign-in sheet. One row per login. The browser holds the pass; this table holds only its fingerprint.
+model Session {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  tenantId     String
+  userId       String
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// One row per department per action: the lowest role allowed to do that action.
+model RolePermission {
+  id          String   @id @default(cuid())
+  tenantId    String
+  permission  String
+  minimumRole String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, permission])
+  @@index([tenantId])
+}
+
+/// Who changed an account, and what changed. Never stores a password.
+model AccountAuditLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  actorUserId    String?
+  actorUsername  String
+  action         String
+  targetUsername String
+  detail         String   @default("")
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
 }
 
 model DepartmentDetails {
@@ -239,4 +294,19 @@ model NerisDraft {
 
   @@unique([tenantId, callNumber])
   @@index([tenantId])
+}
+
+/// Who saved a NERIS report, and which field names changed. Add-only. No old or new text.
+model NerisReportChange {
+  id            String   @id @default(cuid())
+  tenantId      String
+  callNumber    String
+  actorUserId   String?
+  actorUsername String
+  fieldNames    Json
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, callNumber, createdAt])
 }

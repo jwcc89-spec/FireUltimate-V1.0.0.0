@@ -58,7 +58,7 @@ Maps a hostname to a tenant for domain-based routing.
 
 **Notes**
 
-- Used for host-based tenant resolution (request `Host` / `X-Forwarded-Host`). Localhost resolves to the `demo` tenant.
+- Used for host-based tenant resolution (request `Host`). `X-Forwarded-Host` is ignored unless `TRUST_PROXY=1`. Localhost resolves to the `demo` tenant.
 - A hostname may belong to only one tenant.
 
 ---
@@ -79,7 +79,7 @@ Login account for a tenant. Auth is stored only in this table, not in `Departmen
 **Notes**
 
 - Passwords must be stored as bcrypt hashes.
-- Roles in use: `admin`, `user`.
+- Roles in use: `user`, `subadmin`, `admin`, `superadmin`. A higher role can do everything a lower role can do.
 
 ---
 
@@ -216,7 +216,7 @@ The following collections live inside `DepartmentDetails.payloadJson` under the 
 
 - NERIS-related tenant configuration must resolve from tenant-scoped data (e.g. tenant’s `nerisEntityId`, department details, selected mutual aid).
 - Do not fall back to global environment defaults for tenant traffic unless explicitly intended and documented.
-- Tenant entity ID is stored on `Tenant.nerisEntityId`; department reporting metadata and options live in `DepartmentDetails.payloadJson` or derived from it.
+- Tenant entity ID is stored on `Tenant.nerisEntityId`. An admin sets it in Admin Functions (NERIS Export Configuration). Saving that screen must copy it onto `Tenant.nerisEntityId`, and export must use that value. Department reporting metadata and options live in `DepartmentDetails.payloadJson` or derived from it. Departments do not have their own NERIS logins; the vendor client id and secret stay in server env.
 
 ---
 
@@ -230,3 +230,64 @@ Some business/domain data currently lives in `DepartmentDetails.payloadJson` (an
 - reporting/export integrity
 
 Agents must **not** migrate JSON-backed structures into new database tables without explicit approval and a documented migration plan.
+
+---
+
+## 11. RolePermission
+
+One row per department per named action. It stores the lowest role allowed to do that action.
+
+**Key fields**
+
+- `id` (cuid)
+- `tenantId`
+- `permission` (for example `incidents.create` or `billing.submit`)
+- `minimumRole` (`user`, `subadmin`, `admin`, or `superadmin`)
+- `createdAt`, `updatedAt`
+
+**Notes**
+
+- Unique on `tenantId` + `permission`. If a department has no row, the server uses the built-in default.
+- Add-only. Approved October 29, 2026. Not applied to staging or production yet.
+
+---
+
+## 12. AccountAuditLog
+
+One row each time an account is created, edited, reset, or deleted.
+
+**Key fields**
+
+- `id` (cuid)
+- `tenantId`
+- `actorUserId` (optional; the person who made the change)
+- `actorUsername`
+- `action`
+- `targetUsername`
+- `detail` (plain text; never a password)
+- `createdAt`
+
+**Notes**
+
+- Add-only. Approved October 29, 2026. Not applied to staging or production yet.
+
+---
+
+## 13. NerisReportChange
+
+One row each time a NERIS report is saved or unlocked. It records who, when, which report, and which field names changed. It does not store the old or new text.
+
+**Key fields**
+
+- `id` (cuid)
+- `tenantId`
+- `callNumber` (the incident id the report is saved under)
+- `actorUserId` (optional)
+- `actorUsername`
+- `fieldNames` (list of names only)
+- `createdAt`
+
+**Notes**
+
+- Add-only. Rows are kept forever and shown inside that report. Approved and built October 30, 2026. Not applied to staging or production yet.
+- Department logo, dispatch workflow states, submenu visibility, and submenu cards are stored in `DepartmentDetails.payloadJson.sharedDepartmentSettings`. That object holds no passwords. The logo is limited to 500 KB.

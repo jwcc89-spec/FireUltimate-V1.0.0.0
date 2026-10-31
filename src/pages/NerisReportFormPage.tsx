@@ -15,6 +15,7 @@ import {
   type UserRole,
 } from "../appData";
 import { isAdminOrHigher } from "../roleHierarchy";
+import { getNerisDraftHistory, type NerisReportChangeEntry } from "../api/nerisDrafts";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
   NERIS_FORM_SECTIONS,
@@ -64,10 +65,15 @@ export interface NerisReportFormPageProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
-  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
+  onDeleteIncidentCall: (callNumber: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
-  writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void;
+  writeNerisDraft: (
+    callNumber: string,
+    draft: NerisStoredDraft,
+    seedFormValues?: Record<string, string>,
+  ) => void | Promise<void>;
+  unlockNerisDraft?: () => Promise<void>;
   appendNerisExportRecord: (record: NerisExportRecord) => void;
   parseAssignedUnits: (value: string) => string[];
   inferResourceUnitTypeValue: (
@@ -158,6 +164,7 @@ interface NerisStoredDraft {
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
   additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
+  reportRemoved?: boolean;
 }
 
 interface NerisExportRecord {
@@ -324,6 +331,7 @@ function NerisReportFormPage({
   nerisExportSettings,
   readNerisDraft,
   writeNerisDraft,
+  unlockNerisDraft,
   appendNerisExportRecord,
   parseAssignedUnits,
   inferResourceUnitTypeValue,
@@ -450,11 +458,20 @@ function NerisReportFormPage({
   );
   const isLocked =
     reportStatus === "In Review" || reportStatus === "Exported";
-  const canEdit = !isLocked || isAdminOrHigher(role);
+  const canEdit = !isLocked;
+  const canUnlock =
+    reportStatus === "In Review" || (reportStatus === "Exported" && isAdminOrHigher(role));
+  const [changeHistory, setChangeHistory] = useState<NerisReportChangeEntry[]>([]);
   const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
     ...defaultFormValues,
     ...(persistedDraft?.formValues ?? {}),
   }));
+  const autoFillSeedRef = useRef<NerisFormValues>({ ...defaultFormValues });
+  const userEditedReportRef = useRef(false);
+  useEffect(() => {
+    if (userEditedReportRef.current) return;
+    autoFillSeedRef.current = { ...formValues };
+  }, [formValues]);
   const lastSyncedIncidentIdPair = useRef("");
   const previousIncidentIdPair = useRef("");
   const hasInitializedIncidentIdSync = useRef(false);
@@ -515,6 +532,7 @@ function NerisReportFormPage({
   const [printSummaryOpen, setPrintSummaryOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isFetchingIncidentTest, setIsFetchingIncidentTest] = useState(false);
   const [incidentTestResponseDetail, setIncidentTestResponseDetail] = useState("");
@@ -523,6 +541,21 @@ function NerisReportFormPage({
   const [lastSavedAt, setLastSavedAt] = useState<string>(
     () => persistedDraft?.lastSavedAt ?? "Not saved",
   );
+
+  useEffect(() => {
+    if (!callNumber) return;
+    let cancelled = false;
+    getNerisDraftHistory(callNumber)
+      .then((rows) => {
+        if (!cancelled) setChangeHistory(rows);
+      })
+      .catch(() => {
+        if (!cancelled) setChangeHistory([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [callNumber, reportStatus, lastSavedAt]);
   const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
     (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
       aidDirection: entry.aidDirection,
@@ -1675,6 +1708,20 @@ function NerisReportFormPage({
       >,
     [allNerisFields],
   );
+  const historyFieldLabel = (fieldId: string): string => {
+    const extraLabels: Record<string, string> = {
+      reportStatus: "Report status",
+      additionalAidEntries: "Additional aid",
+      additionalNonFdAidEntries: "Additional non-FD aid",
+      resource_units_json: "Units",
+      emerging_haz_electrocution_items_json: "Electrical hazards",
+      emerging_haz_power_generation_items_json: "Power generation hazards",
+      risk_reduction_fire_suppression_systems_json: "Suppression systems",
+    };
+    const named = nerisFieldLabelById[fieldId] || extraLabels[fieldId];
+    const text = named && named.trim() ? named : fieldId.replace(/_/g, " ");
+    return text.replace(/_/g, " ");
+  };
   const nerisFieldSectionById = useMemo(
     () =>
       Object.fromEntries(
@@ -1848,6 +1895,7 @@ function NerisReportFormPage({
   }, [nerisExportSettings.vendorCode, formValues.fd_neris_id]);
 
   const updateFieldValue = (fieldId: string, value: string) => {
+    userEditedReportRef.current = true;
     const sanitizedValue =
       fieldId === "incident_displaced_number" ? value.replace(/[^\d]/g, "") : value;
     const shouldClearNoAction =
@@ -2086,6 +2134,7 @@ function NerisReportFormPage({
   };
 
   const markNerisFormDirty = () => {
+    userEditedReportRef.current = true;
     setSaveMessage("");
     setErrorMessage("");
     setValidationIssues([]);
@@ -2922,6 +2971,25 @@ function NerisReportFormPage({
     markNerisFormDirty();
   };
 
+  const persistNerisDraft = (draft: NerisStoredDraft) => {
+    const result = writeNerisDraft(callNumber, draft, autoFillSeedRef.current);
+    if (result && typeof result.then === "function") {
+      void result.catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "The report was not saved.";
+        setSaveMessage("");
+        if (
+          message ===
+          "Someone else saved this report while you were editing. Reload to see their changes before saving again."
+        ) {
+          setErrorMessage("");
+          setConflictDialogOpen(true);
+          return;
+        }
+        setErrorMessage(message);
+      });
+    }
+  };
+
   const stampSavedAt = (
     mode: "manual" | "auto",
     nextStatus: string = reportStatus,
@@ -2938,7 +3006,7 @@ function NerisReportFormPage({
       formValuesOverride != null && Object.keys(formValuesOverride).length > 0
         ? ({ ...formValues, ...formValuesOverride } as NerisFormValues)
         : formValues;
-    writeNerisDraft(callNumber, {
+    persistNerisDraft({
       formValues: valuesToWrite,
       reportStatus: nextStatus,
       lastSavedAt: savedAt,
@@ -3035,7 +3103,7 @@ function NerisReportFormPage({
     }
     const serializedAidEntries = buildStoredAdditionalAidEntries();
     const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
-    writeNerisDraft(callNumber, {
+    persistNerisDraft({
       formValues,
       reportStatus: "Draft",
       lastSavedAt,
@@ -3918,7 +3986,7 @@ function NerisReportFormPage({
     const isProxyRequest = requestConfig.isProxyRequest;
     const serializedAidEntries = buildStoredAdditionalAidEntries();
     const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
-    writeNerisDraft(callNumber, {
+    persistNerisDraft({
       formValues,
       reportStatus,
       lastSavedAt,
@@ -4326,16 +4394,17 @@ function NerisReportFormPage({
   const handleDeleteIncident = async () => {
     if (reportStatus === "In Review" || reportStatus === "Exported") {
       setDeleteConfirmOpen(false);
-      alert(
-        "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance.",
-      );
+      alert("This report is locked. Unlock it before deleting.");
       return;
     }
     try {
-      await onDeleteIncidentCall(callNumber, "Deleted from NERIS report form.");
-    } finally {
+      await onDeleteIncidentCall(callNumber);
       setDeleteConfirmOpen(false);
       navigate("/reporting/neris");
+    } catch (error) {
+      setDeleteConfirmOpen(false);
+      setSaveMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "The report was not deleted.");
     }
   };
 
@@ -4571,7 +4640,18 @@ function NerisReportFormPage({
     setSectionErrors({});
     setErrorMessage("");
     setSaveMessage("");
-    stampSavedAt("manual", "Draft", "Report unlocked. You can edit again.");
+    if (!unlockNerisDraft) {
+      stampSavedAt("manual", "Draft", "Report unlocked. You can edit again.");
+      return;
+    }
+    void unlockNerisDraft()
+      .then(() => {
+        setReportStatus("Draft");
+        setSaveMessage("Report unlocked. You can edit again.");
+      })
+      .catch((error: unknown) => {
+        setErrorMessage(error instanceof Error ? error.message : "The report was not unlocked.");
+      });
   };
 
   const goToNextSection = () => {
@@ -5450,6 +5530,12 @@ function NerisReportFormPage({
           <p>
             <strong>{detail.incidentType}</strong> at {detail.address}
           </p>
+          {persistedDraft?.reportRemoved ? (
+            <p className="field-hint">
+              This report is off the NERIS list. Click Save to put it back. The incident was not
+              deleted.
+            </p>
+          ) : null}
           <div className="neris-incident-meta">
             <span>
               Incident date <strong>{formValues.incident_onset_date || "Not set"}</strong>
@@ -5466,6 +5552,37 @@ function NerisReportFormPage({
           </div>
           {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
+          <details className="panel neris-change-history">
+            <summary>Change history</summary>
+            {changeHistory.length === 0 ? (
+              <p className="field-hint">No saved changes yet.</p>
+            ) : (
+              <ul>
+                {changeHistory.map((entry) => {
+                  const when = new Date(entry.createdAt);
+                  const label = Number.isNaN(when.getTime())
+                    ? entry.createdAt
+                    : when.toLocaleString("en-US", {
+                        year: "numeric",
+                        month: "2-digit",
+                        day: "2-digit",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                        hour12: false,
+                      });
+                  const fields =
+                    entry.fieldNames.length > 0
+                      ? entry.fieldNames.map((fieldId) => historyFieldLabel(fieldId)).join(", ")
+                      : "Saved";
+                  return (
+                    <li key={entry.id}>
+                      {label} — {entry.actorUsername} — {fields}
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </details>
           {incidentCompareRows.length > 0 ? (
             <section className="neris-incident-compare panel" aria-live="polite">
               <div className="neris-incident-compare-header">
@@ -5588,22 +5705,43 @@ function NerisReportFormPage({
               >
                 {isExporting ? "Exporting..." : "Export"}
               </button>
-              {isLocked ? (
-                <button
-                  type="button"
-                  className="secondary-button compact-button"
-                  onClick={handleUnlock}
-                >
-                  Unlock
-                </button>
-              ) : null}
             </>
+          ) : null}
+          {canUnlock ? (
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              onClick={handleUnlock}
+            >
+              Unlock
+            </button>
           ) : null}
           <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
             {reportStatus}
           </span>
         </div>
       </header>
+
+      {conflictDialogOpen ? (
+        <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="validation-modal panel">
+            <h2>This report was not saved</h2>
+            <p>
+              Someone else saved this report while you were editing. Reload to see their
+              changes before saving again.
+            </p>
+            <div className="validation-modal-actions">
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={() => window.location.reload()}
+              >
+                Reload
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {validationModal ? (
         <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
@@ -5676,10 +5814,10 @@ function NerisReportFormPage({
           }}
         >
           <div className="validation-modal panel">
-            <h2>Delete incident?</h2>
+            <h2>Delete this report?</h2>
             <p>
-              This will remove the incident from Fire Ultimate for this tenant (including the NERIS
-              workflow entry). This cannot be undone.
+              This removes the report from the NERIS list. The incident stays on the Incidents
+              tab. The change history is kept.
             </p>
             <div className="validation-modal-actions">
               <button
@@ -5694,7 +5832,7 @@ function NerisReportFormPage({
                 className="primary-button compact-button"
                 onClick={handleDeleteIncident}
               >
-                Confirm Delete
+                Delete report
               </button>
             </div>
           </div>
