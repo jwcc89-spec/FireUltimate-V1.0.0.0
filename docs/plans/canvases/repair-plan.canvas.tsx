@@ -640,6 +640,9 @@ export default function Plan() {
         <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Next: Stage C on this practice branch only · Recover Reports, incident Status, table drag, and left-menu hiding are parked</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
+      <Callout tone="success" title="Stage B click-through passed on the practice copy (October 31, 2026)">
+        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Stage C starts on this practice copy only when you say start Step 10. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
+      </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />
       {tab === "Start here" && (
