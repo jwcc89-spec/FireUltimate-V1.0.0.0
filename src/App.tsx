@@ -64,7 +64,6 @@ import {
   DASHBOARD_STATS,
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
-  INCIDENT_CALLS,
   INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
@@ -3791,7 +3790,6 @@ function IncidentsListPage({
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
   const canCreateIncident = permissionGrants?.["incidents.create"] === true;
-  const isDemoTenant = useIsDemoTenant();
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [fieldEditorError, setFieldEditorError] = useState("");
   const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
@@ -3891,11 +3889,8 @@ function IncidentsListPage({
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
   };
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const resetCreateIncidentDraft = () => {
     setCreateIncidentDraft({
@@ -5487,51 +5482,11 @@ function PersonnelTradesPage() {
   );
 }
 
-function useIsDemoTenant(): boolean {
-  const [isDemoTenant, setIsDemoTenant] = useState(() =>
-    window.location.hostname.toLowerCase().includes("demo"),
-  );
-
-  useEffect(() => {
-    let isMounted = true;
-
-    const loadTenantContext = async () => {
-      try {
-        const response = await fetch("/api/tenant/context");
-        if (!response.ok || !isMounted) return;
-
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          tenant?: { slug?: string };
-        };
-        const slug = String(payload?.tenant?.slug ?? "").toLowerCase();
-        if (slug) {
-          setIsDemoTenant(slug.includes("demo"));
-        }
-      } catch {
-        // Keep hostname-based default when tenant context cannot be read.
-      }
-    };
-
-    void loadTenantContext();
-
-    return () => {
-      isMounted = false;
-    };
-  }, []);
-
-  return isDemoTenant;
-}
-
 function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const fieldLabelById = useMemo(
     () =>
@@ -5672,15 +5627,11 @@ interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
 
 function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPagePropsWithHistory) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
   const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
 
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const latestExportByCall = useMemo(() => {
     const map = new Map<string, NerisExportRecord>();
