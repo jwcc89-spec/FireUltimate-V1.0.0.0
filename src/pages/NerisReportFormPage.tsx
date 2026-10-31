@@ -164,6 +164,7 @@ interface NerisStoredDraft {
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
   additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
+  reportRemoved?: boolean;
 }
 
 interface NerisExportRecord {
@@ -5519,6 +5520,12 @@ function NerisReportFormPage({
           <p>
             <strong>{detail.incidentType}</strong> at {detail.address}
           </p>
+          {persistedDraft?.reportRemoved ? (
+            <p className="field-hint">
+              This report is off the NERIS list. Click Save to put it back. The incident was not
+              deleted.
+            </p>
+          ) : null}
           <div className="neris-incident-meta">
             <span>
               Incident date <strong>{formValues.incident_onset_date || "Not set"}</strong>

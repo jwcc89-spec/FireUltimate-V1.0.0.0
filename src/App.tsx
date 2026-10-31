@@ -261,6 +261,7 @@ interface NerisStoredDraft {
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
   additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
+  reportRemoved?: boolean;
 }
 
 interface NerisExportSettings {
@@ -2648,7 +2649,7 @@ function normalizeApiDraftPayload(
         return acc;
       }, [])
     : [];
-  return {
+    return {
     formValues,
     reportStatus:
       typeof candidate.reportStatus === "string"
@@ -2658,6 +2659,7 @@ function normalizeApiDraftPayload(
       typeof candidate.lastSavedAt === "string" ? candidate.lastSavedAt : "Not saved",
     additionalAidEntries,
     additionalNonFdAidEntries,
+    reportRemoved: candidate.reportRemoved === true,
   };
 }
 
@@ -2822,9 +2824,11 @@ function getNerisQueueFieldValue(
   fieldId: IncidentCallFieldId,
 ): string {
   if (fieldId === "status") {
+    const localStatus = readNerisDraft(call.callNumber)?.reportStatus?.trim();
+    if (localStatus) return localStatus;
     const serverStatus = call.nerisReportStatus?.trim();
     if (serverStatus) return serverStatus;
-    return getNerisReportStatus(call.callNumber);
+    return "Draft";
   }
   return getCallFieldValue(call, fieldId);
 }
@@ -4891,10 +4895,21 @@ function IncidentCallDetailPage({
           <NavLink className="secondary-button button-link" to="/incidents-mapping/incidents">
             Back to Incidents
           </NavLink>
-          <button type="button" className="primary-button">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`)}
+          >
+            Open NERIS report
+          </button>
+          <button type="button" className="secondary-button">
             Add Note
           </button>
         </div>
+        <p className="field-hint">
+          The NERIS list hides a deleted report. Use Open NERIS report on this page, then
+          click Save, to put that report back on the NERIS list.
+        </p>
       </header>
 
       <section className="panel-grid">

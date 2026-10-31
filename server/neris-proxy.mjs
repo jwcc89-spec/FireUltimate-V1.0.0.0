@@ -2714,6 +2714,7 @@ app.get("/api/incidents", async (request, response) => {
     const reportStatusByCall = new Map();
     for (const d of drafts) {
       const payload = d.payload && typeof d.payload === "object" ? d.payload : {};
+      if (payload.reportRemoved === true) continue;
       const status =
         typeof payload.reportStatus === "string" && payload.reportStatus.trim()
           ? payload.reportStatus.trim()
@@ -3058,7 +3059,13 @@ function isReportRemoved(payload) {
   return Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && payload.reportRemoved === true);
 }
 
-const REMOVED_REPORT_PAYLOAD = { reportRemoved: true, reportStatus: "Draft", formValues: {} };
+function removedReportPayload(existing) {
+  const previous =
+    existing?.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? existing.payload
+      : {};
+  return { ...previous, reportRemoved: true, reportStatus: "Draft" };
+}
 
 function draftPayloadFromBody(body) {
   const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
@@ -3276,7 +3283,7 @@ app.get("/api/neris/drafts/:callNumber", async (request, response) => {
     const row = await prisma.nerisDraft.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
     });
-    if (!row || isReportRemoved(row.payload)) {
+    if (!row) {
       response.status(404).json({ ok: false, message: "No draft found for this incident." });
       return;
     }
@@ -3340,8 +3347,14 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
     const existing = await prisma.nerisDraft.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
     });
-    const active = existing && !isReportRemoved(existing.payload) ? existing : null;
+    const removed = Boolean(existing && isReportRemoved(existing.payload));
+    const active = existing && !removed ? existing : null;
+    const sentRevision = trimValue(body.baseUpdatedAt);
     if (active && !revisionMatches(active.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    if (removed && sentRevision && !revisionMatches(existing.updatedAt, body.baseUpdatedAt)) {
       response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
       return;
     }
@@ -3378,7 +3391,7 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
       tenantId,
       callNumber,
       request.auth,
-      changedFieldNames(active?.payload ?? {}, payload, seedFormValues),
+      changedFieldNames(existing?.payload ?? {}, payload, seedFormValues),
     );
     response.json(draftJson(row));
   } catch (error) {
@@ -3477,8 +3490,8 @@ app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
     }
     await prisma.nerisDraft.upsert({
       where: { tenantId_callNumber: { tenantId, callNumber } },
-      create: { tenantId, callNumber, payload: REMOVED_REPORT_PAYLOAD },
-      update: { payload: REMOVED_REPORT_PAYLOAD },
+      create: { tenantId, callNumber, payload: removedReportPayload(existing) },
+      update: { payload: removedReportPayload(existing) },
     });
     response.json({ ok: true });
   } catch (error) {

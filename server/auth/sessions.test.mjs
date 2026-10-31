@@ -623,7 +623,9 @@ test("server sign-in passes", async () => {
     });
     assert.equal(reportOnlyDelete.status, 200);
     const draftGone = await call(`/api/neris/drafts/${keepId}`, { cookie: first.pair });
-    assert.equal(draftGone.status, 404);
+    assert.equal(draftGone.status, 200);
+    assert.equal(draftGone.json.data.reportRemoved, true);
+    assert.equal(draftGone.json.data.formValues.notes, "practice");
     const incidentKept = await call(`/api/incidents/${keepId}`, { cookie: first.pair });
     assert.equal(incidentKept.status, 200);
     assert.equal(incidentKept.json.data.deletedAt ?? null, null);
