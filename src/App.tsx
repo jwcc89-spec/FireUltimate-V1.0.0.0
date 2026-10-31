@@ -3709,8 +3709,60 @@ function MenuDisplayCards({
   );
 }
 
+const DASHBOARD_WIDGET_OPTIONS = [
+  { id: "active-calls", label: "Active Calls" },
+  { id: "units-available", label: "Units Available" },
+  { id: "pending-reports", label: "Pending Reports" },
+  { id: "unread-messages", label: "Unread Messages" },
+  { id: "priority-shortcuts", label: "Priority Shortcuts" },
+  { id: "live-alerts", label: "Live Alerts" },
+] as const;
+
+type DashboardWidgetId = (typeof DASHBOARD_WIDGET_OPTIONS)[number]["id"];
+
+const DASHBOARD_WIDGET_IDS = new Set<string>(DASHBOARD_WIDGET_OPTIONS.map((item) => item.id));
+const DASHBOARD_HIDDEN_WIDGETS_KEY = "fire-ultimate-dashboard-hidden-widgets";
+
+function readHiddenDashboardWidgets(): DashboardWidgetId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_HIDDEN_WIDGETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is DashboardWidgetId => typeof id === "string" && DASHBOARD_WIDGET_IDS.has(id));
+  } catch {
+    return [];
+  }
+}
+
+function writeHiddenDashboardWidgets(hidden: DashboardWidgetId[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DASHBOARD_HIDDEN_WIDGETS_KEY, JSON.stringify(hidden));
+}
+
 function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
+  const [widgetEditorOpen, setWidgetEditorOpen] = useState(false);
+  const [hiddenWidgets, setHiddenWidgets] = useState<DashboardWidgetId[]>(() =>
+    readHiddenDashboardWidgets(),
+  );
+  const hiddenWidgetSet = useMemo(() => new Set(hiddenWidgets), [hiddenWidgets]);
+  const visibleDashboardStats = DASHBOARD_STATS.filter((stat) => {
+    const match = DASHBOARD_WIDGET_OPTIONS.find((item) => item.label === stat.label);
+    return !match || !hiddenWidgetSet.has(match.id);
+  });
+  const showPriorityShortcuts = !hiddenWidgetSet.has("priority-shortcuts");
+  const showLiveAlerts = !hiddenWidgetSet.has("live-alerts");
+
+  const toggleDashboardWidget = (id: DashboardWidgetId) => {
+    setHiddenWidgets((previous) => {
+      const next = previous.includes(id)
+        ? previous.filter((item) => item !== id)
+        : [...previous, id];
+      writeHiddenDashboardWidgets(next);
+      return next;
+    });
+  };
 
   return (
     <section className="page-section neris-report-page">
@@ -3723,6 +3775,39 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
           </p>
         </div>
         <div className="header-actions">
+          <div className="edit-display-wrap">
+            <button
+              type="button"
+              className="edit-display-link"
+              onClick={() => setWidgetEditorOpen((previous) => !previous)}
+            >
+              Edit display
+            </button>
+            {widgetEditorOpen ? (
+              <div className="edit-display-dropdown">
+                <p>Choose which dashboard boxes to show.</p>
+                <ul>
+                  {DASHBOARD_WIDGET_OPTIONS.map((widget) => (
+                    <li key={widget.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={!hiddenWidgetSet.has(widget.id)}
+                          onChange={() => toggleDashboardWidget(widget.id)}
+                        />
+                        <span>{widget.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <small>
+                  Active Calls, Units Available, Pending Reports, Unread Messages, and Live
+                  Alerts use sample numbers. They are not connected to live incidents yet.
+                  This choice stays on this computer.
+                </small>
+              </div>
+            ) : null}
+          </div>
           <NavLink className="secondary-button button-link" to="/calendar/events">
             Open Calendar
           </NavLink>
@@ -3732,17 +3817,21 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
         </div>
       </header>
 
-      <section className="stat-grid">
-        {DASHBOARD_STATS.map((stat) => (
-          <article key={stat.label} className="stat-card">
-            <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
-            <span className={toToneClass(stat.tone)}>{stat.detail}</span>
-          </article>
-        ))}
-      </section>
+      {visibleDashboardStats.length > 0 ? (
+        <section className="stat-grid">
+          {visibleDashboardStats.map((stat) => (
+            <article key={stat.label} className="stat-card">
+              <p>{stat.label}</p>
+              <strong>{stat.value}</strong>
+              <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+            </article>
+          ))}
+        </section>
+      ) : null}
 
+      {showPriorityShortcuts || showLiveAlerts ? (
       <section className="panel-grid two-column">
+        {showPriorityShortcuts ? (
         <article className="panel">
           <div className="panel-header">
             <h2>Priority Shortcuts</h2>
@@ -3766,7 +3855,9 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
             ))}
           </ul>
         </article>
+        ) : null}
 
+        {showLiveAlerts ? (
         <article className="panel">
           <div className="panel-header">
             <h2>Live Alerts</h2>
@@ -3784,7 +3875,9 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
             ))}
           </ul>
         </article>
+        ) : null}
       </section>
+      ) : null}
 
       {dashboardMenu ? (
         <MenuDisplayCards
@@ -12425,7 +12518,7 @@ function CustomizationPage({
         >
           <div className="settings-form">
             {workflowDraft.map((state, index) => (
-              <div key={`${state}-${index}`} className="state-edit-row">
+              <div key={index} className="state-edit-row">
                 <input
                   type="text"
                   value={state}

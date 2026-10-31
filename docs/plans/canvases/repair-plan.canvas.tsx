@@ -289,6 +289,7 @@ const decided = [
   ["October 30, 2026", "Production", "Keep the admin and demo accounts. Set NODE_ENV=production on both Render services during a planned release.", "9B"],
   ["October 30, 2026", "Settings", "Move the department logo (500 KB limit), dispatch workflow states, submenu visibility, and submenu cards to the server. Incident list layout and sidebar width stay on each computer. Shift trades wait.", "9B"],
   ["October 30, 2026", "Practice branch", "Steps 9, 9A, and 9B are built on the practice branch. GitHub runs lint, build, and the tests on a throwaway database. This is not on staging or production.", "9, 9A, 9B"],
+  ["October 31, 2026", "Reports", "Recover Reports is parked. Later, a button on Reporting → NERIS, next to Fire Recovery and View Exports, will restore a deleted report with every typed answer. Do not build it during this test pass.", "Parked & future"],
 ];
 
 const decisions = [
@@ -591,6 +592,11 @@ function Parked() {
         striped
       />
       <Divider />
+      <H2>Parked: recover a deleted NERIS report</H2>
+      <Text>
+        Decided October 31, 2026, during practice-branch testing. Do not build this yet. On Reporting → NERIS, next to Fire Recovery and View Exports, add a Recover Reports button. If a report is removed from that list by mistake, Recover Reports puts the whole report back, including every answer that was typed. The incident already stays on the Incidents tab. The answers on Incident 27 Test were cleared by an earlier delete, before this was parked, so that one report cannot be restored.
+      </Text>
+      <Divider />
       <H2>Set aside for now: scheduling</H2>
       <Text>Scheduling (rotation, D shifts, staffing, Kelly days, vacation, trades) is parked for a separate review and possible rebuild. None of these steps change scheduling features.</Text>
       <Callout tone="warning" title="Scheduling is next after Fire Recovery and CAD (decided October 29)">
@@ -613,7 +619,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 30, 2026 · Steps 1–9B done on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD</Text>
+        <Text size="small" tone="tertiary">Updated October 31, 2026 · Steps 1–9B done on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD · Recover Reports is parked</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>

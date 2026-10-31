@@ -532,6 +532,7 @@ function NerisReportFormPage({
   const [printSummaryOpen, setPrintSummaryOpen] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
+  const [conflictDialogOpen, setConflictDialogOpen] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [isFetchingIncidentTest, setIsFetchingIncidentTest] = useState(false);
   const [incidentTestResponseDetail, setIncidentTestResponseDetail] = useState("");
@@ -2974,8 +2975,17 @@ function NerisReportFormPage({
     const result = writeNerisDraft(callNumber, draft, autoFillSeedRef.current);
     if (result && typeof result.then === "function") {
       void result.catch((error: unknown) => {
+        const message = error instanceof Error ? error.message : "The report was not saved.";
         setSaveMessage("");
-        setErrorMessage(error instanceof Error ? error.message : "The report was not saved.");
+        if (
+          message ===
+          "Someone else saved this report while you were editing. Reload to see their changes before saving again."
+        ) {
+          setErrorMessage("");
+          setConflictDialogOpen(true);
+          return;
+        }
+        setErrorMessage(message);
       });
     }
   };
@@ -5711,6 +5721,27 @@ function NerisReportFormPage({
           </span>
         </div>
       </header>
+
+      {conflictDialogOpen ? (
+        <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
+          <div className="validation-modal panel">
+            <h2>This report was not saved</h2>
+            <p>
+              Someone else saved this report while you were editing. Reload to see their
+              changes before saving again.
+            </p>
+            <div className="validation-modal-actions">
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={() => window.location.reload()}
+              >
+                Reload
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {validationModal ? (
         <div className="validation-modal-backdrop" role="dialog" aria-modal="true">
