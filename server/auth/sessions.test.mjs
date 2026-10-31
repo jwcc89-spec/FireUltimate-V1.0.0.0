@@ -570,6 +570,66 @@ test("server sign-in passes", async () => {
     const historyAfterDelete = await call(`/api/neris/drafts/${reportId}/history`, { cookie: first.pair });
     assert.ok(historyAfterDelete.json.data.length > 0);
 
+    const keepIncident = await call("/api/incidents", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { incidentType: "Keep me" },
+    });
+    assert.equal(keepIncident.status, 201);
+    const keepId = keepIncident.json.data.id;
+    const keepDraft = await call(`/api/neris/drafts/${keepId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { payload: { reportStatus: "Draft", formValues: { notes: "practice" } } },
+    });
+    assert.equal(keepDraft.status, 200, JSON.stringify(keepDraft.json));
+    const keepReviewed = await call(`/api/neris/drafts/${keepId}`, {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: {
+        baseUpdatedAt: keepDraft.json.updatedAt,
+        payload: { reportStatus: "In Review", formValues: { notes: "practice" } },
+      },
+    });
+    assert.equal(keepReviewed.status, 200);
+    const lockedReportDelete = await call(`/api/neris/drafts/${keepId}`, {
+      method: "DELETE",
+      cookie: first.pair,
+      requestOrigin: origin,
+    });
+    assert.equal(lockedReportDelete.status, 409);
+    assert.equal(lockedReportDelete.json.code, "REPORT_LOCKED");
+    const keepUnlocked = await call(`/api/neris/drafts/${keepId}/unlock`, {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { baseUpdatedAt: keepReviewed.json.updatedAt },
+    });
+    assert.equal(keepUnlocked.status, 200);
+    const firefighterReportDelete = await call(`/api/neris/drafts/${keepId}`, {
+      method: "DELETE",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+    });
+    assert.equal(firefighterReportDelete.status, 403);
+    assert.match(firefighterReportDelete.json.message, /Only an admin can delete a report/);
+    const reportOnlyDelete = await call(`/api/neris/drafts/${keepId}`, {
+      method: "DELETE",
+      cookie: first.pair,
+      requestOrigin: origin,
+    });
+    assert.equal(reportOnlyDelete.status, 200);
+    const draftGone = await call(`/api/neris/drafts/${keepId}`, { cookie: first.pair });
+    assert.equal(draftGone.status, 404);
+    const incidentKept = await call(`/api/incidents/${keepId}`, { cookie: first.pair });
+    assert.equal(incidentKept.status, 200);
+    assert.equal(incidentKept.json.data.deletedAt ?? null, null);
+    const historyKept = await call(`/api/neris/drafts/${keepId}/history`, { cookie: first.pair });
+    assert.ok(historyKept.json.data.length > 0);
+
     const entitySave = await call("/api/neris/settings", {
       method: "PATCH",
       cookie: first.pair,

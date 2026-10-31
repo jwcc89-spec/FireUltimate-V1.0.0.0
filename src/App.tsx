@@ -45,7 +45,7 @@ import {
   getNerisExportHistory,
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
-import { getNerisDraft, patchNerisDraft, unlockNerisDraft } from "./api/nerisDrafts";
+import { deleteNerisDraft, getNerisDraft, patchNerisDraft, unlockNerisDraft } from "./api/nerisDrafts";
 import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
@@ -2590,6 +2590,13 @@ function readNerisDraft(callNumber: string): NerisStoredDraft | null {
 function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
   const store = readNerisDraftStore();
   store[callNumber] = draft;
+  writeNerisDraftStore(store);
+}
+
+function removeNerisDraft(callNumber: string): void {
+  const store = readNerisDraftStore();
+  if (!Object.prototype.hasOwnProperty.call(store, callNumber)) return;
+  delete store[callNumber];
   writeNerisDraftStore(store);
 }
 
@@ -6016,7 +6023,7 @@ interface NerisReportFormRouteProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
-  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
+  onDeleteIncidentCall: (callNumber: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   apparatusFromDepartmentDetails: { unit: string; unitId: string; commonName: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
@@ -12998,9 +13005,10 @@ function RouteResolver({
         username={username}
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
-        onDeleteIncidentCall={(targetCallNumber: string, reason?: string) =>
-          onSetIncidentDeleted(targetCallNumber, true, reason ?? "Deleted from NERIS report form.")
-        }
+        onDeleteIncidentCall={async (targetCallNumber: string) => {
+          await deleteNerisDraft(targetCallNumber);
+          removeNerisDraft(targetCallNumber);
+        }}
         nerisExportSettings={nerisExportSettings}
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
         exportHistory={nerisExportHistory}

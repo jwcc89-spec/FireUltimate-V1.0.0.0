@@ -65,7 +65,7 @@ export interface NerisReportFormPageProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
-  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
+  onDeleteIncidentCall: (callNumber: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   readNerisDraft: (callNumber: string) => NerisStoredDraft | null;
   writeNerisDraft: (callNumber: string, draft: NerisStoredDraft) => void | Promise<void>;
@@ -4361,10 +4361,13 @@ function NerisReportFormPage({
       return;
     }
     try {
-      await onDeleteIncidentCall(callNumber, "Deleted from NERIS report form.");
-    } finally {
+      await onDeleteIncidentCall(callNumber);
       setDeleteConfirmOpen(false);
       navigate("/reporting/neris");
+    } catch (error) {
+      setDeleteConfirmOpen(false);
+      setSaveMessage("");
+      setErrorMessage(error instanceof Error ? error.message : "The report was not deleted.");
     }
   };
 
@@ -5744,10 +5747,10 @@ function NerisReportFormPage({
           }}
         >
           <div className="validation-modal panel">
-            <h2>Delete incident?</h2>
+            <h2>Delete this report?</h2>
             <p>
-              This will remove the incident from Fire Ultimate for this tenant (including the NERIS
-              workflow entry). This cannot be undone.
+              This removes the saved NERIS report. The incident stays in the incident list. The
+              change history is kept.
             </p>
             <div className="validation-modal-actions">
               <button
@@ -5762,7 +5765,7 @@ function NerisReportFormPage({
                 className="primary-button compact-button"
                 onClick={handleDeleteIncident}
               >
-                Confirm Delete
+                Delete report
               </button>
             </div>
           </div>

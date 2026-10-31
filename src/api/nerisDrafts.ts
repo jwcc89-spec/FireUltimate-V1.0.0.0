@@ -69,6 +69,17 @@ export async function patchNerisDraft(
   };
 }
 
+/** Remove the saved NERIS report. The incident and the change history stay. */
+export async function deleteNerisDraft(callNumber: string): Promise<void> {
+  const encoded = encodeURIComponent(callNumber);
+  const res = await fetch(`/api/neris/drafts/${encoded}`, {
+    ...fetchOptions,
+    method: "DELETE",
+  });
+  const json = await readJson(res);
+  if (!res.ok) throw new Error(json?.message ?? `HTTP ${res.status}`);
+}
+
 export async function unlockNerisDraft(callNumber: string, baseUpdatedAt: string): Promise<NerisDraftRecord> {
   const encoded = encodeURIComponent(callNumber);
   const res = await fetch(`/api/neris/drafts/${encoded}/unlock`, {

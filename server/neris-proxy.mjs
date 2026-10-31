@@ -3365,6 +3365,53 @@ app.post("/api/neris/drafts/:callNumber/unlock", async (request, response) => {
   }
 });
 
+app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    if (roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can delete a report.",
+      });
+      return;
+    }
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (!existing) {
+      response.json({ ok: true });
+      return;
+    }
+    if (reportStatusOf(existing.payload) !== "Draft") {
+      response.status(409).json({
+        ok: false,
+        code: "REPORT_LOCKED",
+        message: "This report is locked. Unlock it before deleting.",
+      });
+      return;
+    }
+    await prisma.nerisDraft.delete({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    response.json({ ok: true });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: error instanceof Error ? error.message : "Unexpected report delete error.",
+    });
+  }
+});
+
 app.patch("/api/department-shared-settings", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;

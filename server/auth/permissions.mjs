@@ -76,7 +76,7 @@ export function permissionForRequest(method, path, body) {
     return "incidents.create";
   }
 
-  if ((verb === "GET" || verb === "PATCH") && /^\/api\/neris\/drafts\/[^/]+$/.test(route)) {
+  if ((verb === "GET" || verb === "PATCH" || verb === "DELETE") && /^\/api\/neris\/drafts\/[^/]+$/.test(route)) {
     return "reports.edit";
   }
   if (verb === "GET" && /^\/api\/neris\/drafts\/[^/]+\/history$/.test(route)) {
