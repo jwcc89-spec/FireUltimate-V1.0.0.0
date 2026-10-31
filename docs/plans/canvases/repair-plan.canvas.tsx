@@ -290,6 +290,9 @@ const decided = [
   ["October 30, 2026", "Settings", "Move the department logo (500 KB limit), dispatch workflow states, submenu visibility, and submenu cards to the server. Incident list layout and sidebar width stay on each computer. Shift trades wait.", "9B"],
   ["October 30, 2026", "Practice branch", "Steps 9, 9A, and 9B are built on the practice branch. GitHub runs lint, build, and the tests on a throwaway database. This is not on staging or production.", "9, 9A, 9B"],
   ["October 31, 2026", "Reports", "Recover Reports is parked. Later, a button on Reporting → NERIS, next to Fire Recovery and View Exports, will restore a deleted report with every typed answer. Do not build it during this test pass.", "Parked & future"],
+  ["October 31, 2026", "Incidents", "The Status box on an open incident is unit status. Draft is not a valid choice there. That box is not the NERIS report status. Fix later.", "Parked & future"],
+  ["October 31, 2026", "Incidents", "Dragging columns under Incidents → Configure Table does not work. Fix later. That layout stays on each computer.", "Parked & future"],
+  ["October 31, 2026", "Settings", "Unchecking a box in Admin Functions → Customization → Submenu Display Settings should hide that item from the left menu. Edit Display on the submenu cards is what shows or hides cards on the menu page. Fix later.", "Parked & future"],
 ];
 
 const decisions = [
@@ -597,6 +600,21 @@ function Parked() {
         Decided October 31, 2026, during practice-branch testing. Do not build this yet. On Reporting → NERIS, next to Fire Recovery and View Exports, add a Recover Reports button. If a report is removed from that list by mistake, Recover Reports puts the whole report back, including every answer that was typed. The incident already stays on the Incidents tab. The answers on Incident 27 Test were cleared by an earlier delete, before this was parked, so that one report cannot be restored.
       </Text>
       <Divider />
+      <H2>Parked: incident Status is unit status</H2>
+      <Text>
+        Found October 31, 2026, on an open incident. The Status box uses a built-in list: Draft, Dispatched, Enroute, On scene, and Cleared. A new incident starts on Draft. That list is not the NERIS report status (Draft, In Review, Exported), and it is not connected to the dispatch workflow list in Admin Functions → Customization. This box is unit status. Draft should not be a choice. Do not change it while starting Stage C.
+      </Text>
+      <Divider />
+      <H2>Parked: Incidents Configure Table drag and drop</H2>
+      <Text>
+        Found October 31, 2026. On the Incidents tab, Configure Table is meant to let a person drag columns into a new order. That drag and drop does not work correctly. Fix it later. The column layout stays on each computer.
+      </Text>
+      <Divider />
+      <H2>Parked: Submenu Display Settings hide the left menu</H2>
+      <Text>
+        Decided October 31, 2026. Admin Functions → Customization → Submenu Display Settings currently changes whether a submenu appears on that menu's card page and in Edit Display. Unchecking a box there should instead hide that item from the main menu list on the left. Showing or hiding cards on the menu page stays with Edit Display on the submenu cards.
+      </Text>
+      <Divider />
       <H2>Set aside for now: scheduling</H2>
       <Text>Scheduling (rotation, D shifts, staffing, Kelly days, vacation, trades) is parked for a separate review and possible rebuild. None of these steps change scheduling features.</Text>
       <Callout tone="warning" title="Scheduling is next after Fire Recovery and CAD (decided October 29)">
@@ -619,7 +637,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 31, 2026 · Steps 1–9B done on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Saved in repo: docs/plans/canvases/repair-plan.canvas.tsx · Priority: Fire Recovery, then CAD · Scheduling after Fire Recovery and CAD · Recover Reports is parked</Text>
+        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Next: Stage C on this practice branch only · Recover Reports, incident Status, table drag, and left-menu hiding are parked</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
