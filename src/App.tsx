@@ -60,6 +60,7 @@ import {
   patchFireRecoverySettings,
   postFireRecoverySubmit,
   type FireRecoveryIncidentApi,
+  type FireRecoverySettingsApi,
 } from "./api/fireRecovery";
 import { FireRecoveryIncidentsPage } from "./pages/FireRecoveryIncidentsPage";
 import { FireRecoveryIncidentDetailPage } from "./pages/FireRecoveryIncidentDetailPage";
@@ -12229,20 +12230,28 @@ function SetupFireRecoveryPanel() {
   const [apiUsername, setApiUsername] = useState("");
   const [apiPasswordInput, setApiPasswordInput] = useState("");
   const [passwordIsSet, setPasswordIsSet] = useState(false);
+  const [serverMode, setServerMode] = useState<FireRecoverySettingsApi["mode"] | "">("");
+  const [serverDepartmentId, setServerDepartmentId] = useState("");
+  const [serverBanner, setServerBanner] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const applyFireRecoverySettings = (d: FireRecoverySettingsApi) => {
+    setDepartmentName(d.departmentName);
+    setApiUsername(d.apiUsername ?? "");
+    setPasswordIsSet(d.passwordIsSet);
+    setServerMode(d.mode);
+    setServerDepartmentId(d.departmentId ?? "");
+    setServerBanner(d.banner ?? "");
+  };
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const d = await getFireRecoverySettings();
-        if (!cancelled) {
-          setDepartmentName(d.departmentName);
-          setApiUsername(d.apiUsername ?? "");
-          setPasswordIsSet(d.passwordIsSet);
-        }
+        if (!cancelled) applyFireRecoverySettings(d);
       } catch {
         // leave empty
       }
@@ -12269,9 +12278,7 @@ function SetupFireRecoveryPanel() {
     }
     patchFireRecoverySettings(payload)
       .then((d) => {
-        setDepartmentName(d.departmentName);
-        setApiUsername(d.apiUsername ?? "");
-        setPasswordIsSet(d.passwordIsSet);
+        applyFireRecoverySettings(d);
         setApiPasswordInput("");
         setMessage("Fire Recovery settings saved.");
       })
@@ -12287,7 +12294,7 @@ function SetupFireRecoveryPanel() {
     setError("");
     patchFireRecoverySettings({ fireRecoveryApiPassword: "" })
       .then((d) => {
-        setPasswordIsSet(d.passwordIsSet);
+        applyFireRecoverySettings(d);
         setApiPasswordInput("");
         setMessage("Saved Fire Recovery API password removed.");
       })
@@ -12303,12 +12310,22 @@ function SetupFireRecoveryPanel() {
         <h2>Fire Recovery</h2>
       </div>
       <div className="settings-form">
+        {serverBanner ? (
+          <p className="field-hint" id="fire-recovery-mode-banner">
+            <strong>{serverBanner}</strong>
+            {serverDepartmentId
+              ? ` Department ID that will be sent: ${serverDepartmentId}.`
+              : serverMode === "live"
+                ? " No department ID will be sent. Live mode needs this department's NERIS Entity ID, and FD12345678 is refused."
+                : ""}
+          </p>
+        ) : null}
         <p className="field-hint">
           <strong>Username</strong> and <strong>password</strong> here are required for Fire Recovery API
           calls (JWT for <strong>Add NERIS Incident for Billing</strong> and billing status). The server
           does not use <code>.env.server</code> for Fire Recovery login—only these tenant fields. The
-          tenant <strong>NERIS Entity ID</strong> (FD########) is set elsewhere in Setup/Configuration.
-          Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server may point to dev vs production host.
+          line above comes from the server setting <code>FIRE_RECOVERY_MODE</code>. It is not saved with
+          these fields. Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server may point at another host.
         </p>
 
         <label htmlFor="setup-fr-username">Username</label>

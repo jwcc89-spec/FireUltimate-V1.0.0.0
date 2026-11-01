@@ -24,11 +24,16 @@ export interface FireRecoveryIncidentApi {
   billingFetchedAt: string | null;
 }
 
+export type FireRecoveryMode = "sandbox" | "live" | "off";
+
 export interface FireRecoverySettingsApi {
   subscriptionKeyMasked: string;
   departmentName: string;
   apiUsername: string;
   passwordIsSet: boolean;
+  mode: FireRecoveryMode;
+  departmentId: string;
+  banner: string;
 }
 
 async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {

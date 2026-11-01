@@ -24,6 +24,11 @@ import {
   postAddNerisIncidentForBilling,
   postIncidentBillingStatus,
 } from "./fireRecoveryClient.mjs";
+import {
+  fireRecoveryModeBanner,
+  readFireRecoveryMode,
+  resolveFireRecoveryDepartmentId,
+} from "./fireRecoveryMode.mjs";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./crypto/secretBox.mjs";
 import { PublicError, publicErrorMessage } from "./http/publicError.mjs";
 import {
@@ -3821,6 +3826,20 @@ function formatFireRecoveryExportDateLabel(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function fireRecoverySettingsData(tenant) {
+  const mode = readFireRecoveryMode();
+  const resolved = resolveFireRecoveryDepartmentId(mode, tenant?.nerisEntityId);
+  return {
+    subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
+    departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
+    apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
+    passwordIsSet: isEncryptedSecret(tenant?.fireRecoveryApiPassword),
+    mode,
+    departmentId: resolved.departmentId,
+    banner: fireRecoveryModeBanner(mode),
+  };
+}
+
 function fireRecoveryBillingRowToApi(row) {
   const due = row.invoiceAmountDue ?? "";
   return {
@@ -3868,6 +3887,7 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: {
+        nerisEntityId: true,
         fireRecoverySubscriptionKey: true,
         fireRecoveryDepartmentName: true,
         fireRecoveryApiUsername: true,
@@ -3876,12 +3896,7 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
     });
     response.json({
       ok: true,
-      data: {
-        subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
-        departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
-        apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
-        passwordIsSet: isEncryptedSecret(tenant?.fireRecoveryApiPassword),
-      },
+      data: fireRecoverySettingsData(tenant),
     });
   } catch (error) {
     response.status(500).json({
@@ -3946,6 +3961,7 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
       where: { id: tenantId },
       data,
       select: {
+        nerisEntityId: true,
         fireRecoverySubscriptionKey: true,
         fireRecoveryDepartmentName: true,
         fireRecoveryApiUsername: true,
@@ -3954,12 +3970,7 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
     });
     response.json({
       ok: true,
-      data: {
-        subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant.fireRecoverySubscriptionKey),
-        departmentName: trimValue(tenant.fireRecoveryDepartmentName),
-        apiUsername: trimValue(tenant.fireRecoveryApiUsername),
-        passwordIsSet: isEncryptedSecret(tenant.fireRecoveryApiPassword),
-      },
+      data: fireRecoverySettingsData(tenant),
     });
   } catch (error) {
     response.status(500).json({
@@ -4044,6 +4055,12 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
         fireRecoveryApiPassword: true,
       },
     });
+    const mode = readFireRecoveryMode();
+    const department = resolveFireRecoveryDepartmentId(mode, tenant?.nerisEntityId);
+    if (!department.ok) {
+      response.status(400).json({ ok: false, message: department.message });
+      return;
+    }
     if (!tenantHasFireRecoveryLogin(tenant)) {
       response.status(400).json({
         ok: false,
@@ -4062,16 +4079,7 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       });
       return;
     }
-    const nerisDepartmentId = trimValue(tenant?.nerisEntityId);
     const dept = trimValue(tenant?.fireRecoveryDepartmentName);
-    if (!nerisDepartmentId || !NERIS_ENTITY_ID_PATTERN.test(nerisDepartmentId)) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "Set this tenant's NERIS Entity ID (FD########) in Setup/Configuration, and Fire Recovery department name under Setup/Configuration → Fire Recovery, before submitting.",
-      });
-      return;
-    }
     if (!dept) {
       response.status(400).json({
         ok: false,
@@ -4120,7 +4128,7 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
 
     const meta = extractIncidentMetadataFromExportPayload(parsed);
     const frBody = buildNerisIncidentForBillingPayload(parsed, latestOk, {
-      nerisDepartmentId,
+      nerisDepartmentId: department.departmentId,
       departmentName: dept,
     });
 

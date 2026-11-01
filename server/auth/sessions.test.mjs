@@ -1290,6 +1290,7 @@ test("server sign-in passes", async () => {
     const originalFetch = globalThis.fetch;
     let nerisMode = "error";
     let frLoginMode = "ok";
+    const addIncidentBodies = [];
     globalThis.fetch = async (url, init) => {
       const target = String(url);
       if (target.startsWith("http://127.0.0.1") || target.startsWith("http://localhost")) {
@@ -1316,6 +1317,16 @@ test("server sign-in passes", async () => {
         return new Response(JSON.stringify({ LoginAndGetJWTTokenResult: "jwt-test" }), { status: 200 });
       }
       if (target.includes("addincident")) {
+        let parsedBody = null;
+        try {
+          parsedBody = init?.body ? JSON.parse(String(init.body)) : null;
+        } catch {
+          parsedBody = String(init?.body ?? "");
+        }
+        addIncidentBodies.push({
+          mode: String(process.env.FIRE_RECOVERY_MODE ?? ""),
+          body: parsedBody,
+        });
         return new Response(JSON.stringify({ Done: { TrackingId: "track-1" } }), { status: 200 });
       }
       return new Response("unexpected upstream", { status: 500, statusText: "Error" });
@@ -1323,6 +1334,7 @@ test("server sign-in passes", async () => {
     process.env.NERIS_STATIC_ACCESS_TOKEN = "test-token";
     process.env.NERIS_BASE_URL = "https://neris.invalid/v1";
     process.env.FIRE_RECOVERY_CREDENTIAL_KEY = "practice-test-key";
+    process.env.FIRE_RECOVERY_MODE = "sandbox";
     const exportBody = {
       callNumber: "26-RECEIPT",
       reportStatus: "In Review",
@@ -1410,6 +1422,12 @@ test("server sign-in passes", async () => {
       });
       assert.equal(realBill.status, 201, JSON.stringify(realBill.json));
       assert.equal(realBill.json.data.trackingId, "track-1");
+      assert.equal(tenantAfterSave.nerisEntityId, "FD33333333");
+      assert.equal(
+        addIncidentBodies.at(-1)?.body?.IncidentToBillPayload?.NERISDepartmentId,
+        "FD12345678",
+        "sandbox mode must send FD12345678 even when the department NERIS ID is different",
+      );
 
       await prisma.tenant.update({
         where: { id: demo.id },
@@ -1466,11 +1484,99 @@ test("server sign-in passes", async () => {
       assert.equal(wrongKey.status, 400);
       assert.equal(wrongKey.json.message, "re-enter the password");
       assert.equal(JSON.stringify(wrongKey.json).includes(leakPassword), false);
+
+      frLoginMode = "ok";
+      process.env.FIRE_RECOVERY_CREDENTIAL_KEY = "practice-test-key";
+      await prisma.tenant.update({
+        where: { id: demo.id },
+        data: { fireRecoveryApiPassword: encryptSecret("sandbox-pass") },
+      });
+      const callsBeforeModeChecks = addIncidentBodies.length;
+
+      delete process.env.FIRE_RECOVERY_MODE;
+      const unsetBill = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(unsetBill.status, 400, JSON.stringify(unsetBill.json));
+      assert.match(unsetBill.json.message, /switched off/);
+      assert.equal(addIncidentBodies.length, callsBeforeModeChecks);
+      const unsetSettings = await call("/api/fire-recovery/settings", { cookie: exportCookie.pair });
+      assert.equal(unsetSettings.json.data.mode, "off");
+      assert.equal(unsetSettings.json.data.departmentId, "");
+      assert.match(unsetSettings.json.data.banner, /switched off/);
+
+      process.env.FIRE_RECOVERY_MODE = "live";
+      await prisma.tenant.update({
+        where: { id: demo.id },
+        data: { nerisEntityId: "FD12345678" },
+      });
+      const liveSandboxBill = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(liveSandboxBill.status, 400, JSON.stringify(liveSandboxBill.json));
+      assert.match(liveSandboxBill.json.message, /FD12345678/);
+      assert.equal(addIncidentBodies.length, callsBeforeModeChecks);
+      const liveSandboxSettings = await call("/api/fire-recovery/settings", { cookie: exportCookie.pair });
+      assert.equal(liveSandboxSettings.json.data.mode, "live");
+      assert.equal(liveSandboxSettings.json.data.departmentId, "");
+      assert.match(liveSandboxSettings.json.data.banner, /LIVE/);
+
+      await prisma.tenant.update({
+        where: { id: demo.id },
+        data: { nerisEntityId: "FD33333333" },
+      });
+      const liveRealBill = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(liveRealBill.status, 201, JSON.stringify(liveRealBill.json));
+      assert.equal(
+        addIncidentBodies.at(-1)?.body?.IncidentToBillPayload?.NERISDepartmentId,
+        "FD33333333",
+      );
+      const liveSettings = await call("/api/fire-recovery/settings", { cookie: exportCookie.pair });
+      assert.equal(liveSettings.json.data.mode, "live");
+      assert.equal(liveSettings.json.data.departmentId, "FD33333333");
+
+      process.env.FIRE_RECOVERY_MODE = "sandbox";
+      const sandboxAgain = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(sandboxAgain.status, 201, JSON.stringify(sandboxAgain.json));
+      assert.equal(
+        addIncidentBodies.at(-1)?.body?.IncidentToBillPayload?.NERISDepartmentId,
+        "FD12345678",
+      );
+      const sandboxSettings = await call("/api/fire-recovery/settings", { cookie: exportCookie.pair });
+      assert.equal(sandboxSettings.json.data.mode, "sandbox");
+      assert.equal(sandboxSettings.json.data.departmentId, "FD12345678");
+      assert.match(sandboxSettings.json.data.banner, /SANDBOX/);
+      const sandboxSends = addIncidentBodies.filter((entry) => entry.mode.trim().toLowerCase() === "sandbox");
+      assert.ok(sandboxSends.length >= 2);
+      for (const entry of sandboxSends) {
+        assert.equal(entry.body?.IncidentToBillPayload?.NERISDepartmentId, "FD12345678");
+      }
     } finally {
       globalThis.fetch = originalFetch;
       delete process.env.NERIS_STATIC_ACCESS_TOKEN;
       delete process.env.NERIS_BASE_URL;
       delete process.env.FIRE_RECOVERY_CREDENTIAL_KEY;
+      delete process.env.FIRE_RECOVERY_MODE;
+      await prisma.tenant.update({
+        where: { id: demo.id },
+        data: { nerisEntityId: "FD33333333" },
+      });
     }
 
     assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents"), "billing.view");

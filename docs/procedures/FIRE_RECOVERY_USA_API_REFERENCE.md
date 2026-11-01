@@ -94,7 +94,7 @@ Vendor documentation states:
 **Request body (top level):**
 
 - `IncidentToBillPayload` (object)
-  - `NERISDepartmentId` (string) — NERIS department identifier (this app uses the tenant **NERIS Entity ID**, e.g. `FD########`).
+  - `NERISDepartmentId` (string) — NERIS department identifier. As of Wave 1, the server setting `FIRE_RECOVERY_MODE` chooses it: `sandbox` always sends `FD12345678`, `live` sends the tenant NERIS Entity ID and refuses `FD12345678`, and unset refuses the submit. No database change.
   - `DepartmentName` (string) — display name for the department.
   - `IncidentsToBill` (object)
     - `incident` (object)

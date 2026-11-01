@@ -1,7 +1,7 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Planning complete; all §14 approvals given except Q5 (vendor). No Stage C code is written yet. Start at Wave 1.
-**Updated:** 2026-11-01, about 4:30 p.m. America/Chicago.
+**Status:** Wave 1 is done on the practice branch. Next is Wave 2, after review. Q5 (vendor) still waits. Render, Neon, and production were not changed.
+**Updated:** 2026-11-01, about 5:45 p.m. America/Chicago.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
 
@@ -445,9 +445,9 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - [x] Review, questions, vendor docs saved, decisions recorded, this plan in the repo.
 
 ### Wave 1 — Sandbox switch (§7.5)
-- [ ] `FIRE_RECOVERY_MODE` handling in the submit route; refuse when unset.
-- [ ] Mode and department ID returned by the settings GET (for display).
-- [ ] Tests: sandbox forces `FD12345678`; live refuses `FD12345678`; unset refuses.
+- [x] `FIRE_RECOVERY_MODE` handling in the submit route; refuse when unset.
+- [x] Mode and department ID returned by the settings GET (for display).
+- [x] Tests: sandbox forces `FD12345678`; live refuses `FD12345678`; unset refuses.
 - **Done when:** tests pass, and no code path can send a non-sandbox ID while the mode is `sandbox`.
 
 ### Wave 2 — Fire Recovery Billing tab (§5, §6)
@@ -630,6 +630,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 ## 15. Progress log (newest last)
 
 - 2026-11-01 — Plan written. Vendor docs saved (`docs/procedures/vendor/`). Blank Recovery Hub screenshot saved (`docs/plans/assets/phase-c-fire-recovery/`). Billing agreement confirmed. Render keys not yet created on staging or production.
+- 2026-11-01 — Wave 1 done on `cursor/stage-b-foundation-b5ff` (practice only). Submit reads `FIRE_RECOVERY_MODE`: `sandbox` always sends `FD12345678`; `live` sends the department NERIS Entity ID and refuses `FD12345678`; unset or anything else refuses and does not call Fire Recovery. Settings GET and PATCH return `mode`, `departmentId`, and `banner`. The Fire Recovery settings screen shows that line. `npm run lint`, `npm run build`, and `npm test` (27) passed against local `fu_session_test` only. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 2 after review.
 
 ---
 
