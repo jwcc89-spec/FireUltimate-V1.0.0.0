@@ -85,6 +85,7 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Workflow row input key is `key={index}` (about `src/App.tsx` line 12521). Do not key the row on the text value or typing one character remounts the input.
 - Queue status: `getNerisQueueFieldValue` prefers the local draft `reportStatus`, then `call.nerisReportStatus`, then Draft. View Exports uses that same helper, and shows Exported only after a successful export. The incidents list API skips `reportRemoved` drafts when setting `nerisReportStatus`. Call number used by the API is the incident id.
 - View Exports (the button, the page, and `GET /api/neris/export-history`) requires `neris.export`. Default role is admin. A person without it sees "Export history is not shown for this sign-in." Do not add a separate permission.
+- Part 0: `requirePlatformAdmin` compares `request.path.toLowerCase()` with `/api/admin`. A capitalized `/API/admin/...` with no key returns 403 and creates nothing. Built on this practice branch on 2026-11-01. Not on `main` or staging. Do not merge pull request 31 to ship it. Fixes 8, 9, and 10 are still not built.
 
 ## Still open — user must answer before those pieces are built
 - Fire Recovery sandbox Welcome Message account email (Step 13). Support mentioned `support@fireultimatehq.com`; the user has not confirmed which email to send.
@@ -97,7 +98,7 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-part-3.md`, and `docs/plans/security-remediation-plan.md`. Part 1 is complete. Parts 2 and 3 are built and not released. Do not rebuild fixes 5–7. Do not build the allowed-sender screen (Stage D, step 23). Do not deploy.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-part-3.md`, and `docs/plans/security-remediation-plan.md`. Part 1 is complete. Parts 2 and 3 are built and not released. Part 0's one-line admin-key check is built on this branch only. Do not rebuild it. Do not start fixes 8–10 unless the user asks. Do not build the allowed-sender screen (Stage D, step 23). Do not deploy. Do not merge.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click. If that site is down, start it. Do not restart a healthy proxy.
 3. **Do now:** Wait for the user's next request. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. The allowed-sender screen is Stage D.
 4. **Do not** build Recover Reports, the allowed-sender screen, the Status dropdown, Configure Table drag, or left-menu hiding.

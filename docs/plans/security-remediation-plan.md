@@ -22,13 +22,15 @@ Rules for every fix:
 
 ## Part 0 — Urgent: platform admin key can be skipped (production and staging today)
 
-**Found 2026-10-31 during verification. Awaiting operator decision.** Not caused by the remediation. The same code is on `main` (production) and `submenu/neris-golive-cifpd` (staging).
+**Code status: the one-line check is built on this practice branch and not released.** The operator approved it on 2026-11-01. It is not on `main` or staging yet. Not caused by the remediation. The same gap is still on `main` (production) and `submenu/neris-golive-cifpd` (staging) until this one change is placed there by itself.
 
 - **Problem:** The program-owner tools under `/api/admin/` require the platform admin key. The check only looks at paths that start with lowercase `/api/admin` (`requirePlatformAdmin`, `server/neris-proxy.mjs` line 1554 on this branch; line 1618 on `main`; line 1633 on staging). Express matches routes regardless of letter case, so `/API/admin/...` reaches the same tools with no key.
 - **What someone could do on a live server:** create a new department with an admin password they choose (`POST /api/admin/tenants`), attach a web address to any existing department (`POST /api/admin/tenants/:tenantId/domains`), or refresh the NERIS directory. These routes run before the department is looked up, so they work on any address that reaches the server, including the direct Render address.
 - **Verified:** only on a throwaway local database. With no key, `POST /API/admin/tenants/<Crescent id>/domains` attached a new web address to Crescent. Nothing was sent to staging or production.
 
-### Step 1 — Check now (read-only, both Neon projects)
+### Step 1 — Check now (read-only, both Neon projects) — completed 2026-11-01
+
+The operator ran both queries. Production slugs and hostnames were all recognized. Staging had two unfamiliar rows: slug `local2` with hostname `local2.localhost`, and slug `wave2test` with hostname `wave2test.staging.fireultimate.app`. Those names match old test departments in `docs/seed-and-tenant-reference.md` and the March 6, 2026 notes. They were left in place. Render logs for the staging API and the production API, searched 14 days for `/api` and `/API`, showed no matching lines.
 
 ```sql
 -- Departments, newest first. Look for any you do not recognize.
@@ -42,8 +44,8 @@ ORDER BY d."createdAt" DESC;
 
 Also search the Render logs for both API services for request paths that contain `/API` or any other capital letters in `/api`.
 
-### Step 2 — Decide on an emergency fix (needs operator approval: authorization code)
-- **Smallest safe change:** make the admin-key check compare a lowercase copy of the path, so `/API/admin/...` needs the key too. One line in `requirePlatformAdmin`, plus one automated test. It would be applied to `main` and staging as a separate small change, independent of Stage B.
+### Step 2 — Emergency fix (operator approved 2026-11-01; built on this branch, not released)
+- **Smallest safe change:** make the admin-key check compare a lowercase copy of the path, so `/API/admin/...` needs the key too. One line in `requirePlatformAdmin`, plus one automated test. Built here. It still has to be applied to `main` and staging as a separate small change, independent of Stage B. Do not merge pull request 31 to do that.
 - **Not enough on its own:** a Cloudflare rule blocking `/api` paths with capital letters protects only the custom domains. The direct Render address does not pass through Cloudflare, and the CAD Worker uses that address.
 - **Staging check:** `POST /API/admin/tenants` with no key returns 403; CAD email still arrives; normal sign-in still works.
 
@@ -273,7 +275,7 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 
 ## Decisions needed
 
-- **Part 0:** approve or decline the one-line emergency fix to the platform admin key check on `main` and staging. Run the two read-only queries first.
+- **Part 0:** the read-only checks are done. The one-line fix is approved and built on this practice branch only. Placing that same line on `main` and staging is still a separate approval. Do not merge this branch to do it.
 - **Fixes 8 and 9:** approve the authorization and sign-in code changes. Fix 8 comes first.
 - Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
 - Allowed-sender screen: Stage D, step 23. Not Part 3. Crescent's address is `dispatch@co.iroquois.il.us`.

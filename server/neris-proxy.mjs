@@ -1551,7 +1551,7 @@ const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
 const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
 
 function requirePlatformAdmin(request, response, next) {
-  if (!request.path.startsWith("/api/admin")) {
+  if (!request.path.toLowerCase().startsWith("/api/admin")) {
     return next();
   }
   const key = trimValue(request.headers["x-platform-admin-key"] ?? request.headers["authorization"]?.replace(/^Bearer\s+/i, ""));

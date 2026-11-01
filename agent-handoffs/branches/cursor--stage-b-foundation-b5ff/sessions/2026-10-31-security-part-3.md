@@ -37,6 +37,11 @@ The user checked Part 3 on `http://localhost:5173`.
 - Incident 12354 (`incidentNumber` 12354, id `cmvx9s3200003v0jsto4lt10t`) has draft `reportStatus` **In Review**. The NERIS queue showed that. View Exports showed Draft because it ignored `call.nerisReportStatus`. The exports list now uses the same status helper as the NERIS queue. A successful export still shows Exported.
 - View Exports is reserved for people who can send a NERIS report (`neris.export`, default admin). The button is hidden otherwise. Opening the exports address shows "Export history is not shown for this sign-in." `GET /api/neris/export-history` now requires `neris.export`. A regular user gets 403. Do not add a new permission.
 
+## Part 0 (2026-11-01)
+The operator finished the read-only checks. Production names were all recognized. Staging names they did not recognize are `local2` / `local2.localhost` and `wave2test` / `wave2test.staging.fireultimate.app`. Those match old test departments. They were not deleted. Render logs for 14 days had no `/api` or `/API` matches on staging or production.
+
+The operator approved the one-line change. `requirePlatformAdmin` now lowercases the path before checking `/api/admin`. The session test posts `/API/admin/tenants` with no key, expects 403 "Platform admin key required.", and expects no new department. This is on the practice branch only. Staging and production still have the old check.
+
 ## Next steps for next agent
 1. Stay on `cursor/stage-b-foundation-b5ff`. Do not merge. Do not touch staging, production, Neon, Render, or Cloudflare.
 2. Part 3 is done. Part 4 (D1–D7) is deferred and is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient. Do not start Part 4 unless asked. Likely later work is Stage C step 11 (billing preview and Confirm), the sandbox Fire Recovery department ID, or a planned release. The View Exports status and admin-only follow-up above is done. Do not rebuild it.

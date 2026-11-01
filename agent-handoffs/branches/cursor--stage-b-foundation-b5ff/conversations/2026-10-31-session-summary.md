@@ -84,3 +84,9 @@ Two things were wrong, and both are fixed on this practice copy:
 
 - Incident 12354 is In Review on the NERIS page. View Exports was still saying Draft. It now uses the same status as the NERIS page. After a successful send it still says Exported.
 - View Exports is for an admin only (the same permission as sending a NERIS report). A regular user does not see the button. If they open that address, the page says "Export history is not shown for this sign-in."
+
+## November 1 — Part 0 admin-key check
+
+You checked both databases. Production names were ones you know. On staging, `local2` and `wave2test` match old test departments, and they were left in place. Fourteen days of Render logs had no capitalized `/api` lines.
+
+The practice copy now requires the platform admin key even when the address uses capital letters. Staging and production do not have that line yet. Do not merge the practice copy to put it there. The next code, when you ask for it, is fix 8, then fix 9, then fix 10, each on its own.

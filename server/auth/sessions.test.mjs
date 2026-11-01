@@ -1419,6 +1419,24 @@ test("server sign-in passes", async () => {
     });
     assert.equal(visibleOne.status, 200);
     assert.equal(visibleOne.json.data.trackingId, "demo-track");
+
+    const tenantsBeforeAdminBypass = await prisma.tenant.count();
+    const skippedAdminKey = await callHost("/API/admin/tenants", {
+      method: "POST",
+      host: "localhost",
+      body: {
+        slug: "not-allowed",
+        name: "Not Allowed",
+        hostname: "not-allowed.example",
+        status: "trial",
+        adminUsername: "someone",
+        adminPassword: "Password1!",
+      },
+    });
+    assert.equal(skippedAdminKey.status, 403);
+    assert.equal(skippedAdminKey.json.message, "Platform admin key required.");
+    assert.equal(await prisma.tenant.count(), tenantsBeforeAdminBypass);
+    assert.equal(await prisma.tenant.findFirst({ where: { slug: "not-allowed" } }), null);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();
