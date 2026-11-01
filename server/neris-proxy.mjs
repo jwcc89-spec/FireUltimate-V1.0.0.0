@@ -1553,12 +1553,12 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
 const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
 const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
 
-/** Lowercase API path with one trailing slash removed. Empty when the path is not under /api. */
+/** API path with one trailing slash removed. Empty when the path is not under /api. Letters after /api keep their case. */
 function canonicalApiPath(path) {
   const exact = String(path || "").split("?")[0];
   if (!exact.toLowerCase().startsWith("/api")) return "";
   const trimmed = exact.length > 1 && exact.endsWith("/") ? exact.slice(0, -1) : exact;
-  return trimmed.toLowerCase();
+  return `/api${trimmed.slice(4)}`;
 }
 
 function requirePlatformAdmin(request, response, next) {
@@ -6089,6 +6089,14 @@ if (hasFrontendBuild) {
     response.status(404).send("Frontend build not found. Run `npm run build` before starting staging web UI.");
   });
 }
+
+app.use((request, response, next) => {
+  if (!String(request.path || "").toLowerCase().startsWith("/api")) {
+    next();
+    return;
+  }
+  response.status(404).json({ ok: false, message: "Not found." });
+});
 
 app.use((error, request, response, next) => {
   if (response.headersSent) {

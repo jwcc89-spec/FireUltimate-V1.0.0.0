@@ -270,7 +270,7 @@ test("server sign-in passes", async () => {
       const method = match[1].toUpperCase();
       const pattern = match[2];
       if (!pattern.startsWith("/api")) continue;
-      const path = pattern.replace(/:[A-Za-z0-9_]+/g, "missing");
+      const path = pattern.replace(/:[A-Za-z0-9_]+/g, "MiXeD-1");
       const response = await call(path, { method, body: method === "GET" ? undefined : {} });
       const label = `${method} ${pattern}`;
       if (pattern.startsWith("/api/admin") || APPROVED_PUBLIC.has(`${method} ${pattern}`)) {
@@ -296,6 +296,21 @@ test("server sign-in passes", async () => {
         }
         assert.notEqual(variantResponse.json.ok, true, variantLabel);
         assert.equal(JSON.stringify(variantResponse.json).includes("passwordHash"), false, variantLabel);
+      }
+      const wordPath = path.replace(/^\/api\/([^/]+)/, (_, word) => `/api/${word.toUpperCase()}`);
+      if (wordPath !== path) {
+        const wordResponse = await call(wordPath, { method, body: method === "GET" ? undefined : {} });
+        const wordLabel = `${method} ${wordPath}`;
+        if (wordPath.toLowerCase().startsWith("/api/admin")) {
+          assert.equal(wordResponse.status, 403, wordLabel);
+          assert.equal(wordResponse.json.message, "Platform admin key required.");
+        } else {
+          assert.ok(
+            wordResponse.status === 401 || wordResponse.status === 404,
+            `${wordLabel} -> ${wordResponse.status}`,
+          );
+        }
+        assert.notEqual(wordResponse.json.ok, true, wordLabel);
       }
     }
 
@@ -408,6 +423,29 @@ test("server sign-in passes", async () => {
     assert.equal(ffLogin.status, 200);
     assert.equal(ffLogin.json.user.role, "user");
     const ffCookie = sessionCookie(ffLogin.setCookie);
+    const upperDraft = await call("/api/neris/drafts/26-UPPER", {
+      method: "PATCH",
+      cookie: first.pair,
+      requestOrigin: origin,
+      body: { payload: { reportStatus: "Draft", formValues: {} } },
+    });
+    assert.equal(upperDraft.status, 200, JSON.stringify(upperDraft.json));
+    assert.equal((await call("/api/neris/drafts/26-UPPER", { cookie: first.pair })).status, 200);
+    assert.equal((await call("/api/neris/drafts/26-UPPER/history", { cookie: first.pair })).status, 200);
+    const upperBilling = await call("/api/fire-recovery/incidents/26-UPPER", { cookie: first.pair });
+    assert.equal(upperBilling.status, 404);
+    assert.equal(upperBilling.json.message, "Fire Recovery row not found for this incident.");
+    for (const hiddenPath of [
+      "/api/Fire-Recovery/incidents",
+      "/api/fire-recovery/incidents/",
+      "/API/fire-recovery/incidents",
+      "/api/Users",
+      "/api/Account-Audit",
+    ]) {
+      const hidden = await call(hiddenPath, { cookie: ffCookie.pair });
+      assert.ok(hidden.status === 403 || hidden.status === 404, `${hiddenPath} -> ${hidden.status}`);
+      assert.notEqual(hidden.json.ok, true, hiddenPath);
+    }
     const deniedIncident = await call("/api/incidents", {
       method: "POST",
       cookie: ffCookie.pair,
