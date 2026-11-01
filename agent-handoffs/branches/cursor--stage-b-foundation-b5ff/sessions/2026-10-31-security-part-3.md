@@ -42,6 +42,8 @@ The operator finished the read-only checks. Production names were all recognized
 
 The operator approved the one-line change. `requirePlatformAdmin` now lowercases the path before checking `/api/admin`. The session test posts `/API/admin/tenants` with no key, expects 403 "Platform admin key required.", and expects no new department. This is on the practice branch only. Staging and production still have the old check.
 
+Fixes 8, 9, and 10 were approved on 2026-11-01 and built on this branch only. Fix 8: exact letter case and no trailing slash, or the API answers 404. Fix 9: a real account keeps its wrong-password count through a flood, and a count expires 15 minutes after the last failure. Fix 10: a broken JSON request returns "The request could not be read." with no stack trace. Live sites stay unchanged.
+
 ## Next steps for next agent
 1. Stay on `cursor/stage-b-foundation-b5ff`. Do not merge. Do not touch staging, production, Neon, Render, or Cloudflare.
 2. Part 3 is done. Part 4 (D1–D7) is deferred and is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient. Do not start Part 4 unless asked. Likely later work is Stage C step 11 (billing preview and Confirm), the sandbox Fire Recovery department ID, or a planned release. The View Exports status and admin-only follow-up above is done. Do not rebuild it.

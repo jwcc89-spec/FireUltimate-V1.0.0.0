@@ -1486,6 +1486,45 @@ test("server sign-in passes", async () => {
     assert.equal(skippedAdminKey.json.message, "Platform admin key required.");
     assert.equal(await prisma.tenant.count(), tenantsBeforeAdminBypass);
     assert.equal(await prisma.tenant.findFirst({ where: { slug: "not-allowed" } }), null);
+
+    const badJson = await new Promise((resolve, reject) => {
+      const req = http.request(
+        {
+          hostname: "127.0.0.1",
+          port,
+          path: "/api/auth/login",
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            origin,
+            host: `127.0.0.1:${port}`,
+          },
+        },
+        (res) => {
+          const chunks = [];
+          res.on("data", (chunk) => chunks.push(chunk));
+          res.on("end", () => {
+            const text = Buffer.concat(chunks).toString("utf8");
+            let json = {};
+            try {
+              json = text ? JSON.parse(text) : {};
+            } catch {
+              json = {};
+            }
+            resolve({ status: res.statusCode, json, text });
+          });
+        },
+      );
+      req.on("error", reject);
+      req.write("{");
+      req.end();
+    });
+    assert.equal(badJson.status, 400);
+    assert.equal(badJson.json.ok, false);
+    assert.equal(badJson.json.message, "The request could not be read.");
+    assert.equal(badJson.text.includes("neris-proxy"), false);
+    assert.equal(badJson.text.includes("SyntaxError"), false);
+    assert.equal(badJson.text.includes("<"), false);
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();

@@ -6090,6 +6090,19 @@ if (hasFrontendBuild) {
   });
 }
 
+app.use((error, request, response, next) => {
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+  console.error(error);
+  const unreadable = error?.type === "entity.parse.failed" || error instanceof SyntaxError;
+  response.status(unreadable ? 400 : 500).json({
+    ok: false,
+    message: unreadable ? "The request could not be read." : "Something went wrong.",
+  });
+});
+
 if (invokedDirectly) {
   app.listen(config.proxyPort, () => {
     console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);

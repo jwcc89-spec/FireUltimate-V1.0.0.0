@@ -107,7 +107,7 @@ If the readable-text password count is above `0`, reset those accounts to strong
 
 ## Part 2 — Blocks the Stage B sign-in release
 
-**Code status: fixes 1–4 built on this branch, 2026-10-31. Not released.** Build order was fix 4, then 1, then 2, then 3. Automated tests passed. **Verification found new blockers: fixes 8, 9, and 10 below must be built before the branch goes to staging.** Staging checks are still open because this branch has not been deployed.
+**Code status: fixes 1–4 and 8–10 are built on this branch. Not released.** Build order was fix 4, then 1, then 2, then 3, then 8, then 9, then 10. Automated tests passed. Staging checks are still open because this branch has not been deployed.
 
 The operator has no Part 2 clicks until a release day. The allowed-sender screen is **Stage D, repair-plan step 23**, decided October 31. Do not build that screen during Part 3. Staging reported `cifpdil` with 0 allowed senders. Because Fix 3 is already in this branch, do not release the branch until Stage D has saved `dispatch@co.iroquois.il.us` for Crescent.
 
@@ -182,7 +182,7 @@ Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-s
 - **Automated tests:** a real account with 4 failures keeps its count through a 20,000-name flood; the 5th failure locks it; a count older than 15 minutes is cleared; memory stays capped.
 - **Staging check:** the same as fix 1.
 
-### Fix 10 — Error replies expose internal details (audit LOW-1, moved up from item D4) — not built
+### Fix 10 — Error replies expose internal details (audit LOW-1, moved up from item D4) — built on this branch, not released
 - **Problem:** 49 server replies still return the raw internal error message. Badly formed JSON returns an HTML page with a stack trace and server file paths when `NODE_ENV` is not `production`.
 - **Smallest safe change:** Add one JSON error handler at the end of the server that returns a short, fixed message and logs the detail on the server. Set `NODE_ENV=production` on both Render services at release (already in Part 5).
 - **Depends on:** nothing.
@@ -276,7 +276,7 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 ## Decisions needed
 
 - **Part 0:** the read-only checks are done. The one-line fix is approved and built on this practice branch only. Placing that same line on `main` and staging is still a separate approval. Do not merge this branch to do it.
-- **Fixes 8 and 9:** approve the authorization and sign-in code changes. Fix 8 comes first.
+- **Fixes 8, 9, and 10:** approved and built on this practice branch on 2026-11-01. Not released. Live sites stay unchanged until a separate approval.
 - Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
 - Allowed-sender screen: Stage D, step 23. Not Part 3. Crescent's address is `dispatch@co.iroquois.il.us`.
 - Part 3 code is built on this practice branch and not released: fix 5, then 6, then 7. Fix 6 keeps the plan's Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (a different value on staging and production; a copy stays in the password manager). Do not create that setting during a coding session. Fix 7's `billing.view` default is admin, matching the October 29 decision that billing is admin-only.
