@@ -61,7 +61,7 @@ Passed, and the user said so:
 - Fixes 11–14 are built and the practice click check passed. The staging backup, Crescent sender, and four new tables are done. Do not merge into staging until `NODE_ENV=production` and `CAD_INGEST_SECRET` are confirmed on the staging API.
 - The four tables exist on the live staging database as of 2026-11-01, about 1:19 p.m. America/Chicago. They are add-only. Do not migrate production. Prisma schema and migrations change only with explicit approval.
 - Do not set `TRUST_PROXY=1` until Render is confirmed to replace `X-Forwarded-Host`.
-- Do not set `NODE_ENV=production` until a planned release. Keep the admin and demo accounts.
+- Set `NODE_ENV=production` on the staging API only when promoting this branch. Do not set it on production until staging has passed. Keep the admin and demo accounts.
 - Do not store auth secrets in `DepartmentDetails.payloadJson`.
 - Fire Recovery tests, when they start, use sandbox department ID `FD12345678` only.
 
