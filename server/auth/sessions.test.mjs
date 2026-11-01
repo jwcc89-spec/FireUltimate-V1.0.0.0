@@ -257,6 +257,24 @@ test("server sign-in passes", async () => {
         assert.equal(response.status, 401, `${label} -> ${response.status}`);
         assert.equal(response.json.code, "AUTH_REQUIRED", label);
       }
+      const upperPath = path.replace(/^\/api/, "/API");
+      const mixedPath = path.replace(/^\/api/, "/aPi");
+      const slashPath = `${path}/`;
+      for (const variant of [upperPath, mixedPath, slashPath]) {
+        const variantResponse = await call(variant, { method, body: method === "GET" ? undefined : {} });
+        const variantLabel = `${method} ${variant}`;
+        if (variant.toLowerCase().startsWith("/api/admin")) {
+          assert.equal(variantResponse.status, 403, variantLabel);
+          assert.equal(variantResponse.json.message, "Platform admin key required.");
+        } else {
+          assert.ok(
+            variantResponse.status === 401 || variantResponse.status === 404,
+            `${variantLabel} -> ${variantResponse.status}`,
+          );
+        }
+        assert.notEqual(variantResponse.json.ok, true, variantLabel);
+        assert.equal(JSON.stringify(variantResponse.json).includes("passwordHash"), false, variantLabel);
+      }
     }
 
     const login = await call("/api/auth/login", {
@@ -1397,6 +1415,15 @@ test("server sign-in passes", async () => {
     const hiddenHistory = await call("/api/neris/export-history", { cookie: billingUserCookie.pair });
     assert.equal(hiddenHistory.status, 403);
     assert.equal(hiddenHistory.json.code, "FORBIDDEN");
+    const slashBilling = await call("/api/fire-recovery/incidents/", { cookie: billingUserCookie.pair });
+    assert.equal(slashBilling.status, 404);
+    assert.notEqual(slashBilling.json.ok, true);
+    const caseBilling = await call("/api/Fire-Recovery/incidents", { cookie: billingUserCookie.pair });
+    assert.equal(caseBilling.status, 404);
+    assert.notEqual(caseBilling.json.ok, true);
+    const caseUsers = await call("/API/users", { cookie: billingUserCookie.pair });
+    assert.equal(caseUsers.status, 404);
+    assert.notEqual(caseUsers.json.ok, true);
     const hiddenOne = await call(`/api/fire-recovery/incidents/${demoIncidentId}`, {
       cookie: billingUserCookie.pair,
     });

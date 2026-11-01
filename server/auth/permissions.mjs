@@ -50,7 +50,8 @@ export function roleLevel(role) {
 
 export function permissionForRequest(method, path, body) {
   const verb = String(method || "").toUpperCase();
-  const route = String(path || "").split("?")[0];
+  let route = String(path || "").split("?")[0];
+  if (route.length > 1 && route.endsWith("/")) route = route.slice(0, -1);
 
   if (verb === "GET" && route === "/api/permissions") return null;
   if ((verb === "GET" || verb === "PUT") && route === "/api/permissions/policy") {

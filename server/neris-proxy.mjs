@@ -78,6 +78,9 @@ const prisma = new PrismaClient({ adapter: prismaAdapter });
 
 
 const app = express();
+// /API/users and /api/users/ must not reach the real handlers.
+app.set("case sensitive routing", true);
+app.set("strict routing", true);
 app.use(express.json({ limit: "4mb" }));
 
 const DEFAULT_NERIS_BASE_URL = "https://api.neris.fsri.org/v1";
@@ -1550,6 +1553,14 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
 const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
 const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
 
+/** Lowercase API path with one trailing slash removed. Empty when the path is not under /api. */
+function canonicalApiPath(path) {
+  const exact = String(path || "").split("?")[0];
+  if (!exact.toLowerCase().startsWith("/api")) return "";
+  const trimmed = exact.length > 1 && exact.endsWith("/") ? exact.slice(0, -1) : exact;
+  return trimmed.toLowerCase();
+}
+
 function requirePlatformAdmin(request, response, next) {
   if (!request.path.toLowerCase().startsWith("/api/admin")) {
     return next();
@@ -1752,16 +1763,23 @@ const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
 
 app.use(async (request, response, next) => {
   try {
-    if (!request.path.startsWith("/api")) {
+    const exactPath = String(request.path || "").split("?")[0];
+    const canonical = canonicalApiPath(exactPath);
+    if (!canonical) {
       next();
+      return;
+    }
+    // A different letter case or a trailing slash is not the real route.
+    if (exactPath !== canonical) {
+      response.status(404).json({ ok: false, message: "Not found." });
       return;
     }
     // Program-owner tools keep the platform admin key. CAD inbound keeps its shared secret.
-    if (request.path.startsWith("/api/admin") || request.path === "/api/cad/inbound-email") {
+    if (exactPath.startsWith("/api/admin") || exactPath === "/api/cad/inbound-email") {
       next();
       return;
     }
-    const routeKey = `${request.method} ${request.path}`;
+    const routeKey = `${request.method} ${exactPath}`;
     const isPublic = PUBLIC_API_ROUTES.has(routeKey);
     const mutating = MUTATING_METHODS.has(request.method);
     if (isPublic) {
