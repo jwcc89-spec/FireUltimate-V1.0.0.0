@@ -299,6 +299,8 @@ const decided = [
   ["October 31, 2026", "Incidents", "The Status box on an open incident is unit status. Draft is not a valid choice there. That box is not the NERIS report status. Fix later.", "Parked & future"],
   ["October 31, 2026", "Incidents", "Dragging columns under Incidents → Configure Table does not work. Fix later. That layout stays on each computer.", "Parked & future"],
   ["October 31, 2026", "Settings", "Unchecking a box in Admin Functions → Customization → Submenu Display Settings should hide that item from the left menu. Edit Display on the submenu cards is what shows or hides cards on the menu page. Fix later.", "Parked & future"],
+  ["November 1, 2026", "NERIS", "On Resources, checking Dispatched and canceled en route should fill Dispatch Time, Canceled Time, and Clear Time with the call arrival time from Incident Times. It did not on the Crescent staging test. Fix later.", "Parked & future"],
+  ["November 1, 2026", "Settings", "Edit My Display stays in the browser. It followed a second user on the same computer and did not follow the person to another browser. Save it per person on the server later.", "Parked & future"],
   ["October 31, 2026", "CAD", "The allowed-sender screen stays in Stage D, step 23. Do not build it during security Part 3. Crescent's sender is dispatch@co.iroquois.il.us. Do not release this practice branch until that address is saved, because an empty sender list now rejects mail.", "23"],
   ["October 31, 2026", "Security", "Part 3 is built on the practice branch and not released. The server writes the NERIS export receipt. The Fire Recovery password is encrypted. Viewing billing requires billing.view, which defaults to admin. Do not create FIRE_RECOVERY_CREDENTIAL_KEY on Render in a coding session.", "10, 13"],
   ["October 31, 2026", "Security", "Part 4 (D1–D7) stays deferred. It is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient.", "Parked & future"],
@@ -623,6 +625,16 @@ function Parked() {
       <H2>Parked: Submenu Display Settings hide the left menu</H2>
       <Text>
         Decided October 31, 2026. Admin Functions → Customization → Submenu Display Settings currently changes whether a submenu appears on that menu's card page and in Edit Display. Unchecking a box there should instead hide that item from the main menu list on the left. Showing or hiding cards on the menu page stays with Edit Display on the submenu cards.
+      </Text>
+      <Divider />
+      <H2>Parked: canceled en route fills the times</H2>
+      <Text>
+        Found November 1, 2026, on Crescent staging. On a NERIS report, open Resources and check Dispatched and canceled en route. Dispatch Time, Canceled Time, and Clear Time should fill themselves with the call arrival time from Incident Times. They stayed empty. The operator typed the times and continued the test. Do not build this until asked.
+      </Text>
+      <Divider />
+      <H2>Parked: Edit My Display follows the person</H2>
+      <Text>
+        Found November 1, 2026, on Crescent staging. Dashboard Edit My Display stayed after logout and also appeared for a second username in the same browser. A different browser did not have those choices. Save the choices for the signed-in person on the server. A shared computer should not keep the previous person's display, and the same person should see their choices on another computer. Do not build this until asked.
       </Text>
       <Divider />
       <H2>Set aside for now: scheduling</H2>
