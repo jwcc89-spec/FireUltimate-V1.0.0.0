@@ -158,9 +158,9 @@ Use a 3px left/right bar on the input the way Recovery Hub does: red for Require
 | Recovery Hub label | Source in the report | Notes |
 |---|---|---|
 | Run Date | `incident_onset_date` | Show as `MM/DD/YYYY` to match Recovery Hub |
-| Time Alarm Received | see §14 Q3 (default `incident_time_call_arrival`) | 24-hour `HH:MM` |
+| Time Alarm Received | `incident_time_call_arrival` (call arrival at dispatch; §14 Q3) | 24-hour `HH:MM` |
 | Time Call Cleared | `incident_time_clear` | 24-hour |
-| Run Number | `incident_internal_id` (Crescent incident number, e.g. `26-079`) | §14 Q4 |
+| Run Number | `incident_internal_id` (Crescent incident number, e.g. `26-079`) | Confirmed (§14 Q4) |
 | Law Enforcement Agency Report Number | **Editable** text, new | Optional. If blank, the server falls back to the first Person/Owner vehicle's `policeReportFileNumber` |
 | Total Personnel On-Scene | Count of distinct people assigned to units that arrived on scene (`resource_units_json`) | Show the count, and the names on hover |
 | NERIS Code | **Editable** `DD-S` with the NERIS incident type list, pre-filled from `primary_incident_type` | D-15 |
@@ -598,8 +598,8 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 |---|---|---|---|
 | Q1 | Approve an add-only database change for billing status (`submitStatus`, `submitStartedAt`; optional attempt history table)? | Wave 4 | Yes: Option A (§7.4) |
 | Q2 | Approve permission-map changes for the new routes (preview and submit = `billing.submit`; resolve-review = admin only)? | Wave 4 | Yes |
-| Q3 | Which report time is "Time Alarm Received": call arrival at dispatch (`incident_time_call_arrival`), call answered, or CAD record created? | Wave 3 | Call arrival |
-| Q4 | Is "Run Number" Crescent's incident number (e.g. `26-079`, `incident_internal_id`)? | Wave 3 | Yes |
+| Q3 | ~~Which report time is "Time Alarm Received"?~~ **Answered 2026-11-01:** call arrival at dispatch (`incident_time_call_arrival`) | — | — |
+| Q4 | ~~Is "Run Number" Crescent's incident number?~~ **Answered 2026-11-01:** yes (`incident_internal_id`, e.g. `26-079`) | — | — |
 | Q5 | Is the Welcome login also for real bills? | Wave 8 | Vendor email Q1 |
 
 ---
