@@ -20,5 +20,4 @@ Part 1 notes that stay true:
 Part 2 code is already complete and not released. Staging checks wait for a release. The allowed-sender screen is not built. Staging `cifpdil` has 0 allowed senders.
 
 ## Next steps for next agent
-1. Do not deploy. Do not start Step 10 until the user says start.
-2. When the user asks for the next code, build the allowed-sender screen so Crescent can add `dispatch@co.iroquois.il.us` before any promotion.
+Superseded the same evening by `sessions/2026-10-31-handoff-to-part-3.md`. The operator decided the allowed-sender screen stays in Stage D (repair-plan step 23). The next code is security Part 3: Fix 5, then Fix 6, then Fix 7. Do not build the screen in that session.

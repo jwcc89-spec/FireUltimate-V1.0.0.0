@@ -15,17 +15,18 @@
 
 ## Current focus
 - Stage B (Steps 5–9B) is **built and click-tested** on this practice branch. It is **not released**.
-- Security remediation Part 2 (fixes 4, 1, 2, and 3) is **built and tested** on this branch. It is **not released**. Do not promote until `dispatch@co.iroquois.il.us` is on Crescent's allowed-sender list. Staging reported `cifpdil` with 0 allowed senders. There is no on-screen editor for that list yet. Sign-in limits stay at 5 failures, 10,000 remembered names, 100-character usernames, and 256-character passwords.
-- Stage C (Fire Recovery, Step 10) waits until the user says **start Step 10**. Do not start Stage C, Step 15, or the Fire Recovery email on your own. Fixes 5, 6, and 7 are the Stage C security items.
+- Security Part 1 is **complete**. Part 2 code (fixes 4, 1, 2, and 3) is **built and tested** and **not released**. Sign-in limits stay at 5 failures, 10,000 remembered names, 100-character usernames, and 256-character passwords.
+- The allowed-sender screen is **Stage D, repair-plan step 23**. Do not build it during Part 3. Crescent's sender is `dispatch@co.iroquois.il.us`. Staging `cifpdil` has 0 allowed senders. Do not release this branch until that address is saved, because Fix 3 rejects mail when the list is empty.
+- **Next code is security Part 3:** fix 5, then fix 6, then fix 7, on this practice branch only. The operator ended the October 31 chat by asking the next agent to start there. Fix 6 uses Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Fix 7 `billing.view` defaults to admin. Do not start Step 15, the Fire Recovery email, or a release.
 - Repair plan canvas (live): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 - Repair plan source in the repo: `docs/plans/canvases/repair-plan.canvas.tsx`. Keep the live canvas and this file in sync. Republish with WriteCanvas using canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` and the full repo file. Omit the title so "Fire Ultimate repair plan" stays.
 - Design canvas (older, not the working plan): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618
-- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-part-1-complete.md`
+- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-handoff-to-part-3.md`
 - Latest user summary: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-10-31-session-summary.md`
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
 
 ## Latest known status
-- Latest security code: `f94bd28` (CAD secret required everywhere) and `b0d29b3` (empty sender list rejected). Earlier the same evening: `497b667` and `e3c222e`. Read `git log -1` after pull.
+- Latest security code on this branch: `f3b59e5` (CAD secret required everywhere) and `2e99f11` (empty sender list rejected). Earlier the same evening: `497b667` (session tests) and `e3c222e` (sign-in memory cap). Docs through `0b356cd` marked Part 1 complete. Read `git log -1` after pull. The handoff that points the next agent at Part 3 is the commit after `0b356cd`.
 - Stage A (Steps 1–4) complete. Stage B Steps 5, 6, 7, 8, 9, 9A, and 9B are built here and click-tested on October 31, 2026 (America/Chicago).
 - GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, and `npm test` on Node 20.19.0 against throwaway Postgres. Install is `npm ci --engine-strict=false` because `@prisma/streams-local` (unused by the app) wants Node 22 and `.npmrc` has `engine-strict=true`. Do not change that flag. Do not upgrade Prisma. If Render is still on Node 20 at release, its install needs the same flag.
 - `npm test` is CAD unit tests plus `server/auth/sessions.test.mjs`. It refuses any database that is not `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never point tests at Neon.
@@ -94,9 +95,9 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-part-1-complete.md`, and `docs/plans/security-remediation-plan.md`. Part 1 is complete. Part 2 code is complete and not released. The next code, when the user asks, is the allowed-sender screen. Do not deploy. Do not start Step 10 until the user says start.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-handoff-to-part-3.md`, and `docs/plans/security-remediation-plan.md` Part 3. Part 1 is complete. Part 2 code is complete and not released. Start Part 3 at Fix 5, then Fix 6, then Fix 7. Do not build the allowed-sender screen (Stage D, step 23). Do not deploy.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click.
-3. **Do now:** Do not deploy. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. Before any promotion, Crescent needs allowed sender `dispatch@co.iroquois.il.us`. The screen for that list is not built. Stage C starts only when the user says start Step 10 (security fixes 5, 6, and 7).
-4. **Do not** start Step 10, Recover Reports, the Status dropdown, Configure Table drag, or left-menu hiding until the user asks for that item by name.
+3. **Do now:** Start security Part 3 (fix 5, then 6, then 7). Do not deploy. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. The allowed-sender screen is Stage D.
+4. **Do not** build Recover Reports, the allowed-sender screen, the Status dropdown, Configure Table drag, or left-menu hiding. Step 10 in this next session means security Fix 5 only.
 5. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
-6. When the user says start Step 10, work only on this practice branch, one step at a time, and stop before any database change that is not already approved. Step 13 still needs a database-setting approval and the sandbox email. Security fixes 5, 6, and 7 are the Stage C billing blockers in the security plan.
+6. Part 3 does not add a database table. Fix 6's key is the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Do not create that setting on Render in this session. Step 15 and the Fire Recovery email stay parked.

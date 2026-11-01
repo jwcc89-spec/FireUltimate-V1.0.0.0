@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31, about 9:30 p.m. Chicago time):** Part 1 hands-on items are complete. Part 2 code (fixes 4, 1, 2, and 3) is built and tested on this branch and is not released. Production has 10 migrations through `20260411190000_fire_recovery_tenant_api_credentials`. This branch adds three more. Do not promote until Crescent has an allowed sender (staging currently has 0). There is no on-screen button for that list yet.
+**Progress (2026-10-31, about 9:37 p.m. Chicago time):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Next implementation is Part 3: fix 5, then 6, then 7. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -77,7 +77,7 @@ If the readable-text password count is above `0`, reset those accounts to strong
 
 **Code status: completed on this branch, 2026-10-31. Not released.** Build order was fix 4, then 1, then 2, then 3. Automated tests passed. Staging checks are still open because this branch has not been deployed.
 
-The operator has no Part 2 clicks until a release day. Before that release, the allowed-sender screen still has to be built so Crescent can add `dispatch@co.iroquois.il.us`. Staging reported `cifpdil` with 0 allowed senders. Deploying Fix 3 before that address is saved would reject real dispatch email.
+The operator has no Part 2 clicks until a release day. The allowed-sender screen is **Stage D, repair-plan step 23**, decided October 31. Do not build that screen during Part 3. Staging reported `cifpdil` with 0 allowed senders. Because Fix 3 is already in this branch, do not release the branch until Stage D has saved `dispatch@co.iroquois.il.us` for Crescent.
 
 ### Fix 1 — Failed logins can use up server memory (audit HIGH-1) — built on this branch, not released
 
@@ -173,7 +173,7 @@ Build order: fix 5, then 6, then 7.
 
 ### Promote this branch to staging
 1. Neon backup of `fireultimate-staging`.
-2. Add `dispatch@co.iroquois.il.us` to Crescent's allowed-sender list on staging (admin screen).
+2. Add `dispatch@co.iroquois.il.us` to Crescent's allowed-sender list on staging. The screen for that list is Stage D, repair-plan step 23, not Part 3. This step still has to happen before the release, because Fix 3 rejects mail when the list is empty.
 3. Confirm `NODE_ENV=production` and `CAD_INGEST_SECRET` on the staging API service.
 4. Follow `docs/procedures/RELEASE_CHECKLIST.md`.
 5. Run each fix's staging check. Real CAD email must arrive; NERIS export and validation must work.
@@ -195,9 +195,8 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 
 ## Decisions needed
 
-- Approve fix 1's memory-cap approach (instead of a database table).
-- Approve fail-closed CAD intake (fixes 2 and 3).
-- Approve encryption with a Render-held key (fix 6).
-- Choose the default role for `billing.view` (fix 7).
-- Approve the browser-clearing rule (item D2).
-- Approve adding the Fire Recovery production restriction and the CAD release order (Part 5) to `docs/procedures/RELEASE_CHECKLIST.md`.
+- Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
+- Allowed-sender screen: Stage D, step 23. Not Part 3. Crescent's address is `dispatch@co.iroquois.il.us`.
+- Part 3 starts next, in order: fix 5, then 6, then 7. Fix 6 keeps the plan's Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (a different value on staging and production; a copy stays in the password manager). Fix 7's `billing.view` default is admin, matching the October 29 decision that billing is admin-only.
+- Approve the browser-clearing rule (item D2). Still later.
+- Approve adding the Fire Recovery production restriction and the CAD release order (Part 5) to `docs/procedures/RELEASE_CHECKLIST.md`. Still later.

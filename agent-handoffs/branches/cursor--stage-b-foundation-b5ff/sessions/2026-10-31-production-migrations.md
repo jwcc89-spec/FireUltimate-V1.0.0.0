@@ -39,5 +39,5 @@ This branch adds three that production does not have:
 
 ## Next steps for next agent
 1. Stay on this branch. Do not merge or deploy.
-2. When the user says start Step 10, build Fix 5 first.
+2. Superseded later the same evening. The next session starts Part 3 now: Fix 5, then Fix 6, then Fix 7. See `sessions/2026-10-31-handoff-to-part-3.md`. The allowed-sender screen stays in Stage D.
 3. Before promotion, Crescent still needs `dispatch@co.iroquois.il.us` on the allowed-sender list.

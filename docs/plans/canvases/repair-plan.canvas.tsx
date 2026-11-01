@@ -192,7 +192,7 @@ const stages: StageDef[] = [
       { n: "23", title: "Control who can send CAD emails", status: "Updated",
         problem: "An empty sender allowlist accepts everyone, unknown addresses create department-less records, and there is no screen to manage senders.",
         why: "Spam or a mistaken email could become an incident, and later a false alert to responders.",
-        fix: "Reject unknown addresses and add an admin screen for allowed senders. Decided October 29: when a department has no allowed senders listed, CAD emails are accepted from no one until an address is added. Crescent's only sender is dispatch@co.iroquois.il.us.",
+        fix: "Reject unknown addresses and add an admin screen for allowed senders. Decided October 29: when a department has no allowed senders listed, CAD emails are accepted from no one until an address is added. Crescent's only sender is dispatch@co.iroquois.il.us. October 31: the reject behavior is already on the practice branch (security fix 3). The allowed-sender screen stays in this Stage D step. Do not build that screen during security Part 3.",
         who: "Me.",
         done: "Unapproved senders are rejected and admins manage the list themselves." },
       { n: "24", title: "Never silently lose dispatch emails",
@@ -293,6 +293,7 @@ const decided = [
   ["October 31, 2026", "Incidents", "The Status box on an open incident is unit status. Draft is not a valid choice there. That box is not the NERIS report status. Fix later.", "Parked & future"],
   ["October 31, 2026", "Incidents", "Dragging columns under Incidents → Configure Table does not work. Fix later. That layout stays on each computer.", "Parked & future"],
   ["October 31, 2026", "Settings", "Unchecking a box in Admin Functions → Customization → Submenu Display Settings should hide that item from the left menu. Edit Display on the submenu cards is what shows or hides cards on the menu page. Fix later.", "Parked & future"],
+  ["October 31, 2026", "CAD", "The allowed-sender screen stays in Stage D, step 23. Do not build it during security Part 3. Crescent's sender is dispatch@co.iroquois.il.us. Do not release this practice branch until that address is saved, because an empty sender list now rejects mail.", "23"],
 ];
 
 const decisions = [
@@ -637,11 +638,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed on the practice branch · Not released · Practice copy: cursor/stage-b-foundation-b5ff · Next: Stage C on this practice branch only · Recover Reports, incident Status, table drag, and left-menu hiding are parked</Text>
+        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed · Security Part 1 and Part 2 code are done and not released · Next: security Part 3 (fixes 5, 6, 7) on this practice branch · Allowed-sender screen stays in Stage D · Not released</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B click-through passed on the practice copy (October 31, 2026)">
-        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Stage C starts on this practice copy only when you say start Step 10. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
+        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Security Part 3 (fixes 5, 6, and 7) is the next code on this practice copy. The allowed-sender screen stays in Stage D, step 23. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

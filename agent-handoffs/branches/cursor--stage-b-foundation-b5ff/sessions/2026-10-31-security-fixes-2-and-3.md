@@ -42,4 +42,4 @@
 ## Next steps for next agent
 1. Stay on this branch. Do not merge or deploy.
 2. When the user says start Step 10, build Fix 5 first.
-3. If they ask for the allowed-sender screen, that is the missing piece before this branch can be promoted.
+3. Superseded later the same evening: the allowed-sender screen is Stage D, repair-plan step 23, not the next coding task. See `sessions/2026-10-31-handoff-to-part-3.md`. Do not release until `dispatch@co.iroquois.il.us` is saved for Crescent.

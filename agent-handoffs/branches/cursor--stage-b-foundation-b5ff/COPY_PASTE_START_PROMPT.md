@@ -14,11 +14,12 @@ The agent states at the end of each response **which agent/model was used**. The
 3. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md` — current focus, practice servers, parked work, do-not-merge
 4. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-session.md` — what the October 31 click-through shipped
 5. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-10-31-session-summary.md` — user-readable summary of that session
-6. `docs/agent-execution-contract.md` — preflight, delivery, verification, handoff
-7. `docs/task-2-multitenant-domain-plan.md` — Now vs Later. Stage B click-through passed. Stage C starts on this practice branch only when the user says start.
-8. `docs/plans/canvases/repair-plan.canvas.tsx` — repair plan source. Live canvas: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
-9. `docs/procedures/RELEASE_CHECKLIST.md` — release wording. Do not run a release from this prompt.
-10. `docs/system_architecture.md`, `docs/data_model.md`, `docs/incident-lifecycle.md`, and `docs/integrations.md` when touching architecture, data, incidents, reports, export, CAD, NERIS, or NEMSIS
+6. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-handoff-to-part-3.md` — the note that starts the next session. Follow this one, not the older "build the allowed-sender screen" lines.
+7. `docs/plans/security-remediation-plan.md` — Part 1 complete. Part 2 code complete and not released. **Start at Part 3.**
+8. `docs/task-2-multitenant-domain-plan.md` — Now vs Later. Stage B click-through passed. Next code is security Part 3 on this practice branch.
+9. `docs/plans/canvases/repair-plan.canvas.tsx` — repair plan source. Live canvas: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
+10. `docs/procedures/RELEASE_CHECKLIST.md` — release wording. Do not run a release from this prompt.
+11. `docs/system_architecture.md`, `docs/data_model.md`, `docs/incident-lifecycle.md`, and `docs/integrations.md` when touching architecture, data, incidents, reports, export, CAD, NERIS, or NEMSIS
 
 **Sessions vs conversations (this branch):**
 
@@ -27,12 +28,13 @@ The agent states at the end of each response **which agent/model was used**. The
 | **`sessions/`** | Next agent | What shipped, paths, commands, verification, next steps | **One** session note — do **not** add a new file for every sub-task in the same session |
 | **`conversations/`** | User | Condensed summary of the **full** conversation (decisions, outcomes, what to test) | **One** file: **`YYYY-MM-DD-session-summary.md`** |
 
-Older session files under `sessions/` (October 29 and October 30) stay as history. The October 31 note is the one to follow.
+Older session files under `sessions/` (October 29 and October 30, and the earlier October 31 notes) stay as history. Follow `sessions/2026-10-31-handoff-to-part-3.md` for what to build next.
 
 **Hard stops until the user says otherwise:**
 - Do not merge pull request 31.
 - Do not touch staging, production, Neon, Render, or Cloudflare.
-- Do not start Stage C, Step 10, Step 15, or the Fire Recovery email until the user says **start Step 10** (or names a later step).
+- Start security Part 3: Fix 5, then Fix 6, then Fix 7. That is the October 31 handoff. Do not start Step 15 or the Fire Recovery email.
+- Do not build the allowed-sender screen. That screen is Stage D, repair-plan step 23. Crescent's address is `dispatch@co.iroquois.il.us`.
 - Do not build Recover Reports.
 - Do not change the incident Status dropdown (Draft must not be removed until they ask; it is parked as unit status).
 - Do not fix Incidents → Configure Table drag-and-drop.
@@ -54,7 +56,7 @@ Before doing any feature work, understand the Branch Rules:
    - cursoragent-context.md
    - .cursor/project-context.md
    - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md
-   - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-session.md
+   - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-handoff-to-part-3.md
    - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-10-31-session-summary.md
 4) Read and follow before any edits:
    - docs/agent-execution-contract.md
@@ -66,7 +68,7 @@ Before doing any feature work, understand the Branch Rules:
    - Stage B click-through is done and not released
    - do not merge until Session, RolePermission, AccountAuditLog, and NerisReportChange exist on staging with a fresh backup
    - parked: Recover Reports, incident Status (unit status, drop Draft later), Configure Table drag, left-menu hiding
-   - next implementation step is Stage C Step 10 only if I said "start Step 10"
+   - next implementation step is security Part 3: Fix 5, then Fix 6, then Fix 7. The allowed-sender screen is Stage D, not this session.
    - Now vs Later
 6) Follow beginner-friendly communication: numbered where / click / type / expect. 24-hour time. I cannot paste into the terminal.
 7) Practice site: http://localhost:5173 (Vite). Sign in demo / demo unless I changed it. Do not restart the practice proxy unless it is down or I am locked out.
@@ -83,10 +85,11 @@ Before doing any feature work, understand the Branch Rules:
    - end with which agent/model answered
 
 After acknowledging the rules above:
-1) Continue from the current blocker only. Do not redo Stage B click-through fixes.
-2) Sync latest code for cursor/stage-b-foundation-b5ff.
-3) Do not start Step 10, Recover Reports, or the parked UI fixes unless I ask.
-4) If I say start Step 10, work on this practice branch only. No merge, no staging, no production, no Fire Recovery email.
+1) Start security Part 3 on this practice branch. Read docs/plans/security-remediation-plan.md Part 3. Build Fix 5, then Fix 6, then Fix 7. One fix per commit. Run npm run lint, npm run build, and npm test after each fix.
+2) Fix 5: the server writes the NERIS export record after NERIS replies. The browser may record only failures. No schema change.
+3) Fix 6: encrypt Tenant.fireRecoveryApiPassword with AES-256-GCM, tag enc:v1:, key from FIRE_RECOVERY_CREDENTIAL_KEY. Do not create that Render setting. Do not save a Fire Recovery password in production.
+4) Fix 7: add billing.view, default role admin. Hide billing information from users who do not have it.
+5) Do not build the allowed-sender screen, Recover Reports, or the parked UI fixes. Do not merge. Do not touch staging, production, Neon, Render, or Cloudflare.
 
 When I say "this session is coming to an end":
 1) Update the one session file for this working session and ACTIVE_CONTEXT.md
