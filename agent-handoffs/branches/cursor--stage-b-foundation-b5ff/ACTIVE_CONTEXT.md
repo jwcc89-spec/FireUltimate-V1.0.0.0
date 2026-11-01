@@ -19,7 +19,7 @@
 - The allowed-sender screen is **Stage D, repair-plan step 23**. Do not build it unless the user asks. Crescent's sender is `dispatch@co.iroquois.il.us`. Staging `cifpdil` has 0 allowed senders. Do not release this branch until that address is saved, because Fix 3 rejects mail when the list is empty.
 - **Part 3 is done on this practice branch.** Fix 5: the server writes the NERIS export receipt after NERIS replies; the browser can post only a failure. Fix 6: `Tenant.fireRecoveryApiPassword` is AES-256-GCM, tagged `enc:v1:`, key from Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (do not create that setting in a coding session). Fix 7: `billing.view` defaults to admin and hides billing without it. Do not save a Fire Recovery password in production until these fixes are live there. Do not start Step 15, the Fire Recovery email, or a release unless the user asks.
 - The operator finished the practice-site click checks for fixes 8, 9, and 10 on 2026-11-01, about 11:30 a.m. America/Chicago, with no issues. Staging checks stay open until a release.
-- **Next coding task: `docs/plans/security-remediation-plan.md` Part 2B (fixes 11–14).** The second verification on 2026-11-01 was FAIL. Fix 11 first: `canonicalApiPath` lowercases the whole path, so a call number with a capital letter gets "Not found". Get the user's approval before editing the sign-in gate or permission code. Fixes 15–17 need separate decisions.
+- **Fixes 11–14 are built and not released.** Commits `939a629`, `70ac3d5`, `aa9eba0`, `4eaed9e`. Do not rebuild them. The operator still needs to click a report whose number contains a letter. Fix 15 (the admin-key line on the live sites) needs a separate yes. Fix 16 is Stage C and is not built. Fix 17 stays the 15-minute lock. Do not start Stage C until the operator finishes that click, unless they ask.
 - **Part 4 is deferred.** It is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient. The list is on the repair plan, Parked & future.
 - Repair plan canvas (live): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 - Repair plan source in the repo: `docs/plans/canvases/repair-plan.canvas.tsx`. The repo file already records Part 3. The live canvas was still the older Step 10 text when last checked. Republish with WriteCanvas using canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` and the full repo file. Omit the title so "Fire Ultimate repair plan" stays.
@@ -29,7 +29,7 @@
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
 
 ## Latest known status
-- Latest code on this branch is `1857c9c` (fix 10). Before that: `6ecd113` (fix 9), `019f06d` (fix 8), `ba777be` (Part 0 admin-key letter case), `25b30c1` (View Exports status and admin-only export history). Part 3 commits remain `6fba67f` (NERIS export receipts), `abe48a7` (Fire Recovery password encryption), and `55b0bf7` (`billing.view`). Read `git log -1` after pull. Do not rebuild Part 0 or fixes 8–10.
+- Latest code on this branch is `4eaed9e` (fix 14). Before that: `aa9eba0` (fix 13), `70ac3d5` (fix 12), `939a629` (fix 11), then fixes 8–10 and the Part 0 line. Read `git log -1` after pull. Do not rebuild Part 0 or fixes 8–14.
 - Stage A (Steps 1–4) complete. Stage B Steps 5, 6, 7, 8, 9, 9A, and 9B are built here and click-tested on October 31, 2026 (America/Chicago).
 - GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, and `npm test` on Node 20.19.0 against throwaway Postgres. Install is `npm ci --engine-strict=false` because `@prisma/streams-local` (unused by the app) wants Node 22 and `.npmrc` has `engine-strict=true`. Do not change that flag. Do not upgrade Prisma. If Render is still on Node 20 at release, its install needs the same flag.
 - `npm test` is CAD unit tests plus `server/auth/sessions.test.mjs`. It refuses any database that is not `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never point tests at Neon.
@@ -56,7 +56,7 @@ Passed, and the user said so:
 - After a client change, tell the user to reload `http://localhost:5173` once.
 
 ## Current blocker / status
-- Code blockers for Stage B: security fixes 11–14 (Part 2B of `docs/plans/security-remediation-plan.md`). Click-through is done.
+- Fixes 11–14 are built. The operator still clicks a report number that contains a letter. Do not merge. Do not release.
 - **Do not merge** until `Session`, `RolePermission`, `AccountAuditLog`, and `NerisReportChange` exist on staging, with a fresh backup and explicit approval. Those tables are add-only. Prisma schema and migrations change only with explicit approval.
 - Do not set `TRUST_PROXY=1` until Render is confirmed to replace `X-Forwarded-Host`.
 - Do not set `NODE_ENV=production` until a planned release. Keep the admin and demo accounts.
@@ -101,7 +101,7 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-part-3.md`, and `docs/plans/security-remediation-plan.md`. Trust the Progress line at the top of that plan. Part 1 is complete. Part 0 and fixes 8–10 are built on this branch and not released. Do not rebuild them. Parts 2 and 3 are built and not released. Follow-ups 5a and 5b are not built. Do not build the allowed-sender screen (Stage D, step 23). Do not deploy. Do not merge. The operator is click-testing fixes 8–10.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, and `docs/plans/security-remediation-plan.md`. Trust the Progress line at the top of that plan. Fixes 8–14 are built and not released. Do not rebuild them. Fix 15 needs a separate yes before anyone touches `main` or staging. Fix 16 is Stage C. Fix 17 has no code change. Do not build the allowed-sender screen. Do not deploy. Do not merge. The operator is click-testing a report number that contains a letter.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click. If that site is down, start it. Do not restart a healthy proxy.
 3. **Do now:** Wait for the user's next request. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. The allowed-sender screen is Stage D.
 4. **Do not** build Recover Reports, the allowed-sender screen, the Status dropdown, Configure Table drag, or left-menu hiding.
