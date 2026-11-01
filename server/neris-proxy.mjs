@@ -6103,9 +6103,15 @@ app.use((error, request, response, next) => {
     next(error);
     return;
   }
-  console.error(error);
   const unreadable = error?.type === "entity.parse.failed" || error instanceof SyntaxError;
-  response.status(unreadable ? 400 : 500).json({
+  const status = unreadable ? 400 : 500;
+  console.error("[request error]", {
+    method: request.method,
+    path: String(request.path || "").slice(0, 200),
+    status,
+    type: typeof error?.type === "string" ? error.type : error?.name || "Error",
+  });
+  response.status(status).json({
     ok: false,
     message: unreadable ? "The request could not be read." : "Something went wrong.",
   });

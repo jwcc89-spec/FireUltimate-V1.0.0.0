@@ -4,6 +4,7 @@ import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import http from "node:http";
 import test from "node:test";
+import { inspect } from "node:util";
 import bcrypt from "bcryptjs";
 import { encryptSecret } from "../crypto/secretBox.mjs";
 import { permissionForRequest } from "./permissions.mjs";
@@ -1563,6 +1564,72 @@ test("server sign-in passes", async () => {
     assert.equal(badJson.text.includes("neris-proxy"), false);
     assert.equal(badJson.text.includes("SyntaxError"), false);
     assert.equal(badJson.text.includes("<"), false);
+
+    async function postRaw(path, rawBody, { method = "POST", headers = {} } = {}) {
+      return new Promise((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port,
+            path,
+            method,
+            headers: {
+              "content-type": "application/json",
+              origin,
+              host: `127.0.0.1:${port}`,
+              ...headers,
+            },
+          },
+          (res) => {
+            const chunks = [];
+            res.on("data", (chunk) => chunks.push(chunk));
+            res.on("end", () => {
+              const text = Buffer.concat(chunks).toString("utf8");
+              let json = {};
+              try {
+                json = text ? JSON.parse(text) : {};
+              } catch {
+                json = {};
+              }
+              resolve({ status: res.statusCode, json, text });
+            });
+          },
+        );
+        req.on("error", reject);
+        req.write(rawBody);
+        req.end();
+      });
+    }
+
+    async function assertLogsOmit(secret, run) {
+      const saved = [];
+      const original = console.error;
+      console.error = (...args) => {
+        saved.push(args);
+      };
+      try {
+        return await run();
+      } finally {
+        console.error = original;
+        const dumped = saved.map((args) => `${JSON.stringify(args)}\n${inspect(args)}`).join("\n");
+        assert.equal(dumped.includes(secret), false);
+      }
+    }
+
+    const logSecret = "Fake-Log-Secret-9X";
+    const leakedLogin = await assertLogsOmit(logSecret, () =>
+      postRaw("/api/auth/login", `{"username":"chief","password":"${logSecret}`),
+    );
+    assert.equal(leakedLogin.status, 400);
+    assert.equal(leakedLogin.json.message, "The request could not be read.");
+    const leakedSettings = await assertLogsOmit(logSecret, () =>
+      postRaw("/api/fire-recovery/settings", `{"fireRecoveryApiPassword":"${logSecret}`, {
+        method: "PATCH",
+        headers: { cookie: first.pair },
+      }),
+    );
+    assert.equal(leakedSettings.status, 400);
+    assert.equal(leakedSettings.json.message, "The request could not be read.");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();
