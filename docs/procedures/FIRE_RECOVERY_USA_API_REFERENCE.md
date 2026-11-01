@@ -14,6 +14,8 @@ This document is the **project-local reference** for integrating Fire Ultimate w
 
 The structured API details below were **captured from the Fire Recovery Postman / published API guide** (2026). If vendor URLs or fields change, update this file and the server integration together.
 
+**Full vendor copy (2026-11-01):** [`vendor/fire-recovery-usa-api-collection-2026-11-01.json`](vendor/fire-recovery-usa-api-collection-2026-11-01.json) is the complete published Postman collection behind `https://doc.firerecoveryusa.com/`. It holds every endpoint, description, example body, and example response, and contains no credentials. To refresh it, download `https://documenter.gw.postman.com/api/collections/28810799/2sAYdmjSor?segregateAuth=true&versionTag=latest` and save it under a new date. When this file and the vendor copy disagree, the vendor copy wins.
+
 ---
 
 ## Hosts and environments
@@ -102,6 +104,34 @@ Vendor documentation states:
       - **Fire Recovery minimums (from the department, 2026-10-29):** per party: first and last name, address, Is Resident, insurance company, vehicle make and model (helpful: phone, policy number, insurance contact number, VIN, license plate). Per call: incident date, alarm time, cleared time, run number, personnel on scene, location (helpful: law enforcement report number, NFIRS code).
       - **Current gap:** `server/fireRecoveryMapping.mjs` sends only `CostRecovery` with empty `Parties`. Tracked as repair plan Step 15.
 
+**Vendor notes from the full documentation (checked 2026-11-01):**
+
+- **Behavioral notes:** `RespondingUnits` should be sent when unit-level details are available. `Narrative` should be included when incident notes are needed for billing review.
+- **Nested shapes:**
+  - Each `RespondingUnits[]` item has `UnitNumber`, `UnitDescription`, `UnitTypeCode`, `UnitTypeDescription`, `UnitOnsceneDateTime`, `UnitClearDateTime`, `UnitCanceledEnRoute` (bool), `UnitNarrative`, and `UnitActionsTakens[]` (`UnitActionsTakenCode`, `UnitActionsTakenDescription`).
+  - Each `IncidentActionsTaken[]` item has `IncidentActionsTakenCode` and `IncidentActionsTakenDescription`.
+  - `Occupancydata` has `Occupancyid`, `OccupancyName`, `Address`, `City`, `State`, `Zip`, `Phone`, and `Email`.
+  - Party addresses use separate `Address`, `City`, `State`, and `Zip` fields.
+- **Date format:** examples use `0001-01-01T00:00:00`, with no time zone. Whether local time is expected is an open question for the vendor email.
+- **Required fields:** the vendor documentation marks **no** field as required and lists no allowed values for `InvolvementType`. The department's minimums above are the rule.
+- **Success check:** success is `Done["API Response"].Status === 1` with `Message: "Success"` and a `Done.TrackingId`. The client should require both. Today it checks only the tracking ID.
+
+**Decisions for Fire Ultimate (2026-11-01):**
+
+- Only vehicle accidents are billed at launch.
+- Each vehicle produces one party, its **driver**. Passengers are not sent.
+- **Required for each vehicle:**
+  - driver first and last name
+  - driver address
+  - `Isresident`, meaning the driver lives in the fire district. It is always sent; Fire Recovery then bills only the insurance.
+  - `VehicleMake` and `VehicleModel`
+  - `InsuranceCompanyName`, taken from **Vehicle Insurance - Company Name** only. The "Owner - Insurance Company" field is removed, and any saved value is copied into the vehicle field when that field is blank.
+- **Optional for each vehicle:**
+  - `AtFault`, from an optional driver yes/no question.
+  - `Vehicle.Owner`, set when one of the vehicle's persons involved is the owner.
+- The narrative and responding units are sent.
+- Staging is forced to sandbox ID `FD12345678` by a Render setting, and production refuses that ID.
+
 **Success response (example shape):**
 
 ```json
@@ -189,7 +219,7 @@ Use when you **do not already have** a tracking ID.
 **Body (text/JSON):**
 
 - `outputtype`: `"Json"`
-- `SubscriptionKey`
+- `SubscriptionKey` (still listed by the vendor on 2026-11-01, even though Add NERIS Incident for Billing no longer needs one; ask the vendor how to look up a tracking ID without it)
 - `IncidentNumber`
 - `AlarmDatetime` (ISO-style datetime string, e.g. `0001-01-01T00:00:00` in template)
 
@@ -249,6 +279,21 @@ Use when you **do not already have** a tracking ID.
 
 **Success:** `Done.BulkIncidentBillingStatusResponse` — array of per-incident status objects (same financial fields as single call; types may be strings in bulk responses per vendor examples).
 
+**Vendor example (single status):** amounts arrive as strings (`"InvoiceAmount": "2564.00"`), and `InvoiceStatus` is text such as `"Payment Received"`.
+
+### Reporting endpoints (added by the vendor; not used yet)
+
+Both need a `SubscriptionKey` in the body. Dates use `M/D/YYYY`, and results are paged with `Limit` and `Offset`.
+
+| Purpose | Path |
+|--------|------|
+| Get Payment Reconciliation (payments in a date range) | `/Primary/restapi/rhpublicapi/flows/incidentbillingstatus/getpaymentreconciliation` |
+| Get Totals (billing totals in a date range) | `/Primary/restapi/rhpublicapi/flows/incidentbillingstatus/gettotals` |
+
+### Invoice billing (added by the vendor; out of scope)
+
+`Add Invoice For Billing` (`/Primary/restapi/rhpublicapi/flows/v1apis/invoices/addinvoiceforbilling`) and `Get Invoice Billing Status` (`/Primary/restapi/rhpublicapi/flows/v1apis/invoices/getinvoicebillingstatus`) bill businesses for items such as permits and inspections. They are not part of incident billing.
+
 ---
 
 ## Inspection billing (defer — reference only)
@@ -285,4 +330,4 @@ Inspection bodies are large (occupancy, person-to-bill, violations, fees, etc.).
 
 ---
 
-*Last updated: 2026-04-11 — Populated from Postman / API export (incident-first; inspection deferred).*
+*Last updated: 2026-11-01 — Full vendor collection saved under `vendor/`; vendor notes and Fire Ultimate field decisions added. First populated 2026-04-11.*

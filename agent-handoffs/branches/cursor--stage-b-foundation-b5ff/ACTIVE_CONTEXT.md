@@ -23,7 +23,7 @@
 - Repair plan canvas (live): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 - Repair plan source in the repo: `docs/plans/canvases/repair-plan.canvas.tsx`. The repo copy was updated on 2026-11-01 to say Stage B is on staging. The live canvas was not republished. Republish only if the user asks, using canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` and the full repo file. Omit the title so "Fire Ultimate repair plan" stays.
 - Design canvas (older, not the working plan): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618
-- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-01-staging-promote.md`
+- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-01-fire-recovery-plan-review.md`
 - Latest user summary: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-01-session-summary.md`
 - Older notes through 2026-10-31 stay as the record of those days. Trust this file and the security-plan Status line over any "not released" sentence in an older note.
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
@@ -93,9 +93,10 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Fixes 8, 9, and 10 are on staging as of 2026-11-01. Fix 8 rejects API paths with different letter case or a trailing slash. Fix 9 keeps a real account's wrong-password count during a flood and clears a count 15 minutes after the last failure. Fix 10 returns a short JSON message for a broken request instead of a stack trace. Production does not have fixes 8–14 yet.
 
 ## Still open — user must answer before those pieces are built
-- Fire Recovery sandbox Welcome Message account email (Step 13). Support mentioned `support@fireultimatehq.com`; the user has not confirmed which email to send.
-- Step 15 Reporting tab: add Is Resident, require vehicle-party fields, and decide where the incident-level Law Enforcement Number lives.
-- One combined Fire Recovery email is drafted after sandbox testing (Step 17), not before.
+- **Stage C decisions were recorded 2026-11-01.** See `docs/task-2-multitenant-domain-plan.md` ("Fire Recovery decisions (2026-11-01)") and the Cursor plan `~/.cursor/plans/phase_c_fire_recovery_1a6da064.plan.md`. Target: one real Crescent vehicle-accident bill from production by Monday, November 2. Go-live moves later if the staging sandbox test hasn't passed. Stage C code is **not started**.
+- Still open: how the report marks which person was the driver (Affiliation is free text). Also unconfirmed: whether the Welcome Message arrived at `support@fireultimatehq.com`, whether `FIRE_RECOVERY_CREDENTIAL_KEY` exists on staging and production Render, and whether Crescent's billing agreement is set up with Fire Recovery.
+- The user chose to send the combined Fire Recovery email now, in parallel with building, instead of after Step 17.
+- The full vendor API documentation is in `docs/procedures/vendor/fire-recovery-usa-api-collection-2026-11-01.json`.
 
 ## External dependency status
 - Staging Neon and Render were updated on 2026-11-01 for this release: backup branch, Crescent sender row, four tables, and the `d4bbaee` deploy with build command `npm ci --engine-strict=false && npm run build`. Production Neon, production Render, and Cloudflare were not changed by the Stage B promote. Fix 15 was already on production before that promote. Fire Recovery settings were not changed.
@@ -108,4 +109,4 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 3. **Do now:** Wait for the user's next request. Production still needs its own backup, the four tables, Crescent's sender, and a separate approval. Staging already has those. The Allowed Senders screen is on staging.
 4. **Do not** rebuild the Allowed Senders screen. Do not build Recover Reports, the Status dropdown, Configure Table drag, left-menu hiding, canceled-en-route time fill, or per-user Edit My Display. Those last two were parked on 2026-11-01 after the Crescent staging test.
 5. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
-6. Part 3 did not add a database table. Fix 6's key is the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Do not create that setting on Render until a planned release. Step 15 and the Fire Recovery email stay parked. Do not save a Fire Recovery password in production until fixes 5–7 are live there.
+6. Part 3 did not add a database table. Fix 6's key is the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Do not create that setting on Render until a planned release. Step 15 is decided (2026-11-01), apart from how the driver is marked; build it only after the user approves the Stage C build. Do not save a Fire Recovery password in production until fixes 5–7 are live there.
