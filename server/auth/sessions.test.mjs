@@ -280,6 +280,10 @@ test("server sign-in passes", async () => {
         assert.equal(response.status, 401, `${label} -> ${response.status}`);
         assert.equal(response.json.code, "AUTH_REQUIRED", label);
       }
+      if (method === "GET" && !pattern.startsWith("/api/admin") && !APPROVED_PUBLIC.has(`GET ${pattern}`)) {
+        const headResponse = await call(path, { method: "HEAD" });
+        assert.equal(headResponse.status, 401, `HEAD ${pattern} -> ${headResponse.status}`);
+      }
       const upperPath = path.replace(/^\/api/, "/API");
       const mixedPath = path.replace(/^\/api/, "/aPi");
       const slashPath = `${path}/`;
@@ -436,6 +440,17 @@ test("server sign-in passes", async () => {
     const upperBilling = await call("/api/fire-recovery/incidents/26-UPPER", { cookie: first.pair });
     assert.equal(upperBilling.status, 404);
     assert.equal(upperBilling.json.message, "Fire Recovery row not found for this incident.");
+    assert.equal((await call("/api/fire-recovery/incidents", { method: "HEAD", cookie: first.pair })).status, 200);
+    for (const headPath of [
+      "/api/fire-recovery/incidents",
+      "/api/fire-recovery/incidents/26-UPPER",
+      "/api/account-audit",
+      "/api/neris/export-history",
+      "/api/cad/emails",
+    ]) {
+      const headDenied = await call(headPath, { method: "HEAD", cookie: ffCookie.pair });
+      assert.equal(headDenied.status, 403, `HEAD ${headPath} -> ${headDenied.status}`);
+    }
     for (const hiddenPath of [
       "/api/Fire-Recovery/incidents",
       "/api/fire-recovery/incidents/",
@@ -1459,6 +1474,7 @@ test("server sign-in passes", async () => {
     }
 
     assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents"), "billing.view");
+    assert.equal(permissionForRequest("HEAD", "/api/fire-recovery/incidents"), "billing.view");
     assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents/26-1"), "billing.view");
     assert.equal(permissionForRequest("POST", "/api/fire-recovery/submit"), "billing.submit");
     assert.equal(permissionForRequest("GET", "/api/neris/export-history"), "neris.export");

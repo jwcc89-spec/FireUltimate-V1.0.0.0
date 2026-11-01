@@ -1779,7 +1779,8 @@ app.use(async (request, response, next) => {
       next();
       return;
     }
-    const routeKey = `${request.method} ${exactPath}`;
+    const routeMethod = request.method === "HEAD" ? "GET" : request.method;
+    const routeKey = `${routeMethod} ${exactPath}`;
     const isPublic = PUBLIC_API_ROUTES.has(routeKey);
     const mutating = MUTATING_METHODS.has(request.method);
     if (isPublic) {

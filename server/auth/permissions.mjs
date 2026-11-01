@@ -49,7 +49,8 @@ export function roleLevel(role) {
 }
 
 export function permissionForRequest(method, path, body) {
-  const verb = String(method || "").toUpperCase();
+  const upper = String(method || "").toUpperCase();
+  const verb = upper === "HEAD" ? "GET" : upper;
   let route = String(path || "").split("?")[0];
   if (route.length > 1 && route.endsWith("/")) route = route.slice(0, -1);
 
