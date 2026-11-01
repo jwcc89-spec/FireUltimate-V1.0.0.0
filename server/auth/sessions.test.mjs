@@ -1,10 +1,11 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import http from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
-import { PUBLIC_API_ROUTES, normalizeRole, publicHostname } from "./sessions.mjs";
+import { PUBLIC_API_ROUTES, normalizeRole, originAllowed, publicHostname, revokeAllSessions } from "./sessions.mjs";
 
 const DATABASE_URL = "postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable";
 const databaseHost = new URL(DATABASE_URL).hostname;
@@ -23,6 +24,25 @@ const APPROVED_PUBLIC = new Set([
 ]);
 
 test("server sign-in passes", async () => {
+  // Known gap D5: originAllowed compares hostnames only. A different scheme or
+  // port on the same host is accepted. HTTPS-only at Cloudflare limits this
+  // until Stage C. A different host is still refused.
+  assert.equal(
+    originAllowed({
+      headers: { host: "dept.test", origin: "https://dept.test:444" },
+      tenant: { host: "dept.test" },
+    }),
+    true,
+    "D5 known gap: scheme and port are ignored",
+  );
+  assert.equal(
+    originAllowed({
+      headers: { host: "dept.test", origin: "https://evil.test" },
+      tenant: { host: "dept.test" },
+    }),
+    false,
+  );
+
   assert.equal(publicHostname({ headers: { host: "alpha.test", "x-forwarded-host": "bravo.test" } }), "alpha.test");
   process.env.TRUST_PROXY = "1";
   assert.equal(publicHostname({ headers: { host: "alpha.test", "x-forwarded-host": "spoof.test, render.test" } }), "render.test");
@@ -186,6 +206,60 @@ test("server sign-in passes", async () => {
       cookie: first.pair,
     });
     assert.equal(crossed.status, 401);
+
+    const madeUp = await call("/api/auth/session", { cookie: "fu_session=not-a-real-session" });
+    assert.equal(madeUp.status, 401);
+    assert.equal(madeUp.json.code, "AUTH_REQUIRED");
+    const realToken = decodeURIComponent(first.pair.slice("fu_session=".length));
+    const tamperedToken = `${realToken.slice(0, -1)}${realToken.endsWith("a") ? "b" : "a"}`;
+    const tampered = await call("/api/auth/session", { cookie: `fu_session=${encodeURIComponent(tamperedToken)}` });
+    assert.equal(tampered.status, 401);
+    assert.equal(tampered.json.code, "AUTH_REQUIRED");
+    assert.equal((await call("/api/auth/session", { cookie: first.pair })).status, 200);
+
+    const cancelLogin = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password },
+    });
+    assert.equal(cancelLogin.status, 200);
+    const cancelCookie = sessionCookie(cancelLogin.setCookie);
+    const cancelToken = decodeURIComponent(cancelCookie.pair.slice("fu_session=".length));
+    const cancelRow = await prisma.session.findUnique({
+      where: { tokenHash: createHash("sha256").update(cancelToken).digest("hex") },
+    });
+    assert.ok(cancelRow, "expected the extra sign-in to be stored");
+    await prisma.session.update({
+      where: { id: cancelRow.id },
+      data: { revokedAt: new Date() },
+    });
+    const cancelled = await call("/api/auth/session", { cookie: cancelCookie.pair });
+    assert.equal(cancelled.status, 401);
+    assert.equal(cancelled.json.code, "AUTH_REQUIRED");
+    assert.equal((await call("/api/auth/session", { cookie: first.pair })).status, 200);
+
+    const portGapLogin = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password },
+    });
+    assert.equal(portGapLogin.status, 200);
+    const portGapCookie = sessionCookie(portGapLogin.setCookie);
+    const portGap = await call("/api/auth/logout", {
+      method: "POST",
+      cookie: portGapCookie.pair,
+      requestOrigin: "http://127.0.0.1:9",
+      body: {},
+    });
+    assert.equal(portGap.status, 200, "D5 known gap: origin port is ignored");
+    const schemeGap = await call("/api/auth/change-password", {
+      method: "POST",
+      cookie: first.pair,
+      requestOrigin: `https://127.0.0.1:${port}`,
+      body: { currentPassword: "wrong-password", newPassword: "Password9!" },
+    });
+    assert.equal(schemeGap.status, 401, "D5 known gap: origin scheme is ignored");
+    assert.match(schemeGap.json.message, /Current password is incorrect/);
 
     const evil = await call("/api/auth/logout", {
       method: "POST",
@@ -807,6 +881,24 @@ test("server sign-in passes", async () => {
     });
     const idle = await call("/api/auth/session", { cookie: first.pair });
     assert.equal(idle.status, 401);
+
+    const deviceOne = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "Password2!" },
+    });
+    assert.equal(deviceOne.status, 200);
+    const deviceOneCookie = sessionCookie(deviceOne.setCookie);
+    const deviceTwo = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "Password2!" },
+    });
+    assert.equal(deviceTwo.status, 200);
+    const deviceTwoCookie = sessionCookie(deviceTwo.setCookie);
+    await revokeAllSessions(prisma, user.id);
+    assert.equal((await call("/api/auth/session", { cookie: deviceOneCookie.pair })).status, 401);
+    assert.equal((await call("/api/users", { cookie: deviceTwoCookie.pair })).status, 401);
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       const failed = await call("/api/auth/login", {
