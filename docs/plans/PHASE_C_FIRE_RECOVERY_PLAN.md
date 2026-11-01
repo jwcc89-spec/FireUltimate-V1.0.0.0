@@ -1,6 +1,6 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Planning complete except the approvals in §14. No Stage C code is written yet.
+**Status:** Planning complete; all §14 approvals given except Q5 (vendor). No Stage C code is written yet. Start at Wave 1.
 **Updated:** 2026-11-01, about 4:30 p.m. America/Chicago.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
@@ -449,7 +449,8 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - **Done when:** unit tests show the exact vendor JSON for a sample report.
 
 ### Wave 4 — Preview, lock, safe results (§7.4)
-- [ ] Needs §14 Q1 and Q2 answered first.
+- [x] §14 Q1 and Q2 approved (2026-11-01).
+- [ ] Add-only migration: `submitStatus`, `submitStartedAt` on `FireRecoveryIncidentBilling`. Leave existing columns unchanged.
 - [ ] Preview route + hash; submit with hash; atomic lock.
 - [ ] Time limits; `Status 1` check; Sent / Failed / Needs review; never clear a tracking ID.
 - [ ] Resolve-review route.
@@ -596,8 +597,8 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 
 | # | Question | Needed before | Agent's recommendation |
 |---|---|---|---|
-| Q1 | Approve an add-only database change for billing status (`submitStatus`, `submitStartedAt`; optional attempt history table)? | Wave 4 | Yes: Option A (§7.4) |
-| Q2 | Approve permission-map changes for the new routes (preview and submit = `billing.submit`; resolve-review = admin only)? | Wave 4 | Yes |
+| Q1 | ~~Approve an add-only database change for billing status?~~ **Approved 2026-11-01 (operator):** Option A, two add-only columns on `FireRecoveryIncidentBilling`, `submitStatus String @default("")` and `submitStartedAt DateTime?`. The attempt-history table is **not** approved; keep it out. The migration must be rehearsed on staging before production (Wave 8) | — | — |
+| Q2 | ~~Approve permission-map changes for the new routes?~~ **Approved 2026-11-01 (operator):** `POST /api/fire-recovery/preview` and `POST /api/fire-recovery/submit` = `billing.submit`; `POST /api/fire-recovery/resolve-review` = admin only. Add the tests listed in Wave 4 | — | — |
 | Q3 | ~~Which report time is "Time Alarm Received"?~~ **Answered 2026-11-01:** call arrival at dispatch (`incident_time_call_arrival`) | — | — |
 | Q4 | ~~Is "Run Number" Crescent's incident number?~~ **Answered 2026-11-01:** yes (`incident_internal_id`, e.g. `26-079`) | — | — |
 | Q5 | Is the Welcome login also for real bills? | Wave 8 | Vendor email Q1 |
