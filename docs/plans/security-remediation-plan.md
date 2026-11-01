@@ -1,9 +1,9 @@
 # Security Remediation Plan (October 2026)
 
-**Status:** **Stage B release BLOCKED.** The post-remediation verification on 2026-10-31 (see "Verification results" at the end) found that the new sign-in and permission checks can be skipped by changing letter case or adding a trailing slash in the web address. Fixes 8–10 in Part 2 must be built and verified before this branch goes to staging. Part 0 is a separate urgent item that affects production and staging today. Do not merge.
+**Status:** **Stage B release BLOCKED.** Fixes 8, 9, and 10 are already built on this practice branch (2026-11-01, commits `019f06d`, `6ecd113`, `1857c9c`). Automated tests passed. They are not released. Staging checks for them are still open. The October 31 verification at the end of this file is the record of what was found before those fixes. Part 0's one-line admin-key check is on this practice branch only (`ba777be`). It is not on `main` or staging. Do not merge. Do not rebuild fixes 8–10 or the Part 0 line.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Verified:** 2026-10-31, 10:27 p.m. America/Chicago, against commit `a7a9413`. Commit `25b30c1` (View Exports status and admin-only export history) landed afterward and was not part of that verification.
-**Progress (2026-10-31, evening, America/Chicago):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Part 3 code (fixes 5, 6, and 7) is built on this practice branch and not released. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in this coding session. Do not save a Fire Recovery password in production until these fixes are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
+**Verified:** The independent check on 2026-10-31, 10:27 p.m. America/Chicago, was against commit `a7a9413`. Later commits on this branch, through `1857c9c`, include View Exports (`25b30c1`), the Part 0 key check (`ba777be`), and fixes 8–10. Those later commits were not part of that October 31 check. Hands-on click checks of fixes 8–10 on the cloud practice site are still with the operator.
+**Progress (2026-11-01, America/Chicago):** Part 1 is complete. Part 0 code is on this practice branch only and is not on `main` or staging. Part 2 code (fixes 1–4 and 8–10) is built, automated tests passed, and is not released. Staging checks are open. Part 3 code (fixes 5, 6, and 7) is built and not released. Follow-ups 5a (blank validator name) and 5b (older success rows need a new export before billing) are not built. Part 4 is deferred. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in a coding session. Do not save a Fire Recovery password in production until fixes 5–7 are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail. Do not merge.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -160,6 +160,8 @@ Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-s
 **Verification 2026-10-31:** passed locally against a throwaway Postgres. Live checks also confirmed sign-out, the 60-minute idle limit, tampered cookies, and another department's cookie are all refused. Missing: tests for letter-case and trailing-slash variants (fix 8).
 
 ### Fix 8 — Letter case and trailing slashes skip sign-in and permissions (found in verification; CRITICAL and HIGH) — built on this branch, not released
+
+Built in commit `019f06d`. The "Verified locally" bullets below are the 2026-10-31 evidence from before this fix. After the fix, those paths return 404 or 403 and do not return data. Do not rebuild this fix.
 - **Problem:** Express matches routes regardless of letter case and accepts a trailing slash. The sign-in gate only checks paths that start with lowercase `/api` (`server/neris-proxy.mjs` lines 1755 and 1760). The permission lookup compares the exact path (`server/auth/permissions.mjs` line 53).
 - **Verified locally, no session at all:** `GET /API/users`, `/API/account-audit`, `/API/department-details`, `/API/cad/emails`, and `/aPi/users` returned data. `POST /API/incidents` created an incident. `PATCH /API/fire-recovery/settings` changed settings. Account create, rename, and delete still refused, because those handlers check the signed-in person themselves. Another department's data could not be reached this way.
 - **Verified locally, regular signed-in user:** `GET /api/fire-recovery/incidents/` (trailing slash) returned 200. `POST /api/users/` created an account. `PATCH /api/fire-recovery/settings/` changed settings. `POST /api/neris/export/` and `POST /api/fire-recovery/submit/` reached the admin-only handlers. The new `GET /api/neris/export-history` rule from commit `25b30c1` uses the same exact-path check, so it is expected to have the same gap.
@@ -220,7 +222,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 - **Automated tests:** encrypt/decrypt round trip; altered stored text rejected; wrong key rejected; settings reply never contains the password; a failed Fire Recovery call does not leak it; readable-text value refused.
 - **Staging check:** save a password; in Neon the value starts with `enc:v1:` and does not contain the password; one sandbox submission succeeds; Render logs show no password.
 
-**Verification 2026-10-31: VERIFIED FIXED in code (local).** The saved value began with `enc:v1:` and did not contain the password. Neither the settings reply nor the server log contained it. A readable-text value was refused with "re-enter the password". Not verified on Render: the key does not exist there yet. Until fix 8 is in, anyone can overwrite these settings through the letter-case gap. Follow-ups (low): the Fire Recovery subscription key is still stored as readable text (masked on screen). The key setting is hashed with SHA-256 with no minimum strength check, so use a long random value.
+**Verification 2026-10-31: VERIFIED FIXED in code (local).** The saved value began with `enc:v1:` and did not contain the password. Neither the settings reply nor the server log contained it. A readable-text value was refused with "re-enter the password". Not verified on Render: the key does not exist there yet. Fix 8 is on this practice branch, so those letter-case paths are rejected here. Staging and production do not have fix 8 yet. Follow-ups (low): the Fire Recovery subscription key is still stored as readable text (masked on screen). The key setting is hashed with SHA-256 with no minimum strength check, so use a long random value.
 
 ### Fix 7 — Any signed-in user can read billing records (audit MEDIUM-3) — built on this branch, not released
 - **Affected code:** `server/auth/permissions.mjs` (permission list and route mapping); front end `src/api/fireRecovery.ts` and billing display in `src/App.tsx`.
@@ -251,7 +253,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 ## Part 5 — Release order
 
 ### Promote this branch to staging
-0. **Not before** fixes 8, 9, and 10 are built and pass their tests, and the letter-case and trailing-slash checks below pass locally.
+0. Fixes 8, 9, and 10 are already built on this branch (commits `019f06d`, `6ecd113`, `1857c9c`) and their automated tests passed. Local letter-case and trailing-slash checks passed on the practice site. Do not rebuild them. Their staging checks are still open and happen in step 5 below.
 1. Neon backup of `fireultimate-staging`.
 2. Add `dispatch@co.iroquois.il.us` to Crescent's allowed-sender list on staging. The screen for that list is Stage D, repair-plan step 23, not Part 3. This step still has to happen before the release, because Fix 3 rejects mail when the list is empty.
 3. Confirm `NODE_ENV=production` and `CAD_INGEST_SECRET` on the staging API service.
@@ -286,6 +288,8 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 ---
 
 ## Verification results (2026-10-31)
+
+This section is the snapshot from before fixes 8, 9, and 10. It stays as the record of what that check found. Current status is the Progress line at the top. "Blocks release" in the table means the gap blocked a release on 2026-10-31. The code for those gaps is now on this branch and is not released. Do not start coding fixes 8–10 again.
 
 Independent post-remediation verification, finished 10:27 p.m. America/Chicago, against commit `a7a9413`. No application code, settings, databases, or deployments were changed. All live checks ran on a throwaway local database with NERIS pointed at an unreachable address and made-up Fire Recovery credentials. Staging and production were not contacted.
 
@@ -326,4 +330,4 @@ Independent post-remediation verification, finished 10:27 p.m. America/Chicago, 
 `npm run lint` passed. `npm run build` passed. `npm test` passed: 14 suites, 22 tests, including the session integration test (286 assertions) against a throwaway local Postgres.
 
 ### Still to verify on staging or at deployment
-Creating `FIRE_RECOVERY_CREDENTIAL_KEY` on Render and saving a password with it; a real NERIS test export creating its server record; a second export of an already-exported incident; a real dispatch email through the Cloudflare Worker after the sender is added; `NODE_ENV=production` set on both services; `TRUST_PROXY` left unset; browser cache behavior (D2); commit `25b30c1`.
+Creating `FIRE_RECOVERY_CREDENTIAL_KEY` on Render and saving a password with it; a real NERIS test export creating its server record; a second export of an already-exported incident; a real dispatch email through the Cloudflare Worker after the sender is added; `NODE_ENV=production` set on both services; `TRUST_PROXY` left unset; browser cache behavior (D2). Commits after this snapshot, through `1857c9c`, include View Exports (`25b30c1`), the Part 0 key check (`ba777be`), and fixes 8–10. Those are built on this practice branch. Their staging checks are still open. The operator's click check of fixes 8–10 is still open.

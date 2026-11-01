@@ -15,7 +15,7 @@
 
 ## Current focus
 - Stage B (Steps 5–9B) is **built and click-tested** on this practice branch. It is **not released**.
-- Security Part 1 is **complete**. Part 2 code (fixes 4, 1, 2, and 3) and Part 3 code (fixes 5, 6, and 7) are **built and tested** and **not released**. Sign-in limits stay at 5 failures, 10,000 remembered names, 100-character usernames, and 256-character passwords.
+- Security Part 1 is **complete**. Part 2 code (fixes 4, 1, 2, 3, 8, 9, and 10) and Part 3 code (fixes 5, 6, and 7) are **built and tested** and **not released**. Do not rebuild them. Sign-in limits stay at 5 failures, 10,000 remembered names, 100-character usernames, and 256-character passwords.
 - The allowed-sender screen is **Stage D, repair-plan step 23**. Do not build it unless the user asks. Crescent's sender is `dispatch@co.iroquois.il.us`. Staging `cifpdil` has 0 allowed senders. Do not release this branch until that address is saved, because Fix 3 rejects mail when the list is empty.
 - **Part 3 is done on this practice branch.** Fix 5: the server writes the NERIS export receipt after NERIS replies; the browser can post only a failure. Fix 6: `Tenant.fireRecoveryApiPassword` is AES-256-GCM, tagged `enc:v1:`, key from Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (do not create that setting in a coding session). Fix 7: `billing.view` defaults to admin and hides billing without it. Do not save a Fire Recovery password in production until these fixes are live there. Do not start Step 15, the Fire Recovery email, or a release unless the user asks.
 - **Part 4 is deferred.** It is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient. The list is on the repair plan, Parked & future.
@@ -27,7 +27,7 @@
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
 
 ## Latest known status
-- Latest code on this branch: Part 3. `6fba67f` records NERIS export receipts on the server. `abe48a7` encrypts the Fire Recovery password. `55b0bf7` adds `billing.view`. Read `git log -1` after pull. Earlier the same day: `f3b59e5` (CAD secret required everywhere) and `2e99f11` (empty sender list rejected). Docs through `0b356cd` marked Part 1 complete.
+- Latest code on this branch is `1857c9c` (fix 10). Before that: `6ecd113` (fix 9), `019f06d` (fix 8), `ba777be` (Part 0 admin-key letter case), `25b30c1` (View Exports status and admin-only export history). Part 3 commits remain `6fba67f` (NERIS export receipts), `abe48a7` (Fire Recovery password encryption), and `55b0bf7` (`billing.view`). Read `git log -1` after pull. Do not rebuild Part 0 or fixes 8–10.
 - Stage A (Steps 1–4) complete. Stage B Steps 5, 6, 7, 8, 9, 9A, and 9B are built here and click-tested on October 31, 2026 (America/Chicago).
 - GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, and `npm test` on Node 20.19.0 against throwaway Postgres. Install is `npm ci --engine-strict=false` because `@prisma/streams-local` (unused by the app) wants Node 22 and `.npmrc` has `engine-strict=true`. Do not change that flag. Do not upgrade Prisma. If Render is still on Node 20 at release, its install needs the same flag.
 - `npm test` is CAD unit tests plus `server/auth/sessions.test.mjs`. It refuses any database that is not `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never point tests at Neon.
@@ -99,7 +99,7 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-part-3.md`, and `docs/plans/security-remediation-plan.md`. Part 1 is complete. Parts 2 and 3 are built and not released. Part 0's one-line admin-key check is built on this branch only. Do not rebuild it. Do not start fixes 8–10 unless the user asks. Do not build the allowed-sender screen (Stage D, step 23). Do not deploy. Do not merge.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-part-3.md`, and `docs/plans/security-remediation-plan.md`. Trust the Progress line at the top of that plan. Part 1 is complete. Part 0 and fixes 8–10 are built on this branch and not released. Do not rebuild them. Parts 2 and 3 are built and not released. Follow-ups 5a and 5b are not built. Do not build the allowed-sender screen (Stage D, step 23). Do not deploy. Do not merge. The operator is click-testing fixes 8–10.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click. If that site is down, start it. Do not restart a healthy proxy.
 3. **Do now:** Wait for the user's next request. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. The allowed-sender screen is Stage D.
 4. **Do not** build Recover Reports, the allowed-sender screen, the Status dropdown, Configure Table drag, or left-menu hiding.
