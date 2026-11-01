@@ -11,7 +11,7 @@
 - `docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md`: vendor notes (send Narrative and RespondingUnits, nested shapes, date format, no required fields listed, Status 1 success check), new reporting and invoice endpoints, and today's field decisions.
 - `docs/plans/canvases/repair-plan.canvas.tsx` (repo copy; the live canvas was not republished): Steps 11–15 and 18, 11 new Decisions rows, Still open, and the vendor email questions.
 - `docs/task-2-multitenant-domain-plan.md`: Fire Recovery decisions (2026-11-01).
-- Cursor plan `~/.cursor/plans/phase_c_fire_recovery_1a6da064.plan.md`: rewritten for the Monday go-live.
+- Stage C plan rewritten for the Monday go-live and saved in the repo as `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` (source of truth). It started as a local Cursor plan file, which other agents cannot see.
 
 ## Decisions (user, 2026-11-01)
 - **Go-live:** one real Crescent bill from production by Monday, November 2. It slips if the staging sandbox test hasn't passed.
