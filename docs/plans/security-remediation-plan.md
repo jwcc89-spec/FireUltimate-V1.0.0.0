@@ -1,9 +1,9 @@
 # Security Remediation Plan (October 2026)
 
-**Status:** **Stage B release BLOCKED.** Fixes 8, 9, and 10 are already built on this practice branch (2026-11-01, commits `019f06d`, `6ecd113`, `1857c9c`). Automated tests passed. They are not released. Staging checks for them are still open. The October 31 verification at the end of this file is the record of what was found before those fixes. Part 0's one-line admin-key check is on this practice branch only (`ba777be`). It is not on `main` or staging. Do not merge. Do not rebuild fixes 8–10 or the Part 0 line.
+**Status:** **Stage B release BLOCKED.** The second independent verification (2026-11-01) result is **FAIL**. Fixes 11–14 in Part 2B must be built and verified first. The next agent starts at Part 2B. Fixes 8, 9, and 10 are already built on this practice branch (2026-11-01, commits `019f06d`, `6ecd113`, `1857c9c`). Automated tests passed. They are not released. Staging checks for them are still open. The October 31 verification at the end of this file is the record of what was found before those fixes. Part 0's one-line admin-key check is on this practice branch only (`ba777be`). It is not on `main` or staging. Do not merge. Do not rebuild fixes 8–10 or the Part 0 line.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
 **Verified:** The independent check on 2026-10-31, 10:27 p.m. America/Chicago, was against commit `a7a9413`. Later commits on this branch, through `1857c9c`, include View Exports (`25b30c1`), the Part 0 key check (`ba777be`), and fixes 8–10. Those later commits were not part of that October 31 check. Hands-on click checks of fixes 8–10 on the cloud practice site are still with the operator.
-**Progress (2026-11-01, America/Chicago):** Part 1 is complete. Part 0 code is on this practice branch only and is not on `main` or staging. Part 2 code (fixes 1–4 and 8–10) is built, automated tests passed, and is not released. Staging checks are open. Part 3 code (fixes 5, 6, and 7) is built and not released. Follow-ups 5a (blank validator name) and 5b (older success rows need a new export before billing) are not built. Part 4 is deferred. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in a coding session. Do not save a Fire Recovery password in production until fixes 5–7 are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail. Do not merge.
+**Progress (2026-11-01, America/Chicago):** Part 1 is complete. Part 0 code is on this practice branch only and is not on `main` or staging. Part 2 code (fixes 1–4 and 8–10) is built, automated tests passed, and is not released. Staging checks are open. Part 3 code (fixes 5, 6, and 7) is built and not released. Follow-ups 5a (blank validator name; not a regression, see fix 16) and 5b (older success rows need a new export before billing) are not built. Part 2B (fixes 11–17, from the November 1 verification) is planned and not started. Part 4 is deferred. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in a coding session. Do not save a Fire Recovery password in production until fixes 5–7 are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail. Do not merge.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -194,6 +194,190 @@ Built in commit `019f06d`. The "Verified locally" bullets below are the 2026-10-
 
 ---
 
+## Part 2B — Next agent: fixes from the November 1 verification
+
+**Status: not started. Plan only. The 2026-11-01 verification result was FAIL** (see "Verification results (2026-11-01)" at the end of this file). Fixes 1–10 and the Part 0 line held up. The verification found one regression caused by fix 8 (fix 11) and three smaller gaps (fixes 12–14). Fixes 11–14 block the Stage B release. Fix 15 is a separate small change for `main` and staging. Fixes 16 and 17 are not Stage B blockers.
+
+### Before you start (next agent)
+1. Read `cursoragent-context.md`, `docs/task-2-multitenant-domain-plan.md`, `.cursor/project-context.md`, and this file. Restate the task, the constraints, and the acceptance checks to the user.
+2. Get the user's approval before you edit `server/neris-proxy.mjs` or `server/auth/permissions.mjs`. Both hold authorization code. No fix in this part changes the Prisma schema or a migration. If a fix starts to need one, stop and ask.
+3. Stay on `cursor/stage-b-foundation-b5ff`. Do not open a new branch for fixes 11–14 and 16–17. Fix 15 is the only one that goes on its own branch, and only after a separate approval.
+4. Run `git pull origin cursor/stage-b-foundation-b5ff`. The code these steps were written against is `1857c9c`. Line numbers below are from that commit. Search for the quoted code if they have moved.
+5. Start a throwaway local Postgres for the tests. `npm test` accepts only `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never point tests at Neon.
+6. Build order: 11, 12, 13, 14. Then 16 if approved. Then 17 if approved. One commit per fix. After each fix run `npm run lint`, `npm run build`, and `npm test`, and fix anything that fails before you move on.
+
+### Fix 11 — Capital letters in a call number or ID now give "Not found" (HIGH, regression from fix 8) — Stage B blocker
+- **Problem:** The sign-in gate compares the request path with `canonicalApiPath(path)`, and that function lowercases the **whole** path, including the call number or ID at the end. Any path that holds a capital letter gets `404 {"ok":false,"message":"Not found."}` before it reaches its handler. That covers every route with a `:callNumber` or `:id` value that contains a capital letter.
+- **Evidence (local, 2026-11-01):** As an admin, `GET /api/neris/drafts/26-RECEIPT`, `GET /api/neris/drafts/26-RECEIPT/history`, and `GET /api/fire-recovery/incidents/26-RECEIPT` all returned the generic 404. The same requests with `26-receipt` reached the handlers.
+- **Who is affected:** Incident IDs and user IDs are lowercase database IDs, so those routes are not affected today. NERIS drafts and Fire Recovery billing rows use the call number. A department whose call numbers contain a letter (for example `26-FD0012`) cannot open, save, unlock, delete, or view the history of that report, and cannot read its billing row.
+- **Affected code:** `server/neris-proxy.mjs`, `canonicalApiPath` (lines 1556–1561), used once by the sign-in gate (lines 1766–1776). Nothing else calls it.
+- **Smallest safe change:** Lowercase only the `/api` prefix check. Keep the rest of the path exactly as it was sent:
+
+```js
+/** API path with one trailing slash removed. Empty when the path is not under /api. Letters after /api keep their case. */
+function canonicalApiPath(path) {
+  const exact = String(path || "").split("?")[0];
+  if (!exact.toLowerCase().startsWith("/api")) return "";
+  const trimmed = exact.length > 1 && exact.endsWith("/") ? exact.slice(0, -1) : exact;
+  return `/api${trimmed.slice(4)}`;
+}
+```
+
+  After this change, `exactPath !== canonical` is true only when the prefix is not exactly lowercase `/api` (for example `/API/users` or `/aPi/users`) or when the path ends in `/`. Both still get the 404.
+- **Why this stays safe:** A capital letter in a fixed part of the path, such as `/api/Users` or `/api/Fire-Recovery/incidents`, now passes the gate. It still needs a session (401 without one). It cannot reach a handler, because `case sensitive routing` (line 82) stays on. For a signed-in user, `permissionForRequest` returns no permission for that spelling, but there is no handler for it either, so nothing is read or changed. Do not turn off `case sensitive routing` or `strict routing`. Do not change `requirePlatformAdmin` (line 1565); it already lowercases.
+- **Optional, same commit:** any API path that no route matches currently gets Express's default HTML "Cannot GET" page. To return JSON instead, add this just before the final error handler (line 6093):
+
+```js
+app.use((request, response, next) => {
+  if (!String(request.path || "").toLowerCase().startsWith("/api")) {
+    next();
+    return;
+  }
+  response.status(404).json({ ok: false, message: "Not found." });
+});
+```
+
+  The front-end catch-all at line 6084 already skips `/api` paths, so this does not affect pages.
+- **Depends on:** user approval (sign-in gate code). Nothing else.
+- **Regression risk:** low. One function. The danger is going too far, for example lowercasing the path somewhere else or removing the prefix check. The tests below catch both.
+- **Automated tests (`server/auth/sessions.test.mjs`):**
+  1. In the route loop (lines 266–300), change the placeholder from `"missing"` to `"MiXeD-1"`: `pattern.replace(/:[A-Za-z0-9_]+/g, "MiXeD-1")`. Signed out, every exact path must still return 401 with `AUTH_REQUIRED`. Every `/API`, `/aPi`, and trailing-slash variant must still return 401 or 404, and `/api/admin` variants 403.
+  2. Add a fourth variant that capitalizes the first fixed word after `/api` (for example `/api/USERS`, `/api/NERIS/drafts/MiXeD-1`). Signed out, it must be 401 or 404 and never `ok: true`.
+  3. Add a positive check, signed in as the admin (`first.pair`): `PATCH /api/neris/drafts/26-UPPER` with `{ payload: { reportStatus: "Draft", formValues: {} } }` returns 200. `GET /api/neris/drafts/26-UPPER` returns 200. `GET /api/neris/drafts/26-UPPER/history` returns 200. `GET /api/fire-recovery/incidents/26-UPPER` returns 404 with the message `Fire Recovery row not found for this incident.` (the handler's own message, not `Not found.`). Copy the request style from the draft test at line 642.
+  4. Signed in as the regular user (`ffCookie.pair`): `GET /api/Fire-Recovery/incidents`, `GET /api/fire-recovery/incidents/`, and `GET /API/fire-recovery/incidents` must each return 403 or 404, and never `ok: true`. Do the same for `GET /api/Users` and `GET /api/Account-Audit`.
+- **Staging check (after promotion, test account only):** open a report whose call number contains a capital letter; it loads and saves. Signed out, `/API/users` returns 404 and `/api/users` returns 401.
+
+### Fix 12 — A badly formed request body is written to the server log (MEDIUM) — Stage B blocker
+- **Problem:** The final error handler (line 6098) runs `console.error(error)`. When JSON cannot be read, Express puts the raw request text on `error.body`, so the whole body is printed in the Render log. A login or Fire Recovery settings request with one broken character would log the password in readable text.
+- **Evidence (local, 2026-11-01):** A malformed `PATCH /api/fire-recovery/settings` body holding a made-up Fire Recovery password showed up word for word in the server output.
+- **Affected code:** `server/neris-proxy.mjs`, final error handler (lines 6093–6104). Leave the reply it sends unchanged.
+- **Smallest safe change:** Log a short fixed summary. Never log the body, the headers, the cookie, or the error object:
+
+```js
+app.use((error, request, response, next) => {
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+  const unreadable = error?.type === "entity.parse.failed" || error instanceof SyntaxError;
+  const status = unreadable ? 400 : 500;
+  console.error("[request error]", {
+    method: request.method,
+    path: String(request.path || "").slice(0, 200),
+    status,
+    type: typeof error?.type === "string" ? error.type : error?.name || "Error",
+  });
+  response.status(status).json({
+    ok: false,
+    message: unreadable ? "The request could not be read." : "Something went wrong.",
+  });
+});
+```
+
+  Do not log `error.message` here. For a parse error it can quote part of the body.
+- **Also search for the same pattern elsewhere:** `rg -n "console\.(error|log|warn)\(" server/neris-proxy.mjs`. Any call that passes `request.body`, a whole `error` object from a route that reads passwords, or `request.headers` should log a fixed text plus the route name instead. Do not change log lines that print only fixed text.
+- **Depends on:** nothing. Can be built before fix 11 if the user prefers.
+- **Regression risk:** less detail in the logs when debugging a 500. The method, path, and error type stay.
+- **Automated tests (`server/auth/sessions.test.mjs`, next to the bad-JSON test at lines 1490–1527):** replace `console.error` with a function that saves its arguments, for the length of one request, and restore it in `finally`. Send `{"username":"chief","password":"Fake-Log-Secret-9X` (broken on purpose) to `/api/auth/login`. Assert the reply is still 400 with `The request could not be read.` Assert that no saved log line contains `Fake-Log-Secret-9X`, using `JSON.stringify` plus `util.inspect` of every argument. Repeat with a broken body on `PATCH /api/fire-recovery/settings`, signed in as the admin.
+- **Staging check:** send one broken JSON body with a made-up value to `/api/auth/login`. Search the staging API's Render log for that value; it must not be there.
+
+### Fix 13 — A HEAD request skips the permission check (LOW) — Stage B blocker
+- **Problem:** Express answers a `HEAD` request with the matching `GET` handler and drops only the body. `permissionForRequest` checks `verb === "GET"`, so `HEAD` gets no permission at all. A signed-in regular user can send `HEAD` to admin-only list routes. The reply has no body, but its status and `Content-Length` show whether a record exists and roughly how large the list is.
+- **Evidence (local, 2026-11-01):** A regular user's `HEAD /api/fire-recovery/incidents`, `/api/account-audit`, `/api/neris/export-history`, and `/api/cad/emails` returned 200 with a length. `HEAD` on an existing billing row returned 200 with length 437. A missing row returned 404.
+- **Affected code:** `server/auth/permissions.mjs`, `permissionForRequest` (line 52). `server/neris-proxy.mjs`, the sign-in gate's public-route lookup (line 1782).
+- **Smallest safe change (recommended):** treat `HEAD` as `GET` for the permission lookup and the public-route lookup:
+
+```js
+// server/auth/permissions.mjs, first line of permissionForRequest
+const upper = String(method || "").toUpperCase();
+const verb = upper === "HEAD" ? "GET" : upper;
+```
+
+```js
+// server/neris-proxy.mjs, sign-in gate
+const routeMethod = request.method === "HEAD" ? "GET" : request.method;
+const routeKey = `${routeMethod} ${exactPath}`;
+```
+
+  `isSelfNameOnlyUserPatch` needs no change; it only allows `PATCH`.
+- **Alternative (also safe):** in the sign-in gate, answer `HEAD` on any API path with `405 {"ok":false,"message":"Method not allowed."}` and an `Allow: GET` header. Use this only if the user prefers it. Before choosing it, check the Render health-check setting for both API services; if either uses `HEAD` on an `/api` path, choose the recommended change instead.
+- **Depends on:** user approval (permission code). Build after fix 11.
+- **Regression risk:** very low. No page in the app sends `HEAD`.
+- **Automated tests:** in the route loop, for every `GET` route also send `HEAD` signed out and expect 401. In the regular-user section, send `HEAD` to `/api/fire-recovery/incidents`, `/api/fire-recovery/incidents/<an existing call number>`, `/api/account-audit`, `/api/neris/export-history`, and `/api/cad/emails`, and expect 403 each time. As the admin, `HEAD /api/fire-recovery/incidents` returns 200. The test helper `call` must allow an empty body for `HEAD`; check that it does not try to read JSON from an empty reply.
+- **Staging check:** with a regular test account, `curl -I` (which sends `HEAD`) to `/api/account-audit` with that account's cookie returns 403.
+
+### Fix 14 — 49 routes still send the internal error text to the browser (LOW-1, the rest of fix 10) — Stage B blocker
+- **Problem:** Fix 10 added a safe final handler, but 49 route `catch` blocks still reply with `error instanceof Error ? error.message : "…"`. When the database is down or a query fails, the browser receives the raw Prisma text, which can include table names, the database host, and its port.
+- **Evidence (local, 2026-11-01):** with the database stopped, `GET /api/users` as an admin returned the raw Prisma message including `127.0.0.1:5432`.
+- **Affected code:** `server/neris-proxy.mjs`, lines 1659, 1698, 1757, 1818, 1854, 1918, 1935, 1975, 2004, 2340, 2383, 2438, 2542, 2570, 2658, 2741, 2784, 2808, 2872, 2936, 3071, 3142, 3365, 3394, 3427, 3500, 3555, 3600, 3650, 3714, 3765, 3788, 3888, 3987, 4016, 4409, 4468, 4982, 5050, 5183, 5246, 5296, 5326, 5366, 5385, 5453, 5644, 5897, and 6069. Find them again with `rg -n "error instanceof Error \? error.message" server/neris-proxy.mjs`.
+- **Smallest safe change (an allow-list, not a block-list):**
+  1. Add a small helper near the top of `server/neris-proxy.mjs`:
+
+```js
+/** Errors whose message is written for the person using the app. */
+class PublicError extends Error {}
+
+/** Message safe to send to the browser. Anything not marked public gets the fixed fallback. */
+function publicErrorMessage(error, fallback) {
+  if (error instanceof PublicError) return error.message;
+  console.error("[route error]", { name: error?.name || "Error", code: error?.code || "" });
+  return fallback;
+}
+```
+
+  2. In each of the 49 `catch` blocks, replace `error instanceof Error ? error.message : "X"` with `publicErrorMessage(error, "X")`. Keep each route's own fallback text and status code.
+  3. Mark only messages written for people as public. Change `throw new Error(` to `throw new PublicError(` at `server/neris-proxy.mjs` lines 796, 801, 845, 853, 860, 864 (NERIS sign-in messages), and 1110, 1115, 1124, 1127, 1130 (report checks such as "Missing incident number."). Do the same in `server/cadDispatchRuleEngine.mjs` (rule checks such as "Rules must be an array.") by exporting `PublicError` from a tiny shared file, for example `server/http/publicError.mjs`, and importing it in both places. Before marking a message public, read it and confirm it holds no secret, URL with a key, or database detail.
+  4. Leave the Fire Recovery replies as they are: line 3788 already passes through `scrubSecret`. Leave every reply that sends a fixed text (for example `"Missing tenant context."`) unchanged.
+  5. Do not change the sign-in gate's `catch` (line 1818) to send detail. It becomes `publicErrorMessage(error, "Sign-in check failed.")`.
+- **Depends on:** fix 12 (so the new log lines follow the same no-body rule).
+- **Regression risk:** medium. A screen that used to show a useful message may now show the fallback. The main ones to check are NERIS export and validate (NERIS sign-in problems), CAD rule save (rule errors), and the admin tenant tools. Click each of those after the change.
+- **Automated tests:**
+  1. Unit test (new file `server/http/publicError.test.mjs`, added to the `npm test` list in `package.json`): a `PublicError` message passes through; a plain `Error("Invalid prisma.user.findMany() invocation … 127.0.0.1:5432")` returns the fallback.
+  2. Integration test in `server/auth/sessions.test.mjs`: temporarily replace one Prisma method used by `GET /api/users` (for example `prisma.user.findMany`) with a function that throws `new Error("Invalid prisma call at 127.0.0.1:5432")`, call the route as the admin, restore the method in `finally`, and assert the reply has no `prisma` (any letter case) and no `127.0.0.1`.
+  3. Keep the existing NERIS and CAD rule tests passing; they show that public messages still reach the screen.
+- **Staging check:** none that is safe to force. Confirm a normal NERIS validation error and a CAD rule mistake still show a readable message.
+
+### Fix 15 — Put the Part 0 admin-key line on `main` and staging (operational; separate approval)
+- **Problem:** `main` (`3f9b97a`, line 1618) and staging (`2d985fa`, line 1633) still have `if (!request.path.startsWith("/api/admin")) {`. On those live servers, `/API/admin/...` skips the platform admin key. This was re-checked on 2026-11-01.
+- **Smallest safe change:** the same one line used on this branch: `if (!request.path.toLowerCase().startsWith("/api/admin")) {`. Nothing else. Do not bring fixes 8–14 or Stage B with it.
+- **How (only after the user approves this exact step):**
+  1. `git fetch origin main` and create `cursor/admin-key-case-main-44c8` (or the user's preferred name) from `origin/main`.
+  2. Change that one line. Add one test only if the branch already has a server test file. `main` does not run the session test.
+  3. `npm run lint` and `npm run build`. Open a pull request into `main`. The user merges it.
+  4. Repeat from `origin/submenu/neris-golive-cifpd` with a pull request into that branch, or let the user merge `main` into staging.
+- **Check after each deploy:** `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<that environment's API>/API/admin/tenants -H "Content-Type: application/json" -d '{}'` returns `403`. Do not send a real tenant body. Then confirm CAD email still arrives and normal sign-in still works.
+- **Until it is deployed:** keep watching Render logs for `/API` paths, and rerun the two Part 0 Step 1 queries after any unexpected log line.
+
+### Fix 16 — NERIS export record follow-ups (5a and 5b) — Stage C, not a Stage B blocker
+- **5a correction (2026-11-01):** the October 31 verification said the browser used to fill in the validator name. That was wrong. At the original audit commit `7e6b991`, the browser also passed `""` for the validator name (`appendExportHistoryRecord(exportResult, "", statusForHistory)`). The blank value is not a regression. Only build this if the user wants a validator name recorded.
+  - **If approved:** the browser sends `validatorName` inside the `POST /api/neris/export` body (`src/pages/NerisReportFormPage.tsx`, where the export request body is built from `buildExportRequestConfig`). The server stores `String(trimValue(body.validatorName) ?? "").slice(0, 200)` instead of `""` at line 3014 of `server/neris-proxy.mjs`. The value is display-only and must never affect billing readiness. Test: an export with `validatorName: "Lt Smith"` stores `Lt Smith`; a 5,000-character value is cut to 200.
+- **5b (re-export before billing):** success records written before fix 5 lack the server mark and no longer count for billing. Do not write code to "upgrade" old rows; that would bring back the forgery fix 5 closed. Instead, on staging, export one already-exported test incident a second time and record how NERIS answers (update or duplicate). Write the answer here. If NERIS updates cleanly, the Stage C release note tells billing staff to re-export before submitting. If it duplicates, stop and ask the user.
+
+### Fix 17 — Anyone can lock a real account with five wrong passwords (LOW; decision needed) — not a Stage B blocker
+- **Problem:** fix 9 made the lock reliable, which also means anyone who knows a username can lock it for 15 minutes, again and again. There is no admin unlock other than restarting the server.
+- **Evidence (local, 2026-11-01):** five wrong passwords locked a known account. The correct password was then refused for 15 minutes.
+- **Why it is not simple:** a per-address limit needs the real visitor address, but `TRUST_PROXY` stays unset on Render, so the server sees the proxy's address, not the visitor's. Do not set `TRUST_PROXY` to solve this.
+- **Options for the user to choose (do not build without a choice):**
+  1. **Keep as is (recommended for Stage B).** Document it. Restriction: if an account is being locked on purpose, the program owner restarts the API service, and a Cloudflare rate-limit rule is added on `/api/auth/login`.
+  2. **Admin unlock button.** A department admin clears one user's lock. Small code change in `server/auth/sessions.mjs` (export a `clearLoginLock(tenantId, username)`) plus one admin route protected by `users.manage`. No schema change.
+  3. **Slow down instead of lock.** After five failures, each further attempt waits longer, up to 30 seconds, instead of a hard lock. Bigger change to the lockout tests.
+- **Tests for option 2 if chosen:** locked account → admin clears it → the correct password works; a regular user gets 403 on the clear route; a different department's admin cannot clear it.
+
+### Still deferred (unchanged by the November 1 verification)
+D1 (suspended departments), D2 (browser cache after expiry), D3 (readable-text password fallback in `verifyPassword`, lines 236–239), D5 (Origin scheme and port), D6 (login timing), and D7 (development warnings) stay in Part 4 with the same restrictions. D3's condition was re-checked: the operator reported the readable-text count as `0` in both databases.
+
+### Done means (for the next agent to report)
+- Fixes 11–14 are committed one at a time on `cursor/stage-b-foundation-b5ff`, each with its tests.
+- `npm run lint`, `npm run build`, and `npm test` pass after the last commit. Report the test count.
+- A local check, signed in as the admin, shows a report with call number `26-UPPER` opens and saves.
+- A local check shows a broken JSON body with a made-up secret does not appear in the server output.
+- A local check shows a regular user's `HEAD /api/account-audit` returns 403.
+- A local check with the database stopped shows `GET /api/users` returns a fixed message with no `prisma` and no `127.0.0.1`.
+- This file's Status and Progress lines are updated. Fixes 15–17 are listed as still open unless the user approved them.
+- Release prerequisites are unchanged and still open: `dispatch@co.iroquois.il.us` saved for Crescent, `FIRE_RECOVERY_CREDENTIAL_KEY` created on Render by the operator (not in a coding session), and `NODE_ENV=production` on both API services at release.
+
+---
+
 ## Part 3 — Must be fixed before Fire Recovery goes live (Stage C)
 
 Build order: fix 5, then 6, then 7. All three are built on this practice branch and not released.
@@ -210,7 +394,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 - **Staging check:** confirm staging's `NERIS_BASE_URL` points at the NERIS test system; export one report and see one success row with the real NERIS ID; validation still works; a forced failure shows one failed row.
 
 **Verification 2026-10-31: VERIFIED FIXED (local and automated tests).** A browser "success" post returned 400. The automated test fakes NERIS success and error replies, and a planted fake record was not accepted for billing. Two follow-ups:
-- **5a — Validator name is now blank** on export records (`validatorName: ""`, `server/neris-proxy.mjs` line 2996). The browser used to fill it in. Send it with the export request and store it on the server record.
+- **5a — Validator name is blank** on export records (`validatorName: ""`, `server/neris-proxy.mjs` line 3014). Corrected 2026-11-01: the browser also sent a blank value before fix 5, so this is not a regression. Optional; see fix 16.
 - **5b — Earlier exports no longer count for billing.** Success records written before this change lack the server mark, so those incidents must be exported to NERIS again before billing. On staging, confirm how NERIS answers a second export of the same incident before relying on this.
 
 ### Fix 6 — Fire Recovery password stored as readable text (audit HIGH-2; repair plan Stage C Step 13) — built on this branch, not released
@@ -254,6 +438,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 
 ### Promote this branch to staging
 0. Fixes 8, 9, and 10 are already built on this branch (commits `019f06d`, `6ecd113`, `1857c9c`) and their automated tests passed. Local letter-case and trailing-slash checks passed on the practice site. Do not rebuild them. Their staging checks are still open and happen in step 5 below.
+0a. Fixes 11, 12, 13, and 14 (Part 2B) must be built, pass `npm run lint`, `npm run build`, and `npm test`, and pass their local checks before this branch goes to staging. Fix 11 matters most: without it, reports whose call number has a capital letter cannot be opened.
 1. Neon backup of `fireultimate-staging`.
 2. Add `dispatch@co.iroquois.il.us` to Crescent's allowed-sender list on staging. The screen for that list is Stage D, repair-plan step 23, not Part 3. This step still has to happen before the release, because Fix 3 rejects mail when the list is empty.
 3. Confirm `NODE_ENV=production` and `CAD_INGEST_SECRET` on the staging API service.
@@ -279,6 +464,11 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 
 - **Part 0:** the read-only checks are done. The one-line fix is approved and built on this practice branch only. Placing that same line on `main` and staging is still a separate approval. Do not merge this branch to do it.
 - **Fixes 8, 9, and 10:** approved and built on this practice branch on 2026-11-01. Not released. Live sites stay unchanged until a separate approval.
+- **Fixes 11–14 (Part 2B):** need approval before coding, because 11 and 13 change the sign-in gate and the permission lookup. All four block the Stage B release.
+- **Fix 13:** treat `HEAD` as `GET` (recommended) or refuse `HEAD` on API paths with 405.
+- **Fix 15:** separate approval to put the one admin-key line on `main` and staging.
+- **Fix 16:** whether a validator name should be recorded at all (5a). How NERIS answers a second export (5b) is checked on staging.
+- **Fix 17:** keep the attacker-triggered lockout as is (recommended for Stage B), add an admin unlock, or slow down instead of locking.
 - Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
 - Allowed-sender screen: Stage D, step 23. Not Part 3. Crescent's address is `dispatch@co.iroquois.il.us`.
 - Part 3 code is built on this practice branch and not released: fix 5, then 6, then 7. Fix 6 keeps the plan's Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (a different value on staging and production; a copy stays in the password manager). Do not create that setting during a coding session. Fix 7's `billing.view` default is admin, matching the October 29 decision that billing is admin-only.
@@ -331,3 +521,40 @@ Independent post-remediation verification, finished 10:27 p.m. America/Chicago, 
 
 ### Still to verify on staging or at deployment
 Creating `FIRE_RECOVERY_CREDENTIAL_KEY` on Render and saving a password with it; a real NERIS test export creating its server record; a second export of an already-exported incident; a real dispatch email through the Cloudflare Worker after the sender is added; `NODE_ENV=production` set on both services; `TRUST_PROXY` left unset; browser cache behavior (D2). Commits after this snapshot, through `1857c9c`, include View Exports (`25b30c1`), the Part 0 key check (`ba777be`), and fixes 8–10. Those are built on this practice branch. Their staging checks are still open. The operator's click check of fixes 8–10 is still open.
+
+---
+
+## Verification results (2026-11-01)
+
+Second independent post-remediation verification, 2026-11-01 (America/Chicago), against code commit `1857c9c` (`ae12854` after it changes documentation only). No application code, settings, databases, or deployments were changed. Live checks ran on a throwaway local database (`fu_session_test`) with NERIS pointed at an unreachable address and made-up Fire Recovery credentials. The database was dropped afterward. Staging and production were not contacted. `main` (`3f9b97a`) and staging (`2d985fa`) were read from git only.
+
+**Overall: FAIL.** The fixes from the first verification work. Fix 8 introduced a regression (fix 11), and three smaller gaps remain (fixes 12–14). The fix plan is Part 2B.
+
+### Results by item
+
+| Item | Result | Evidence | Next step |
+|---|---|---|---|
+| Part 0 admin key (this branch) | VERIFIED FIXED | `/API/admin/...` and `/api/Admin/...` with no key returned 403. | Fix 15 for `main` and staging. |
+| Part 0 admin key (`main`, staging) | NOT FIXED | Line 1618 on `main` and 1633 on staging still compare the path without lowercasing it. | Fix 15. |
+| Fix 8 letter case and trailing slash | VERIFIED FIXED, with regression | Signed out, `/API`, `/aPi`, and trailing-slash variants returned 404 or 401. A regular user got 403 on the exact path and 404 on variants. Capital letters in a call number also return 404. | Fix 11. |
+| Fix 7 billing reads | VERIFIED FIXED | Regular user: 403 on the exact path, 404 on case and slash variants. `HEAD` still returned 200. | Fix 13. |
+| Fix 9 lockout | VERIFIED FIXED | Five wrong passwords lock a known account; flooding did not reset it. Anyone who knows a username can trigger the lock. | Fix 17 (decision). |
+| Fix 10 error replies | PARTIALLY FIXED | Broken JSON returns a short JSON reply. Route replies still carry raw Prisma text (`127.0.0.1:5432` with the database stopped). Broken JSON bodies are printed to the server log. | Fixes 12 and 14. |
+| Fix 5 export records | VERIFIED FIXED | A browser "success" post returned 400. | Fix 16 (5a, 5b). |
+| Fix 6 Fire Recovery password | VERIFIED FIXED (local) | Stored value began with `enc:v1:`. | Key on Render at release. |
+| Fixes 2 and 3 CAD intake | VERIFIED FIXED | Missing secret returned 401. Unknown sender rejected; 0 rows saved. | Crescent sender before release. |
+| D1, D2, D3, D5, D6 | NOT FIXED (deferred) | Unchanged. | Part 4. |
+
+### New findings
+1. **HIGH (regression)** — Capital letters in a call number or ID give "Not found". Fix 11.
+2. **MEDIUM** — A broken JSON body, including any password in it, is printed to the server log. Fix 12.
+3. **LOW** — `HEAD` skips the permission check and reveals whether a record exists and its size. Fix 13.
+4. **LOW** — 49 route replies still send raw internal error text. Fix 14.
+5. **LOW** — Anyone who knows a username can lock that account for 15 minutes. Fix 17.
+6. **Correction** — The blank validator name is not a regression; it was blank before fix 5. Fix 16.
+
+### Automated checks run
+`npm run lint` passed. `npm run build` passed. `npm test` passed (22 tests). `npm audit --omit=dev` found 0 issues. 12 moderate warnings remain in development tools only (D7).
+
+### Still to verify on staging or at deployment
+Everything listed under the October 31 "Still to verify" list, plus each Part 2B staging check after fixes 11–14 are promoted, and fix 15's 403 check on each live environment after it is deployed.

@@ -18,6 +18,7 @@
 - Security Part 1 is **complete**. Part 2 code (fixes 4, 1, 2, 3, 8, 9, and 10) and Part 3 code (fixes 5, 6, and 7) are **built and tested** and **not released**. Do not rebuild them. Sign-in limits stay at 5 failures, 10,000 remembered names, 100-character usernames, and 256-character passwords.
 - The allowed-sender screen is **Stage D, repair-plan step 23**. Do not build it unless the user asks. Crescent's sender is `dispatch@co.iroquois.il.us`. Staging `cifpdil` has 0 allowed senders. Do not release this branch until that address is saved, because Fix 3 rejects mail when the list is empty.
 - **Part 3 is done on this practice branch.** Fix 5: the server writes the NERIS export receipt after NERIS replies; the browser can post only a failure. Fix 6: `Tenant.fireRecoveryApiPassword` is AES-256-GCM, tagged `enc:v1:`, key from Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (do not create that setting in a coding session). Fix 7: `billing.view` defaults to admin and hides billing without it. Do not save a Fire Recovery password in production until these fixes are live there. Do not start Step 15, the Fire Recovery email, or a release unless the user asks.
+- **Next coding task: `docs/plans/security-remediation-plan.md` Part 2B (fixes 11–14).** The second verification on 2026-11-01 was FAIL. Fix 11 first: `canonicalApiPath` lowercases the whole path, so a call number with a capital letter gets "Not found". Get the user's approval before editing the sign-in gate or permission code. Fixes 15–17 need separate decisions.
 - **Part 4 is deferred.** It is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient. The list is on the repair plan, Parked & future.
 - Repair plan canvas (live): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 - Repair plan source in the repo: `docs/plans/canvases/repair-plan.canvas.tsx`. The repo file already records Part 3. The live canvas was still the older Step 10 text when last checked. Republish with WriteCanvas using canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` and the full repo file. Omit the title so "Fire Ultimate repair plan" stays.
@@ -54,7 +55,7 @@ Passed, and the user said so:
 - After a client change, tell the user to reload `http://localhost:5173` once.
 
 ## Current blocker / status
-- No code blocker for Stage B. Click-through is done.
+- Code blockers for Stage B: security fixes 11–14 (Part 2B of `docs/plans/security-remediation-plan.md`). Click-through is done.
 - **Do not merge** until `Session`, `RolePermission`, `AccountAuditLog`, and `NerisReportChange` exist on staging, with a fresh backup and explicit approval. Those tables are add-only. Prisma schema and migrations change only with explicit approval.
 - Do not set `TRUST_PROXY=1` until Render is confirmed to replace `X-Forwarded-Host`.
 - Do not set `NODE_ENV=production` until a planned release. Keep the admin and demo accounts.
