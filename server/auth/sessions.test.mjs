@@ -169,11 +169,12 @@ test("server sign-in passes", async () => {
   const base = `http://127.0.0.1:${port}`;
   const origin = base;
 
-  async function call(path, { method = "GET", cookie = "", requestOrigin = "", forwardedHost = "", body } = {}) {
+  async function call(path, { method = "GET", cookie = "", requestOrigin = "", forwardedHost = "", extraHeaders = null, body } = {}) {
     const headers = {};
     if (cookie) headers.cookie = cookie;
     if (requestOrigin) headers.origin = requestOrigin;
     if (forwardedHost) headers["x-forwarded-host"] = forwardedHost;
+    if (extraHeaders) Object.assign(headers, extraHeaders);
     if (body !== undefined) headers["content-type"] = "application/json";
     const response = await fetch(`${base}${path}`, {
       method,
@@ -1060,6 +1061,26 @@ test("server sign-in passes", async () => {
       cookie: otherCookie.pair,
     });
     assert.equal(afterLogout.status, 401);
+
+    delete process.env.CAD_INGEST_SECRET;
+    const noSecret = await call("/api/cad/inbound-email", {
+      method: "POST",
+      body: { from: "a@b.test", to: "demo@cad.fireultimate.app", raw: "" },
+    });
+    assert.equal(noSecret.status, 503);
+    process.env.CAD_INGEST_SECRET = "stage-b-test-secret";
+    const missingHeader = await call("/api/cad/inbound-email", {
+      method: "POST",
+      body: { from: "a@b.test", to: "demo@cad.fireultimate.app", raw: "" },
+    });
+    assert.equal(missingHeader.status, 401);
+    const wrongHeader = await call("/api/cad/inbound-email", {
+      method: "POST",
+      extraHeaders: { "x-cad-ingest-secret": "wrong" },
+      body: { from: "a@b.test", to: "demo@cad.fireultimate.app", raw: "" },
+    });
+    assert.equal(wrongHeader.status, 401);
+    delete process.env.CAD_INGEST_SECRET;
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();
