@@ -94,7 +94,12 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 
 ## Still open — user must answer before those pieces are built
 - **Stage C decisions were recorded 2026-11-01.** See `docs/task-2-multitenant-domain-plan.md` ("Fire Recovery decisions (2026-11-01)") and the Stage C plan `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` (the repo copy is the source of truth; a local `~/.cursor/plans/` copy is not). Target: one real Crescent vehicle-accident bill from production by Monday, November 2. Go-live moves later if the staging sandbox test hasn't passed. Stage C code is **not started**.
-- Still open: how the report marks which person was the driver (Affiliation is free text). Also unconfirmed: whether the Welcome Message arrived at `support@fireultimatehq.com`, whether `FIRE_RECOVERY_CREDENTIAL_KEY` exists on staging and production Render, and whether Crescent's billing agreement is set up with Fire Recovery.
+- **Stage C plan is complete and detailed** in `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`: decisions in §3, waves in §9, operator steps in §11, vendor email in §13. Start at the first unticked wave. Before Wave 4, get the operator's answers to §14 (an add-only billing status column, and permission-map entries for the new routes).
+- Confirmed 2026-11-01:
+  - The Welcome email has the RH public API login; the host is `https://process.firerecoveryusa.com`.
+  - Crescent's billing agreement is set up.
+  - `FIRE_RECOVERY_CREDENTIAL_KEY` is missing on both staging and production. The operator creates it at Wave 7/8 (plan §11.1).
+- Key finding: since fix 5, the export receipt stores only the NERIS payload, so billing receives no `formValues` today (plan §2.1).
 - The user chose to send the combined Fire Recovery email now, in parallel with building, instead of after Step 17.
 - The full vendor API documentation is in `docs/procedures/vendor/fire-recovery-usa-api-collection-2026-11-01.json`.
 
@@ -109,4 +114,4 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 3. **Do now:** Wait for the user's next request. Production still needs its own backup, the four tables, Crescent's sender, and a separate approval. Staging already has those. The Allowed Senders screen is on staging.
 4. **Do not** rebuild the Allowed Senders screen. Do not build Recover Reports, the Status dropdown, Configure Table drag, left-menu hiding, canceled-en-route time fill, or per-user Edit My Display. Those last two were parked on 2026-11-01 after the Crescent staging test.
 5. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
-6. Part 3 did not add a database table. Fix 6's key is the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Do not create that setting on Render until a planned release. Step 15 is decided (2026-11-01), apart from how the driver is marked; build it only after the user approves the Stage C build. Do not save a Fire Recovery password in production until fixes 5–7 are live there.
+6. Part 3 did not add a database table. Fix 6's key is the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Do not create that setting on Render until a planned release. Step 15 is decided (2026-11-01; plan §5–§6). Build it only after the user says to start the Stage C build. Do not save a Fire Recovery password in production until fixes 5–7 are live there.

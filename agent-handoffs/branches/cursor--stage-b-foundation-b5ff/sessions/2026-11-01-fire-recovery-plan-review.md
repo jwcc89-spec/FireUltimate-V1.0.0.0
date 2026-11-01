@@ -1,42 +1,49 @@
 # Agent Handoff Note
 
 ## Session metadata
-- Date: 2026-11-01, about 3:10–3:40 p.m. America/Chicago
+- Date: 2026-11-01, about 3:10–4:30 p.m. America/Chicago
 - Agent type: Cursor desktop (Claude Opus 5.5)
-- User request focus: Review the Phase C Fire Recovery plan, find everything about Fire Recovery in the repo, ask questions so billing can go live in 24 hours.
+- User request focus: Review the Phase C Fire Recovery plan, find everything about Fire Recovery in the repo, ask questions, and write a detailed plan so billing can go live Monday, November 2.
 - Working branch: `cursor/stage-b-foundation-b5ff`
 
 ## Work completed (documentation only)
-- Saved Fire Recovery's full published API documentation (Postman collection, no credentials) as `docs/procedures/vendor/fire-recovery-usa-api-collection-2026-11-01.json`.
-- `docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md`: vendor notes (send Narrative and RespondingUnits, nested shapes, date format, no required fields listed, Status 1 success check), new reporting and invoice endpoints, and today's field decisions.
-- `docs/plans/canvases/repair-plan.canvas.tsx` (repo copy; the live canvas was not republished): Steps 11–15 and 18, 11 new Decisions rows, Still open, and the vendor email questions.
-- `docs/task-2-multitenant-domain-plan.md`: Fire Recovery decisions (2026-11-01).
-- Stage C plan rewritten for the Monday go-live and saved in the repo as `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` (source of truth). It started as a local Cursor plan file, which other agents cannot see.
+- **`docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`:** the detailed Stage C plan and the source of truth. It started as a local Cursor plan file, which other agents cannot see. It covers:
+  - decisions (§3)
+  - the Recovery Hub-style billing form (§5)
+  - requirement levels (§6)
+  - server and front-end design (§7–8)
+  - waves with checkboxes (§9)
+  - operator steps (§11)
+  - the vendor email (§13)
+  - open questions (§14)
+  - a note to move the plan to `docs/plans/completed/` when finished
+- **Vendor docs:** Fire Recovery's full published API documentation (Postman collection, no credentials) saved as `docs/procedures/vendor/fire-recovery-usa-api-collection-2026-11-01.json`.
+- **Reference image:** a blank Recovery Hub screenshot saved as `docs/plans/assets/phase-c-fire-recovery/recovery-hub-create-motor-vehicle-incident-blank.png`. An earlier screenshot from the user showed a real person's name, address and plate; it was **not** committed.
+- **Updated to match the plan:**
+  - `docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md`
+  - `docs/plans/canvases/repair-plan.canvas.tsx` (repo copy; the live canvas was not republished)
+  - `docs/task-2-multitenant-domain-plan.md`
+  - `ACTIVE_CONTEXT.md`
 
-## Decisions (user, 2026-11-01)
-- **Go-live:** one real Crescent bill from production by Monday, November 2. It slips if the staging sandbox test hasn't passed.
-- **Scope:** vehicle accidents only.
-- **Sandbox protection:** a Render setting forces `FD12345678` on staging, and production refuses it. No database change.
-- **Parties:** one per vehicle, the driver; passengers are not sent.
-  - **Required:** driver name and address, Is Resident (lives in the fire district; always sent), vehicle make and model, vehicle insurance company.
-  - **Optional:** At Fault. The vendor's Owner flag comes from the vehicle's persons involved.
-- **Insurance field:** remove "Owner - Insurance Company" and copy its values into "Vehicle Insurance - Company Name" when that field is blank.
-- **Unclear vendor reply:** shows "Needs review: check Recovery Hub", and resending is blocked until an admin clears it.
-- **Older incidents:** a button exports the report to NERIS again, then opens the billing preview.
-- **Permissions:** officers will be granted billing (both billing.submit and billing.view).
-- **Display:** billing status is also shown in the NERIS report's export view.
+## Decisions
+The plan's §3 is the final list. The earlier chat ideas about driver-only parties, Is Owner / Is Driver checkboxes, and removing "Owner - Insurance Company" were **cancelled**: billing has its own tab, and Person/Owner stays unchanged.
 
-## Findings for the build
-- A failed submit sets `lastSubmitOk: false` on a row that already has a good tracking ID, so a billed incident looks unsent (`server/neris-proxy.mjs`, submit catch block).
-- Any error after the vendor accepted a bill is stored as a failure. That invites a double bill unless it becomes "Needs review".
-- `postAddNerisIncidentForBilling` accepts any reply with a TrackingId. It should also require `Done["API Response"].Status === 1`.
-- Vehicle `personsInvolved` stores references `person:N` / `owner:N`. No field marks the driver; Person "Affiliation" is free text.
-- Get Incident Tracking Id still needs a SubscriptionKey, so "Needs review" is resolved by hand in Recovery Hub for now.
+## Findings for the build (also in plan §2.1)
+- Since security fix 5, the export receipt holds only the NERIS payload, so the billing mapping receives no `formValues`. The plan reads the server-saved, Exported report instead (§7.1).
+- A failed submit sets `lastSubmitOk: false` on a row that already has a good tracking ID.
+- Errors after the vendor accepted a bill are stored as failures, which invites a double bill. These become "Needs review".
+- The client accepts any reply with a TrackingId; it must also require `Status === 1`.
+- Person/Owner vehicle links use list positions, which shift when a person is deleted.
+
+## Operator status
+- The Welcome email has the RH public API login (host `https://process.firerecoveryusa.com`).
+- The billing agreement is set up.
+- `FIRE_RECOVERY_CREDENTIAL_KEY` is missing on staging and production.
 
 ## Verification
-- Documentation only; no app or server code changed. `npm run lint` passed. A build was not needed.
+- Documentation only; no app or server code changed. `npm run lint` passed.
 
 ## Next steps for next agent
-1. Get the user's answer on how the driver is marked.
-2. Get approval to start the Stage C build in the order of the Cursor plan.
-3. Do not touch Render, Neon, or production. The user creates the Render settings.
+1. Get the operator's answers to plan §14 (Q1 and Q2 before Wave 4; Q3 and Q4 before Wave 3).
+2. Start at Wave 1 once the operator says to start building.
+3. Do not touch Render, Neon, or production. The operator creates the Render settings (§11.1).

@@ -116,21 +116,14 @@ Vendor documentation states:
 - **Required fields:** the vendor documentation marks **no** field as required and lists no allowed values for `InvolvementType`. The department's minimums above are the rule.
 - **Success check:** success is `Done["API Response"].Status === 1` with `Message: "Success"` and a `Done.TrackingId`. The client should require both. Today it checks only the tracking ID.
 
-**Decisions for Fire Ultimate (2026-11-01):**
+**Decisions for Fire Ultimate (2026-11-01, final):** see `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` §3 (decisions), §5 (form), §6 (required fields) and §7.3 (field-by-field mapping). In short:
 
-- Only vehicle accidents are billed at launch.
-- Each vehicle produces one party, its **driver**. Passengers are not sent.
-- **Required for each vehicle:**
-  - driver first and last name
-  - driver address
-  - `Isresident`, meaning the driver lives in the fire district. It is always sent; Fire Recovery then bills only the insurance.
-  - `VehicleMake` and `VehicleModel`
-  - `InsuranceCompanyName`, taken from **Vehicle Insurance - Company Name** only. The "Owner - Insurance Company" field is removed, and any saved value is copied into the vehicle field when that field is blank.
-- **Optional for each vehicle:**
-  - `AtFault`, from an optional driver yes/no question.
-  - `Vehicle.Owner`, set when one of the vehicle's persons involved is the owner.
+- Only motor-vehicle incidents are billed (three NERIS types, primary or additional).
+- Billing parties are entered on a new **Fire Recovery Billing** tab in the NERIS report, laid out like Recovery Hub's "Create New Motor Vehicle Incident" form. They are not taken from the Person/Owner section, which stays as it is; a "Copy from Person/Owner" button can pre-fill them.
+- A party is one card (name and address, insurance, vehicle), with no driver or owner concept. `Isresident` is required for Crescent (local ordinance); an admin can change any billing field's requirement level.
 - The narrative and responding units are sent.
-- Staging is forced to sandbox ID `FD12345678` by a Render setting, and production refuses that ID.
+- Staging is forced to sandbox ID `FD12345678` by the Render setting `FIRE_RECOVERY_MODE`, and production refuses that ID.
+- Recovery Hub's screen marks required fields red and recommended fields orange. A blank-form reference image is at `docs/plans/assets/phase-c-fire-recovery/recovery-hub-create-motor-vehicle-incident-blank.png`.
 
 **Success response (example shape):**
 
