@@ -14,6 +14,7 @@
 - `main` is production. Do not merge this branch. Do not point staging or production at this branch. Do not touch staging, production, Neon, Render, or Cloudflare.
 
 ## Current focus
+- **Part 5 step 1 is in progress and not finished** (started 2026-11-01, about 1:00 p.m. America/Chicago). The operator must create Neon branch `backup-2026-11-01-before-stage-b` in project `fireultimate-staging` only, from the live branch `production`, with current data and automatic deletion turned off. Do not connect the app to that branch. Do not open `fireultimate-prod`. Do not start step 2 (saving Crescent's sender) until the backup exists and the incident count is written down.
 - Stage B (Steps 5–9B) is **built and click-tested** on this practice branch. It is **not released**.
 - Security Part 1 is **complete**. Part 2 code (fixes 4, 1, 2, 3, 8, 9, and 10) and Part 3 code (fixes 5, 6, and 7) are **built and tested** and **not released**. Do not rebuild them. Sign-in limits stay at 5 failures, 10,000 remembered names, 100-character usernames, and 256-character passwords.
 - The allowed-sender screen is built on this practice branch at Admin Functions → Dispatch Parsing Settings → Allowed Senders. It is not on staging yet. Crescent's sender is `dispatch@co.iroquois.il.us`. Staging `cifpdil` has 0 allowed senders. Do not release this branch until that address is saved, because Fix 3 rejects mail when the list is empty.
