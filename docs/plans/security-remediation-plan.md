@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31, evening, America/Chicago):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Fixes 5 and 6 are built on this practice branch and not released. Next implementation is Fix 7. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in this coding session. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
+**Progress (2026-10-31, evening, America/Chicago):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Part 3 code (fixes 5, 6, and 7) is built on this practice branch and not released. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in this coding session. Do not save a Fire Recovery password in production until these fixes are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -145,7 +145,7 @@ Build order: fix 5, then 6, then 7.
 - **Automated tests:** encrypt/decrypt round trip; altered stored text rejected; wrong key rejected; settings reply never contains the password; a failed Fire Recovery call does not leak it; readable-text value refused.
 - **Staging check:** save a password; in Neon the value starts with `enc:v1:` and does not contain the password; one sandbox submission succeeds; Render logs show no password.
 
-### Fix 7 — Any signed-in user can read billing records (audit MEDIUM-3)
+### Fix 7 — Any signed-in user can read billing records (audit MEDIUM-3) — built on this branch, not released
 - **Affected code:** `server/auth/permissions.mjs` (permission list and route mapping); front end `src/api/fireRecovery.ts` and billing display in `src/App.tsx`.
 - **Smallest safe change:** New `billing.view` permission protecting `GET /api/fire-recovery/incidents` and `GET /api/fire-recovery/incidents/:callNumber`. Front end hides billing information without it. Defaults live in code; no database change.
 - **Depends on:** your choice of the default role for `billing.view` (proposed: admin).

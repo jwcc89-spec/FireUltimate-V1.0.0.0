@@ -6,6 +6,7 @@ import http from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
 import { encryptSecret } from "../crypto/secretBox.mjs";
+import { permissionForRequest } from "./permissions.mjs";
 import {
   LOGIN_FAILURE_LIMIT,
   LOGIN_FAILURE_MAP_MAX,
@@ -1377,6 +1378,39 @@ test("server sign-in passes", async () => {
       delete process.env.NERIS_BASE_URL;
       delete process.env.FIRE_RECOVERY_CREDENTIAL_KEY;
     }
+
+    assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents"), "billing.view");
+    assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents/26-1"), "billing.view");
+    assert.equal(permissionForRequest("POST", "/api/fire-recovery/submit"), "billing.submit");
+    const billingUser = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "ff", password },
+    });
+    assert.equal(billingUser.status, 200);
+    const billingUserCookie = sessionCookie(billingUser.setCookie);
+    const hiddenList = await call("/api/fire-recovery/incidents", { cookie: billingUserCookie.pair });
+    assert.equal(hiddenList.status, 403);
+    assert.equal(hiddenList.json.code, "FORBIDDEN");
+    const hiddenOne = await call(`/api/fire-recovery/incidents/${demoIncidentId}`, {
+      cookie: billingUserCookie.pair,
+    });
+    assert.equal(hiddenOne.status, 403);
+    const billingAdmin = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "Password2!" },
+    });
+    assert.equal(billingAdmin.status, 200);
+    const billingAdminCookie = sessionCookie(billingAdmin.setCookie);
+    const visibleList = await call("/api/fire-recovery/incidents", { cookie: billingAdminCookie.pair });
+    assert.equal(visibleList.status, 200);
+    assert.equal(visibleList.json.ok, true);
+    const visibleOne = await call(`/api/fire-recovery/incidents/${demoIncidentId}`, {
+      cookie: billingAdminCookie.pair,
+    });
+    assert.equal(visibleOne.status, 200);
+    assert.equal(visibleOne.json.data.trackingId, "demo-track");
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();

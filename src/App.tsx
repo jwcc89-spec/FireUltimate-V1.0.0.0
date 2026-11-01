@@ -5604,6 +5604,8 @@ function PersonnelTradesPage() {
 }
 
 function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
+  const permissionGrants = useMyPermissions();
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
   const navigate = useNavigate();
   const [removedCallNumbers, setRemovedCallNumbers] = useState<Set<string>>(() => new Set());
   useEffect(() => {
@@ -5649,12 +5651,14 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
           </p>
         </div>
         <div className="header-actions">
-          <NavLink
-            className="secondary-button button-link compact-button"
-            to="/reporting/neris/fire-recovery"
-          >
-            Fire Recovery
-          </NavLink>
+          {canViewBilling ? (
+            <NavLink
+              className="secondary-button button-link compact-button"
+              to="/reporting/neris/fire-recovery"
+            >
+              Fire Recovery
+            </NavLink>
+          ) : null}
           <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
             View Exports
           </NavLink>
@@ -5765,6 +5769,8 @@ interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
 
 function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPagePropsWithHistory) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
   const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
 
   const queueCalls = useMemo(
@@ -5783,6 +5789,7 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   }, [exportHistory]);
 
   useEffect(() => {
+    if (!canViewBilling) return;
     let cancelled = false;
     getFireRecoveryIncidents()
       .then((list) => {
@@ -5797,7 +5804,7 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
     return () => {
       cancelled = true;
     };
-  }, [exportHistory]);
+  }, [canViewBilling, exportHistory]);
 
   const openExportDetails = (callNumber: string) => {
     navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
@@ -5814,12 +5821,14 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
           </p>
         </div>
         <div className="header-actions">
-          <NavLink
-            className="secondary-button button-link compact-button"
-            to="/reporting/neris/fire-recovery"
-          >
-            Fire Recovery
-          </NavLink>
+          {canViewBilling ? (
+            <NavLink
+              className="secondary-button button-link compact-button"
+              to="/reporting/neris/fire-recovery"
+            >
+              Fire Recovery
+            </NavLink>
+          ) : null}
           <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
             Back to NERIS Queue
           </NavLink>
@@ -5843,7 +5852,7 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                   <th>Validator</th>
                   <th>Report Writer</th>
                   <th>NERIS ID</th>
-                  <th>Fire Recovery</th>
+                  {canViewBilling ? <th>Fire Recovery</th> : null}
                 </tr>
               </thead>
               <tbody>
@@ -5890,23 +5899,25 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                       <td>{latestExport?.validatorName || "--"}</td>
                       <td>{latestExport?.reportWriterName || "--"}</td>
                       <td>{latestExport?.nerisId || "--"}</td>
-                      <td
-                        className="fire-recovery-queue-cell"
-                        onClick={(event) => event.stopPropagation()}
-                        onKeyDown={(event) => event.stopPropagation()}
-                      >
-                        {fr?.lastSubmitOk ? (
-                          <span className="tone tone-positive">DataSent</span>
-                        ) : (
-                          <span>—</span>
-                        )}
-                      </td>
+                      {canViewBilling ? (
+                        <td
+                          className="fire-recovery-queue-cell"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          {fr?.lastSubmitOk ? (
+                            <span className="tone tone-positive">DataSent</span>
+                          ) : (
+                            <span>—</span>
+                          )}
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
                 {queueCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={9}>
+                    <td colSpan={canViewBilling ? 9 : 8}>
                       <div className="empty-message">
                         No export queue rows are shown for live tenants until incidents are connected.
                       </div>
@@ -5925,7 +5936,8 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
 function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
-  const canSubmitBilling = permissionGrants?.["billing.submit"] === true;
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canSubmitBilling = canViewBilling && permissionGrants?.["billing.submit"] === true;
   const [frSending, setFrSending] = useState(false);
   const incident =
     getIncidentCallDetail(callNumber) ??

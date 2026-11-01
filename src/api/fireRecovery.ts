@@ -39,14 +39,25 @@ async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   });
   const json = (await res.json()) as { ok?: boolean; data?: T; message?: string };
   if (!res.ok) {
-    throw new Error(json?.message ?? `HTTP ${res.status}`);
+    const error = new Error(json?.message ?? `HTTP ${res.status}`) as Error & { status?: number };
+    error.status = res.status;
+    throw error;
   }
   return json.data as T;
 }
 
+function isHiddenBilling(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && "status" in error && (error as { status?: number }).status === 403);
+}
+
 export async function getFireRecoveryIncidents(): Promise<FireRecoveryIncidentApi[]> {
-  const data = await apiJson<FireRecoveryIncidentApi[]>("/api/fire-recovery/incidents");
-  return Array.isArray(data) ? data : [];
+  try {
+    const data = await apiJson<FireRecoveryIncidentApi[]>("/api/fire-recovery/incidents");
+    return Array.isArray(data) ? data : [];
+  } catch (error) {
+    if (isHiddenBilling(error)) return [];
+    throw error;
+  }
 }
 
 export async function getFireRecoveryIncident(

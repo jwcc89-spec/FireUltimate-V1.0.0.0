@@ -10,6 +10,7 @@ export const PERMISSIONS = [
   { key: "neris.export", label: "Send a NERIS report", minimumRole: "admin" },
   { key: "neris.settings", label: "Change NERIS settings", minimumRole: "admin" },
   { key: "neris.debug", label: "Use NERIS debug tools", minimumRole: "superadmin" },
+  { key: "billing.view", label: "View billing information", minimumRole: "admin" },
   { key: "billing.submit", label: "Send a NERIS report for billing", minimumRole: "admin" },
   { key: "billing.settings", label: "Change Fire Recovery settings", minimumRole: "admin" },
   { key: "cad.rules", label: "Change CAD rules", minimumRole: "admin" },
@@ -98,6 +99,12 @@ export function permissionForRequest(method, path, body) {
   if (verb === "PATCH" && route === "/api/neris/settings") return "neris.settings";
   if (route === "/api/neris/debug" || route.startsWith("/api/neris/debug/")) return "neris.debug";
 
+  if (
+    verb === "GET" &&
+    (route === "/api/fire-recovery/incidents" || /^\/api\/fire-recovery\/incidents\/[^/]+$/.test(route))
+  ) {
+    return "billing.view";
+  }
   if (verb === "POST" && (route === "/api/fire-recovery/submit" || route === "/api/fire-recovery/billing-status")) {
     return "billing.submit";
   }

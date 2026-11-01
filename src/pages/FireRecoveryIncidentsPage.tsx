@@ -8,6 +8,7 @@ import {
   getIncidentDisplayNumber,
   type IncidentCallSummary,
 } from "../appData";
+import { useMyPermissions } from "../useMyPermissions";
 
 export interface FireRecoveryIncidentsPageProps {
   incidentCalls: IncidentCallSummary[];
@@ -20,6 +21,8 @@ function isIncidentHiddenFromQueue(entry: IncidentCallSummary): boolean {
 
 export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryIncidentsPageProps) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
   const [rows, setRows] = useState<FireRecoveryIncidentApi[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -29,6 +32,7 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
   );
 
   const refresh = () => {
+    if (!canViewBilling) return;
     setLoadError(null);
     getFireRecoveryIncidents()
       .then(setRows)
@@ -39,6 +43,7 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
   };
 
   useEffect(() => {
+    if (!canViewBilling) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -54,11 +59,37 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [canViewBilling]);
 
   const openDetail = (callNumber: string) => {
     navigate(`/reporting/neris/fire-recovery/${encodeURIComponent(callNumber)}`);
   };
+
+  if (!permissionGrants) {
+    return (
+      <section className="page-section">
+        <p className="panel-description">Loading…</p>
+      </section>
+    );
+  }
+
+  if (!canViewBilling) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Reporting | NERIS</h1>
+            <p>Billing information is not shown for this sign-in.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   return (
     <section className="page-section">

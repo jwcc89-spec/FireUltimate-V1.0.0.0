@@ -6,6 +6,7 @@ import {
   type FireRecoveryIncidentApi,
 } from "../api/fireRecovery";
 import { getIncidentDisplayNumber, type IncidentCallSummary } from "../appData";
+import { useMyPermissions } from "../useMyPermissions";
 
 export interface FireRecoveryIncidentDetailPageProps {
   callNumber: string;
@@ -17,6 +18,8 @@ export function FireRecoveryIncidentDetailPage({
   incidentCalls,
 }: FireRecoveryIncidentDetailPageProps) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
   const [row, setRow] = useState<FireRecoveryIncidentApi | null>(null);
   const [loading, setLoading] = useState(true);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -25,6 +28,7 @@ export function FireRecoveryIncidentDetailPage({
   const incident = incidentCalls.find((c) => c.callNumber === callNumber) ?? null;
 
   useEffect(() => {
+    if (!canViewBilling) return;
     let cancelled = false;
     void (async () => {
       try {
@@ -43,7 +47,7 @@ export function FireRecoveryIncidentDetailPage({
     return () => {
       cancelled = true;
     };
-  }, [callNumber]);
+  }, [callNumber, canViewBilling]);
 
   const handleUpdateBilling = () => {
     setUpdating(true);
@@ -57,6 +61,36 @@ export function FireRecoveryIncidentDetailPage({
       })
       .finally(() => setUpdating(false));
   };
+
+  if (!permissionGrants) {
+    return (
+      <section className="page-section">
+        <p className="panel-description">Loading…</p>
+      </section>
+    );
+  }
+
+  if (!canViewBilling) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Reporting | NERIS</h1>
+            <p>Billing information is not shown for this sign-in.</p>
+          </div>
+          <div className="header-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              onClick={() => navigate("/reporting/neris")}
+            >
+              Back to NERIS Queue
+            </button>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   if (!loading && !row) {
     return (
