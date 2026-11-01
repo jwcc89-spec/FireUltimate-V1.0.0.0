@@ -75,3 +75,12 @@ A new coding session on this same practice copy built the three security fixes. 
 - The screen that adds `dispatch@co.iroquois.il.us` is still Stage D, step 23. Do not release this practice copy until that address is saved.
 - The repair-plan file in the repo matches that work, and it now lists security Part 4 (D1–D7) under Parked & future. Part 4 is deferred. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient.
 - The live canvas was still the older plan when this note was written. The next person who opens the plan should republish canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` from `docs/plans/canvases/repair-plan.canvas.tsx` and leave the title as "Fire Ultimate repair plan."
+
+## Later the same evening — View Exports follow-up
+
+You checked the regular user. Fire Recovery stayed hidden, and the billing sentence was correct. The Fire Recovery password check was correct.
+
+Two things were wrong, and both are fixed on this practice copy:
+
+- Incident 12354 is In Review on the NERIS page. View Exports was still saying Draft. It now uses the same status as the NERIS page. After a successful send it still says Exported.
+- View Exports is for an admin only (the same permission as sending a NERIS report). A regular user does not see the button. If they open that address, the page says "Export history is not shown for this sign-in."

@@ -2800,23 +2800,15 @@ function getCallFieldValue(
   }
 }
 
-function getNerisReportStatus(callNumber: string): string {
-  const draftStatus = readNerisDraft(callNumber)?.reportStatus;
-  if (draftStatus) {
-    return draftStatus;
-  }
-  return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
-}
-
-/** Exports list: successful NERIS submit ⇒ show Exported (matches NERIS queue), not pre-submit workflow e.g. In Review. */
+/** Exports list: a successful NERIS submit shows Exported. Otherwise use the same status as the NERIS queue. */
 function getExportsListReportStatus(
-  callNumber: string,
+  call: IncidentCallSummary,
   latestExport: NerisExportRecord | undefined,
 ): string {
   if (latestExport?.attemptStatus === "success") {
     return "Exported";
   }
-  return getNerisReportStatus(callNumber);
+  return getNerisQueueFieldValue(call, "status");
 }
 
 function getNerisQueueFieldValue(
@@ -5606,6 +5598,7 @@ function PersonnelTradesPage() {
 function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
   const permissionGrants = useMyPermissions();
   const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canViewExports = permissionGrants?.["neris.export"] === true;
   const navigate = useNavigate();
   const [removedCallNumbers, setRemovedCallNumbers] = useState<Set<string>>(() => new Set());
   useEffect(() => {
@@ -5659,9 +5652,11 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
               Fire Recovery
             </NavLink>
           ) : null}
-          <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
-            View Exports
-          </NavLink>
+          {canViewExports ? (
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
+              View Exports
+            </NavLink>
+          ) : null}
         </div>
       </header>
 
@@ -5771,6 +5766,7 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
   const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canViewExports = permissionGrants?.["neris.export"] === true;
   const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
 
   const queueCalls = useMemo(
@@ -5809,6 +5805,32 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   const openExportDetails = (callNumber: string) => {
     navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
   };
+
+  if (!permissionGrants) {
+    return (
+      <section className="page-section">
+        <p className="panel-description">Loading…</p>
+      </section>
+    );
+  }
+
+  if (!canViewExports) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Reporting | NERIS</h1>
+            <p>Export history is not shown for this sign-in.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   return (
     <section className="page-section">
@@ -5883,11 +5905,11 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                         <span
                           className={toToneClass(
                             toneFromNerisStatus(
-                              getExportsListReportStatus(call.callNumber, latestExport),
+                              getExportsListReportStatus(call, latestExport),
                             ),
                           )}
                         >
-                          {getExportsListReportStatus(call.callNumber, latestExport)}
+                          {getExportsListReportStatus(call, latestExport)}
                         </span>
                       </td>
                       <td>
@@ -5937,6 +5959,7 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
   const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canViewExports = permissionGrants?.["neris.export"] === true;
   const canSubmitBilling = canViewBilling && permissionGrants?.["billing.submit"] === true;
   const [frSending, setFrSending] = useState(false);
   const incident =
@@ -5964,6 +5987,32 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
     },
     [callNumber, serverExportHistory],
   );
+
+  if (!permissionGrants) {
+    return (
+      <section className="page-section">
+        <p className="panel-description">Loading…</p>
+      </section>
+    );
+  }
+
+  if (!canViewExports) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Reporting | NERIS</h1>
+            <p>Export history is not shown for this sign-in.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   if (!incident) {
     return (

@@ -1382,6 +1382,8 @@ test("server sign-in passes", async () => {
     assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents"), "billing.view");
     assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents/26-1"), "billing.view");
     assert.equal(permissionForRequest("POST", "/api/fire-recovery/submit"), "billing.submit");
+    assert.equal(permissionForRequest("GET", "/api/neris/export-history"), "neris.export");
+    assert.equal(permissionForRequest("POST", "/api/neris/export-history"), "neris.export");
     const billingUser = await call("/api/auth/login", {
       method: "POST",
       requestOrigin: origin,
@@ -1392,6 +1394,9 @@ test("server sign-in passes", async () => {
     const hiddenList = await call("/api/fire-recovery/incidents", { cookie: billingUserCookie.pair });
     assert.equal(hiddenList.status, 403);
     assert.equal(hiddenList.json.code, "FORBIDDEN");
+    const hiddenHistory = await call("/api/neris/export-history", { cookie: billingUserCookie.pair });
+    assert.equal(hiddenHistory.status, 403);
+    assert.equal(hiddenHistory.json.code, "FORBIDDEN");
     const hiddenOne = await call(`/api/fire-recovery/incidents/${demoIncidentId}`, {
       cookie: billingUserCookie.pair,
     });
@@ -1406,6 +1411,9 @@ test("server sign-in passes", async () => {
     const visibleList = await call("/api/fire-recovery/incidents", { cookie: billingAdminCookie.pair });
     assert.equal(visibleList.status, 200);
     assert.equal(visibleList.json.ok, true);
+    const visibleHistory = await call("/api/neris/export-history", { cookie: billingAdminCookie.pair });
+    assert.equal(visibleHistory.status, 200);
+    assert.equal(visibleHistory.json.ok, true);
     const visibleOne = await call(`/api/fire-recovery/incidents/${demoIncidentId}`, {
       cookie: billingAdminCookie.pair,
     });

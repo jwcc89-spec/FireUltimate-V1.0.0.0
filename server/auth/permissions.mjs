@@ -91,8 +91,8 @@ export function permissionForRequest(method, path, body) {
     return "settings.department";
   }
   if (
-    verb === "POST" &&
-    (route === "/api/neris/export" || route === "/api/neris/validate" || route === "/api/neris/export-history")
+    (verb === "POST" && (route === "/api/neris/export" || route === "/api/neris/validate")) ||
+    ((verb === "GET" || verb === "POST") && route === "/api/neris/export-history")
   ) {
     return "neris.export";
   }
