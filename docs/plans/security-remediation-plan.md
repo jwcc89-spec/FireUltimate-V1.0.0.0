@@ -30,7 +30,7 @@ Rules for every fix:
 | 3 | Run the read-only queries below in **both** Neon projects. Send back only counts and migration names. | Promotion applies this branch's database changes to production, and production already has some of them. | Results reviewed. |
 | 4 | In Render, confirm the setting **name** `CAD_INGEST_SECRET` exists on the staging and production API services, and that the Cloudflare email Worker has its matching secret. Do not copy the values. | Production's current code accepts any CAD email if that setting is missing. | Name is present on both services. |
 
-Ask Fire Recovery USA to change the password that was saved on staging **before Fire Recovery goes live** (Stage C). The old password is in the 2026-10-28 staging backup and cannot be removed from it.
+**Only if the saved staging value is a real, working Fire Recovery account:** ask Fire Recovery USA to change that password before Fire Recovery goes live (Stage C). The value is also in the 2026-10-28 staging backup and cannot be removed from it. Confirm whether it is real by asking whoever entered it or Fire Recovery USA, not by sending a request to Fire Recovery from staging.
 
 Cloudflare Access in front of staging/production is **only needed if promotion of this branch is delayed**.
 
@@ -123,6 +123,7 @@ Build order: fix 5, then 6, then 7.
 - **Staging check:** confirm staging's `NERIS_BASE_URL` points at the NERIS test system; export one report and see one success row with the real NERIS ID; validation still works; a forced failure shows one failed row.
 
 ### Fix 6 — Fire Recovery password stored as readable text (audit HIGH-2; repair plan Stage C Step 13)
+- **Verified 2026-10-31:** On a throwaway local database (no staging or production access), a signed-in admin saved the made-up password `Fake-Audit-Pw-7Q2` through `PATCH /api/fire-recovery/settings`. The `Tenant.fireRecoveryApiPassword` column then held exactly `Fake-Audit-Pw-7Q2`. The settings reply did not include it. Staging's code (`submenu/neris-golive-cifpd`) has the same save line, so the issue applies to any password entered on this branch or staging.
 - **Affected code:** existing `Tenant.fireRecoveryApiPassword` column (kept); `server/neris-proxy.mjs` Fire Recovery settings `GET`/`PATCH`, submit, and billing status; new `server/crypto/secretBox.mjs`.
 - **Smallest safe change:** Encrypt with AES-256-GCM before saving, tagged `enc:v1:`, key from a new Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (different key for staging and production). Settings reply returns only "a password is saved: yes/no". A readable-text value is refused with "re-enter the password" (no automatic conversion). Errors and logs never include the password or the request body. No schema change.
 - **Depends on:** Part 1 item 2; approval of where the key lives (copy kept in your password manager); Fire Recovery testing with sandbox department ID `FD12345678` as decided 2026-10-29; Fire Recovery has changed the old password.
