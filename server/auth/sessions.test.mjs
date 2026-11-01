@@ -1646,6 +1646,28 @@ test("server sign-in passes", async () => {
     );
     assert.equal(leakedSettings.status, 400);
     assert.equal(leakedSettings.json.message, "The request could not be read.");
+
+    const freshAdmin = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "Password2!" },
+    });
+    assert.equal(freshAdmin.status, 200);
+    const freshAdminCookie = sessionCookie(freshAdmin.setCookie);
+    const originalFindMany = prisma.user.findMany.bind(prisma.user);
+    prisma.user.findMany = async () => {
+      throw new Error("Invalid prisma call at 127.0.0.1:5432");
+    };
+    try {
+      const hiddenDb = await call("/api/users", { cookie: freshAdminCookie.pair });
+      const hiddenText = JSON.stringify(hiddenDb.json);
+      assert.equal(hiddenDb.status, 500);
+      assert.equal(/prisma/i.test(hiddenText), false);
+      assert.equal(hiddenText.includes("127.0.0.1"), false);
+      assert.equal(hiddenDb.json.message, "Unexpected users list error.");
+    } finally {
+      prisma.user.findMany = originalFindMany;
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();

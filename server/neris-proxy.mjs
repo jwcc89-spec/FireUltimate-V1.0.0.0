@@ -25,6 +25,7 @@ import {
   postIncidentBillingStatus,
 } from "./fireRecoveryClient.mjs";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./crypto/secretBox.mjs";
+import { PublicError, publicErrorMessage } from "./http/publicError.mjs";
 import {
   PUBLIC_API_ROUTES,
   applySessionCookie,
@@ -793,12 +794,12 @@ async function getAccessToken(config) {
   }
 
   if (!config.clientId || !config.clientSecret) {
-    throw new Error(
+    throw new PublicError(
       "Missing server auth config. Set NERIS_CLIENT_ID and NERIS_CLIENT_SECRET in .env.server (or set NERIS_STATIC_ACCESS_TOKEN).",
     );
   }
   if (config.grantType === "password" && (!config.username || !config.password)) {
-    throw new Error(
+    throw new PublicError(
       "Grant type password requires NERIS_USERNAME and NERIS_PASSWORD in .env.server.",
     );
   }
@@ -842,7 +843,7 @@ async function getAccessToken(config) {
           ? " Hint: verify NERIS_CLIENT_ID and NERIS_CLIENT_SECRET are for the test environment and are copied exactly."
           : " Hint: verify NERIS_BASE_URL and OAuth client credentials belong to the same NERIS environment."
       : "";
-    throw new Error(
+    throw new PublicError(
       `Token request failed (${tokenResponse.status} ${tokenResponse.statusText}). ${JSON.stringify(
         tokenResponseBody ?? {},
       )}${hint}`,
@@ -850,18 +851,18 @@ async function getAccessToken(config) {
   }
 
   if (!tokenResponseBody || typeof tokenResponseBody !== "object") {
-    throw new Error("Token response was empty or invalid.");
+    throw new PublicError("Token response was empty or invalid.");
   }
 
   const accessToken = trimValue(tokenResponseBody.access_token);
   if (!accessToken) {
     const challengeName = trimValue(tokenResponseBody.challenge_name);
     if (challengeName) {
-      throw new Error(
+      throw new PublicError(
         `Token flow requires additional challenge step (${challengeName}). Complete challenge auth in backend flow first.`,
       );
     }
-    throw new Error("Token response did not include access_token.");
+    throw new PublicError("Token response did not include access_token.");
   }
 
   const expiresInSeconds = Number.parseInt(
@@ -1107,12 +1108,12 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   const primaryIncidentType = normalizeEnumValue(formValues.primary_incident_type);
 
   if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
-    throw new Error(
+    throw new PublicError(
       `Invalid entity ID format (${entityId}). Expected FD########, VN########, FM########, or FA########.`,
     );
   }
   if (!departmentNerisId) {
-    throw new Error(
+    throw new PublicError(
       "Missing or invalid department NERIS ID. Use FD######## format in report field 'Department NERIS ID' (or set NERIS_DEPARTMENT_NERIS_ID on server).",
     );
   }
@@ -1121,13 +1122,13 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     departmentNerisId = entityId;
   }
   if (!incidentNumber) {
-    throw new Error("Missing incident number.");
+    throw new PublicError("Missing incident number.");
   }
   if (!dispatchIncidentNumber) {
-    throw new Error("Missing dispatch incident number.");
+    throw new PublicError("Missing dispatch incident number.");
   }
   if (!primaryIncidentType) {
-    throw new Error("Missing primary incident type.");
+    throw new PublicError("Missing primary incident type.");
   }
 
   const nowIso = new Date().toISOString();
@@ -1656,7 +1657,7 @@ app.post("/api/admin/tenants", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected error creating tenant.",
+      message: publicErrorMessage(error, "Unexpected error creating tenant."),
     });
   }
 });
@@ -1695,7 +1696,7 @@ app.post("/api/admin/tenants/:tenantId/domains", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected error adding domain.",
+      message: publicErrorMessage(error, "Unexpected error adding domain."),
     });
   }
 });
@@ -1754,7 +1755,7 @@ app.use(async (request, response, next) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Tenant resolution failed.",
+      message: publicErrorMessage(error, "Tenant resolution failed."),
     });
   }
 });
@@ -1816,7 +1817,7 @@ app.use(async (request, response, next) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Sign-in check failed.",
+      message: publicErrorMessage(error, "Sign-in check failed."),
     });
   }
 });
@@ -1852,7 +1853,7 @@ app.use(async (request, response, next) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Permission check failed.",
+      message: publicErrorMessage(error, "Permission check failed."),
     });
   }
 });
@@ -1916,7 +1917,7 @@ app.get("/api/permissions", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Could not load permissions.",
+      message: publicErrorMessage(error, "Could not load permissions."),
     });
   }
 });
@@ -1933,7 +1934,7 @@ app.get("/api/permissions/policy", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Could not load the permission list.",
+      message: publicErrorMessage(error, "Could not load the permission list."),
     });
   }
 });
@@ -1973,7 +1974,7 @@ app.put("/api/permissions/policy", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Could not save the permission.",
+      message: publicErrorMessage(error, "Could not save the permission."),
     });
   }
 });
@@ -2002,7 +2003,7 @@ app.get("/api/account-audit", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Could not load the account log.",
+      message: publicErrorMessage(error, "Could not load the account log."),
     });
   }
 });
@@ -2338,7 +2339,7 @@ app.post("/api/cad/inbound-email", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "CAD inbound email store failed.",
+      message: publicErrorMessage(error, "CAD inbound email store failed."),
     });
   }
 });
@@ -2381,7 +2382,7 @@ app.get("/api/cad/emails", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to list CAD emails.",
+      message: publicErrorMessage(error, "Failed to list CAD emails."),
     });
   }
 });
@@ -2436,7 +2437,7 @@ app.get("/api/cad/parsing-config", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to load CAD parsing config.",
+      message: publicErrorMessage(error, "Failed to load CAD parsing config."),
     });
   }
 });
@@ -2540,7 +2541,7 @@ app.patch("/api/cad/parsing-config", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to save CAD parsing config.",
+      message: publicErrorMessage(error, "Failed to save CAD parsing config."),
     });
   }
 });
@@ -2568,7 +2569,7 @@ app.get("/api/cad/allowlist", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to load CAD allowlist.",
+      message: publicErrorMessage(error, "Failed to load CAD allowlist."),
     });
   }
 });
@@ -2656,7 +2657,7 @@ app.patch("/api/cad/allowlist", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to save CAD allowlist.",
+      message: publicErrorMessage(error, "Failed to save CAD allowlist."),
     });
   }
 });
@@ -2739,7 +2740,7 @@ app.get("/api/incidents", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incidents list error.",
+      message: publicErrorMessage(error, "Unexpected incidents list error."),
     });
   }
 });
@@ -2782,7 +2783,7 @@ app.post("/api/incidents", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident create error.",
+      message: publicErrorMessage(error, "Unexpected incident create error."),
     });
   }
 });
@@ -2806,7 +2807,7 @@ app.get("/api/incidents/:id", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident get error.",
+      message: publicErrorMessage(error, "Unexpected incident get error."),
     });
   }
 });
@@ -2870,7 +2871,7 @@ app.patch("/api/incidents/:id", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident update error.",
+      message: publicErrorMessage(error, "Unexpected incident update error."),
     });
   }
 });
@@ -2934,7 +2935,7 @@ app.delete("/api/incidents/:id", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident delete error.",
+      message: publicErrorMessage(error, "Unexpected incident delete error."),
     });
   }
 });
@@ -3069,7 +3070,7 @@ app.get("/api/neris/export-history", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected export history list error.",
+      message: publicErrorMessage(error, "Unexpected export history list error."),
     });
   }
 });
@@ -3140,7 +3141,7 @@ app.post("/api/neris/export-history", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected export history create error.",
+      message: publicErrorMessage(error, "Unexpected export history create error."),
     });
   }
 });
@@ -3363,7 +3364,7 @@ app.get("/api/neris/removed-reports", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected removed report list error.",
+      message: publicErrorMessage(error, "Unexpected removed report list error."),
     });
   }
 });
@@ -3392,7 +3393,7 @@ app.get("/api/neris/drafts/:callNumber", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected draft get error.",
+      message: publicErrorMessage(error, "Unexpected draft get error."),
     });
   }
 });
@@ -3425,7 +3426,7 @@ app.get("/api/neris/drafts/:callNumber/history", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected report history error.",
+      message: publicErrorMessage(error, "Unexpected report history error."),
     });
   }
 });
@@ -3498,7 +3499,7 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected draft save error.",
+      message: publicErrorMessage(error, "Unexpected draft save error."),
     });
   }
 });
@@ -3553,7 +3554,7 @@ app.post("/api/neris/drafts/:callNumber/unlock", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected unlock error.",
+      message: publicErrorMessage(error, "Unexpected unlock error."),
     });
   }
 });
@@ -3598,7 +3599,7 @@ app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected report delete error.",
+      message: publicErrorMessage(error, "Unexpected report delete error."),
     });
   }
 });
@@ -3648,7 +3649,7 @@ app.patch("/api/department-shared-settings", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected shared settings error.",
+      message: publicErrorMessage(error, "Unexpected shared settings error."),
     });
   }
 });
@@ -3712,7 +3713,7 @@ app.get("/api/neris/settings", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS settings read error.",
+        publicErrorMessage(error, "Unexpected NERIS settings read error."),
     });
   }
 });
@@ -3763,7 +3764,7 @@ app.patch("/api/neris/settings", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS settings save error.",
+        publicErrorMessage(error, "Unexpected NERIS settings save error."),
     });
   }
 });
@@ -3886,7 +3887,7 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected Fire Recovery settings read error.",
+        publicErrorMessage(error, "Unexpected Fire Recovery settings read error."),
     });
   }
 });
@@ -3985,7 +3986,7 @@ app.get("/api/fire-recovery/incidents", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected Fire Recovery incidents list error.",
+        publicErrorMessage(error, "Unexpected Fire Recovery incidents list error."),
     });
   }
 });
@@ -4014,7 +4015,7 @@ app.get("/api/fire-recovery/incidents/:callNumber", async (request, response) =>
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected Fire Recovery incident read error.",
+        publicErrorMessage(error, "Unexpected Fire Recovery incident read error."),
     });
   }
 });
@@ -4309,10 +4310,7 @@ app.get("/api/department-details", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected department details read error.",
+      message: publicErrorMessage(error, "Unexpected department details read error."),
     });
   }
 });
@@ -4407,7 +4405,7 @@ app.post("/api/auth/login", (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected login service error.",
+        publicErrorMessage(error, "Unexpected login service error."),
     });
   });
 });
@@ -4466,7 +4464,7 @@ app.post("/api/auth/change-password", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected change-password error.",
+        publicErrorMessage(error, "Unexpected change-password error."),
     });
   }
 });
@@ -4549,10 +4547,7 @@ app.post("/api/department-details", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected department details write error.",
+      message: publicErrorMessage(error, "Unexpected department details write error."),
     });
   }
 });
@@ -4609,10 +4604,7 @@ app.get("/api/schedule-assignments", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected schedule assignments read error.",
+      message: publicErrorMessage(error, "Unexpected schedule assignments read error."),
     });
   }
 });
@@ -4708,10 +4700,7 @@ app.post("/api/schedule-assignments", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected schedule assignments write error.",
+      message: publicErrorMessage(error, "Unexpected schedule assignments write error."),
     });
   }
 });
@@ -4980,7 +4969,7 @@ app.get("/api/users", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected users list error.",
+        publicErrorMessage(error, "Unexpected users list error."),
     });
   }
 });
@@ -5048,7 +5037,7 @@ app.post("/api/users", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected user create error.",
+        publicErrorMessage(error, "Unexpected user create error."),
     });
   }
 });
@@ -5181,7 +5170,7 @@ app.patch("/api/users/:id", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected user update error.",
+        publicErrorMessage(error, "Unexpected user update error."),
     });
   }
 });
@@ -5244,7 +5233,7 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected reset-password error.",
+        publicErrorMessage(error, "Unexpected reset-password error."),
     });
   }
 });
@@ -5294,7 +5283,7 @@ app.delete("/api/users/:id", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected user delete error.",
+        publicErrorMessage(error, "Unexpected user delete error."),
     });
   }
 });
@@ -5324,7 +5313,7 @@ app.get("/api/neris/debug/entities", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected proxy debug error.",
+      message: publicErrorMessage(error, "Unexpected proxy debug error."),
     });
   }
 });
@@ -5364,7 +5353,7 @@ app.get("/api/neris/entities", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS entities error.",
+        publicErrorMessage(error, "Unexpected NERIS entities error."),
     });
   }
 });
@@ -5383,7 +5372,7 @@ app.post("/api/admin/neris/entities/refresh", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS entities refresh error.",
+        publicErrorMessage(error, "Unexpected NERIS entities refresh error."),
     });
   }
 });
@@ -5451,7 +5440,7 @@ app.get("/api/neris/debug/entity-check", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected entity-check debug error.",
+        publicErrorMessage(error, "Unexpected entity-check debug error."),
       submittedEntityId: requestedNerisId,
     });
   }
@@ -5642,7 +5631,7 @@ app.get("/api/neris/debug/incident", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected proxy get-incident debug error.",
+        publicErrorMessage(error, "Unexpected proxy get-incident debug error."),
       submittedEntityId: requestedEntityId,
       incidentNerisId: requestedIncidentNerisId,
     });
@@ -5895,7 +5884,7 @@ app.post("/api/neris/validate", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected proxy validate error.",
+      message: publicErrorMessage(error, "Unexpected proxy validate error."),
     });
   }
 });
@@ -6067,7 +6056,7 @@ app.post("/api/neris/export", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected proxy error.",
+      message: publicErrorMessage(error, "Unexpected proxy error."),
     });
   }
 });

@@ -3,6 +3,8 @@
  * and `src/cadDispatch/extractDispatchPlainText.ts` (MIME / plain text — Batch G1).
  */
 
+import { PublicError } from "./http/publicError.mjs";
+
 export function normalizeDispatchTextForParsing(input) {
   if (!input) return "";
   let s = input.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -24,34 +26,34 @@ function isPlainObject(v) {
 }
 
 function asString(v, field) {
-  if (typeof v !== "string") throw new Error(`${field} must be a string`);
+  if (typeof v !== "string") throw new PublicError(`${field} must be a string`);
   return v;
 }
 
 function asPositiveInt(v, field) {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 1) {
-    throw new Error(`${field} must be a positive integer`);
+    throw new PublicError(`${field} must be a positive integer`);
   }
   return v;
 }
 
 function asNonNegInt(v, field) {
   if (typeof v !== "number" || !Number.isInteger(v) || v < 0) {
-    throw new Error(`${field} must be a non-negative integer`);
+    throw new PublicError(`${field} must be a non-negative integer`);
   }
   return v;
 }
 
 export function parseCadRulesJson(raw) {
   if (raw === undefined || raw === null) return [];
-  if (!Array.isArray(raw)) throw new Error("Rules must be an array.");
+  if (!Array.isArray(raw)) throw new PublicError("Rules must be an array.");
   const out = [];
   for (let i = 0; i < raw.length; i++) {
     const item = raw[i];
-    if (!isPlainObject(item)) throw new Error(`Rule at index ${i} must be an object.`);
+    if (!isPlainObject(item)) throw new PublicError(`Rule at index ${i} must be an object.`);
     const t = item.type;
     if (typeof t !== "string" || !RULE_TYPES.has(t)) {
-      throw new Error(`Rule at index ${i} has invalid or missing type.`);
+      throw new PublicError(`Rule at index ${i} has invalid or missing type.`);
     }
     switch (t) {
       case "trim":
@@ -92,7 +94,7 @@ export function parseCadRulesJson(raw) {
         break;
       }
       default:
-        throw new Error(`Rule at index ${i} has unsupported type.`);
+        throw new PublicError(`Rule at index ${i} has unsupported type.`);
     }
   }
   return out;
