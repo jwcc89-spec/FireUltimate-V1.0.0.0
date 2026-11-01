@@ -1080,6 +1080,74 @@ test("server sign-in passes", async () => {
       body: { from: "a@b.test", to: "demo@cad.fireultimate.app", raw: "" },
     });
     assert.equal(wrongHeader.status, 401);
+
+    const secretHeader = { "x-cad-ingest-secret": "stage-b-test-secret" };
+    const unknownDepartment = await call("/api/cad/inbound-email", {
+      method: "POST",
+      extraHeaders: secretHeader,
+      body: {
+        from: "dispatch@co.iroquois.il.us",
+        to: "missing-dept@cad.fireultimate.app",
+        raw: "hello",
+      },
+    });
+    assert.equal(unknownDepartment.status, 200);
+    assert.equal(unknownDepartment.json.rejected, true);
+    assert.equal(unknownDepartment.json.code, "cad_allowlist");
+    assert.equal(
+      await prisma.cadEmailIngest.count({ where: { toAddress: "missing-dept@cad.fireultimate.app" } }),
+      0,
+    );
+
+    const emptyList = await call("/api/cad/inbound-email", {
+      method: "POST",
+      extraHeaders: secretHeader,
+      body: {
+        from: "dispatch@co.iroquois.il.us",
+        to: "demo@cad.fireultimate.app",
+        raw: "hello",
+      },
+    });
+    assert.equal(emptyList.status, 200);
+    assert.equal(emptyList.json.rejected, true);
+    assert.equal(
+      await prisma.cadEmailIngest.count({ where: { tenantId: demo.id, toAddress: "demo@cad.fireultimate.app" } }),
+      0,
+    );
+
+    await prisma.cadEmailAllowlistEntry.create({
+      data: {
+        tenantId: demo.id,
+        pattern: "dispatch@co.iroquois.il.us",
+        patternType: "exact_email",
+        enabled: true,
+      },
+    });
+    const namedSender = "County Dispatch <dispatch@co.iroquois.il.us>";
+    const allowedSender = await call("/api/cad/inbound-email", {
+      method: "POST",
+      extraHeaders: secretHeader,
+      body: { from: namedSender, to: "demo@cad.fireultimate.app", raw: "hello" },
+    });
+    assert.equal(allowedSender.status, 200);
+    assert.equal(allowedSender.json.ok, true);
+    assert.equal(
+      await prisma.cadEmailIngest.count({ where: { tenantId: demo.id, fromAddress: namedSender } }),
+      1,
+    );
+
+    const personal = await call("/api/cad/inbound-email", {
+      method: "POST",
+      extraHeaders: secretHeader,
+      body: { from: "me@personal.example", to: "demo@cad.fireultimate.app", raw: "nope" },
+    });
+    assert.equal(personal.status, 200);
+    assert.equal(personal.json.rejected, true);
+    assert.equal(personal.json.code, "cad_allowlist");
+    assert.equal(
+      await prisma.cadEmailIngest.count({ where: { tenantId: demo.id, fromAddress: "me@personal.example" } }),
+      0,
+    );
     delete process.env.CAD_INGEST_SECRET;
   } finally {
     await new Promise((resolve) => server.close(resolve));

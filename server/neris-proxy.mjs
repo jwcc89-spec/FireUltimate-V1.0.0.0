@@ -1994,7 +1994,7 @@ app.get("/api/tenant/context", (request, response) => {
   });
 });
 
-// ----- CAD inbound allowlist (Batch D): when tenant has ≥1 enabled entry, From must match one pattern -----
+// ----- CAD inbound allowlist: unknown department or an empty sender list accepts no one -----
 function extractEmailFromCadFromField(fromRaw) {
   const s = trimValue(fromRaw);
   if (!s) return "";
@@ -2043,11 +2043,11 @@ function cadFromMatchesAllowlistEntry(fromRaw, emailLower, pattern, patternType)
 
 /**
  * @returns {Promise<{ allowed: boolean }>}
- * If no enabled rows exist for tenant → allowed (allowlist not configured / permissive).
+ * Unknown department or an empty enabled-sender list accepts no one.
  */
 async function cadInboundAllowlistDecision(tenantId, fromAddress) {
   if (!tenantId) {
-    return { allowed: true };
+    return { allowed: false };
   }
   const entries = await prisma.cadEmailAllowlistEntry.findMany({
     where: { tenantId, enabled: true },
@@ -2055,7 +2055,7 @@ async function cadInboundAllowlistDecision(tenantId, fromAddress) {
     select: { pattern: true, patternType: true },
   });
   if (entries.length === 0) {
-    return { allowed: true };
+    return { allowed: false };
   }
   const emailLower = extractEmailFromCadFromField(fromAddress);
   const fromRaw = typeof fromAddress === "string" ? fromAddress : "";
