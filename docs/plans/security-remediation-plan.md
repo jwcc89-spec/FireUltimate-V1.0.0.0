@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31):** Fix 4 (`497b667`) and Fix 1 (`e3c222e`) are built and tested here. Fixes 2 and 3 are next. Part 1 is still an operator task and blocks the Stage B release. The username-length query in Part 1 must show a longest username of 100 or less before this branch is promoted, because Fix 1 refuses longer sign-in names.
+**Progress (2026-10-31, later the same evening):** Fixes 4, 1, 2, and 3 are built and tested on this branch. Not released. Do not promote until Crescent has an allowed sender (staging currently has 0) and the production migration names are copied. There is no on-screen button for the allowed-sender list yet.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -63,6 +63,14 @@ SELECT migration_name FROM "_prisma_migrations" ORDER BY finished_at;
 
 If the readable-text password count is above `0`, reset those accounts to strong temporary passwords before the Stage B release.
 
+### Operator results (2026-10-31 evening, America/Chicago)
+
+- Production `admin` password was changed on `https://cifpdil.fireultimate.app`. That site has no `demo` user. `https://demo.fireultimate.app` does not exist. Staging passwords were changed on `cifpdil.staging`, `demo.staging`, and `kankdemo.staging`.
+- Staging backup was created. The Fire Recovery password was removed in the staging database. Both projects reported a saved-password count of `0`.
+- Longest username: production `12`, staging `13`. Readable-text password count was reported as `0`. Staging CAD mail in the last 30 days: `cifpdil` with `0` allowed senders. Staging tenant status: trial `3`, active `2`. Production tenant status was described as active. No suspended or archived department was reported, so item D1 can wait.
+- The production migration answer was not a list of migration names (`active` and count `2`). Copy those names before any production release.
+- `CAD_INGEST_SECRET` name is present on the staging API, the production API, and the Cloudflare Worker. Values were not copied.
+
 ---
 
 ## Part 2 — Blocks the Stage B sign-in release
@@ -70,6 +78,8 @@ If the readable-text password count is above `0`, reset those accounts to strong
 Build order: fix 4, then 1, then 2, then 3.
 
 ### Fix 1 — Failed logins can use up server memory (audit HIGH-1) — built on this branch, not released
+
+Kept the designed limits after the operator asked on 2026-10-31. Five wrong passwords still lock the account for 15 minutes. The 10,000 cap is how many different failed names are remembered during an attack, not how many tries one person gets. Usernames over 100 characters and passwords over 256 characters are still refused. Current longest username is 12 in production and 13 on staging, so 100 does not block anyone. Passwords are not capped at 20, so a longer passphrase still works.
 - **Problem:** Every failed login stores the submitted username in memory with no size limit. Request bodies may be up to 4 MB, so each request can add up to about 4 MB.
 - **Affected code:** `server/auth/sessions.mjs` (`loginFailures`, `failureKey`, `loginLockStatus`, `noteLoginFailure`); `server/neris-proxy.mjs` `POST /api/auth/login`.
 - **Smallest safe change (memory only, no database table):**
@@ -82,7 +92,7 @@ Build order: fix 4, then 1, then 2, then 3.
 - **Automated tests (`server/auth/sessions.test.mjs`, no database needed):** long username rejected and not stored; 20,000 different failures never exceed 10,000 entries; a locked account stays locked through the flood; expired entries removed; existing tests still pass (5 failures lock, success clears).
 - **Staging check:** normal sign-in works; 5 wrong passwords on a test account → "too many attempts", unlocks after 15 minutes; a 50 KB username is refused quickly; Render memory graph stays flat.
 
-### Fix 2 — CAD intake secret only enforced when `NODE_ENV=production` (audit MEDIUM-1, part A)
+### Fix 2 — CAD intake secret only enforced when `NODE_ENV=production` (audit MEDIUM-1, part A) — built on this branch, not released
 - **Affected code:** `server/neris-proxy.mjs` CAD secret check and startup warning; new `server/cad/ingestGuard.mjs`.
 - **Smallest safe change:** Move the check into `ingestGuard.mjs`. With no secret configured, intake answers 503 everywhere (local development sets a test secret in `.env`). Compare with Node's timing-safe comparison. Nothing else about CAD intake changes.
 - **Depends on:** Part 1 item 4.
@@ -90,7 +100,9 @@ Build order: fix 4, then 1, then 2, then 3.
 - **Automated tests:** no secret → 503; wrong or missing header → 401; correct header → passes.
 - **Staging check:** a real or test dispatch email still appears in CAD emails and still creates/updates the incident; a hand-sent request without the header gets 401 and adds no row.
 
-### Fix 3 — CAD intake accepts mail with an empty sender list or unknown department (audit MEDIUM-1, part B)
+### Fix 3 — CAD intake accepts mail with an empty sender list or unknown department (audit MEDIUM-1, part B) — built on this branch, not released
+
+Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-sender list. Staging reported `cifpdil` with `0` allowed senders on 2026-10-31. The app has no screen for that list yet (`GET/PATCH /api/cad/allowlist` only). Deploying first would reject real dispatch email and save nothing.
 - **Affected code:** `server/neris-proxy.mjs` `cadInboundAllowlistDecision` and the department lookup in `POST /api/cad/inbound-email`.
 - **Smallest safe change:** Unknown department or empty allowed-sender list → existing "rejected" reply (same status the Worker already handles, so no retries); nothing saved. Matches the 2026-10-29 decision. Existing rows are untouched.
 - **Depends on:** fix 2; every department that receives CAD mail has an allowed sender **before** this reaches that environment (see Part 5).
