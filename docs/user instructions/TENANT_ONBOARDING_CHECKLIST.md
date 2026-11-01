@@ -234,7 +234,7 @@ Use this when dispatch will send mail to **`<tenant-slug>@cad.fireultimate.app`*
   1. **[https://dash.cloudflare.com](https://dash.cloudflare.com)** → select the zone **`fireultimate.app`** (or **`cad.fireultimate.app`** if you use a separate zone for the cad subdomain—see **`EMAIL_AND_CAD_SETUP.md`**).
   2. Left sidebar → **Email** → **Email Routing** (sometimes **Email** → **Routing rules**).
   3. Open **Custom addresses** (or **Addresses** / **Routing** depending on UI).
-  4. Create or edit the address whose **local part** equals **`<tenant-slug>`** (e.g. `cifpdil`), so the full address is **`cifpdil@cad.fireultimate.app`** or **`cifpdil@fireultimate.app`** as designed for your tenant.
+  4. Create or edit the address whose **local part** equals **`<tenant-slug>`** (e.g. `cifpdil`). For Crescent the live address is **`cifpdil@cad.fireultimate.app`**.
   5. Set the action to **Send to a Worker** (or **Worker**) and choose **`cad-email-ingest-worker`**. Save.
 - [ ] **Database:** `CadEmailIngest` migration applied on the **same** database as this API (see **`EMAIL_AND_CAD_SETUP.md`** §B6).
 - [ ] **Database migration (CAD parsing / allowlist storage — Batch C):** See **§I.2** below (staging first, then production). Until this runs on a given database, **`GET/PATCH /api/cad/parsing-config`** and **`/api/cad/allowlist`** will error for that environment.

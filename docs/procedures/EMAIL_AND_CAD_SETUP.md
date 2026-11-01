@@ -3,7 +3,9 @@
 **Purpose:** This is the **single guide** for:
 
 1. **Part A (optional)** — Set up **jeremy@fireultimate.app** on Google Workspace (business email).
-2. **Part B** — Set up the **CAD dispatch address** (cifpdil@fireultimate.app or cifpdil@cad.fireultimate.app) using Cloudflare Email Routing + Worker so dispatch emails reach the FireUltimate API and are stored in the database.
+2. **Part B** — Set up the **CAD dispatch address** using Cloudflare Email Routing + Worker so dispatch emails reach the FireUltimate API and are stored in the database.
+
+**CAD address source of truth (confirmed 2026-11-01):** **`cifpdil@cad.fireultimate.app`**. That is the live Crescent CAD ingest address. Do not tell operators or agents to use `cifpdil@fireultimate.app` unless Cloudflare Email Routing is later changed on purpose. The Worker name is **`cad-email-ingest-worker`**.
 
 **For agents:** This doc replaces **CAD_EMAIL_CIFPDIL_FIREULTIMATE_APP_SETUP.md**, **CAD_EMAIL_INGEST_SETUP_GUIDE.md**, and **EMAIL_GOOGLE_AND_CAD_CLOUDFLARE_SETUP.md**. Use this file only when working on email or CAD ingest.
 
@@ -18,7 +20,7 @@
 ## Overview: CAD email flow
 
 ```
-CAD dispatch (or you) sends email to cifpdil@fireultimate.app or cifpdil@cad.fireultimate.app
+CAD dispatch (or you) sends email to cifpdil@cad.fireultimate.app
        │
        ▼
 Cloudflare Email Routing (receives mail for that address)
@@ -33,28 +35,27 @@ Queue consumer POSTs to FireUltimate API
 POST /api/cad/inbound-email → store in CadEmailIngest → (later) parse and create incidents
 ```
 
-**Address options:**
+**Live CAD address:** **`cifpdil@cad.fireultimate.app`** (cad subdomain + custom address **cifpdil** → Worker **`cad-email-ingest-worker`**).
 
-- **cifpdil@fireultimate.app** — Custom address on the **root** zone fireultimate.app. Use this if you don’t need a separate subdomain.
-- **cifpdil@cad.fireultimate.app** — Use this if you add the **cad** subdomain in Cloudflare (Email Routing → Add subdomain **cad**), then create the custom address **cifpdil** for that subdomain.
+**Historical note only:** older setup text also mentioned **`cifpdil@fireultimate.app`** on the root zone. That is **not** the current live address. Keep the cad-subdomain setup so Part A Google MX records on the root zone are not disturbed.
 
-**If you use Part A (Google):** Part B must **not** remove or replace your Google MX records. Use the CAD address on the root zone or add the cad subdomain so Cloudflare doesn’t overwrite apex MX.
+**If you use Part A (Google):** Part B must **not** remove or replace your Google MX records. The cad subdomain setup is how CAD mail stays separate from those MX records.
 
 ---
 
 ## Where to view incoming CAD emails (e.g. cifpdil@cad.fireultimate.app)
 
-When an email is sent to your CAD address (e.g. **cifpdil@cad.fireultimate.app** or **cifpdil@fireultimate.app**), it is captured and stored. You can confirm receipt and view the content here:
+When an email is sent to **`cifpdil@cad.fireultimate.app`**, it is captured and stored. Confirm receipt in this order:
 
-| Where | How |
-|-------|-----|
-| **Render (API logs)** | Render Dashboard → your API Web Service (e.g. fireultimate-api-staging or production) → **Logs**. Look for **POST /api/cad/inbound-email** with status **200**. This confirms the Worker called the API and the request was accepted. |
-| **Neon (database)** | **Neon** → your project → **SQL Editor**. Run a query against the **CadEmailIngest** table. Each row is one received email. Example to see latest emails with full body for parsing: |
-| | `SELECT id, "tenantId", "fromAddress", "toAddress", "rawBody", "parsedMessageText", "headersJson", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 20;` |
-| | **Columns:** `fromAddress`, `toAddress` = sender and your CAD address; **`rawBody`** = stored payload (often base64-wrapped MIME); **`parsedMessageText`** = output of **Message Parsing** rules at ingest (Batch H); `headersJson` = headers; `createdAt` = when it was stored. |
-| **In-app UI** | **Admin Functions → Dispatch Parsing Settings.** Lists incoming CAD emails (From, To, received time); expand a row to view raw body. Product + implementation status: **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**. |
+| Where | How | Prefer? |
+|-------|-----|---------|
+| **In-app UI** | **Admin Functions → Dispatch Parsing Settings → Raw Email.** New row with recent time = success. | **Yes — primary check** |
+| **Neon (database)** | **Neon** → correct project (`fireultimate-staging` or `fireultimate-prod`) → **SQL Editor**. Run: |
+| | `SELECT id, "tenantId", "fromAddress", "toAddress", "rawBody", "parsedMessageText", "headersJson", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 20;` | **Yes — backup check** |
+| | **Columns:** `fromAddress`, `toAddress` = sender and CAD address; **`rawBody`** = stored payload; **`parsedMessageText`** = Message Parsing output; `createdAt` = when stored. | |
+| **Render (API logs)** | Render → API Web Service → **Logs**. Search for **`/api/cad/inbound-email`**. | **Optional only.** Operators often cannot find matching lines even when mail arrived. If Raw Email or Neon shows the row, treat CAD as working and ignore a failed Render log search. |
 
-**Before giving the address to dispatch:** Run the B8 test (send a test email, then check Render logs or Neon) so you know emails are reaching the API and the **CadEmailIngest** table. After you send the address to the CAD Dispatch center, view incoming mail in **Admin Functions → Dispatch Parsing Settings** (or Neon); parsing/editing rules will be added in a later update.
+**Before giving the address to dispatch:** Run the B8 test (send a test email to **`cifpdil@cad.fireultimate.app`**, then confirm in **Raw Email** or Neon). After dispatch starts using that address, view incoming mail the same way.
 
 ---
 
@@ -126,7 +127,7 @@ Send an email to **jeremy@fireultimate.app** from another account and confirm it
 
 # Part B — Set Up CAD Address and Worker
 
-**Goal:** Receive CAD dispatch mail at **cifpdil@fireultimate.app** or **cifpdil@cad.fireultimate.app** and send it to **cad-email-ingest-worker**, which POSTs to the FireUltimate API.
+**Goal:** Receive CAD dispatch mail at **`cifpdil@cad.fireultimate.app`** and send it to **cad-email-ingest-worker**, which POSTs to the FireUltimate API.
 
 **Important:** If Cloudflare asks you to **delete or replace existing MX records** (Google’s), **do not confirm**. That would break **jeremy@fireultimate.app**. Use **cifpdil@fireultimate.app** (root zone) or add the **cad** subdomain so you don’t overwrite apex MX.
 
@@ -280,21 +281,22 @@ See **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`**.
 
 1. **Cloudflare** → **fireultimate.app** → **Email** → **Email Routing**.
 2. Under **Custom addresses**, find **cifpdil** (or **Email Workers** / **Routes**).
-3. Edit the address or add a route so that **cifpdil@fireultimate.app** or **cifpdil@cad.fireultimate.app** (whichever you created) has **Action: Send to a Worker** → **cad-email-ingest-worker**.
+3. Edit the address or add a route so that **`cifpdil@cad.fireultimate.app`** has **Action: Send to a Worker** → **cad-email-ingest-worker**.
 4. **Save**.
 
 ---
 
 ## B8. Test CAD email
 
-1. Send a test email to your CAD address (**cifpdil@fireultimate.app** or **cifpdil@cad.fireultimate.app**).
-2. **Confirm** one of these:
-   - **Render:** Dashboard → your API Web Service → **Logs**. Look for **POST /api/cad/inbound-email** with status **200**.
-   - **Neon:** SQL Editor → run:
+1. Send a test email to **`cifpdil@cad.fireultimate.app`**.
+2. **Confirm** in this order:
+   - **Primary:** App → **Admin Functions → Dispatch Parsing Settings → Raw Email** shows a new row.
+   - **Backup — Neon:** SQL Editor → run:
      ```sql
      SELECT id, "toAddress", "fromAddress", "createdAt" FROM "CadEmailIngest" ORDER BY "createdAt" DESC LIMIT 5;
      ```
-     You should see a row with **toAddress** = your CAD address and **createdAt** near when you sent the email.
+     You should see a row with **toAddress** = `cifpdil@cad.fireultimate.app` and **createdAt** near when you sent the email.
+   - **Optional — Render logs:** may show **`/api/cad/inbound-email`**. If Raw Email or Neon already shows the row, do not treat a failed Render log search as a CAD failure.
 
 ---
 
@@ -345,7 +347,7 @@ If you enabled Email Routing on the root and want **jeremy@fireultimate.app** to
 | What | Where |
 |------|--------|
 | **jeremy@fireultimate.app** | Google Workspace (Part A): TXT + MX in Cloudflare, user in Admin. |
-| **cifpdil@fireultimate.app** or **cifpdil@cad.fireultimate.app** (CAD) | Cloudflare (Part B): Email Routing, custom address **cifpdil** (root or **cad** subdomain) → **cad-email-ingest-worker**. Give this address to dispatch. |
+| **`cifpdil@cad.fireultimate.app`** (CAD — live source of truth) | Cloudflare (Part B): Email Routing on **cad** subdomain, custom address **cifpdil** → **cad-email-ingest-worker**. Give this address to dispatch. |
 
 **Checklist:** Part A (optional) → B1–B3 (routing + address) → B4–B5 (Worker + API URL) → B6 (migration) → B7 (connect address to Worker) → B8 (test) → **B11 (switch Worker to production before go-live)** → give address to dispatch.
 
@@ -360,4 +362,4 @@ Cloudflare’s “Add a site” accepts only **root** domains. Creating a zone f
 3. If successful, add **two NS records** in the **fireultimate.app** zone for **cad**, using the nameservers from the create response.
 4. When **cad.fireultimate.app** is Active, enable Email Routing for that zone and create the custom address **cifpdil** there.
 
-If the API rejects subdomain zone creation, use **cifpdil@fireultimate.app** (root zone) or the in-dashboard “Add subdomain” under Email Routing (B2) if available.
+If the API rejects subdomain zone creation, use the in-dashboard “Add subdomain” under Email Routing (B2). The live Crescent address remains **`cifpdil@cad.fireultimate.app`**.

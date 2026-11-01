@@ -31,7 +31,7 @@ Gather these (write them on paper or a notes app — do not paste secrets into p
 |------|------------------|
 | **Staging app URL** | Example: `https://cifpdil.staging.fireultimate.app` — you must open the app on the **tenant’s hostname**, not a wrong subdomain. |
 | **Admin username and password** | For staging only. Role must be **admin** (or equivalent) so **Admin Functions** is visible. |
-| **CAD ingest email address** | The address you send test mail **to** (e.g. `cifpdil@cad.fireultimate.app`). Must match **tenant slug** as above. |
+| **CAD ingest email address** | Live Crescent address: **`cifpdil@cad.fireultimate.app`**. Must match tenant slug `cifpdil`. |
 | **A second email account** | Gmail, Outlook, etc., to **send** the test message (not the same inbox as the CAD address unless your setup allows it). |
 
 Optional but useful:
@@ -89,7 +89,7 @@ Optional but useful:
 1. Open a **different** browser tab.
 2. Log in to your personal email (Gmail, Outlook, etc.).
 3. Click **Compose** / **New message**.
-4. **To:** type your **CAD ingest address** exactly (example: `cifpdil@cad.fireultimate.app`).
+4. **To:** type **`cifpdil@cad.fireultimate.app`** exactly.
 5. **Subject:** `Staging CAD test` (any text is fine).
 6. **Body:** Type a short plain message, for example:  
    `TEST — address 123 Main St — nature fire — time 14:30:00`

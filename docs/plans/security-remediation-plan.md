@@ -1,9 +1,9 @@
 # Security Remediation Plan (October 2026)
 
-**Status:** **Stage B release BLOCKED.** Fixes 11–14 are built on this practice branch (2026-11-01, commits `939a629`, `70ac3d5`, `aa9eba0`, `4eaed9e`). Automated tests passed: 23 tests. They are not released. The operator's click check of report `26-UPPER` passed on 2026-11-01, about 11:53 a.m. America/Chicago. Staging checks are still open. Do not rebuild fixes 8–14 or the Part 0 line. Part 0 is on this practice branch only (`ba777be`) and is not on `main` or staging. Fix 15 (that same line on the live sites) still needs a separate approval. Do not merge.
+**Status:** **Stage B release BLOCKED.** Fixes 11–14 are built on this practice branch (2026-11-01, commits `939a629`, `70ac3d5`, `aa9eba0`, `4eaed9e`). Automated tests passed: 23 tests. They are not released. The operator's click check of report `26-UPPER` passed on 2026-11-01, about 11:53 a.m. America/Chicago. Staging checks are still open. Do not rebuild fixes 8–14 or the Part 0 line. Part 0 / fix 15: the same one-line check is now on staging (`submenu/neris-golive-cifpd`, PR #32 merged) and on `main` (PR #33 merged). Operator staging verification passed on 2026-11-01 (America/Chicago). Production deploy verification still needs the operator’s Part E checks if not already finished. Do not rebuild that line. Do not merge this Stage B practice branch.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
 **Verified:** The independent check on 2026-10-31, 10:27 p.m. America/Chicago, was against commit `a7a9413`. Later commits on this branch, through `1857c9c`, include View Exports (`25b30c1`), the Part 0 key check (`ba777be`), and fixes 8–10. Those later commits were not part of that October 31 check. The operator finished the practice-site click checks for fixes 8, 9, and 10 on 2026-11-01, about 11:30 a.m. America/Chicago, and reported no issues. Staging checks for those fixes stay open until this branch is deployed.
-**Progress (2026-11-01, America/Chicago):** Part 1 is complete. Part 0 code is on this practice branch only and is not on `main` or staging. Part 2 code (fixes 1–4 and 8–14) is built and automated tests passed. The operator's practice-site click checks for fixes 8–10 passed, and the `26-UPPER` report check passed on 2026-11-01, about 11:53 a.m. America/Chicago. Nothing in Part 2 is released. Staging checks are open. Part 3 code (fixes 5, 6, and 7) is built and not released. Follow-ups 5a and 5b are fix 16, Stage C, and are not built. The operator chose the recommended path: fix 13 treats HEAD as a normal read, fix 16 stays unbuilt, and fix 17 stays as the 15-minute lock with no code change. Fix 15 still needs a separate approval. Part 4 is deferred. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in a coding session. Do not save a Fire Recovery password in production until fixes 5–7 are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail. Do not merge.
+**Progress (2026-11-01, America/Chicago):** Part 1 is complete. Part 0 code is on this practice branch only and is not on `main` or staging. Part 2 code (fixes 1–4 and 8–14) is built and automated tests passed. The operator's practice-site click checks for fixes 8–10 passed, and the `26-UPPER` report check passed on 2026-11-01, about 11:53 a.m. America/Chicago. Nothing in Part 2 is released. Staging checks are open. Part 3 code (fixes 5, 6, and 7) is built and not released. Follow-ups 5a and 5b are fix 16, Stage C, and are not built. The operator chose the recommended path: fix 13 treats HEAD as a normal read, fix 16 stays unbuilt, and fix 17 stays as the 15-minute lock with no code change. Fix 15 code is on staging and `main`. Operator confirmed staging success on 2026-11-01: lowercase/uppercase/mixed-case admin paths returned 403, staging sign-in worked, and CAD mail to **`cifpdil@cad.fireultimate.app`** arrived while the Worker pointed at staging. Render log search found no matching lines; treat Raw Email / Neon as the CAD proof, not Render search. Part 4 is deferred. Crescent CAD address source of truth is **`cifpdil@cad.fireultimate.app`**. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in a coding session. Do not save a Fire Recovery password in production until fixes 5–7 are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail. Do not merge.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -20,9 +20,9 @@ Rules for every fix:
 
 ---
 
-## Part 0 — Urgent: platform admin key can be skipped (production and staging today)
+## Part 0 — Urgent: platform admin key can be skipped (was live on production and staging)
 
-**Code status: the one-line check is built on this practice branch and not released.** The operator approved it on 2026-11-01. It is not on `main` or staging yet. Not caused by the remediation. The same gap is still on `main` (production) and `submenu/neris-golive-cifpd` (staging) until this one change is placed there by itself.
+**Code status: fixed on the live branches.** Practice-branch line remains at `ba777be`. Live copies: staging PR #32 merged (`fedb881` on `submenu/neris-golive-cifpd`); production PR #33 merged (`fae804a` on `main`). Operator staging verification passed 2026-11-01. Production still needs the operator’s post-deploy checks if not already finished.
 
 - **Problem:** The program-owner tools under `/api/admin/` require the platform admin key. The check only looks at paths that start with lowercase `/api/admin` (`requirePlatformAdmin`, `server/neris-proxy.mjs` line 1554 on this branch; line 1618 on `main`; line 1633 on staging). Express matches routes regardless of letter case, so `/API/admin/...` reaches the same tools with no key.
 - **What someone could do on a live server:** create a new department with an admin password they choose (`POST /api/admin/tenants`), attach a web address to any existing department (`POST /api/admin/tenants/:tenantId/domains`), or refresh the NERIS directory. These routes run before the department is looked up, so they work on any address that reaches the server, including the direct Render address.
@@ -337,16 +337,12 @@ function publicErrorMessage(error, fallback) {
   3. Keep the existing NERIS and CAD rule tests passing; they show that public messages still reach the screen.
 - **Staging check:** none that is safe to force. Confirm a normal NERIS validation error and a CAD rule mistake still show a readable message.
 
-### Fix 15 — Put the Part 0 admin-key line on `main` and staging (operational; separate approval)
-- **Problem:** `main` (`3f9b97a`, line 1618) and staging (`2d985fa`, line 1633) still have `if (!request.path.startsWith("/api/admin")) {`. On those live servers, `/API/admin/...` skips the platform admin key. This was re-checked on 2026-11-01.
-- **Smallest safe change:** the same one line used on this branch: `if (!request.path.toLowerCase().startsWith("/api/admin")) {`. Nothing else. Do not bring fixes 8–14 or Stage B with it.
-- **How (only after the user approves this exact step):**
-  1. `git fetch origin main` and create `cursor/admin-key-case-main-44c8` (or the user's preferred name) from `origin/main`.
-  2. Change that one line. Add one test only if the branch already has a server test file. `main` does not run the session test.
-  3. `npm run lint` and `npm run build`. Open a pull request into `main`. The user merges it.
-  4. Repeat from `origin/submenu/neris-golive-cifpd` with a pull request into that branch, or let the user merge `main` into staging.
-- **Check after each deploy:** `curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<that environment's API>/API/admin/tenants -H "Content-Type: application/json" -d '{}'` returns `403`. Do not send a real tenant body. Then confirm CAD email still arrives and normal sign-in still works.
-- **Until it is deployed:** keep watching Render logs for `/API` paths, and rerun the two Part 0 Step 1 queries after any unexpected log line.
+### Fix 15 — Put the Part 0 admin-key line on `main` and staging (operational)
+- **Status (2026-11-01, America/Chicago):** **Staging verified.** Code is also merged to `main`. Production post-deploy checks still belong to the operator if not finished.
+- **Branches / PRs:** staging `cursor/admin-key-case-staging-44c8` → PR #32 merged into `submenu/neris-golive-cifpd` (`fedb881`). Production `cursor/admin-key-case-main-44c8` → PR #33 merged into `main` (`fae804a`). Each changed only `requirePlatformAdmin` to `request.path.toLowerCase().startsWith("/api/admin")`.
+- **Staging operator result:** Parts A–D passed. `/api/admin`, `/API/admin`, and `/api/Admin` returned 403 without a key. Staging sign-in worked. CAD Worker pointed at staging and received mail to **`cifpdil@cad.fireultimate.app`** with no issue. Render Logs search found no matching lines; that is a known weak check. Prefer **Raw Email** or Neon.
+- **CAD address source of truth:** **`cifpdil@cad.fireultimate.app`**.
+- **Still open for the operator:** Part E on production — wait for `fireultimate-api-prod` to show the new deploy Live, run the three 403 checks against `https://cifpdil.fireultimate.app`, and confirm production sign-in. Because the Worker currently points at staging, skip a production CAD email test unless the Worker URL is switched on purpose.
 
 ### Fix 16 — NERIS export record follow-ups (5a and 5b) — Stage C, not a Stage B blocker
 - **5a correction (2026-11-01):** the October 31 verification said the browser used to fill in the validator name. That was wrong. At the original audit commit `7e6b991`, the browser also passed `""` for the validator name (`appendExportHistoryRecord(exportResult, "", statusForHistory)`). The blank value is not a regression. Only build this if the user wants a validator name recorded.
@@ -462,10 +458,10 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 
 ## Decisions needed
 
-- **Part 0:** the read-only checks are done. The one-line fix is approved and built on this practice branch only. On 2026-11-01 the operator assigned the live-site copy (fix 15) to a different agent. Do not merge this branch to do that.
+- **Part 0 / Fix 15:** live-site copies are merged. Staging verification passed 2026-11-01. Production code is on `main`; finish Part E checks if not already done. Do not rebuild. Do not merge this Stage B practice branch to do Part 0.
 - **Fixes 8, 9, and 10:** approved and built on this practice branch on 2026-11-01. The operator's practice-site click checks passed. Not released.
 - **Fixes 11–14:** approved, built, and click-checked on this practice branch on 2026-11-01. Report `26-UPPER` opened and saved. Not released. Fix 13 treats HEAD as a normal read. Fix 16 is not built. Fix 17 stays the 15-minute lock, with no code change.
-- **Fix 15:** a different agent is placing the one admin-key line on `main` and staging. This branch stays out of that work.
+- **Fix 15:** staging verified; production PR merged. Operator finishes Part E if needed.
 - **Fix 16:** whether a validator name should be recorded at all (5a). How NERIS answers a second export (5b) is checked on staging during Stage C.
 - **Fix 17:** kept as the 15-minute lock. No code change for Stage B.
 - Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
@@ -534,7 +530,7 @@ Second independent post-remediation verification, 2026-11-01 (America/Chicago), 
 | Item | Result | Evidence | Next step |
 |---|---|---|---|
 | Part 0 admin key (this branch) | VERIFIED FIXED | `/API/admin/...` and `/api/Admin/...` with no key returned 403. | Fix 15 for `main` and staging. |
-| Part 0 admin key (`main`, staging) | NOT FIXED | Line 1618 on `main` and 1633 on staging still compare the path without lowercasing it. | Fix 15. |
+| Part 0 admin key (`main`, staging) | STAGING VERIFIED; PROD CODE MERGED | Staging operator checks passed 2026-11-01. PRs #32 and #33 merged. Finish production Part E if needed. | Fix 15 nearly done. |
 | Fix 8 letter case and trailing slash | VERIFIED FIXED, with regression | Signed out, `/API`, `/aPi`, and trailing-slash variants returned 404 or 401. A regular user got 403 on the exact path and 404 on variants. Capital letters in a call number also return 404. | Fix 11. |
 | Fix 7 billing reads | VERIFIED FIXED | Regular user: 403 on the exact path, 404 on case and slash variants. `HEAD` still returned 200. | Fix 13. |
 | Fix 9 lockout | VERIFIED FIXED | Five wrong passwords lock a known account; flooding did not reset it. Anyone who knows a username can trigger the lock. | Fix 17 (decision). |
