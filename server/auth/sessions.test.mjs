@@ -5,7 +5,24 @@ import { readFileSync } from "node:fs";
 import http from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
-import { PUBLIC_API_ROUTES, normalizeRole, originAllowed, publicHostname, revokeAllSessions } from "./sessions.mjs";
+import {
+  LOGIN_FAILURE_LIMIT,
+  LOGIN_FAILURE_MAP_MAX,
+  LOGIN_LOCK_MS,
+  LOGIN_PASSWORD_MAX,
+  LOGIN_USERNAME_MAX,
+  PUBLIC_API_ROUTES,
+  clearLoginLockouts,
+  loginCredentialsOversized,
+  loginFailureCount,
+  loginLockStatus,
+  normalizeRole,
+  noteLoginFailure,
+  noteLoginSuccess,
+  originAllowed,
+  publicHostname,
+  revokeAllSessions,
+} from "./sessions.mjs";
 
 const DATABASE_URL = "postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable";
 const databaseHost = new URL(DATABASE_URL).hostname;
@@ -43,6 +60,70 @@ test("server sign-in passes", async () => {
     false,
   );
 
+  clearLoginLockouts();
+  assert.equal(loginCredentialsOversized("a".repeat(LOGIN_USERNAME_MAX + 1), "secret"), true);
+  assert.equal(loginCredentialsOversized("chief", "p".repeat(LOGIN_PASSWORD_MAX + 1)), true);
+  assert.equal(loginCredentialsOversized("a".repeat(50_000), "secret"), true);
+  assert.equal(loginCredentialsOversized("a".repeat(LOGIN_USERNAME_MAX), "p".repeat(LOGIN_PASSWORD_MAX)), false);
+  assert.equal(loginFailureCount(), 0);
+
+  for (let attempt = 1; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
+    const result = noteLoginFailure("memory", "bob");
+    assert.equal(result.locked, false, `attempt ${attempt} should not lock`);
+  }
+  const fifth = noteLoginFailure("memory", "bob");
+  assert.equal(fifth.locked, true);
+  assert.equal(loginLockStatus("memory", "bob").locked, true);
+  noteLoginSuccess("memory", "bob");
+  assert.equal(loginLockStatus("memory", "bob").locked, false);
+  noteLoginFailure("memory", "bob");
+  assert.equal(loginLockStatus("memory", "bob").locked, false);
+
+  clearLoginLockouts();
+  for (let index = 0; index < 20_000; index += 1) {
+    noteLoginFailure("flood", `user-${index}`);
+  }
+  assert.equal(loginFailureCount(), LOGIN_FAILURE_MAP_MAX);
+
+  clearLoginLockouts();
+  const stamp = 1_700_000_000_000;
+  for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
+    noteLoginFailure("dept", "victim", stamp);
+  }
+  assert.equal(loginLockStatus("dept", "victim", stamp).locked, true);
+  for (let index = 0; index < 20_000; index += 1) {
+    noteLoginFailure("dept", `other-${index}`, stamp);
+  }
+  assert.equal(loginFailureCount(), LOGIN_FAILURE_MAP_MAX);
+  assert.equal(loginLockStatus("dept", "victim", stamp).locked, true);
+
+  clearLoginLockouts();
+  for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
+    noteLoginFailure("dept", "old-lock", stamp);
+  }
+  for (let index = 0; index < LOGIN_FAILURE_MAP_MAX - 1; index += 1) {
+    noteLoginFailure("dept", `fill-${index}`, stamp);
+  }
+  assert.equal(loginFailureCount(), LOGIN_FAILURE_MAP_MAX);
+  const later = stamp + LOGIN_LOCK_MS + 1;
+  const afterExpiry = noteLoginFailure("dept", "after-expiry", later);
+  assert.equal(afterExpiry.deferred, false);
+  assert.equal(loginLockStatus("dept", "old-lock", later).locked, false);
+  assert.ok(loginFailureCount() <= LOGIN_FAILURE_MAP_MAX);
+
+  clearLoginLockouts();
+  for (let index = 0; index < LOGIN_FAILURE_MAP_MAX; index += 1) {
+    for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
+      noteLoginFailure("dept", `locked-${index}`, stamp);
+    }
+  }
+  assert.equal(loginFailureCount(), LOGIN_FAILURE_MAP_MAX);
+  const deferred = noteLoginFailure("dept", "stranger", stamp);
+  assert.equal(deferred.deferred, true);
+  assert.equal(loginFailureCount(), LOGIN_FAILURE_MAP_MAX);
+  assert.equal(loginLockStatus("dept", "locked-0", stamp).locked, true);
+  clearLoginLockouts();
+
   assert.equal(publicHostname({ headers: { host: "alpha.test", "x-forwarded-host": "bravo.test" } }), "alpha.test");
   process.env.TRUST_PROXY = "1";
   assert.equal(publicHostname({ headers: { host: "alpha.test", "x-forwarded-host": "spoof.test, render.test" } }), "render.test");
@@ -54,7 +135,7 @@ test("server sign-in passes", async () => {
   execFileSync("npx", ["prisma", "generate"], { stdio: "inherit", env: process.env });
   execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "inherit", env: process.env });
 
-  const { app, prisma, clearLoginLockouts } = await import("../neris-proxy.mjs");
+  const { app, prisma } = await import("../neris-proxy.mjs");
   clearLoginLockouts();
 
   const password = "Password1!";
@@ -899,6 +980,46 @@ test("server sign-in passes", async () => {
     await revokeAllSessions(prisma, user.id);
     assert.equal((await call("/api/auth/session", { cookie: deviceOneCookie.pair })).status, 401);
     assert.equal((await call("/api/users", { cookie: deviceTwoCookie.pair })).status, 401);
+
+    clearLoginLockouts();
+    const failuresBeforeHuge = loginFailureCount();
+    const hugeName = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "u".repeat(50_000), password: "nope" },
+    });
+    assert.equal(hugeName.status, 401);
+    assert.equal(hugeName.json.message, "Invalid username or password.");
+    const hugePassword = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "p".repeat(LOGIN_PASSWORD_MAX + 1) },
+    });
+    assert.equal(hugePassword.status, 401);
+    assert.equal(hugePassword.json.message, "Invalid username or password.");
+    assert.equal(loginFailureCount(), failuresBeforeHuge);
+    assert.equal(loginLockStatus(demo.id, "chief").locked, false);
+
+    const fullStamp = Date.now();
+    for (let index = 0; index < LOGIN_FAILURE_MAP_MAX; index += 1) {
+      for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
+        noteLoginFailure(demo.id, `locked-${index}`, fullStamp);
+      }
+    }
+    const blocked = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "brand-new-person", password: "wrong" },
+    });
+    assert.equal(blocked.status, 429);
+    assert.equal(blocked.json.message, "Too many sign-in attempts. Try again later.");
+    const stillWorks = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "Password2!" },
+    });
+    assert.equal(stillWorks.status, 200);
+    clearLoginLockouts();
 
     for (let attempt = 1; attempt <= 5; attempt += 1) {
       const failed = await call("/api/auth/login", {

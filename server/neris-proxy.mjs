@@ -29,6 +29,7 @@ import {
   clearLoginLockouts,
   clearSessionCookie,
   createSession,
+  loginCredentialsOversized,
   loginLockStatus,
   noteLoginFailure,
   noteLoginSuccess,
@@ -4162,6 +4163,13 @@ app.get("/api/department-details", async (request, response) => {
 
 app.post("/api/auth/login", (request, response) => {
   const body = request.body && typeof request.body === "object" ? request.body : {};
+  if (loginCredentialsOversized(body.username, body.password)) {
+    response.status(401).json({
+      ok: false,
+      message: "Invalid username or password.",
+    });
+    return;
+  }
   const submittedUsername = String(body.username ?? "").trim().toLowerCase();
   const submittedPassword = String(body.password ?? "");
   const tenantId = request.tenant?.id;
@@ -4202,7 +4210,14 @@ app.post("/api/auth/login", (request, response) => {
     const storedHash = dbUser ? String(dbUser.passwordHash ?? "") : "";
     const valid = dbUser ? await verifyPassword(submittedPassword, storedHash) : false;
     if (!dbUser || !valid) {
-      noteLoginFailure(tenantId, submittedUsername);
+      const failure = noteLoginFailure(tenantId, submittedUsername);
+      if (failure.deferred) {
+        response.status(429).json({
+          ok: false,
+          message: "Too many sign-in attempts. Try again later.",
+        });
+        return;
+      }
       response.status(401).json({
         ok: false,
         message: "Invalid username or password.",

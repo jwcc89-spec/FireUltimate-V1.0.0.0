@@ -5,6 +5,12 @@ export const SESSION_COOKIE_NAME = "fu_session";
 export const SESSION_IDLE_MS = 60 * 60 * 1000;
 export const LOGIN_FAILURE_LIMIT = 5;
 export const LOGIN_LOCK_MS = 15 * 60 * 1000;
+/** Usernames longer than this are refused and not stored. Matches the sign-in cap. */
+export const LOGIN_USERNAME_MAX = 100;
+/** Passwords longer than this are refused and not stored. */
+export const LOGIN_PASSWORD_MAX = 256;
+/** Failed-sign-in rows kept in memory. Locked rows are never dropped to make room. */
+export const LOGIN_FAILURE_MAP_MAX = 10_000;
 const ACTIVITY_WRITE_INTERVAL_MS = 60 * 1000;
 
 const ROLES = new Set(["user", "subadmin", "admin", "superadmin"]);
@@ -32,33 +38,78 @@ export function clearLoginLockouts() {
   loginFailures.clear();
 }
 
+export function loginFailureCount() {
+  return loginFailures.size;
+}
+
+/** True when the submitted text is too large to store or check. */
+export function loginCredentialsOversized(username, password) {
+  const name = typeof username === "string" ? username : String(username ?? "");
+  const pass = typeof password === "string" ? password : String(password ?? "");
+  return name.length > LOGIN_USERNAME_MAX || pass.length > LOGIN_PASSWORD_MAX;
+}
+
 function failureKey(tenantId, username) {
   return `${tenantId}\n${String(username ?? "").trim().toLowerCase()}`;
 }
 
-export function loginLockStatus(tenantId, username) {
-  const key = failureKey(tenantId, username);
-  const row = loginFailures.get(key);
-  if (!row) return { locked: false };
-  if (row.lockedUntil && row.lockedUntil > Date.now()) {
-    return { locked: true, retryAt: row.lockedUntil };
+function sweepExpiredLoginFailures(now) {
+  for (const [key, row] of loginFailures) {
+    if (row.lockedUntil && row.lockedUntil <= now) loginFailures.delete(key);
   }
-  if (row.lockedUntil && row.lockedUntil <= Date.now()) {
-    loginFailures.delete(key);
+}
+
+/** Drops one unlocked row, the one recorded earliest. Locked rows stay. */
+function evictOldestUnlockedLoginFailure(now) {
+  let oldestKey = "";
+  let oldestAt = Infinity;
+  let found = false;
+  for (const [key, row] of loginFailures) {
+    if (row.lockedUntil && row.lockedUntil > now) continue;
+    const createdAt = row.createdAt ?? 0;
+    if (!found || createdAt < oldestAt) {
+      found = true;
+      oldestAt = createdAt;
+      oldestKey = key;
+    }
+  }
+  if (!found) return false;
+  loginFailures.delete(oldestKey);
+  return true;
+}
+
+export function loginLockStatus(tenantId, username, now = Date.now()) {
+  sweepExpiredLoginFailures(now);
+  const row = loginFailures.get(failureKey(tenantId, username));
+  if (!row) return { locked: false };
+  if (row.lockedUntil && row.lockedUntil > now) {
+    return { locked: true, retryAt: row.lockedUntil };
   }
   return { locked: false };
 }
 
-export function noteLoginFailure(tenantId, username) {
+export function noteLoginFailure(tenantId, username, now = Date.now()) {
+  sweepExpiredLoginFailures(now);
   const key = failureKey(tenantId, username);
-  const row = loginFailures.get(key) ?? { count: 0, lockedUntil: 0 };
-  if (row.lockedUntil && row.lockedUntil > Date.now()) {
-    return { locked: true, retryAt: row.lockedUntil };
+  const existing = loginFailures.get(key);
+  if (existing?.lockedUntil && existing.lockedUntil > now) {
+    return { locked: true, retryAt: existing.lockedUntil, deferred: false };
   }
+  if (!existing && loginFailures.size >= LOGIN_FAILURE_MAP_MAX) {
+    const madeRoom = evictOldestUnlockedLoginFailure(now);
+    if (!madeRoom) {
+      return { locked: false, retryAt: 0, deferred: true };
+    }
+  }
+  const row = loginFailures.get(key) ?? { count: 0, lockedUntil: 0, createdAt: now };
   const count = row.count + 1;
-  const lockedUntil = count >= LOGIN_FAILURE_LIMIT ? Date.now() + LOGIN_LOCK_MS : 0;
-  loginFailures.set(key, { count, lockedUntil });
-  return { locked: lockedUntil > 0, retryAt: lockedUntil };
+  const lockedUntil = count >= LOGIN_FAILURE_LIMIT ? now + LOGIN_LOCK_MS : 0;
+  loginFailures.set(key, {
+    count,
+    lockedUntil,
+    createdAt: row.createdAt ?? now,
+  });
+  return { locked: lockedUntil > now, retryAt: lockedUntil, deferred: false };
 }
 
 export function noteLoginSuccess(tenantId, username) {
