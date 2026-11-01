@@ -13355,6 +13355,7 @@ function RouteResolver({
       <Navigate to="/admin-functions/dispatch-parsing-settings/raw-email" replace />
     );
   } else if (
+    path === "/admin-functions/dispatch-parsing-settings/allowed-senders" ||
     path === "/admin-functions/dispatch-parsing-settings/raw-email" ||
     path === "/admin-functions/dispatch-parsing-settings/message-parsing" ||
     path === "/admin-functions/dispatch-parsing-settings/incident-parsing"

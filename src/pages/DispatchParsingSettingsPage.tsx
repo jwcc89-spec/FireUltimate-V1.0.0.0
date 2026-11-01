@@ -5,10 +5,16 @@ import {
   getDispatchPlainTextFromRawBody,
   tryDecodeRawBody,
 } from "../cadDispatch/extractDispatchPlainText.ts";
+import { DispatchParsingAllowedSendersPanel } from "./DispatchParsingAllowedSendersPanel.tsx";
 import { DispatchParsingIncidentPanel } from "./DispatchParsingIncidentPanel.tsx";
 import { DispatchParsingMessagePanel } from "./DispatchParsingMessagePanel.tsx";
 
 export const DISPATCH_PARSING_ADMIN_MODULES = [
+  {
+    id: "allowed-senders",
+    label: "Allowed Senders",
+    path: "/admin-functions/dispatch-parsing-settings/allowed-senders",
+  },
   {
     id: "message-parsing",
     label: "Message Parsing",
@@ -256,8 +262,8 @@ function normalizePath(pathname: string): string {
 }
 
 /**
- * Dispatch Parsing Settings: sidebar (Raw Email, Message Parsing, Incident Parsing) + content.
- * Routed paths: …/raw-email, …/message-parsing, …/incident-parsing.
+ * Dispatch Parsing Settings: sidebar plus one module at a time.
+ * Routed paths: …/allowed-senders, …/raw-email, …/message-parsing, …/incident-parsing.
  */
 export function DispatchParsingAdminPage() {
   const location = useLocation();
@@ -265,11 +271,13 @@ export function DispatchParsingAdminPage() {
   const path = normalizePath(location.pathname);
 
   const activeModuleId: DispatchParsingModuleId =
-    path === "/admin-functions/dispatch-parsing-settings/message-parsing"
-      ? "message-parsing"
-      : path === "/admin-functions/dispatch-parsing-settings/incident-parsing"
-        ? "incident-parsing"
-        : "raw-email";
+    path === "/admin-functions/dispatch-parsing-settings/allowed-senders"
+      ? "allowed-senders"
+      : path === "/admin-functions/dispatch-parsing-settings/message-parsing"
+        ? "message-parsing"
+        : path === "/admin-functions/dispatch-parsing-settings/incident-parsing"
+          ? "incident-parsing"
+          : "raw-email";
 
   return (
     <section className="page-section reporting-admin-root">
@@ -293,6 +301,7 @@ export function DispatchParsingAdminPage() {
           </nav>
         </aside>
         <article className="panel neris-form-panel reporting-admin-content">
+          {activeModuleId === "allowed-senders" ? <DispatchParsingAllowedSendersPanel /> : null}
           {activeModuleId === "raw-email" ? <DispatchParsingRawEmailPanel /> : null}
           {activeModuleId === "message-parsing" ? <DispatchParsingMessagePanel /> : null}
           {activeModuleId === "incident-parsing" ? <DispatchParsingIncidentPanel /> : null}
