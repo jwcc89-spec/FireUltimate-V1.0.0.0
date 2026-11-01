@@ -1,6 +1,8 @@
 # Session summary — October 31, 2026
 
-**Read this for a condensed view of the click-through.** Technical detail for the next agent is in `sessions/2026-10-31-session.md`. Active status is in `ACTIVE_CONTEXT.md`.
+**History.** This file records October 31 only. Staging was updated the next day. Current status is `conversations/2026-11-01-session-summary.md` and `ACTIVE_CONTEXT.md`. Sentences below that say “do not merge pull request 31” were true on October 31. Pull request 31 was merged on November 1.
+
+**Read this for a condensed view of the click-through.** Technical detail for the next agent is in `sessions/2026-10-31-session.md`.
 
 This was the Stage B click-through on the practice copy only. Crescent's live site and the staging site were not changed.
 
