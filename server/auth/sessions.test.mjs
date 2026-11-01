@@ -1149,6 +1149,169 @@ test("server sign-in passes", async () => {
       0,
     );
     delete process.env.CAD_INGEST_SECRET;
+
+    const exportLogin = await call("/api/auth/login", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { username: "chief", password: "Password2!" },
+    });
+    assert.equal(exportLogin.status, 200);
+    const exportCookie = sessionCookie(exportLogin.setCookie);
+    const forgedSuccess = await call("/api/neris/export-history", {
+      method: "POST",
+      cookie: exportCookie.pair,
+      requestOrigin: origin,
+      body: {
+        callNumber: "FORGED",
+        attemptStatus: "success",
+        nerisId: "FD33333333|FORGED|1710000000",
+        submittedPayloadPreview: "{}",
+      },
+    });
+    assert.equal(forgedSuccess.status, 400);
+    assert.match(forgedSuccess.json.message, /failed export/);
+    assert.equal(await prisma.nerisExportHistory.count({ where: { tenantId: demo.id, callNumber: "FORGED" } }), 0);
+
+    const browserFailure = await call("/api/neris/export-history", {
+      method: "POST",
+      cookie: exportCookie.pair,
+      requestOrigin: origin,
+      body: {
+        callNumber: "LOCAL-FAIL",
+        attemptStatus: "failed",
+        responseDetail: "server-receipt:v1\nstolen",
+        responseSummary: "network",
+      },
+    });
+    assert.equal(browserFailure.status, 201);
+    assert.equal(browserFailure.json.data.attemptStatus, "failed");
+    assert.equal(String(browserFailure.json.data.responseDetail).includes("server-receipt"), false);
+    const storedFailure = await prisma.nerisExportHistory.findFirst({
+      where: { tenantId: demo.id, callNumber: "LOCAL-FAIL" },
+    });
+    assert.equal(String(storedFailure.responseDetail).includes("server-receipt"), false);
+
+    const originalFetch = globalThis.fetch;
+    let nerisMode = "error";
+    globalThis.fetch = async (url, init) => {
+      const target = String(url);
+      if (target.startsWith("http://127.0.0.1") || target.startsWith("http://localhost")) {
+        return originalFetch(url, init);
+      }
+      if (target.includes("/incident/")) {
+        if (nerisMode === "error") {
+          return new Response(JSON.stringify({ detail: "NERIS rejected the incident" }), {
+            status: 422,
+            statusText: "Unprocessable Entity",
+          });
+        }
+        return new Response(JSON.stringify({ neris_id: "FD33333333|2026|1710000000" }), {
+          status: 201,
+          statusText: "Created",
+        });
+      }
+      if (target.includes("LoginAndGetJWTToken")) {
+        return new Response(JSON.stringify({ LoginAndGetJWTTokenResult: "jwt-test" }), { status: 200 });
+      }
+      if (target.includes("addincident")) {
+        return new Response(JSON.stringify({ Done: { TrackingId: "track-1" } }), { status: 200 });
+      }
+      return new Response("unexpected upstream", { status: 500, statusText: "Error" });
+    };
+    process.env.NERIS_STATIC_ACCESS_TOKEN = "test-token";
+    process.env.NERIS_BASE_URL = "https://neris.invalid/v1";
+    const exportBody = {
+      callNumber: "26-RECEIPT",
+      reportStatus: "In Review",
+      formValues: {
+        incident_internal_id: "26-RECEIPT",
+        primary_incident_type: "FIRE",
+        fd_neris_id: "FD33333333",
+      },
+      incidentSnapshot: { incidentType: "Outside fire", address: "1 Practice Lane" },
+      integration: { entityId: "FD33333333", clientUtcOffsetMinutes: 300 },
+    };
+    try {
+      const nerisError = await call("/api/neris/export", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { ...exportBody, callNumber: "26-NERIS-ERROR" },
+      });
+      assert.equal(nerisError.status, 422, JSON.stringify(nerisError.json));
+      assert.equal(nerisError.json.exportRecorded, true);
+      const errorRow = await prisma.nerisExportHistory.findFirst({
+        where: { tenantId: demo.id, callNumber: "26-NERIS-ERROR" },
+      });
+      assert.equal(errorRow.attemptStatus, "failed");
+      assert.equal(errorRow.reportWriterName, "chief");
+      assert.ok(String(errorRow.responseDetail).startsWith("server-receipt:v1"));
+      assert.equal(
+        await prisma.nerisExportHistory.count({ where: { tenantId: demo.id, callNumber: "26-NERIS-ERROR" } }),
+        1,
+      );
+
+      nerisMode = "success";
+      const nerisOk = await call("/api/neris/export", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: exportBody,
+      });
+      assert.equal(nerisOk.status, 201, JSON.stringify(nerisOk.json));
+      assert.equal(nerisOk.json.exportRecorded, true);
+      assert.equal(nerisOk.json.neris.neris_id, "FD33333333|2026|1710000000");
+      const successRow = await prisma.nerisExportHistory.findFirst({
+        where: { tenantId: demo.id, callNumber: "26-RECEIPT", attemptStatus: "success" },
+      });
+      assert.equal(successRow.nerisId, "FD33333333|2026|1710000000");
+      assert.equal(successRow.reportWriterName, "chief");
+      assert.ok(String(successRow.responseDetail).startsWith("server-receipt:v1"));
+      assert.ok(String(successRow.submittedPayloadPreview).startsWith("{"));
+      const listed = await call("/api/neris/export-history", { cookie: exportCookie.pair });
+      const listedRow = listed.json.data.find((row) => row.callNumber === "26-RECEIPT");
+      assert.equal(String(listedRow.responseDetail).includes("server-receipt"), false);
+      assert.equal(listedRow.nerisId, "FD33333333|2026|1710000000");
+
+      await prisma.nerisExportHistory.create({
+        data: {
+          tenantId: demo.id,
+          callNumber: "FAKE-SUCCESS",
+          attemptStatus: "success",
+          nerisId: "FD33333333|FAKE|1710000000",
+          submittedPayloadPreview: "{}",
+          responseDetail: "browser-wrote-this",
+        },
+      });
+      await prisma.tenant.update({
+        where: { id: demo.id },
+        data: {
+          fireRecoveryDepartmentName: "Demo Fire",
+          fireRecoveryApiUsername: "sandbox-user",
+          fireRecoveryApiPassword: "sandbox-pass",
+        },
+      });
+      const fakeBill = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "FAKE-SUCCESS" },
+      });
+      assert.equal(fakeBill.status, 400);
+      assert.match(fakeBill.json.message, /No successful NERIS export/);
+      const realBill = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(realBill.status, 201, JSON.stringify(realBill.json));
+      assert.equal(realBill.json.data.trackingId, "track-1");
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env.NERIS_STATIC_ACCESS_TOKEN;
+      delete process.env.NERIS_BASE_URL;
+    }
   } finally {
     await new Promise((resolve) => server.close(resolve));
     await prisma.$disconnect();

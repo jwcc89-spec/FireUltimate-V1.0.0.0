@@ -75,6 +75,7 @@ export interface NerisReportFormPageProps {
   ) => void | Promise<void>;
   unlockNerisDraft?: () => Promise<void>;
   appendNerisExportRecord: (record: NerisExportRecord) => void;
+  onServerExportRecorded?: () => void | Promise<void>;
   parseAssignedUnits: (value: string) => string[];
   inferResourceUnitTypeValue: (
     unitId: string,
@@ -333,6 +334,7 @@ function NerisReportFormPage({
   writeNerisDraft,
   unlockNerisDraft,
   appendNerisExportRecord,
+  onServerExportRecorded,
   parseAssignedUnits,
   inferResourceUnitTypeValue,
   getStaffingValueForUnit,
@@ -3164,6 +3166,7 @@ function NerisReportFormPage({
     responseSummary: string;
     responseDetail: string;
     submittedPayloadPreview: string;
+    recordedByServer?: boolean;
   };
 
   type ExportRequestError = Error & {
@@ -3174,6 +3177,7 @@ function NerisReportFormPage({
     responseSummary?: string;
     responseDetail?: string;
     submittedPayloadPreview?: string;
+    recordedByServer?: boolean;
   };
 
   const toPrettyJson = (value: unknown): string => {
@@ -3257,6 +3261,7 @@ function NerisReportFormPage({
     error.responseSummary = metadata.responseSummary;
     error.responseDetail = metadata.responseDetail;
     error.submittedPayloadPreview = metadata.submittedPayloadPreview;
+    error.recordedByServer = metadata.recordedByServer === true;
     return error;
   };
 
@@ -4016,6 +4021,7 @@ function NerisReportFormPage({
         toPrettyJson(requestConfig.payload);
       const responseDetail = responseJson ? toPrettyJson(responseJson) : responseText;
       const responseSummary = extractExportResponseSummary(response, responseJson, responseText);
+      const recordedByServer = responseJson?.exportRecorded === true;
       if (!response.ok) {
         if (response.status === 403) {
           const troubleshooting =
@@ -4063,6 +4069,7 @@ function NerisReportFormPage({
               "Export denied by NERIS authorization checks.",
             responseDetail,
             submittedPayloadPreview,
+            recordedByServer,
           });
         }
         throw createExportRequestError(
@@ -4077,6 +4084,7 @@ function NerisReportFormPage({
             responseSummary: responseSummary || `${response.status} ${response.statusText}`,
             responseDetail,
             submittedPayloadPreview,
+            recordedByServer,
           },
         );
       }
@@ -4131,6 +4139,7 @@ function NerisReportFormPage({
         responseSummary: responseSummary || "Export submitted successfully.",
         responseDetail,
         submittedPayloadPreview,
+        recordedByServer,
       };
     } catch (error) {
       if (error instanceof DOMException && error.name === "AbortError") {
@@ -4183,34 +4192,6 @@ function NerisReportFormPage({
     } finally {
       window.clearTimeout(timeoutId);
     }
-  };
-
-  const appendExportHistoryRecord = (
-    exportResult: ExportExecutionResult,
-    validatorNameOverride: string,
-    statusAtExport: string,
-  ) => {
-    appendNerisExportRecord({
-      id: `${detailForSideEffects.callNumber}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      callNumber: detailForSideEffects.callNumber,
-      incidentType: detailForSideEffects.incidentType,
-      address: detailForSideEffects.address,
-      exportedAtIso: exportResult.exportedAtIso,
-      exportedAtLabel: exportResult.exportedAtLabel,
-      attemptStatus: exportResult.attemptStatus,
-      httpStatus: exportResult.httpStatus,
-      httpStatusText: exportResult.httpStatusText,
-      statusLabel: exportResult.statusLabel || "Submitted",
-      reportStatusAtExport: statusAtExport,
-      validatorName: validatorNameOverride.trim(),
-      reportWriterName: buildReportWriterName(),
-      submittedEntityId: exportResult.submittedEntityId,
-      submittedDepartmentNerisId: exportResult.submittedDepartmentNerisId,
-      nerisId: exportResult.nerisId,
-      responseSummary: exportResult.responseSummary,
-      responseDetail: exportResult.responseDetail,
-      submittedPayloadPreview: exportResult.submittedPayloadPreview,
-    });
   };
 
   const appendFailedExportHistoryRecord = (
@@ -4278,9 +4259,9 @@ function NerisReportFormPage({
     try {
       const requestConfig = buildExportRequestConfig();
       const exportResult = await executeExport(requestConfig);
-      const statusForHistory =
-        exportResult.attemptStatus === "success" ? "Exported" : reportStatus;
-      appendExportHistoryRecord(exportResult, "", statusForHistory);
+      if (exportResult.recordedByServer) {
+        await onServerExportRecorded?.();
+      }
       const successMessage =
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
@@ -4292,7 +4273,17 @@ function NerisReportFormPage({
       stampSavedAt("manual", "Exported", successMessage, formValuesOverride);
       setSaveMessage(successMessage);
     } catch (error) {
-      appendFailedExportHistoryRecord(error, "", reportStatus);
+      const recordedByServer = Boolean(
+        error &&
+          typeof error === "object" &&
+          "recordedByServer" in error &&
+          (error as ExportRequestError).recordedByServer,
+      );
+      if (recordedByServer) {
+        await onServerExportRecorded?.();
+      } else {
+        appendFailedExportHistoryRecord(error, "", reportStatus);
+      }
       setSaveMessage("");
       setErrorMessage(error instanceof Error ? error.message : "Unknown export error.");
     } finally {

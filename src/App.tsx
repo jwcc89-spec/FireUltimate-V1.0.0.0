@@ -6159,6 +6159,7 @@ interface NerisReportFormRouteProps {
   apparatusFromDepartmentDetails: { unit: string; unitId: string; commonName: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
   onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
+  onServerExportRecorded?: () => void | Promise<void>;
   nerisRequiredFieldOverrides: string[];
   narrativeBuilderEnabled?: boolean;
   narrativeTemplates?: NarrativeTemplate[];
@@ -13149,7 +13150,12 @@ function RouteResolver({
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
         exportHistory={nerisExportHistory}
         onExportRecordAdded={async (record) => {
+          if (record.attemptStatus !== "failed") return;
           await postNerisExportRecord(record);
+          const list = await getNerisExportHistory();
+          setNerisExportHistory(list);
+        }}
+        onServerExportRecorded={async () => {
           const list = await getNerisExportHistory();
           setNerisExportHistory(list);
         }}

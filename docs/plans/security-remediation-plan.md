@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31, about 9:37 p.m. Chicago time):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Next implementation is Part 3: fix 5, then 6, then 7. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
+**Progress (2026-10-31, about 9:37 p.m. Chicago time):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Fix 5 is built on this practice branch and not released. Next implementation is Fix 6, then Fix 7. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -127,7 +127,7 @@ Build order: fix 5, then 6, then 7.
 
 **Production restriction until fixes 5–7 are live in production:** do not save a Fire Recovery password in production (count must stay `0`) and do not submit bills from production.
 
-### Fix 5 — The browser can create a fake "successful NERIS export" record (audit HIGH-3; repair plan Stage C Step 10)
+### Fix 5 — The browser can create a fake "successful NERIS export" record (audit HIGH-3; repair plan Stage C Step 10) — built on this branch, not released
 - **Why it matters for billing:** Fire Recovery submit treats an incident as ready for billing when a "successful" export record exists. A fake record could get a bill sent for an incident never sent to NERIS.
 - **Affected code:** `server/neris-proxy.mjs` `POST /api/neris/export`, `POST /api/neris/export-history`, and the Fire Recovery readiness check in `POST /api/fire-recovery/submit`; front end `src/api/nerisExportHistory.ts` and the export flow in `src/App.tsx`.
 - **Smallest safe change:** After NERIS actually replies, the server writes the export record itself (real status, real NERIS ID, signed-in person). `POST /api/neris/export-history` then accepts only "failed" records for browser-side errors. The front end stops sending "success" records. Existing table; no schema change.

@@ -2920,6 +2920,91 @@ app.delete("/api/incidents/:id", async (request, response) => {
 });
 
 // ----- /api/neris/export-history (NERIS export history, cross-browser) -----
+const SERVER_EXPORT_RECEIPT = "server-receipt:v1";
+
+function stampServerExportDetail(detail) {
+  return `${SERVER_EXPORT_RECEIPT}\n${String(detail ?? "").slice(0, 8000)}`;
+}
+
+function stripServerExportReceipt(detail) {
+  const text = String(detail ?? "");
+  const prefix = `${SERVER_EXPORT_RECEIPT}\n`;
+  if (text.startsWith(prefix)) return text.slice(prefix.length);
+  if (text === SERVER_EXPORT_RECEIPT) return "";
+  return text;
+}
+
+function formatExportClock(date, offsetMinutes) {
+  const shift = Number.isFinite(offsetMinutes) ? offsetMinutes : 0;
+  const local = new Date(date.getTime() - shift * 60 * 1000);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`;
+}
+
+function nerisIdFromReply(responseBody, fallback) {
+  if (responseBody && typeof responseBody === "object" && typeof responseBody.neris_id === "string") {
+    const fromBody = trimValue(responseBody.neris_id);
+    if (fromBody) return fromBody;
+  }
+  return trimValue(fallback?.usedIncidentNerisId);
+}
+
+async function writeNerisExportReceipt({
+  tenantId,
+  auth,
+  requestBody,
+  entityId,
+  payload,
+  httpStatus,
+  httpStatusText,
+  responseBody,
+  fallback,
+}) {
+  const body = requestBody && typeof requestBody === "object" ? requestBody : {};
+  const formValues = body.formValues && typeof body.formValues === "object" ? body.formValues : {};
+  const snapshot =
+    body.incidentSnapshot && typeof body.incidentSnapshot === "object" ? body.incidentSnapshot : {};
+  const integration = body.integration && typeof body.integration === "object" ? body.integration : {};
+  const offset = Number.parseInt(String(integration.clientUtcOffsetMinutes ?? ""), 10);
+  const succeeded = httpStatus >= 200 && httpStatus < 300;
+  const now = new Date();
+  const detailSource =
+    responseBody && typeof responseBody === "object"
+      ? JSON.stringify(responseBody)
+      : readNerisDetailString(responseBody);
+  const summary = readNerisDetailString(responseBody) || `${httpStatus} ${httpStatusText}`.trim();
+  let preview = "";
+  try {
+    preview = JSON.stringify(payload ?? {});
+  } catch {
+    preview = "";
+  }
+  return prisma.nerisExportHistory.create({
+    data: {
+      tenantId,
+      callNumber: trimValue(body.callNumber) ?? "",
+      incidentType: trimValue(snapshot.incidentType) || trimValue(formValues.primary_incident_type) || "",
+      address: trimValue(snapshot.address) || trimValue(formValues.incident_location_address) || "",
+      exportedAtIso: now.toISOString(),
+      exportedAtLabel: formatExportClock(now, offset),
+      attemptStatus: succeeded ? "success" : "failed",
+      httpStatus,
+      httpStatusText: String(httpStatusText ?? "").slice(0, 200),
+      statusLabel: `${httpStatus} ${httpStatusText}`.trim(),
+      reportStatusAtExport: succeeded ? "Exported" : trimValue(body.reportStatus) || "Draft",
+      validatorName: "",
+      reportWriterName: String(auth?.username ?? "").slice(0, 200),
+      submittedEntityId: trimValue(entityId) ?? "",
+      submittedDepartmentNerisId:
+        trimValue(payload?.base?.department_neris_id) || trimValue(formValues.fd_neris_id) || "",
+      nerisId: nerisIdFromReply(responseBody, fallback),
+      responseSummary: summary.slice(0, 2000),
+      responseDetail: stampServerExportDetail(detailSource),
+      submittedPayloadPreview: preview.slice(0, 200000),
+    },
+  });
+}
+
 function nerisExportHistoryRowToApi(row) {
   return {
     id: row.id,
@@ -2939,7 +3024,7 @@ function nerisExportHistoryRowToApi(row) {
     submittedDepartmentNerisId: row.submittedDepartmentNerisId ?? "",
     nerisId: row.nerisId ?? "",
     responseSummary: row.responseSummary ?? "",
-    responseDetail: row.responseDetail ?? "",
+    responseDetail: stripServerExportReceipt(row.responseDetail),
     submittedPayloadPreview: row.submittedPayloadPreview ?? "",
   };
 }
@@ -2977,12 +3062,19 @@ app.post("/api/neris/export-history", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
+    if (body.attemptStatus !== "failed") {
+      response.status(400).json({
+        ok: false,
+        message: "The browser can record only a failed export. The server records NERIS replies.",
+      });
+      return;
+    }
     const callNumber = trimValue(body.callNumber) ?? "";
     const incidentType = trimValue(body.incidentType) ?? "";
     const address = trimValue(body.address) ?? "";
     const exportedAtIso = trimValue(body.exportedAtIso) ?? "";
     const exportedAtLabel = trimValue(body.exportedAtLabel) ?? "";
-    const attemptStatus = body.attemptStatus === "failed" ? "failed" : "success";
+    const attemptStatus = "failed";
     const httpStatus =
       typeof body.httpStatus === "number" && Number.isFinite(body.httpStatus)
         ? body.httpStatus
@@ -2998,7 +3090,7 @@ app.post("/api/neris/export-history", async (request, response) => {
     const submittedDepartmentNerisId = trimValue(body.submittedDepartmentNerisId) ?? "";
     const nerisId = trimValue(body.nerisId) ?? "";
     const responseSummary = trimValue(body.responseSummary) ?? "";
-    const responseDetail = trimValue(body.responseDetail) ?? "";
+    const responseDetail = stripServerExportReceipt(trimValue(body.responseDetail) ?? "");
     const submittedPayloadPreview = trimValue(body.submittedPayloadPreview) ?? "";
 
     const row = await prisma.nerisExportHistory.create({
@@ -3923,7 +4015,12 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
     }
 
     const latestOk = await prisma.nerisExportHistory.findFirst({
-      where: { tenantId, callNumber, attemptStatus: "success" },
+      where: {
+        tenantId,
+        callNumber,
+        attemptStatus: "success",
+        responseDetail: { startsWith: SERVER_EXPORT_RECEIPT },
+      },
       orderBy: { createdAt: "desc" },
     });
     if (!latestOk?.submittedPayloadPreview) {
@@ -5861,6 +5958,23 @@ app.post("/api/neris/export", async (request, response) => {
         entityIsAccessible,
       };
     }
+    let exportRecorded = false;
+    try {
+      await writeNerisExportReceipt({
+        tenantId: request.tenant?.id,
+        auth: request.auth,
+        requestBody: request.body,
+        entityId,
+        payload,
+        httpStatus: finalResponse.status,
+        httpStatusText: finalResponse.statusText,
+        responseBody: finalResponseBody,
+        fallback,
+      });
+      exportRecorded = true;
+    } catch {
+      console.error("[NERIS export] Could not store the export record.");
+    }
     response.status(finalResponse.status).json({
       ok: finalResponse.ok,
       status: finalResponse.status,
@@ -5870,6 +5984,7 @@ app.post("/api/neris/export", async (request, response) => {
       submittedPayload: payload,
       troubleshooting,
       fallback,
+      exportRecorded,
       createResult: {
         status: createResponse.status,
         statusText: createResponse.statusText,
