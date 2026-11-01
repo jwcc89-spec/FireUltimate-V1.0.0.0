@@ -93,6 +93,12 @@ const stages: StageDef[] = [
         fix: "Approved October 30. Keep the admin and demo accounts; do not delete them. During a planned release, set NODE_ENV=production on both Render services. Move these to the server so the whole department shares them: department logo (500 KB limit), dispatch workflow states, submenu display settings, and submenu cards. Leave each person's incident list layout and sidebar width on their own computer. Shift trades wait for the scheduling review.",
         who: "Me, with you confirming in Render and the app.",
         done: "Built on the practice branch October 30, 2026. The department logo (500 KB limit), dispatch workflow states, submenu visibility, and submenu cards are stored on the server for the whole department. Incident list layout and sidebar width stay on each computer. The admin and demo accounts were kept. NODE_ENV=production is written into the release checklist and is set only during a planned release. Not on staging or production." },
+      { n: "9C", title: "Close the web-address tricks that skip sign-in and permissions", status: "New",
+        problem: "Found October 31 in the post-remediation security check. Changing letter case in the address (for example /API/users) skips sign-in. Adding a trailing slash or changing case skips role permissions. On production and staging today, /API/admin/... skips the program owner's platform admin key.",
+        why: "Anyone could read accounts, CAD emails, and department settings, create incidents, or change Fire Recovery settings without signing in. On the live sites, anyone could create a department or attach a web address to an existing one.",
+        fix: "Security plan Part 0: run two read-only checks for unknown departments and web addresses, then decide on a one-line emergency fix for the platform admin key on main and staging. Security fixes 8–10 on this practice branch: make routes match exact letter case and no trailing slash, make the sign-in and permission checks use the same rule, close the lockout-reset gap, and stop sending internal error details. Each needs your approval first (authorization and sign-in code). Full detail: docs/plans/security-remediation-plan.md.",
+        who: "You for the read-only checks and approvals; me for the code.",
+        done: "Not started. Done when automated tests request every API route with capital letters and a trailing slash and none returns data without permission, and the same checks pass on staging. Stage B must not be released before this." },
     ],
   },
   {
@@ -296,6 +302,7 @@ const decided = [
   ["October 31, 2026", "CAD", "The allowed-sender screen stays in Stage D, step 23. Do not build it during security Part 3. Crescent's sender is dispatch@co.iroquois.il.us. Do not release this practice branch until that address is saved, because an empty sender list now rejects mail.", "23"],
   ["October 31, 2026", "Security", "Part 3 is built on the practice branch and not released. The server writes the NERIS export receipt. The Fire Recovery password is encrypted. Viewing billing requires billing.view, which defaults to admin. Do not create FIRE_RECOVERY_CREDENTIAL_KEY on Render in a coding session.", "10, 13"],
   ["October 31, 2026", "Security", "Part 4 (D1–D7) stays deferred. It is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient.", "Parked & future"],
+  ["October 31, 2026", "Security", "Post-remediation verification result: FAIL. Encryption, server export receipts, and CAD intake checks work. Letter case and trailing slashes skip sign-in and permissions, and on production and staging they skip the platform admin key. Stage B release is blocked until step 9C is done. Error details (D4) moved up to before release.", "9C"],
 ];
 
 const decisions = [
@@ -658,9 +665,12 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed · Security Parts 1–3 are built on the practice branch and not released · Part 4 (D1–D7) is deferred · Allowed-sender screen stays in Stage D · Do not release until dispatch@co.iroquois.il.us is saved · Not released</Text>
+        <Text size="small" tone="tertiary">Updated October 31, 2026, 10:45 p.m. Chicago · Stage B release blocked by step 9C · Security Parts 1–3 are built on the practice branch and not released · Part 4 (D1–D7) is deferred · Allowed-sender screen stays in Stage D · Do not release until dispatch@co.iroquois.il.us is saved · Not released</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
+      <Callout tone="warning" title="Stage B release blocked: security check failed (October 31, 2026)">
+        The post-remediation security check found that changing letter case or adding a trailing slash in the web address skips sign-in and permissions on the practice branch. On production and staging today, the same trick skips the platform admin key. See Stage B step 9C and Part 0 of docs/plans/security-remediation-plan.md. Run the two read-only checks there first, then decide on the emergency fix.
+      </Callout>
       <Callout tone="success" title="Stage B click-through passed on the practice copy (October 31, 2026)">
         Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Security Part 3 (fixes 5, 6, and 7) is built on this practice copy and not released. Security Part 4 (D1–D7) is deferred and is not the next coding task. The allowed-sender screen stays in Stage D, step 23. Do not release until dispatch@co.iroquois.il.us is saved for Crescent. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
       </Callout>

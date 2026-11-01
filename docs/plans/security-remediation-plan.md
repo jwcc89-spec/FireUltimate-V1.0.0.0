@@ -1,7 +1,8 @@
 # Security Remediation Plan (October 2026)
 
-**Status:** In progress on the practice branch. Not released. Do not merge.
+**Status:** **Stage B release BLOCKED.** The post-remediation verification on 2026-10-31 (see "Verification results" at the end) found that the new sign-in and permission checks can be skipped by changing letter case or adding a trailing slash in the web address. Fixes 8–10 in Part 2 must be built and verified before this branch goes to staging. Part 0 is a separate urgent item that affects production and staging today. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
+**Verified:** 2026-10-31, 10:27 p.m. America/Chicago, against commit `a7a9413`. Commit `25b30c1` (View Exports status and admin-only export history) landed afterward and was not part of that verification.
 **Progress (2026-10-31, evening, America/Chicago):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Part 3 code (fixes 5, 6, and 7) is built on this practice branch and not released. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in this coding session. Do not save a Fire Recovery password in production until these fixes are live there. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
@@ -16,6 +17,35 @@ Rules for every fix:
 - After each fix: `npm run lint`, `npm run build`, `npm test`, then the staging check listed for that fix.
 - No fix deletes department data. CAD intake and NERIS export/validation must keep working.
 - Fixes 1, 2, 3, 5, 6 and 7 need no Prisma schema change.
+
+---
+
+## Part 0 — Urgent: platform admin key can be skipped (production and staging today)
+
+**Found 2026-10-31 during verification. Awaiting operator decision.** Not caused by the remediation. The same code is on `main` (production) and `submenu/neris-golive-cifpd` (staging).
+
+- **Problem:** The program-owner tools under `/api/admin/` require the platform admin key. The check only looks at paths that start with lowercase `/api/admin` (`requirePlatformAdmin`, `server/neris-proxy.mjs` line 1554 on this branch; line 1618 on `main`; line 1633 on staging). Express matches routes regardless of letter case, so `/API/admin/...` reaches the same tools with no key.
+- **What someone could do on a live server:** create a new department with an admin password they choose (`POST /api/admin/tenants`), attach a web address to any existing department (`POST /api/admin/tenants/:tenantId/domains`), or refresh the NERIS directory. These routes run before the department is looked up, so they work on any address that reaches the server, including the direct Render address.
+- **Verified:** only on a throwaway local database. With no key, `POST /API/admin/tenants/<Crescent id>/domains` attached a new web address to Crescent. Nothing was sent to staging or production.
+
+### Step 1 — Check now (read-only, both Neon projects)
+
+```sql
+-- Departments, newest first. Look for any you do not recognize.
+SELECT slug, name, status, "createdAt" FROM "Tenant" ORDER BY "createdAt" DESC;
+
+-- Web addresses, newest first. Look for any you did not add.
+SELECT d.hostname, t.slug, d."createdAt"
+FROM "TenantDomain" d JOIN "Tenant" t ON t.id = d."tenantId"
+ORDER BY d."createdAt" DESC;
+```
+
+Also search the Render logs for both API services for request paths that contain `/API` or any other capital letters in `/api`.
+
+### Step 2 — Decide on an emergency fix (needs operator approval: authorization code)
+- **Smallest safe change:** make the admin-key check compare a lowercase copy of the path, so `/API/admin/...` needs the key too. One line in `requirePlatformAdmin`, plus one automated test. It would be applied to `main` and staging as a separate small change, independent of Stage B.
+- **Not enough on its own:** a Cloudflare rule blocking `/api` paths with capital letters protects only the custom domains. The direct Render address does not pass through Cloudflare, and the CAD Worker uses that address.
+- **Staging check:** `POST /API/admin/tenants` with no key returns 403; CAD email still arrives; normal sign-in still works.
 
 ---
 
@@ -75,11 +105,13 @@ If the readable-text password count is above `0`, reset those accounts to strong
 
 ## Part 2 — Blocks the Stage B sign-in release
 
-**Code status: completed on this branch, 2026-10-31. Not released.** Build order was fix 4, then 1, then 2, then 3. Automated tests passed. Staging checks are still open because this branch has not been deployed.
+**Code status: fixes 1–4 built on this branch, 2026-10-31. Not released.** Build order was fix 4, then 1, then 2, then 3. Automated tests passed. **Verification found new blockers: fixes 8, 9, and 10 below must be built before the branch goes to staging.** Staging checks are still open because this branch has not been deployed.
 
 The operator has no Part 2 clicks until a release day. The allowed-sender screen is **Stage D, repair-plan step 23**, decided October 31. Do not build that screen during Part 3. Staging reported `cifpdil` with 0 allowed senders. Because Fix 3 is already in this branch, do not release the branch until Stage D has saved `dispatch@co.iroquois.il.us` for Crescent.
 
 ### Fix 1 — Failed logins can use up server memory (audit HIGH-1) — built on this branch, not released
+
+**Verification 2026-10-31: PARTIALLY FIXED.** Memory is now capped (20,000 failed names left exactly 10,000 entries; a 60 KB username was refused and nothing was stored). But flooding can still reset an account's failure count before it locks, and counts below 5 never expire. See fix 9.
 
 Kept the designed limits after the operator asked on 2026-10-31. Five wrong passwords still lock the account for 15 minutes. The 10,000 cap is how many different failed names are remembered during an attack, not how many tries one person gets. Usernames over 100 characters and passwords over 256 characters are still refused. Current longest username is 12 in production and 13 on staging, so 100 does not block anyone. Passwords are not capped at 20, so a longer passphrase still works.
 - **Problem:** Every failed login stores the submitted username in memory with no size limit. Request bodies may be up to 4 MB, so each request can add up to about 4 MB.
@@ -95,6 +127,8 @@ Kept the designed limits after the operator asked on 2026-10-31. Five wrong pass
 - **Staging check:** normal sign-in works; 5 wrong passwords on a test account → "too many attempts", unlocks after 15 minutes; a 50 KB username is refused quickly; Render memory graph stays flat.
 
 ### Fix 2 — CAD intake secret only enforced when `NODE_ENV=production` (audit MEDIUM-1, part A) — built on this branch, not released
+
+**Verification 2026-10-31: VERIFIED FIXED (local).** Missing or wrong header returned 401 and saved nothing. Unit tests cover the 503 when no secret is configured.
 - **Affected code:** `server/neris-proxy.mjs` CAD secret check and startup warning; new `server/cad/ingestGuard.mjs`.
 - **Smallest safe change:** Move the check into `ingestGuard.mjs`. With no secret configured, intake answers 503 everywhere (local development sets a test secret in `.env`). Compare with Node's timing-safe comparison. Nothing else about CAD intake changes.
 - **Depends on:** Part 1 item 4.
@@ -103,6 +137,8 @@ Kept the designed limits after the operator asked on 2026-10-31. Five wrong pass
 - **Staging check:** a real or test dispatch email still appears in CAD emails and still creates/updates the incident; a hand-sent request without the header gets 401 and adds no row.
 
 ### Fix 3 — CAD intake accepts mail with an empty sender list or unknown department (audit MEDIUM-1, part B) — built on this branch, not released
+
+**Verification 2026-10-31: VERIFIED FIXED (local).** Unknown department and empty sender list were rejected with nothing saved. An allowed sender in `"County CAD <dispatch@co.iroquois.il.us>"` form was saved under the right department. A different sender was rejected.
 
 Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-sender list. Staging reported `cifpdil` with `0` allowed senders on 2026-10-31. The app has no screen for that list yet (`GET/PATCH /api/cad/allowlist` only). Deploying first would reject real dispatch email and save nothing.
 - **Affected code:** `server/neris-proxy.mjs` `cadInboundAllowlistDecision` and the department lookup in `POST /api/cad/inbound-email`.
@@ -118,6 +154,39 @@ Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-s
 - **Depends on:** nothing (CI already provides a throwaway Postgres).
 - **Regression risk:** none; no app code changes.
 - **Staging check:** none; CI must pass.
+
+**Verification 2026-10-31:** passed locally against a throwaway Postgres. Live checks also confirmed sign-out, the 60-minute idle limit, tampered cookies, and another department's cookie are all refused. Missing: tests for letter-case and trailing-slash variants (fix 8).
+
+### Fix 8 — Letter case and trailing slashes skip sign-in and permissions (found in verification; CRITICAL and HIGH) — not built
+- **Problem:** Express matches routes regardless of letter case and accepts a trailing slash. The sign-in gate only checks paths that start with lowercase `/api` (`server/neris-proxy.mjs` lines 1755 and 1760). The permission lookup compares the exact path (`server/auth/permissions.mjs` line 53).
+- **Verified locally, no session at all:** `GET /API/users`, `/API/account-audit`, `/API/department-details`, `/API/cad/emails`, and `/aPi/users` returned data. `POST /API/incidents` created an incident. `PATCH /API/fire-recovery/settings` changed settings. Account create, rename, and delete still refused, because those handlers check the signed-in person themselves. Another department's data could not be reached this way.
+- **Verified locally, regular signed-in user:** `GET /api/fire-recovery/incidents/` (trailing slash) returned 200. `POST /api/users/` created an account. `PATCH /api/fire-recovery/settings/` changed settings. `POST /api/neris/export/` and `POST /api/fire-recovery/submit/` reached the admin-only handlers. The new `GET /api/neris/export-history` rule from commit `25b30c1` uses the same exact-path check, so it is expected to have the same gap.
+- **Affected code:** `server/neris-proxy.mjs` (app setup at line 80, the sign-in gate, the permission middleware); `server/auth/permissions.mjs` (`permissionForRequest`).
+- **Smallest safe change:**
+  1. Turn on Express's `case sensitive routing` and `strict routing` right after the app is created, so `/API/...` and `/api/users/` no longer reach any handler.
+  2. As a second layer, make the sign-in gate treat any path whose lowercase form starts with `/api` as an API request.
+  3. Make `permissionForRequest` strip one trailing slash before comparing.
+- **Depends on:** operator approval (authorization code). Before step 1, confirm the front end never calls an API path with a trailing slash or capital letters.
+- **Regression risk:** a front-end call with a trailing slash would start failing with 404. A non-API capitalized path such as `/API/users` would fall through to the web page instead of data.
+- **Automated tests:** loop over every API route and request it with an uppercase prefix, mixed case, and a trailing slash. With no session, each must return 401 or 404 and never data. As a regular user, each admin-only route must return 403 or 404. Include `/api/admin/...` with no key (Part 0).
+- **Staging check:** the same variants against staging with a test account. Normal pages, NERIS export, and CAD intake still work.
+
+### Fix 9 — Flooding resets the login lockout; old failures never expire (found in verification; MEDIUM and LOW) — not built
+- **Problem:** When the failed-login list is full, the oldest unlocked row is removed. An attacker can make 4 guesses, send 10,000 junk usernames (cheap, because unknown names skip the password check), and repeat. The local probe made 13 guesses on one account without a lock. Separately, counts below 5 never expire: 4 mistakes a year ago plus 1 today locks the account.
+- **Affected code:** `server/auth/sessions.mjs` (`noteLoginFailure`, `evictOldestUnlockedLoginFailure`, `sweepExpiredLoginFailures`).
+- **Smallest safe change:** Expire a failure count 15 minutes after its last failure. When the list is full, remove only rows for usernames that do not exist, or rows with expired counts. Never remove a row for a real account that has failures. Respond "try again later" if no room can be made.
+- **Depends on:** operator approval (sign-in code). Fix 8 first.
+- **Regression risk:** during a large flood, sign-in for new usernames may get "try again later" until rows expire.
+- **Automated tests:** a real account with 4 failures keeps its count through a 20,000-name flood; the 5th failure locks it; a count older than 15 minutes is cleared; memory stays capped.
+- **Staging check:** the same as fix 1.
+
+### Fix 10 — Error replies expose internal details (audit LOW-1, moved up from item D4) — not built
+- **Problem:** 49 server replies still return the raw internal error message. Badly formed JSON returns an HTML page with a stack trace and server file paths when `NODE_ENV` is not `production`.
+- **Smallest safe change:** Add one JSON error handler at the end of the server that returns a short, fixed message and logs the detail on the server. Set `NODE_ENV=production` on both Render services at release (already in Part 5).
+- **Depends on:** nothing.
+- **Regression risk:** some screens may show a less specific message.
+- **Automated tests:** badly formed JSON returns JSON with no stack trace and no file path.
+- **Staging check:** send badly formed JSON to one route; the reply has no file path.
 
 ---
 
@@ -136,6 +205,10 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 - **Automated tests:** record built from a NERIS success reply and from an error reply; a browser "success" post is refused or turned into "failed"; billing readiness only accepts server-written records.
 - **Staging check:** confirm staging's `NERIS_BASE_URL` points at the NERIS test system; export one report and see one success row with the real NERIS ID; validation still works; a forced failure shows one failed row.
 
+**Verification 2026-10-31: VERIFIED FIXED (local and automated tests).** A browser "success" post returned 400. The automated test fakes NERIS success and error replies, and a planted fake record was not accepted for billing. Two follow-ups:
+- **5a — Validator name is now blank** on export records (`validatorName: ""`, `server/neris-proxy.mjs` line 2996). The browser used to fill it in. Send it with the export request and store it on the server record.
+- **5b — Earlier exports no longer count for billing.** Success records written before this change lack the server mark, so those incidents must be exported to NERIS again before billing. On staging, confirm how NERIS answers a second export of the same incident before relying on this.
+
 ### Fix 6 — Fire Recovery password stored as readable text (audit HIGH-2; repair plan Stage C Step 13) — built on this branch, not released
 - **Verified 2026-10-31:** On a throwaway local database (no staging or production access), a signed-in admin saved the made-up password `Fake-Audit-Pw-7Q2` through `PATCH /api/fire-recovery/settings`. The `Tenant.fireRecoveryApiPassword` column then held exactly `Fake-Audit-Pw-7Q2`. The settings reply did not include it. Staging's code (`submenu/neris-golive-cifpd`) has the same save line, so the issue applies to any password entered on this branch or staging.
 - **Affected code:** existing `Tenant.fireRecoveryApiPassword` column (kept); `server/neris-proxy.mjs` Fire Recovery settings `GET`/`PATCH`, submit, and billing status; new `server/crypto/secretBox.mjs`.
@@ -145,6 +218,8 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 - **Automated tests:** encrypt/decrypt round trip; altered stored text rejected; wrong key rejected; settings reply never contains the password; a failed Fire Recovery call does not leak it; readable-text value refused.
 - **Staging check:** save a password; in Neon the value starts with `enc:v1:` and does not contain the password; one sandbox submission succeeds; Render logs show no password.
 
+**Verification 2026-10-31: VERIFIED FIXED in code (local).** The saved value began with `enc:v1:` and did not contain the password. Neither the settings reply nor the server log contained it. A readable-text value was refused with "re-enter the password". Not verified on Render: the key does not exist there yet. Until fix 8 is in, anyone can overwrite these settings through the letter-case gap. Follow-ups (low): the Fire Recovery subscription key is still stored as readable text (masked on screen). The key setting is hashed with SHA-256 with no minimum strength check, so use a long random value.
+
 ### Fix 7 — Any signed-in user can read billing records (audit MEDIUM-3) — built on this branch, not released
 - **Affected code:** `server/auth/permissions.mjs` (permission list and route mapping); front end `src/api/fireRecovery.ts` and billing display in `src/App.tsx`.
 - **Smallest safe change:** New `billing.view` permission protecting `GET /api/fire-recovery/incidents` and `GET /api/fire-recovery/incidents/:callNumber`. Front end hides billing information without it. Defaults live in code; no database change.
@@ -152,6 +227,8 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 - **Regression risk:** regular users stop seeing billing information (intended); screens must not show errors.
 - **Automated tests:** route maps to `billing.view`; regular user gets 403; admin gets 200.
 - **Staging check:** regular test user sees no billing information and no errors; admin sees billing as before; a department admin can lower the permission.
+
+**Verification 2026-10-31: PARTIALLY FIXED.** The exact path returned 403 for a regular user, but `GET /api/fire-recovery/incidents/` (trailing slash) and `/api/Fire-Recovery/incidents` returned 200. Fixed by fix 8.
 
 ---
 
@@ -162,7 +239,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 | D1 | Suspended/archived departments can still sign in (audit MEDIUM-2). | Do not rely on department status to cut off access. To cut off a department, the program owner cancels its sessions and disables its accounts. | Before any department is suspended. Moves into Part 2 if a department is already suspended or archived. |
 | D2 | Report/incident data stays in the browser after a session expires (audit MEDIUM-5). | Users on shared station computers must click Sign out; shared computers use separate Windows sign-ins. | After Stage C; clearing rule needs approval first. |
 | D3 | Readable-text password fallback in `verifyPassword` (audit MEDIUM-4). | Safe only while the readable-text count stays `0` in both databases. | Stage C: remove the fallback, add a test. |
-| D4 | Detailed internal error messages returned to the browser (audit LOW-1). | No secrets in Render settings that could appear in error text. | Stage C. |
+| D4 | Detailed internal error messages returned to the browser (audit LOW-1). | **Moved to Part 2, fix 10** after verification found stack traces with server file paths. | Before the Stage B release. |
 | D5 | Origin check ignores scheme and port (audit LOW-2). | Keep HTTPS-only at Cloudflare; session cookie is already strict and host-only. | Stage C. |
 | D6 | Sign-in for an unknown username replies faster than for a real one (reveals which usernames exist). | Lockout reduces the risk. | Stage C: compare against a dummy hash when the user does not exist. |
 | D7 | 12 moderate warnings in development tools only; session tests skip without a local database. | Not shipped to users; CI covers the session tests. | When convenient. |
@@ -172,6 +249,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 ## Part 5 — Release order
 
 ### Promote this branch to staging
+0. **Not before** fixes 8, 9, and 10 are built and pass their tests, and the letter-case and trailing-slash checks below pass locally.
 1. Neon backup of `fireultimate-staging`.
 2. Add `dispatch@co.iroquois.il.us` to Crescent's allowed-sender list on staging. The screen for that list is Stage D, repair-plan step 23, not Part 3. This step still has to happen before the release, because Fix 3 rejects mail when the list is empty.
 3. Confirm `NODE_ENV=production` and `CAD_INGEST_SECRET` on the staging API service.
@@ -185,7 +263,7 @@ Build order: fix 5, then 6, then 7. All three are built on this practice branch 
 4. Apply this branch's database changes to production.
 5. Add `dispatch@co.iroquois.il.us` to Crescent's allowed-sender list in the production database (exact SQL written after the migration list is reviewed). **This must happen before step 6, or real dispatch emails are rejected and lost.**
 6. Deploy the code with `NODE_ENV=production`.
-7. Send a test dispatch email and confirm it arrives. Confirm an unsigned request to `/api/users` returns 401.
+7. Send a test dispatch email and confirm it arrives. Confirm an unsigned request to `/api/users` returns 401, and that `/API/users` and `/API/admin/tenants` (no key) do not return data or succeed.
 8. Fire Recovery production restriction (Part 3) stays in force.
 
 ### Stage C
@@ -195,8 +273,55 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 
 ## Decisions needed
 
+- **Part 0:** approve or decline the one-line emergency fix to the platform admin key check on `main` and staging. Run the two read-only queries first.
+- **Fixes 8 and 9:** approve the authorization and sign-in code changes. Fix 8 comes first.
 - Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
 - Allowed-sender screen: Stage D, step 23. Not Part 3. Crescent's address is `dispatch@co.iroquois.il.us`.
 - Part 3 code is built on this practice branch and not released: fix 5, then 6, then 7. Fix 6 keeps the plan's Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (a different value on staging and production; a copy stays in the password manager). Do not create that setting during a coding session. Fix 7's `billing.view` default is admin, matching the October 29 decision that billing is admin-only.
 - Approve the browser-clearing rule (item D2). Still later.
 - Approve adding the Fire Recovery production restriction and the CAD release order (Part 5) to `docs/procedures/RELEASE_CHECKLIST.md`. Still later.
+
+---
+
+## Verification results (2026-10-31)
+
+Independent post-remediation verification, finished 10:27 p.m. America/Chicago, against commit `a7a9413`. No application code, settings, databases, or deployments were changed. All live checks ran on a throwaway local database with NERIS pointed at an unreachable address and made-up Fire Recovery credentials. Staging and production were not contacted.
+
+**Overall: FAIL.** The remediation fixed most of what it targeted, but the sign-in and permission checks it relies on can be skipped (fix 8). Those gaps existed at the original audit commit `7e6b991` and were missed by the original audit.
+
+### Results by original finding
+
+| Finding | Result | Evidence | Remaining risk | Release effect |
+|---|---|---|---|---|
+| HIGH-1 Failed-login memory | PARTIALLY FIXED | `sessions.mjs` lines 56–117; login line 4303. Memory capped; 60 KB username refused. Probe: 13 guesses, no lock. | Flood resets counts; counts never expire. | Blocks release (fix 9). |
+| HIGH-2 Readable Fire Recovery password | VERIFIED FIXED (code) | `secretBox.mjs`; save at line 3911. Stored `enc:v1:…`; not in replies or logs; readable value refused. | Key not on Render yet; settings can be overwritten until fix 8. | Key needed per environment. |
+| HIGH-3 Browser-written export records | VERIFIED FIXED | Receipt writer at line 2953; browser posts refused at line 3066; billing check at line 4069. | Validator name blank; earlier exports need re-export. | Follow-ups 5a, 5b. |
+| MEDIUM-1 CAD intake fail-open | VERIFIED FIXED | `ingestGuard.mjs`; allowlist at line 2049. | Staging has 0 allowed senders; no screen yet. | CAD stops if released before a sender is added. |
+| MEDIUM-2 Suspended departments | NOT FIXED (deferred D1) | No status check. A suspended department kept its session and could sign in. | As planned. | Restriction in D1. |
+| MEDIUM-3 Billing reads | PARTIALLY FIXED | `permissions.mjs` lines 102–107. Exact path 403; trailing slash or case 200. | Bypass. | Blocks release (fix 8). |
+| MEDIUM-4 Readable user passwords | NOT FIXED (deferred D3) | `neris-proxy.mjs` line 239. Operator reported count 0 (not independently checked). | As planned. | Count must stay 0. |
+| MEDIUM-5 Browser cache | NOT FIXED (deferred D2) | Not tested in a browser. | As planned. | Restriction in D2. |
+| LOW-1 Internal error messages | NOT FIXED | 49 raw messages; HTML stack trace on bad JSON. | Internal detail leak. | Moved to fix 10. |
+| LOW-2 Origin check | NOT FIXED (deferred D5) | `sessions.mjs` line 168. A different port was accepted. | As planned. | Restriction in D5. |
+
+### New findings
+1. **CRITICAL** — Capitalized `/API/` paths skip sign-in. Fix 8.
+2. **CRITICAL, production and staging today** — Capitalized `/API/admin/` paths skip the platform admin key. Part 0.
+3. **HIGH** — Trailing slash or letter case skips role permissions for signed-in users. Fix 8.
+4. **MEDIUM** — Flooding resets the login lockout. Fix 9.
+5. **LOW** — Login failure counts never expire. Fix 9.
+6. **LOW** — Fire Recovery subscription key stored as readable text (masked on screen). Part 3 follow-up.
+7. **INFO** — Encryption key is a SHA-256 hash of the setting text, with no strength check. The encrypted value is not tied to its department.
+
+### Functionality regressions
+- Earlier NERIS success records no longer qualify for billing (follow-up 5b).
+- Validator name is blank on server-written export records (follow-up 5a).
+- CAD intake stops where the allowed-sender list is empty (documented; Stage D step 23).
+- Local development now needs `CAD_INGEST_SECRET` (documented).
+- No regression found in sign-in, sign-out, the 60-minute idle limit, tampered cookies, another department's cookie, or CAD intake from an allowed sender.
+
+### Automated checks run
+`npm run lint` passed. `npm run build` passed. `npm test` passed: 14 suites, 22 tests, including the session integration test (286 assertions) against a throwaway local Postgres.
+
+### Still to verify on staging or at deployment
+Creating `FIRE_RECOVERY_CREDENTIAL_KEY` on Render and saving a password with it; a real NERIS test export creating its server record; a second export of an already-exported incident; a real dispatch email through the Cloudflare Worker after the sender is added; `NODE_ENV=production` set on both services; `TRUST_PROXY` left unset; browser cache behavior (D2); commit `25b30c1`.
