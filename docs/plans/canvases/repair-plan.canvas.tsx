@@ -329,11 +329,10 @@ const decisions = [
 const fireRecoveryEmail = [
   ["Corrections", "Are corrections and resubmissions made only in Recovery Hub (therecoveryhub.com), or is there an API method? How should a corrected report be matched to the original tracking ID?"],
   ["Billing status", "When does billing status become available after submission, and how often may we check it?"],
-  ["Parties", "We send one party per vehicle, the driver, with first and last name, address, Is Resident, insurance company, and vehicle make and model. Is that enough? Your documentation marks no field as required. Which values does InvolvementType accept?"],
-  ["Dates", "Your examples use dates like 2026-11-01T14:30:00 with no time zone. Should we send the department's local time?"],
+  ["Parties", "We plan to leave InvolvementType and InvolTypeDescript blank. Is that okay? (Minimum fields, local-time dates, one law enforcement number and the run number were answered by the operator on November 1; see docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md section 13.)"],
   ["Lost tracking ID", "Get Incident Tracking Id still lists a SubscriptionKey. If a submission times out, how do we look up its tracking ID without one?"],
-  ["Call details", "Should the run number go in IncidentNumber, IncidentID, or both? Is the NFIRS code expected in IncidentType or PrincipleIncidentType?"],
-  ["Law enforcement", "If more than one police agency reports, should we send one number or several?"],
+  ["NERIS code", "Should IncidentType and PrincipleIncidentType hold the full NERIS incident type value? Which format matches the NERIS Code dropdown in Recovery Hub?"],
+  ["Commercial trucking", "How is a Commercial Trucking Incident marked through the API?"],
   ["Sandbox", "Confirm that submissions using FD12345678 are never billed, and whether sandbox incidents can be cleared after testing."],
   ["Test results", "Summary of the sandbox submissions and any errors returned (added after Step 17)."],
 ];

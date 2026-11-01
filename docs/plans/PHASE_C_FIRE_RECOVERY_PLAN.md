@@ -95,7 +95,10 @@
 | D-6 | Person/Owner tab | Left exactly as it is. The earlier ideas (Is Owner / Is Driver checkboxes, removing Add Owner, removing "Owner - Insurance Company") are **cancelled** |
 | D-7 | Party | A party is one billing card: name and address, insurance, vehicle. No driver/owner concept, matching Recovery Hub. A parked car's owner is entered as that vehicle's party |
 | D-8 | Copy from report | A "Copy from Person/Owner" button pre-fills party cards from the Person/Owner/Vehicle section; staff edit after copying |
-| D-9 | Required fields | Defaults in §6. **Is Resident is required for Crescent** (local ordinance: residents are not billed directly), even though Recovery Hub marks it recommended. An admin can change any billing field between Required / Recommended / Optional in Admin Functions |
+| D-9 | Required fields | App defaults follow Fire Recovery's minimum list (§4, §6). **Is Resident is required for Crescent** (local ordinance: residents are not billed directly), set as Crescent's department setting; Fire Recovery itself does not require it. An admin can change any billing field between Required / Recommended / Optional in Admin Functions |
+| D-25 | Form Filed By | The person who submitted the NERIS report (the export receipt's exporting user) |
+| D-26 | Run Number | Our incident/run number (`incident_internal_id`), sent in both `IncidentNumber` and `IncidentID` |
+| D-27 | Dates and law enforcement | Department local time with no time zone; one law enforcement report number |
 | D-10 | Incomplete billing info | Fire Recovery submit is blocked, with a list of what is missing. NERIS export is **never** blocked by billing fields |
 | D-11 | Uninsured | A per-party "Uninsured" checkbox waives the insurance company requirement. The party is still sent; Fire Recovery decides |
 | D-12 | Run type | Motor Vehicle Incident or Commercial Trucking Incident. Each party also has a Commercial vehicle checkbox and DOT number |
@@ -119,7 +122,20 @@
 - **Endpoint:** `POST https://process.firerecoveryusa.com/Primary/restapi/rhpublicapi/flows/v2apis/incidents/rms/addincident`, Bearer JWT from `POST /Primary/REST/AccountService/LoginAndGetJWTToken`. Get a fresh token before each call.
 - **Success:** `{"Done":{"API Response":{"ErrorCode":null,"Status":1,"Message":"Success"},"TrackingId":"<uuid>"}}`.
 - **Required fields:** the vendor marks none in the API docs and lists no `InvolvementType` values. Recovery Hub's screen marks red = required and orange = recommended (§5). We follow §6.
-- **Dates:** `YYYY-MM-DDTHH:MM:SS` with no time zone. Send department local time (confirm in the email).
+- **Dates:** `YYYY-MM-DDTHH:MM:SS` with no time zone, in the department's local time (confirmed by the operator 2026-11-01).
+- **Law enforcement:** one report number only (operator, 2026-11-01).
+- **Fire Recovery's minimum fields (operator, 2026-11-01):**
+  - **Required:**
+    - Form Filed By (the person who submitted the NERIS report)
+    - Run Date
+    - Time Alarm Received
+    - Time Call Cleared
+    - Run Number
+    - Total Personnel On-Scene
+    - Incident Location (street, city, state, zip)
+    - at least one party, each with first name, last name, full address, insurance company, and vehicle make and model
+  - **Not required:** party phone, party email, Is Resident, policy number, insurance contact number, license plate, At Fault, Law Enforcement Agency Report Number, NERIS code.
+  - **Crescent's choice:** Is Resident is required for Crescent only (ordinance; D-9). This is Crescent's department setting, not the app-wide default.
 - **Lost tracking ID:** Get Incident Tracking Id still needs a SubscriptionKey we don't have, so "Needs review" is resolved by hand in Recovery Hub (`https://therecoveryhub.com/users/login`).
 - **Billing status example:** strings, e.g. `"InvoiceAmount": "2564.00"`, `"InvoiceStatus": "Payment Received"`.
 - **Not used now:** attachments, bulk status, payment reconciliation, totals, invoices, inspections.
@@ -150,7 +166,7 @@ Use a 3px left/right bar on the input the way Recovery Hub does: red for Require
 
 (Recovery Hub also offers Structure Fire and Other; those are out of scope.)
 
-**Form Filed By:** read-only (`RO-BOX`). Shows "Filled in from the signed-in person when sent." The server fills it at submit time from the submitting user's account display name, or the username if there is no display name.
+**Form Filed By:** read-only (`RO-BOX`). This is the person who submitted the NERIS report (operator, 2026-11-01). The server takes it from the latest export receipt's `reportWriterName` (the exporting user's username), shown as that account's display name when one exists. Before the report is exported, the box shows "Filled in from the person who exports this report to NERIS."
 
 **Incident Details** (3-column grid like Recovery Hub). All are `RO-BOX` (read-only, copied from the report) except where noted:
 
@@ -218,30 +234,33 @@ Recovery Hub uses one "Vehicle Make & Model" box. We keep two boxes side by side
 
 ## 6. Requirement levels (D-9, D-10)
 
-**Default levels.** Admins can change these per department. "Party.*" means every party.
+**Default levels.** The app-wide default follows Fire Recovery's minimum list (§4), with Recovery Hub's orange fields as Recommended. Each department's admin can change any row. "Party" rows apply to every party.
 
-| Key | Label | Default |
-|---|---|---|
-| `fr.lawEnforcementNumber` | Law Enforcement Agency Report Number | Optional |
-| `fr.nerisCode` | NERIS Code | Required |
-| `fr.party.firstName` | First Name | Required |
-| `fr.party.lastName` | Last Name | Required |
-| `fr.party.address` | Party Address (street, city, state, zip) | Required |
-| `fr.party.phone` | Party Phone | Recommended |
-| `fr.party.email` | Party Email | Optional |
-| `fr.party.isResident` | Is Resident? | Required |
-| `fr.party.insuranceCompany` | Insurance Company / Liable Party | Required (waived by Uninsured) |
-| `fr.party.policyNumber` | Policy Number | Recommended |
-| `fr.party.insuranceContact` | Insurance Contact Number | Recommended |
-| `fr.party.vehicleMake` | Vehicle Make | Required |
-| `fr.party.vehicleModel` | Vehicle Model | Required |
-| `fr.party.licensePlate` | License Plate | Recommended |
-| `fr.party.vin` | VIN | Recommended |
-| `fr.party.atFault` | At Fault Party | Optional |
+| Key | Label | App default | Crescent setting |
+|---|---|---|---|
+| `fr.lawEnforcementNumber` | Law Enforcement Agency Report Number | Optional | Optional |
+| `fr.nerisCode` | NERIS Code (pre-filled from the report) | Optional | Optional |
+| `fr.party.firstName` | First Name | Required | Required |
+| `fr.party.lastName` | Last Name | Required | Required |
+| `fr.party.address` | Party Address (street, city, state, zip) | Required | Required |
+| `fr.party.phone` | Party Phone | Recommended | Recommended |
+| `fr.party.email` | Party Email | Optional | Optional |
+| `fr.party.isResident` | Is Resident? | Recommended | **Required** (ordinance) |
+| `fr.party.insuranceCompany` | Insurance Company / Liable Party | Required (waived by Uninsured) | Required (waived by Uninsured) |
+| `fr.party.policyNumber` | Policy Number | Recommended | Recommended |
+| `fr.party.insuranceContact` | Insurance Contact Number | Recommended | Recommended |
+| `fr.party.vehicleMake` | Vehicle Make | Required | Required |
+| `fr.party.vehicleModel` | Vehicle Model | Required | Required |
+| `fr.party.licensePlate` | License Plate | Recommended | Recommended |
+| `fr.party.vin` | VIN | Recommended | Recommended |
+| `fr.party.atFault` | At Fault Party | Optional | Optional |
 
-**Always required, not adjustable:**
+**Crescent's Is Resident setting:** an admin sets "Is Resident? = Required" in Admin Functions → Reporting → NERIS Required Fields → Fire Recovery Billing. Do it on staging before the Wave 7 test (§11.2 step 2) and on production before the first real bill (§11.3 step 3).
+
+**Always required, not adjustable (Fire Recovery's minimum):**
+- Form Filed By (comes from the NERIS export).
 - At least one party.
-- The call details Run Date, Time Alarm Received, Time Call Cleared, Run Number, Total Personnel On-Scene (more than 0), and Incident Location. If any is blank, the tab shows "Fix this in the report's {section} section", with a link.
+- The call details: Run Date, Time Alarm Received, Time Call Cleared, Run Number, Total Personnel On-Scene (more than 0), and Incident Location with street, city, state and zip. If any is blank, the tab shows "Fix this in the report's {section} section", with a link.
 
 **Storage:**
 - Department details JSON key `fireRecoveryFieldRequirements`, shaped like `{ "fr.party.isResident": "required", ... }`.
@@ -308,7 +327,7 @@ type FireRecoveryBilling = {
 |---|---|
 | `NERISDepartmentId` | D-3: `FD12345678` in sandbox mode, otherwise `Tenant.nerisEntityId` |
 | `DepartmentName` | `Tenant.fireRecoveryDepartmentName` |
-| `incident.IncidentID` | the report's call number (app incident id) |
+| `incident.IncidentID` | Run Number (`incident_internal_id`), the same value as `CostRecovery.IncidentNumber`. Recovery Hub shows only one Run Number box |
 | `incident.IncidentType` | NERIS code (D-15), full value |
 | `incident.IncidentTypeDescription` | readable label of that NERIS code |
 | `incident.AlarmDateTime` | Run Date + Time Alarm Received, `YYYY-MM-DDTHH:MM:SS` local |
@@ -327,10 +346,10 @@ type FireRecoveryBilling = {
 | `CostRecovery.LawEnforcementNumber` | tab value, else first vehicle `policeReportFileNumber`, else "" |
 | `CostRecovery.CatchCreated` | submit time, `YYYY-MM-DDTHH:MM:SS` local |
 | `CostRecovery.TotalPersonnelOnScene` | §5.2 count |
-| `CostRecovery.FiledBy` | submitting user's first/middle/last (from account), else the username split |
+| `CostRecovery.FiledBy` | the NERIS exporter (receipt `reportWriterName`), with first/middle/last from that account's display name, else the username split |
 | `CostRecovery.Parties[].Party` | per party: `First`, `Last`, `Address`, `City`, `State`, `Zip`, `Phone`, `Email`, `Isresident` (YES → true), `AtFault` (YES → true), and `Vehicle` with `VehicleMake`, `VehicleModel`, `VehicleYear`, `LicensePlate`, `VehicleVIN`, `VehicleOther`, `InsuranceCompanyName` ("" when uninsured), `PolicyNumber`, `InsuranceContactNumber`, `CommercialVehicle`, `DOTNumber`, `CompanyName`, and `Owner: false`. Omit `SSNumber`, `PartySSN` and `DOB` (we don't collect them). Leave `InvolvementType` and `InvolTypeDescript` "" until the vendor answers |
 
-- **Time zone:** use the department's offset; the export receipt has `clientUtcOffsetMinutes` in `integration`. If unknown, use America/Chicago.
+- **Time zone:** send the department's local time, as typed on the report, with no offset (confirmed). If a stored time is in UTC, convert it using the export's `clientUtcOffsetMinutes`, else America/Chicago.
 - **Commercial trucking (D-12):** sent as `CommercialVehicle` per party. Ask the vendor how a Commercial Trucking run type is flagged.
 - **Tests:** keep the mapping a pure function, `buildFireRecoveryPayload(formValues, receipt, tenant, submitter, mode)`, with unit tests.
 
@@ -526,6 +545,7 @@ Repeat this separately for staging and production. Each gets its **own** key.
    - Enter the department name "Crescent Iroquois Fire Protection District".
    - Enter the Welcome email's username and password. Click **Save Fire Recovery**.
    - Expect "Fire Recovery settings saved." and "password is saved".
+   - Then go to **Admin Functions → Reporting → NERIS Required Fields → Fire Recovery Billing**, set **Is Resident?** to **Required**, and click **Save**. Expect "Saved."
 3. Create a test incident with type **MEDICAL: INJURY: MOTOR_VEHICLE_COLLISION**. Fill the NERIS report.
    - On **Fire Recovery Billing**, add two parties: one insured, one with Uninsured checked. Use made-up names.
 4. Export the report to NERIS.
@@ -541,14 +561,14 @@ Repeat this separately for staging and production. Each gets its **own** key.
 
 Follow `docs/procedures/RELEASE_CHECKLIST.md` in full:
 - backup
-- the 3 new migrations (plus any from §14 Q1)
+- the 3 new migrations plus the approved billing-status migration (§14 Q1)
 - Crescent sender
 - `NODE_ENV` handled by Render
 
 Then:
 1. Do §11.1 on **fireultimate-api-prod** with `FIRE_RECOVERY_MODE=live`.
 2. Enter Crescent's real Fire Recovery login on the production site. If the vendor says the Welcome login is sandbox-only, wait for the real one.
-3. Go to **Admin Functions** and grant officers "Send a NERIS report for billing" and "View billing information".
+3. Go to **Admin Functions** and grant officers "Send a NERIS report for billing" and "View billing information". Then set **Is Resident?** to **Required** under **Admin Functions → Reporting → NERIS Required Fields → Fire Recovery Billing**, and save.
 4. Choose one real, complete motor-vehicle incident. Preview, check the red LIVE banner, and Confirm.
 5. Record the tracking ID in §15.
 6. Check it in Recovery Hub.
@@ -575,15 +595,18 @@ Then:
 >
 > 1. Login: is the RH public API login in our Welcome email for the sandbox only, or also for Crescent's real bills?
 > 2. Sandbox: please confirm that submissions with FD12345678 are never billed. Can sandbox incidents be cleared after testing?
-> 3. Required fields: we send, per party, first and last name, address, Is Resident, insurance company (or uninsured), and vehicle make and model. We also send phone, policy number, insurance contact number, license plate and VIN when known. Is that enough? Which values does InvolvementType accept, and is it needed?
+> 3. Party role: the API has InvolvementType and InvolTypeDescript fields. We plan to leave them blank. Is that okay?
 > 4. NERIS code: should IncidentType and PrincipleIncidentType hold the full NERIS incident type value (for example MEDICAL||INJURY||MOTOR_VEHICLE_COLLISION)? Which format matches the NERIS Code dropdown in Recovery Hub?
-> 5. Numbers: should our run number go in IncidentNumber, IncidentID, or both?
-> 6. Dates: your examples have no time zone. Should we send the department's local time?
-> 7. Commercial trucking: how do we mark a Commercial Trucking Incident through the API — CommercialVehicle on the party's vehicle, or something else?
-> 8. Lost tracking ID: if our request times out, how do we find the tracking ID? Get Incident Tracking Id still lists a SubscriptionKey, and we do not have one.
-> 9. Corrections: are corrections made only in Recovery Hub? How should a corrected report be matched to the original tracking ID?
-> 10. Billing status: how soon after submitting is billing status available, and how often may we check it?
-> 11. Law enforcement: if more than one agency reports, should we send one report number or several?
+> 5. Commercial trucking: how do we mark a Commercial Trucking Incident through the API — CommercialVehicle on the party's vehicle, or something else?
+> 6. Lost tracking ID: if our request times out, how do we find the tracking ID? Get Incident Tracking Id still lists a SubscriptionKey, and we do not have one.
+> 7. Corrections: are corrections made only in Recovery Hub? How should a corrected report be matched to the original tracking ID?
+> 8. Billing status: how soon after submitting is billing status available, and how often may we check it?
+
+**Answered by the operator on 2026-11-01 (removed from the email):**
+- **Dates:** send the department's local time with no time zone.
+- **Law enforcement:** send one report number only.
+- **Minimum fields:** in §6.
+- **Run number:** Recovery Hub shows one "Run Number" box, which is our incident/run number. We send it in both `IncidentNumber` and `IncidentID`.
 >
 > Thank you,
 > Jeremy Wichtner, Fire Ultimate

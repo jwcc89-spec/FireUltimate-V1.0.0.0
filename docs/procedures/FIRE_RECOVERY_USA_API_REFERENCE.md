@@ -112,7 +112,8 @@ Vendor documentation states:
   - Each `IncidentActionsTaken[]` item has `IncidentActionsTakenCode` and `IncidentActionsTakenDescription`.
   - `Occupancydata` has `Occupancyid`, `OccupancyName`, `Address`, `City`, `State`, `Zip`, `Phone`, and `Email`.
   - Party addresses use separate `Address`, `City`, `State`, and `Zip` fields.
-- **Date format:** examples use `0001-01-01T00:00:00`, with no time zone. Whether local time is expected is an open question for the vendor email.
+- **Date format:** examples use `0001-01-01T00:00:00`, with no time zone. Send the department's local time (confirmed by the operator 2026-11-01).
+- **Minimum fields (operator, 2026-11-01):** listed in `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` §4. Send one law enforcement report number only. The run number goes in both `IncidentNumber` and `IncidentID`.
 - **Required fields:** the vendor documentation marks **no** field as required and lists no allowed values for `InvolvementType`. The department's minimums above are the rule.
 - **Success check:** success is `Done["API Response"].Status === 1` with `Message: "Success"` and a `Done.TrackingId`. The client should require both. Today it checks only the tracking ID.
 
