@@ -15,16 +15,17 @@
 
 ## Current focus
 - Stage B (Steps 5–9B) is **built and click-tested** on this practice branch. It is **not released**.
-- Stage C (Fire Recovery, Step 10) is next, and only after the user says **start Step 10**. Do not start Stage C, Step 15, or the Fire Recovery email on your own.
+- Security remediation is **in progress** on this same branch. Fix 4 and Fix 1 are built and tested. Fixes 2 and 3 (CAD intake) are next. Do not start them until the operator confirms the Render setting **name** `CAD_INGEST_SECRET` exists (Part 1 item 4). Do not promote this branch until Part 1 and fixes 2 and 3 are done.
+- Stage C (Fire Recovery, Step 10) waits until the user says **start Step 10** and the Stage B security blockers are finished. Do not start Stage C, Step 15, or the Fire Recovery email on your own.
 - Repair plan canvas (live): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 - Repair plan source in the repo: `docs/plans/canvases/repair-plan.canvas.tsx`. Keep the live canvas and this file in sync. Republish with WriteCanvas using canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` and the full repo file. Omit the title so "Fire Ultimate repair plan" stays.
 - Design canvas (older, not the working plan): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618
-- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-session.md`
+- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-security-remediation-start.md`
 - Latest user summary: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-10-31-session-summary.md`
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
 
 ## Latest known status
-- Latest code/docs commit before this handoff close: `4eb5664` — `docs: park incident status, table drag, and left-menu hiding`. That commit is on origin. The handoff files in this close are a later commit; read `git log -1` after pull.
+- Latest code commits for the security start: `497b667` (session refusal tests) and `e3c222e` (failed sign-in memory cap). Read `git log -1` after pull. The October 31 click-through commit remains `4eb5664`.
 - Stage A (Steps 1–4) complete. Stage B Steps 5, 6, 7, 8, 9, 9A, and 9B are built here and click-tested on October 31, 2026 (America/Chicago).
 - GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, and `npm test` on Node 20.19.0 against throwaway Postgres. Install is `npm ci --engine-strict=false` because `@prisma/streams-local` (unused by the app) wants Node 22 and `.npmrc` has `engine-strict=true`. Do not change that flag. Do not upgrade Prisma. If Render is still on Node 20 at release, its install needs the same flag.
 - `npm test` is CAD unit tests plus `server/auth/sessions.test.mjs`. It refuses any database that is not `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never point tests at Neon.
@@ -93,8 +94,9 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-session.md`, and `conversations/2026-10-31-session-summary.md`.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-remediation-start.md`, and `docs/plans/security-remediation-plan.md`.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click.
-3. **Do not** start Step 10, Recover Reports, the Status dropdown, Configure Table drag, or left-menu hiding until the user asks for that item by name.
-4. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
-5. When the user says start Step 10, work only on this practice branch, one step at a time, and stop before any database change that is not already approved. Step 13 still needs a database-setting approval and the sandbox email.
+3. **Do now:** Continue security remediation at Fix 2, then Fix 3, one commit each. Do not start Fix 2 until the operator has confirmed the setting **name** `CAD_INGEST_SECRET` exists on staging and production. Do not deploy.
+4. **Do not** start Step 10, Recover Reports, the Status dropdown, Configure Table drag, or left-menu hiding until the user asks for that item by name.
+5. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
+6. When the user says start Step 10, work only on this practice branch, one step at a time, and stop before any database change that is not already approved. Step 13 still needs a database-setting approval and the sandbox email. Security fixes 5, 6, and 7 are the Stage C billing blockers in the security plan.

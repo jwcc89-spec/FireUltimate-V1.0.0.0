@@ -1,7 +1,8 @@
 # Security Remediation Plan (October 2026)
 
-**Status:** Proposed – awaiting approval. No application code has been changed for this plan.
+**Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
+**Progress (2026-10-31):** Fix 4 (`497b667`) and Fix 1 (`e3c222e`) are built and tested here. Fixes 2 and 3 are next. Part 1 is still an operator task and blocks the Stage B release. The username-length query in Part 1 must show a longest username of 100 or less before this branch is promoted, because Fix 1 refuses longer sign-in names.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -68,7 +69,7 @@ If the readable-text password count is above `0`, reset those accounts to strong
 
 Build order: fix 4, then 1, then 2, then 3.
 
-### Fix 1 — Failed logins can use up server memory (audit HIGH-1)
+### Fix 1 — Failed logins can use up server memory (audit HIGH-1) — built on this branch, not released
 - **Problem:** Every failed login stores the submitted username in memory with no size limit. Request bodies may be up to 4 MB, so each request can add up to about 4 MB.
 - **Affected code:** `server/auth/sessions.mjs` (`loginFailures`, `failureKey`, `loginLockStatus`, `noteLoginFailure`); `server/neris-proxy.mjs` `POST /api/auth/login`.
 - **Smallest safe change (memory only, no database table):**
@@ -97,7 +98,7 @@ Build order: fix 4, then 1, then 2, then 3.
 - **Automated tests:** unknown department rejected; empty list rejected; matching sender passes, including `"Name <address>"`; non-matching sender rejected.
 - **Staging check:** run the allowlist query first; after deploy a real dispatch email arrives and still creates the incident; an email from a personal address is rejected and adds no row.
 
-### Fix 4 — Missing tests for core Stage B claims (tests only)
+### Fix 4 — Missing tests for core Stage B claims (tests only) — built on this branch
 - **Affected code:** `server/auth/sessions.test.mjs` only.
 - **Tests:** made-up or tampered session cookie refused; a session from one department refused on another department's address; a cancelled session refused; `revokeAllSessions` signs a user out everywhere; record the Origin scheme/port gap (item D5) as a known gap.
 - **Depends on:** nothing (CI already provides a throwaway Postgres).
