@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31, later the same evening):** Fixes 4, 1, 2, and 3 are built and tested on this branch. Not released. Do not promote until Crescent has an allowed sender (staging currently has 0) and the production migration names are copied. There is no on-screen button for the allowed-sender list yet.
+**Progress (2026-10-31, later the same evening):** Fixes 4, 1, 2, and 3 are built and tested on this branch. Not released. Production's migration list was copied the same evening: 10 names through `20260411190000_fire_recovery_tenant_api_credentials`. This branch adds three more (`add_session`, `add_role_permission_and_account_audit`, `add_neris_report_change`). Do not promote until Crescent has an allowed sender (staging currently has 0). There is no on-screen button for that list yet.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -68,7 +68,7 @@ If the readable-text password count is above `0`, reset those accounts to strong
 - Production `admin` password was changed on `https://cifpdil.fireultimate.app`. That site has no `demo` user. `https://demo.fireultimate.app` does not exist. Staging passwords were changed on `cifpdil.staging`, `demo.staging`, and `kankdemo.staging`.
 - Staging backup was created. The Fire Recovery password was removed in the staging database. Both projects reported a saved-password count of `0`.
 - Longest username: production `12`, staging `13`. Readable-text password count was reported as `0`. Staging CAD mail in the last 30 days: `cifpdil` with `0` allowed senders. Staging tenant status: trial `3`, active `2`. Production tenant status was described as active. No suspended or archived department was reported, so item D1 can wait.
-- The production migration answer was not a list of migration names (`active` and count `2`). Copy those names before any production release.
+- Production migration names, copied 2026-10-31 about 9:26 p.m. Chicago time. Production already has these 10, in this order: `20260306180916_init_multitenant_core`, `20260310120000_add_tenant_neris_entity_id`, `20260312180000_add_incident_table`, `20260312200000_add_cad_email_ingest`, `20260314000000_add_neris_export_history`, `20260314120000_add_neris_drafts`, `20260409140000_add_cad_parsing_settings_and_allowlist`, `20260410180000_add_cad_email_parsed_message_text`, `20260411120000_fire_recovery_incident_billing`, `20260411190000_fire_recovery_tenant_api_credentials`. The earlier "active and count 2" was the department-status result, not this list. This branch adds three that production does not have: `20261029180000_add_session`, `20261029200000_add_role_permission_and_account_audit`, `20261030180000_add_neris_report_change`. `docs/procedures/RELEASE_CHECKLIST.md` does not name individual migrations, so it did not need a correction.
 - `CAD_INGEST_SECRET` name is present on the staging API, the production API, and the Cloudflare Worker. Values were not copied.
 
 ---
@@ -177,7 +177,7 @@ Build order: fix 5, then 6, then 7.
 5. Run each fix's staging check. Real CAD email must arrive; NERIS export and validation must work.
 
 ### Promote staging to production (`main`)
-1. Production migration list compared with this branch; `RELEASE_CHECKLIST.md` corrected if needed.
+1. Production migration list compared on 2026-10-31. Production has the 10 names through `20260411190000_fire_recovery_tenant_api_credentials`. Apply only the three newer additions at release: Session, RolePermission plus AccountAuditLog, and NerisReportChange. The release checklist did not need a name correction. The allowed-sender SQL is still written in the release session, after the sender screen exists or the release is approved.
 2. Readable-text passwords reset (if any). `admin`/`demo` passwords already changed (Part 1 item 1).
 3. Neon backup of `fireultimate-prod`.
 4. Apply this branch's database changes to production.

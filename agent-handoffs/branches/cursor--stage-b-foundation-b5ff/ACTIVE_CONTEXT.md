@@ -20,7 +20,7 @@
 - Repair plan canvas (live): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 - Repair plan source in the repo: `docs/plans/canvases/repair-plan.canvas.tsx`. Keep the live canvas and this file in sync. Republish with WriteCanvas using canvas id `3b7445ce-b395-4e16-b948-f84dab1ca136` and the full repo file. Omit the title so "Fire Ultimate repair plan" stays.
 - Design canvas (older, not the working plan): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618
-- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-security-fixes-2-and-3.md`
+- Latest session note: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-10-31-production-migrations.md`
 - Latest user summary: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-10-31-session-summary.md`
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
 
@@ -94,9 +94,9 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-security-fixes-2-and-3.md`, and `docs/plans/security-remediation-plan.md`.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, `sessions/2026-10-31-production-migrations.md`, and `docs/plans/security-remediation-plan.md`.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click.
-3. **Do now:** Do not deploy. Before any promotion, Crescent needs allowed sender `dispatch@co.iroquois.il.us`. The screen for that list is not built. Also get the production `_prisma_migrations` names. Then Stage C starts only when the user says start Step 10 (security fixes 5, 6, and 7).
+3. **Do now:** Do not deploy. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. Before any promotion, Crescent needs allowed sender `dispatch@co.iroquois.il.us`. The screen for that list is not built. Stage C starts only when the user says start Step 10 (security fixes 5, 6, and 7).
 4. **Do not** start Step 10, Recover Reports, the Status dropdown, Configure Table drag, or left-menu hiding until the user asks for that item by name.
 5. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
 6. When the user says start Step 10, work only on this practice branch, one step at a time, and stop before any database change that is not already approved. Step 13 still needs a database-setting approval and the sandbox email. Security fixes 5, 6, and 7 are the Stage C billing blockers in the security plan.
