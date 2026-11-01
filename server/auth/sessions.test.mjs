@@ -114,6 +114,28 @@ test("server sign-in passes", async () => {
   assert.ok(loginFailureCount() <= LOGIN_FAILURE_MAP_MAX);
 
   clearLoginLockouts();
+  for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT - 1; attempt += 1) {
+    const kept = noteLoginFailure("dept", "real-account", stamp, { knownAccount: true });
+    assert.equal(kept.locked, false);
+  }
+  for (let index = 0; index < 20_000; index += 1) {
+    noteLoginFailure("dept", `junk-${index}`, stamp);
+  }
+  assert.equal(loginFailureCount(), LOGIN_FAILURE_MAP_MAX);
+  const fifthReal = noteLoginFailure("dept", "real-account", stamp, { knownAccount: true });
+  assert.equal(fifthReal.locked, true);
+  assert.equal(loginLockStatus("dept", "real-account", stamp).locked, true);
+
+  clearLoginLockouts();
+  for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT - 1; attempt += 1) {
+    noteLoginFailure("dept", "stale-account", stamp, { knownAccount: true });
+  }
+  const afterQuiet = stamp + LOGIN_LOCK_MS + 1;
+  const fresh = noteLoginFailure("dept", "stale-account", afterQuiet, { knownAccount: true });
+  assert.equal(fresh.locked, false);
+  assert.equal(loginLockStatus("dept", "stale-account", afterQuiet).locked, false);
+
+  clearLoginLockouts();
   for (let index = 0; index < LOGIN_FAILURE_MAP_MAX; index += 1) {
     for (let attempt = 0; attempt < LOGIN_FAILURE_LIMIT; attempt += 1) {
       noteLoginFailure("dept", `locked-${index}`, stamp);

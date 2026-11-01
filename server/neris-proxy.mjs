@@ -4365,7 +4365,9 @@ app.post("/api/auth/login", (request, response) => {
     const storedHash = dbUser ? String(dbUser.passwordHash ?? "") : "";
     const valid = dbUser ? await verifyPassword(submittedPassword, storedHash) : false;
     if (!dbUser || !valid) {
-      const failure = noteLoginFailure(tenantId, submittedUsername);
+      const failure = noteLoginFailure(tenantId, submittedUsername, Date.now(), {
+        knownAccount: Boolean(dbUser),
+      });
       if (failure.deferred) {
         response.status(429).json({
           ok: false,

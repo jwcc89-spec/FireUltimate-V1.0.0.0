@@ -173,7 +173,7 @@ Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-s
 - **Automated tests:** loop over every API route and request it with an uppercase prefix, mixed case, and a trailing slash. With no session, each must return 401 or 404 and never data. As a regular user, each admin-only route must return 403 or 404. Include `/api/admin/...` with no key (Part 0).
 - **Staging check:** the same variants against staging with a test account. Normal pages, NERIS export, and CAD intake still work.
 
-### Fix 9 — Flooding resets the login lockout; old failures never expire (found in verification; MEDIUM and LOW) — not built
+### Fix 9 — Flooding resets the login lockout; old failures never expire (found in verification; MEDIUM and LOW) — built on this branch, not released
 - **Problem:** When the failed-login list is full, the oldest unlocked row is removed. An attacker can make 4 guesses, send 10,000 junk usernames (cheap, because unknown names skip the password check), and repeat. The local probe made 13 guesses on one account without a lock. Separately, counts below 5 never expire: 4 mistakes a year ago plus 1 today locks the account.
 - **Affected code:** `server/auth/sessions.mjs` (`noteLoginFailure`, `evictOldestUnlockedLoginFailure`, `sweepExpiredLoginFailures`).
 - **Smallest safe change:** Expire a failure count 15 minutes after its last failure. When the list is full, remove only rows for usernames that do not exist, or rows with expired counts. Never remove a row for a real account that has failures. Respond "try again later" if no room can be made.

@@ -9,7 +9,7 @@ export const LOGIN_LOCK_MS = 15 * 60 * 1000;
 export const LOGIN_USERNAME_MAX = 100;
 /** Passwords longer than this are refused and not stored. */
 export const LOGIN_PASSWORD_MAX = 256;
-/** Failed-sign-in rows kept in memory. Locked rows are never dropped to make room. */
+/** Failed-sign-in rows kept in memory. A real account's row is never dropped to make room. */
 export const LOGIN_FAILURE_MAP_MAX = 10_000;
 const ACTIVITY_WRITE_INTERVAL_MS = 60 * 1000;
 
@@ -55,16 +55,20 @@ function failureKey(tenantId, username) {
 
 function sweepExpiredLoginFailures(now) {
   for (const [key, row] of loginFailures) {
-    if (row.lockedUntil && row.lockedUntil <= now) loginFailures.delete(key);
+    const lockExpired = row.lockedUntil && row.lockedUntil <= now;
+    const lastFailedAt = row.lastFailedAt ?? row.createdAt ?? 0;
+    const countExpired = !row.lockedUntil && now - lastFailedAt >= LOGIN_LOCK_MS;
+    if (lockExpired || countExpired) loginFailures.delete(key);
   }
 }
 
-/** Drops one unlocked row, the one recorded earliest. Locked rows stay. */
-function evictOldestUnlockedLoginFailure(now) {
+/** Drops one row for a name that is not a real account. Real accounts and active locks stay. */
+function evictUnknownLoginFailure(now) {
   let oldestKey = "";
   let oldestAt = Infinity;
   let found = false;
   for (const [key, row] of loginFailures) {
+    if (row.knownAccount) continue;
     if (row.lockedUntil && row.lockedUntil > now) continue;
     const createdAt = row.createdAt ?? 0;
     if (!found || createdAt < oldestAt) {
@@ -88,7 +92,7 @@ export function loginLockStatus(tenantId, username, now = Date.now()) {
   return { locked: false };
 }
 
-export function noteLoginFailure(tenantId, username, now = Date.now()) {
+export function noteLoginFailure(tenantId, username, now = Date.now(), options = {}) {
   sweepExpiredLoginFailures(now);
   const key = failureKey(tenantId, username);
   const existing = loginFailures.get(key);
@@ -96,18 +100,20 @@ export function noteLoginFailure(tenantId, username, now = Date.now()) {
     return { locked: true, retryAt: existing.lockedUntil, deferred: false };
   }
   if (!existing && loginFailures.size >= LOGIN_FAILURE_MAP_MAX) {
-    const madeRoom = evictOldestUnlockedLoginFailure(now);
+    const madeRoom = evictUnknownLoginFailure(now);
     if (!madeRoom) {
       return { locked: false, retryAt: 0, deferred: true };
     }
   }
-  const row = loginFailures.get(key) ?? { count: 0, lockedUntil: 0, createdAt: now };
+  const row = loginFailures.get(key) ?? { count: 0, lockedUntil: 0, createdAt: now, knownAccount: false };
   const count = row.count + 1;
   const lockedUntil = count >= LOGIN_FAILURE_LIMIT ? now + LOGIN_LOCK_MS : 0;
   loginFailures.set(key, {
     count,
     lockedUntil,
     createdAt: row.createdAt ?? now,
+    lastFailedAt: now,
+    knownAccount: row.knownAccount === true || options.knownAccount === true,
   });
   return { locked: lockedUntil > now, retryAt: lockedUntil, deferred: false };
 }
