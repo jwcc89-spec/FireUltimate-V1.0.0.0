@@ -94,7 +94,7 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 
 ## Still open — user must answer before those pieces are built
 - **Stage C decisions were recorded 2026-11-01.** See `docs/task-2-multitenant-domain-plan.md` ("Fire Recovery decisions (2026-11-01)") and the Stage C plan `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`. Target: one real Crescent vehicle-accident bill from production by Monday, November 2. Go-live moves later if the staging sandbox test hasn't passed. Stage C code is **not started**.
-- **Stage C plan is complete and detailed** in `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`: decisions in §3, waves in §9, operator steps in §11, vendor email in §13. Start at the first unticked wave. Before Wave 4, get the operator's answers to §14 (an add-only billing status column, and permission-map entries for the new routes).
+- **Stage C plan is complete and detailed** in `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`: decisions in §3, waves in §9, operator steps in §11, vendor email in §13. Start at Wave 1. The §14 approvals are given: the add-only `submitStatus` and `submitStartedAt` columns, and permission-map entries for the new routes. Only Q5 (is the Welcome login also for real bills?) waits on the vendor, and it blocks only Wave 8. The operator answered the minimum fields, local time, one law enforcement number, and the run number on 2026-11-01 (plan §4 and §13).
 - Confirmed 2026-11-01:
   - The Welcome email has the RH public API login; the host is `https://process.firerecoveryusa.com`.
   - Crescent's billing agreement is set up.

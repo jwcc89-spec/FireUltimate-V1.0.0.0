@@ -201,7 +201,7 @@ Recovery Hub's "How many parties are involved?" dropdown is replaced by Add Part
 | | Party Address: Street, City, State, Zip | 4 text boxes (vendor wants separate fields) | Required (all four) |
 | | Party Phone | text | Recommended |
 | | Party Email | text | Optional |
-| | Is Resident? | `DD-S` Yes / No | **Required** (D-9) |
+| | Is Resident? | `DD-S` Yes / No | Recommended by default; **Required for Crescent** (D-9, §6) |
 | Insurance | Uninsured | checkbox | — (when checked, insurance fields are not required) |
 | | Insurance Company / Liable Party | text | Required unless Uninsured |
 | | Policy Number | text | Recommended |
