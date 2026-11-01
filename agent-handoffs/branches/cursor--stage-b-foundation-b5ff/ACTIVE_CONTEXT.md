@@ -30,7 +30,7 @@
 - Start prompt for the next agent: `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/COPY_PASTE_START_PROMPT.md`
 
 ## Latest known status
-- Latest code on this branch is `4eaed9e` (fix 14). Before that: `aa9eba0` (fix 13), `70ac3d5` (fix 12), `939a629` (fix 11), then fixes 8–10 and the Part 0 line. Read `git log -1` after pull. Do not rebuild Part 0 or fixes 8–14.
+- Latest code on this branch adds the Allowed Senders screen (`e6f3e4d`) on top of the Fix 15 docs note (`3b34841`) and fix 14 (`4eaed9e`). Read `git log -1` after pull. Do not rebuild the screen, Part 0, or fixes 8–14.
 - Stage A (Steps 1–4) complete. Stage B Steps 5, 6, 7, 8, 9, 9A, and 9B are built here and click-tested on October 31, 2026 (America/Chicago).
 - GitHub Actions (`.github/workflows/ci.yml`) runs lint, build, and `npm test` on Node 20.19.0 against throwaway Postgres. Install is `npm ci --engine-strict=false` because `@prisma/streams-local` (unused by the app) wants Node 22 and `.npmrc` has `engine-strict=true`. Do not change that flag. Do not upgrade Prisma. If Render is still on Node 20 at release, its install needs the same flag.
 - `npm test` is CAD unit tests plus `server/auth/sessions.test.mjs`. It refuses any database that is not `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never point tests at Neon.
@@ -88,7 +88,7 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Workflow row input key is `key={index}` (about `src/App.tsx` line 12521). Do not key the row on the text value or typing one character remounts the input.
 - Queue status: `getNerisQueueFieldValue` prefers the local draft `reportStatus`, then `call.nerisReportStatus`, then Draft. View Exports uses that same helper, and shows Exported only after a successful export. The incidents list API skips `reportRemoved` drafts when setting `nerisReportStatus`. Call number used by the API is the incident id.
 - View Exports (the button, the page, and `GET /api/neris/export-history`) requires `neris.export`. Default role is admin. A person without it sees "Export history is not shown for this sign-in." Do not add a separate permission.
-- Part 0: `requirePlatformAdmin` compares `request.path.toLowerCase()` with `/api/admin`. A capitalized `/API/admin/...` with no key returns 403 and creates nothing. Built on this practice branch on 2026-11-01. Not on `main` or staging. Do not merge pull request 31 to ship it.
+- Part 0: `requirePlatformAdmin` compares `request.path.toLowerCase()` with `/api/admin`. A capitalized `/API/admin/...` with no key returns 403 and creates nothing. Built on this practice branch on 2026-11-01. The same one-line check is already on staging (PR #32) and on `main` (PR #33). Do not merge pull request 31 to ship it again.
 - Fixes 8, 9, and 10 are built on this practice branch on 2026-11-01 and are not released. Fix 8 rejects API paths with different letter case or a trailing slash. Fix 9 keeps a real account's wrong-password count during a flood and clears a count 15 minutes after the last failure. Fix 10 returns a short JSON message for a broken request instead of a stack trace. Live sites stay unchanged.
 
 ## Still open — user must answer before those pieces are built
@@ -102,9 +102,9 @@ Recorded October 31, 2026 on the repair plan (Decisions and Parked & future):
 - Production runs `main` (`3f9b97a`). Staging runs `submenu/neris-golive-cifpd` (`2d985fa`).
 
 ## Next agent should do this first
-1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, and `docs/plans/security-remediation-plan.md`. Trust the Progress line at the top of that plan. Fixes 8–14 are built, click-checked, and not released. Do not rebuild them. Another agent owns fix 15 on `main` and staging. Do not merge this branch to do that. Fix 16 is Stage C. Fix 17 has no code change. The Allowed Senders screen is already built on this branch. Do not rebuild it. Do not deploy. Do not merge until Part 5's backup and Crescent sender steps are done.
+1. **Do now:** Read `cursoragent-context.md`, `.cursor/project-context.md`, this file, and `docs/plans/security-remediation-plan.md`. Trust the Progress line at the top of that plan. Fixes 8–14 are built, click-checked, and not released. Do not rebuild them. Fix 15 is already on staging and `main`. Do not merge this branch to ship it again. Fix 16 is Stage C. Fix 17 has no code change. The Allowed Senders screen is already built on this branch. Do not rebuild it. Do not deploy. Do not merge until Part 5's backup and Crescent sender steps are done.
 2. **Do now:** Stay on `cursor/stage-b-foundation-b5ff`. Pull before editing. Confirm `http://localhost:5173` if the user is about to click. If that site is down, start it. Do not restart a healthy proxy.
-3. **Do now:** Wait for the user's next request. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. The allowed-sender screen is Stage D.
-4. **Do not** build Recover Reports, the allowed-sender screen, the Status dropdown, Configure Table drag, or left-menu hiding.
+3. **Do now:** Wait for the user's next request. Production migrations are recorded (10 names through `20260411190000_fire_recovery_tenant_api_credentials`). This branch adds Session, RolePermission plus AccountAuditLog, and NerisReportChange. The Allowed Senders screen is already on this branch. Staging does not have it until this branch is promoted.
+4. **Do not** rebuild the Allowed Senders screen. Do not build Recover Reports, the Status dropdown, Configure Table drag, or left-menu hiding.
 5. **Do not** merge, retarget staging, or touch Render, Neon, Cloudflare, or production.
 6. Part 3 did not add a database table. Fix 6's key is the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY`. Do not create that setting on Render until a planned release. Step 15 and the Fire Recovery email stay parked. Do not save a Fire Recovery password in production until fixes 5–7 are live there.
