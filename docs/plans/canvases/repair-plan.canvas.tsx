@@ -295,6 +295,7 @@ const decided = [
   ["October 31, 2026", "Settings", "Unchecking a box in Admin Functions → Customization → Submenu Display Settings should hide that item from the left menu. Edit Display on the submenu cards is what shows or hides cards on the menu page. Fix later.", "Parked & future"],
   ["October 31, 2026", "CAD", "The allowed-sender screen stays in Stage D, step 23. Do not build it during security Part 3. Crescent's sender is dispatch@co.iroquois.il.us. Do not release this practice branch until that address is saved, because an empty sender list now rejects mail.", "23"],
   ["October 31, 2026", "Security", "Part 3 is built on the practice branch and not released. The server writes the NERIS export receipt. The Fire Recovery password is encrypted. Viewing billing requires billing.view, which defaults to admin. Do not create FIRE_RECOVERY_CREDENTIAL_KEY on Render in a coding session.", "10, 13"],
+  ["October 31, 2026", "Security", "Part 4 (D1–D7) stays deferred. It is not the next coding task. D1 is required before any department is suspended. D2 is after Stage C and needs the browser-clearing rule approved first. D3–D6 are Stage C. D7 is when convenient.", "Parked & future"],
 ];
 
 const decisions = [
@@ -623,6 +624,24 @@ function Parked() {
         Crescent does not use the schedule today, but Watseka and Kankakee will use it for work days and trades. Scheduling is reviewed in the near future, but not during the Fire Recovery and CAD work. Step 5 automatically protects the scheduling pages. Saving the schedule today can erase days missing from someone's open browser tab, so that fix must be part of the scheduling review before either department relies on it.
       </Callout>
       <Divider />
+      <H2>Later: security Part 4 (deferred)</H2>
+      <Text>
+        Recorded October 31, 2026 from the security plan. Parts 1–3 are built on the practice branch and not released. Part 4 is not the next coding task. Each item below stays deferred only while its restriction stays true.
+      </Text>
+      <Table
+        headers={["Item", "What is still open", "Restriction until it is fixed", "When"]}
+        rows={[
+          ["D1", "A suspended or archived department can still sign in.", "Do not use department status to cut off access. To cut off a department, cancel its sessions and disable its accounts.", "Before any department is suspended. If one is already suspended or archived, this moves up."],
+          ["D2", "Report and incident data can stay in the browser after sign-in expires.", "On a shared station computer, click Sign out. Shared computers use separate Windows sign-ins.", "After Stage C. The clearing rule needs approval first."],
+          ["D3", "The server can still accept an old readable-text password.", "Safe only while both databases have zero readable-text passwords.", "During Stage C: remove that fallback and add a test."],
+          ["D4", "Detailed internal error messages can be sent back to the browser.", "Do not put secrets in Render settings that could show up in an error.", "During Stage C."],
+          ["D5", "The origin check ignores the web address scheme and port.", "Keep HTTPS-only at Cloudflare. The sign-in cookie is already strict and host-only.", "During Stage C."],
+          ["D6", "Sign-in for an unknown username replies faster than for a real one.", "The lockout after wrong passwords reduces the risk.", "During Stage C: compare against a stand-in password hash when the username does not exist."],
+          ["D7", "12 moderate warnings are in development tools only. Session tests skip when no local database is present.", "These are not shipped to departments. The automatic checks already run the session tests.", "When convenient."],
+        ]}
+        striped
+      />
+      <Divider />
       <H2>Later: turn older plan documents into canvas plans</H2>
       <Text>The repo's docs/plans, docs/procedures and docs/user instructions folders hold text plans that are hard to follow. Later, search the repo for incomplete items in those files and turn each active area into a canvas plan with the same layout as this one. Each plan's source is saved under docs/plans/canvases/.</Text>
     </Stack>
@@ -639,11 +658,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed · Security Parts 1–3 are built on the practice branch and not released · Allowed-sender screen stays in Stage D · Do not release until dispatch@co.iroquois.il.us is saved · Not released</Text>
+        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed · Security Parts 1–3 are built on the practice branch and not released · Part 4 (D1–D7) is deferred · Allowed-sender screen stays in Stage D · Do not release until dispatch@co.iroquois.il.us is saved · Not released</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B click-through passed on the practice copy (October 31, 2026)">
-        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Security Part 3 (fixes 5, 6, and 7) is built on this practice copy and not released. The allowed-sender screen stays in Stage D, step 23. Do not release until dispatch@co.iroquois.il.us is saved for Crescent. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
+        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Security Part 3 (fixes 5, 6, and 7) is built on this practice copy and not released. Security Part 4 (D1–D7) is deferred and is not the next coding task. The allowed-sender screen stays in Stage D, step 23. Do not release until dispatch@co.iroquois.il.us is saved for Crescent. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />
