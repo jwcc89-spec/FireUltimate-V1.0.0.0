@@ -64,3 +64,12 @@ The click-through section above still describes Stage B. After that, the securit
 - The screen that lets you add `dispatch@co.iroquois.il.us` stays in Stage D, repair-plan step 23. Do not build that screen in the next coding session. Do not release this practice copy until that address is saved, because an empty sender list now rejects mail and saves nothing.
 - The next agent starts at Part 3 of `docs/plans/security-remediation-plan.md`: Fix 5, then Fix 6, then Fix 7. Fix 5 is the server-written NERIS export record (the security piece of repair-plan Step 10). It does not start the Fire Recovery email, Recover Reports, or the parked screens.
 - Do not merge pull request 31. Do not save a Fire Recovery password in production until those three fixes are live there.
+
+## Later the same evening — Part 3 built
+
+A new coding session on this same practice copy built the three security fixes. They are not on staging and not on Crescent's site.
+
+- After NERIS answers, the server writes the export record. The browser can no longer write a "success" record. A bill can use only a record the server wrote.
+- The Fire Recovery password is encrypted before it is saved. The encryption key is a Render setting named `FIRE_RECOVERY_CREDENTIAL_KEY`. That setting was not created. Do not type a Fire Recovery password into production until these fixes are live there.
+- Only an admin can see billing information, unless an admin later gives that permission to another role. A person without it sees the sentence "Billing information is not shown for this sign-in." They do not see invoice amounts, and they do not see an error.
+- The screen that adds `dispatch@co.iroquois.il.us` is still Stage D, step 23. Do not release this practice copy until that address is saved.

@@ -123,7 +123,7 @@ Do not deploy this until `dispatch@co.iroquois.il.us` is on Crescent's allowed-s
 
 ## Part 3 — Must be fixed before Fire Recovery goes live (Stage C)
 
-Build order: fix 5, then 6, then 7.
+Build order: fix 5, then 6, then 7. All three are built on this practice branch and not released.
 
 **Production restriction until fixes 5–7 are live in production:** do not save a Fire Recovery password in production (count must stay `0`) and do not submit bills from production.
 
@@ -197,6 +197,6 @@ Fixes 5, 6, 7 on this branch → Fire Recovery changes the old password → stag
 
 - Fix 1's memory cap and fail-closed CAD intake (fixes 2 and 3) are built on this branch. Not released.
 - Allowed-sender screen: Stage D, step 23. Not Part 3. Crescent's address is `dispatch@co.iroquois.il.us`.
-- Part 3 starts next, in order: fix 5, then 6, then 7. Fix 6 keeps the plan's Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (a different value on staging and production; a copy stays in the password manager). Fix 7's `billing.view` default is admin, matching the October 29 decision that billing is admin-only.
+- Part 3 code is built on this practice branch and not released: fix 5, then 6, then 7. Fix 6 keeps the plan's Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (a different value on staging and production; a copy stays in the password manager). Do not create that setting during a coding session. Fix 7's `billing.view` default is admin, matching the October 29 decision that billing is admin-only.
 - Approve the browser-clearing rule (item D2). Still later.
 - Approve adding the Fire Recovery production restriction and the CAD release order (Part 5) to `docs/procedures/RELEASE_CHECKLIST.md`. Still later.

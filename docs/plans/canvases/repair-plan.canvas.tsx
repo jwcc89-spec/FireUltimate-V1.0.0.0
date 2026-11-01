@@ -99,16 +99,16 @@ const stages: StageDef[] = [
     id: "C", name: "Stage C — Fire Recovery billing (first priority)",
     summary: "Bill only verified incidents, exactly once, with correct information. Fire Recovery is not in production yet, so this is building it correctly before release.",
     steps: [
-      { n: "10", title: "Have the server record NERIS export results itself",
+      { n: "10", title: "Have the server record NERIS export results itself", status: "Updated",
         problem: "Billing uses an 'export succeeded' record that the browser writes. Anything not marked 'failed' is saved as success. The same weakness affects NERIS export history in production today.",
         why: "It is like a bank accepting a customer's handwritten note saying a check cleared.",
-        fix: "The server writes an official receipt only after NERIS confirms success. The receipt includes the NERIS ID, time, who exported it, an exact copy of what was sent, and a tamper-check fingerprint.",
+        fix: "The server writes an official receipt only after NERIS replies. The receipt includes the NERIS ID, time, who exported it, and the payload that was sent. October 31: this receipt is built on the practice branch (security fix 5) and not released. The browser can record only a failure that never reached NERIS. A separate tamper-check fingerprint is not in this pass.",
         who: "Me.",
-        done: "Tests prove the browser cannot create a success record." },
+        done: "Tests prove the browser cannot create a success record. Met on the practice branch October 31, 2026. Not released." },
       { n: "11", title: "Bill only from verified receipts, with a preview", status: "Updated",
         problem: "Billing does not check where its data came from or who is submitting.",
         why: "Billing must be based on the official, confirmed report and sent only by authorized staff.",
-        fix: "The 'Send to Fire Recovery' button appears only for incidents with an official receipt and only for approved roles (decided October 29: admin by default; the department admin may grant it to other roles in Admin Functions). The person submitting sees a preview of exactly what will be sent and clicks Confirm. Nothing is ever billed automatically.",
+        fix: "The 'Send to Fire Recovery' button appears only for incidents with an official receipt and only for approved roles (decided October 29: admin by default; the department admin may grant it to other roles in Admin Functions). The person submitting sees a preview of exactly what will be sent and clicks Confirm. Nothing is ever billed automatically. October 31: viewing billing is a separate permission, billing.view, defaulting to admin (security fix 7). That permission is built on the practice branch and not released. The preview and Confirm click are still later.",
         who: "Me.",
         done: "Tests prove unverified incidents and unauthorized users cannot bill." },
       { n: "12", title: "Prevent double billing",
@@ -120,7 +120,7 @@ const stages: StageDef[] = [
       { n: "13", title: "Protect the Fire Recovery password and use the sandbox department ID for testing", status: "Updated",
         problem: "Vendor passwords are stored as readable text. Fire Recovery confirmed October 29 that testing happens on their real address (process.firerecoveryusa.com) using a sandbox department NERIS ID, FD12345678; there is no separate test site for us. Today the app always sends the department's own NERIS ID (the same one used for NERIS exports), so a test from staging would send Crescent's real ID to Fire Recovery's real system.",
         why: "With one shared address, the department ID is the only thing separating a test from a real bill.",
-        fix: "Encrypt stored passwords. Add a per-department 'Fire Recovery department ID' setting, separate from the NERIS export ID, so staging can use FD12345678 while NERIS exports keep the real ID. Staging refuses to submit with any ID other than the sandbox ID, and every submission screen shows which ID will be used. No subscription key is needed for this method. Fire Recovery sets up the sandbox after you reply with the account email; the Welcome Message holds the API login, which is entered only in the app's settings screen, never in chat.",
+        fix: "Encrypt stored passwords. Add a per-department 'Fire Recovery department ID' setting, separate from the NERIS export ID, so staging can use FD12345678 while NERIS exports keep the real ID. Staging refuses to submit with any ID other than the sandbox ID, and every submission screen shows which ID will be used. No subscription key is needed for this method. Fire Recovery sets up the sandbox after you reply with the account email; the Welcome Message holds the API login, which is entered only in the app's settings screen, never in chat. October 31: encryption is built on the practice branch (security fix 6) and not released. The key is the Render setting FIRE_RECOVERY_CREDENTIAL_KEY. Do not create that setting in a coding session. Do not save a Fire Recovery password in production until fixes 5–7 are live there. The separate sandbox department ID setting is not built yet.",
         who: "Me; the new setting may need your approval for a database change; you reply to Fire Recovery with the account email.",
         done: "Passwords are encrypted, and tests prove staging can only submit with sandbox ID FD12345678." },
       { n: "14", title: "Handle vendor outages and errors clearly",
@@ -232,7 +232,7 @@ const stages: StageDef[] = [
 const productionItems = [
   ["Logging in", "Server forgets you after login; role trusted from the browser", "5, 6"],
   ["User management", "Accounts can be created, promoted, reset or deleted without logging in", "6"],
-  ["NERIS export history", "Browser writes 'export succeeded' records", "10"],
+  ["NERIS export history", "Fixed on the practice branch October 31. The server writes the receipt after NERIS replies. Not released.", "10"],
   ["NERIS export button", "Server does not check who exports", "6"],
   ["Report edit lock", "Fixed on the practice branch October 30. The server enforces the lock. Not released.", "9A (done)"],
   ["Report editing", "Fixed on the practice branch October 30. A second save is refused and change history is kept. Not released.", "9A (done)"],
@@ -294,6 +294,7 @@ const decided = [
   ["October 31, 2026", "Incidents", "Dragging columns under Incidents → Configure Table does not work. Fix later. That layout stays on each computer.", "Parked & future"],
   ["October 31, 2026", "Settings", "Unchecking a box in Admin Functions → Customization → Submenu Display Settings should hide that item from the left menu. Edit Display on the submenu cards is what shows or hides cards on the menu page. Fix later.", "Parked & future"],
   ["October 31, 2026", "CAD", "The allowed-sender screen stays in Stage D, step 23. Do not build it during security Part 3. Crescent's sender is dispatch@co.iroquois.il.us. Do not release this practice branch until that address is saved, because an empty sender list now rejects mail.", "23"],
+  ["October 31, 2026", "Security", "Part 3 is built on the practice branch and not released. The server writes the NERIS export receipt. The Fire Recovery password is encrypted. Viewing billing requires billing.view, which defaults to admin. Do not create FIRE_RECOVERY_CREDENTIAL_KEY on Render in a coding session.", "10, 13"],
 ];
 
 const decisions = [
@@ -638,11 +639,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed · Security Part 1 and Part 2 code are done and not released · Next: security Part 3 (fixes 5, 6, 7) on this practice branch · Allowed-sender screen stays in Stage D · Not released</Text>
+        <Text size="small" tone="tertiary">Updated October 31, 2026 · Stage B click-through passed · Security Parts 1–3 are built on the practice branch and not released · Allowed-sender screen stays in Stage D · Do not release until dispatch@co.iroquois.il.us is saved · Not released</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B click-through passed on the practice copy (October 31, 2026)">
-        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Security Part 3 (fixes 5, 6, and 7) is the next code on this practice copy. The allowed-sender screen stays in Stage D, step 23. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
+        Not released. Confirmed in the practice browser: change history shows the on-screen field names, deleting a report leaves the incident, a second save opens the "This report was not saved" pop-up, workflow states accept continuous typing, dashboard Edit display hides the six boxes on this computer, saving the NERIS Entity ID fills the report, idle sign-out is 60 minutes, and five wrong passwords lock sign-in for 15 minutes. Security Part 3 (fixes 5, 6, and 7) is built on this practice copy and not released. The allowed-sender screen stays in Stage D, step 23. Do not release until dispatch@co.iroquois.il.us is saved for Crescent. Recover Reports, incident Status, table drag, and left-menu hiding are parked.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />
