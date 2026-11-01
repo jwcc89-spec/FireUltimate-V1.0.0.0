@@ -21,7 +21,7 @@ Use this for every release to staging or production. A release means telling Ren
 ## Staging first
 
 9. Apply database additions to the staging database only after the backup exists and you have said yes in writing.
-10. Release the code to the staging Render service only after those tables exist. As part of that release, set `NODE_ENV` to `production` on the staging Render service.
+10. Release the code to the staging Render service only after those tables exist. Render already sets `NODE_ENV=production` for the running server. Do not add `NODE_ENV` as a dashboard variable. That value is also present during the build, and `npm install` then skips the compiler packages and the build fails.
 11. Sign in on the department's own staging address and check the change: sign in and out, a wrong password locks after 5 tries, a regular user cannot create an incident or send a NERIS report, and one department cannot open another department's incident.
 12. Stop if staging fails. Leave production as it is.
 
@@ -30,7 +30,7 @@ Use this for every release to staging or production. A release means telling Ren
 13. Take a new production backup the same way. A staging backup does not cover production.
 14. Say yes in writing for production.
 15. Apply the same database additions to production.
-16. Release the code to the production Render service. As part of that release, set `NODE_ENV` to `production` on the production Render service.
+16. Release the code to the production Render service. Render already sets `NODE_ENV=production` for the running server. Do not add `NODE_ENV` as a dashboard variable.
 17. Sign in as Crescent and confirm the department still sees its own incidents and can open a NERIS report.
 18. Leave CAD auto-create off until Stage D. Leave Fire Recovery submissions off until Stage C says otherwise.
 
