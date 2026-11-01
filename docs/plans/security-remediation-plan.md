@@ -26,7 +26,7 @@ Rules for every fix:
 | # | What | Why | Done when |
 |---|---|---|---|
 | 1 | Change the production `admin` and `demo` passwords through the app. | Stage B makes every route require sign-in. A guessable admin password would make that sign-in useless. **This blocks the Stage B release.** | Sign-in with the new passwords works. |
-| 2 | On staging: Neon backup, then clear the saved Fire Recovery password (Admin Functions → Setup/Configuration → Fire Recovery). | Staging's billing submit has no sign-in check until this branch reaches staging, and the password is stored as readable text until fix 6. | The count query below returns `0`. |
+| 2 | On staging: Neon backup, then clear the saved Fire Recovery password (Admin Functions → Setup/Configuration → Fire Recovery). | Staging's billing submit has no sign-in check until this branch reaches staging, and the password is stored as readable text until fix 6. The current staging value appears to be a test value last changed 2026-04-11, so this is lower urgency unless it turns out to be a working account. | The count query below returns `0`. |
 | 3 | Run the read-only queries below in **both** Neon projects. Send back only counts and migration names. | Promotion applies this branch's database changes to production, and production already has some of them. | Results reviewed. |
 | 4 | In Render, confirm the setting **name** `CAD_INGEST_SECRET` exists on the staging and production API services, and that the Cloudflare email Worker has its matching secret. Do not copy the values. | Production's current code accepts any CAD email if that setting is missing. | Name is present on both services. |
 
