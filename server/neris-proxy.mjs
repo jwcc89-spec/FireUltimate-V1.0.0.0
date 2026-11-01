@@ -24,6 +24,7 @@ import {
   postAddNerisIncidentForBilling,
   postIncidentBillingStatus,
 } from "./fireRecoveryClient.mjs";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./crypto/secretBox.mjs";
 import {
   PUBLIC_API_ROUTES,
   applySessionCookie,
@@ -3756,17 +3757,40 @@ function maskFireRecoverySubscriptionKey(raw) {
   return `****${s.slice(-4)}`;
 }
 
-function fireRecoveryJwtOverrideFromTenant(tenant) {
-  const u = trimValue(tenant?.fireRecoveryApiUsername);
-  const p = trimValue(tenant?.fireRecoveryApiPassword);
-  if (u && p) {
-    return { username: u, password: p };
-  }
-  return null;
+const FIRE_RECOVERY_REENTER = "re-enter the password";
+
+function scrubSecret(message, secret) {
+  const text = String(message ?? "");
+  const hidden = String(secret ?? "");
+  if (!hidden) return text;
+  return text.split(hidden).join("[removed]");
 }
 
-function tenantHasFireRecoveryCredentials(tenant) {
-  return Boolean(fireRecoveryJwtOverrideFromTenant(tenant));
+function publicFireRecoveryMessage(error, secret) {
+  const raw = error instanceof Error ? error.message : "Unexpected Fire Recovery error.";
+  return scrubSecret(raw, secret);
+}
+
+function tenantHasFireRecoveryLogin(tenant) {
+  return Boolean(trimValue(tenant?.fireRecoveryApiUsername) && trimValue(tenant?.fireRecoveryApiPassword));
+}
+
+async function readFireRecoveryPassword(stored) {
+  const value = trimValue(stored);
+  if (!value) return "";
+  if (!isEncryptedSecret(value)) {
+    const error = new Error(FIRE_RECOVERY_REENTER);
+    error.code = "SECRET_PLAINTEXT";
+    throw error;
+  }
+  return decryptSecret(value);
+}
+
+async function fireRecoveryCredentialsFromTenant(tenant) {
+  const username = trimValue(tenant?.fireRecoveryApiUsername);
+  const password = await readFireRecoveryPassword(tenant?.fireRecoveryApiPassword);
+  if (!username || !password) return null;
+  return { username, password };
 }
 
 function formatFireRecoveryExportDateLabel(value) {
@@ -3836,7 +3860,7 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
         subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
         departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
         apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
-        passwordIsSet: Boolean(trimValue(tenant?.fireRecoveryApiPassword)),
+        passwordIsSet: isEncryptedSecret(tenant?.fireRecoveryApiPassword),
       },
     });
   } catch (error) {
@@ -3879,7 +3903,20 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
       data.fireRecoveryApiUsername = apiUsername.trim() || null;
     }
     if (apiPassword !== undefined) {
-      data.fireRecoveryApiPassword = apiPassword.trim() || null;
+      const trimmedPassword = apiPassword.trim();
+      if (!trimmedPassword) {
+        data.fireRecoveryApiPassword = null;
+      } else {
+        try {
+          data.fireRecoveryApiPassword = encryptSecret(trimmedPassword);
+        } catch (error) {
+          response.status(400).json({
+            ok: false,
+            message: publicFireRecoveryMessage(error, trimmedPassword),
+          });
+          return;
+        }
+      }
     }
     if (Object.keys(data).length === 0) {
       response.status(400).json({ ok: false, message: "No Fire Recovery fields to update." });
@@ -3901,14 +3938,13 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
         subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant.fireRecoverySubscriptionKey),
         departmentName: trimValue(tenant.fireRecoveryDepartmentName),
         apiUsername: trimValue(tenant.fireRecoveryApiUsername),
-        passwordIsSet: Boolean(trimValue(tenant.fireRecoveryApiPassword)),
+        passwordIsSet: isEncryptedSecret(tenant.fireRecoveryApiPassword),
       },
     });
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error ? error.message : "Unexpected Fire Recovery settings save error.",
+      message: publicFireRecoveryMessage(error, apiPassword),
     });
   }
 });
@@ -3965,6 +4001,7 @@ app.get("/api/fire-recovery/incidents/:callNumber", async (request, response) =>
 });
 
 app.post("/api/fire-recovery/submit", async (request, response) => {
+  let fireRecoveryPassword = "";
   try {
     const tenantId = request.tenant?.id;
     if (!tenantId) {
@@ -3987,7 +4024,17 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
         fireRecoveryApiPassword: true,
       },
     });
-    if (!tenantHasFireRecoveryCredentials(tenant)) {
+    if (!tenantHasFireRecoveryLogin(tenant)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+      });
+      return;
+    }
+    const credentials = await fireRecoveryCredentialsFromTenant(tenant);
+    fireRecoveryPassword = credentials?.password ?? "";
+    if (!credentials) {
       response.status(400).json({
         ok: false,
         message:
@@ -4057,9 +4104,7 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       departmentName: dept,
     });
 
-    const jwt = await getFireRecoveryJwt(
-      /** @type {{ username: string, password: string }} */ (fireRecoveryJwtOverrideFromTenant(tenant)),
-    );
+    const jwt = await getFireRecoveryJwt(credentials);
     const { trackingId } = await postAddNerisIncidentForBilling(jwt, frBody);
 
     const now = new Date();
@@ -4090,7 +4135,7 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       data: fireRecoveryBillingRowToApi(row),
     });
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Unexpected Fire Recovery submit error.";
+    const msg = publicFireRecoveryMessage(error, fireRecoveryPassword);
     try {
       const tenantId = request.tenant?.id;
       const body = request.body && typeof request.body === "object" ? request.body : {};
@@ -4120,6 +4165,7 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
 });
 
 app.post("/api/fire-recovery/billing-status", async (request, response) => {
+  let fireRecoveryPassword = "";
   try {
     const tenantId = request.tenant?.id;
     if (!tenantId) {
@@ -4140,7 +4186,17 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
         fireRecoveryApiPassword: true,
       },
     });
-    if (!tenantHasFireRecoveryCredentials(tenantForJwt)) {
+    if (!tenantHasFireRecoveryLogin(tenantForJwt)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+      });
+      return;
+    }
+    const statusCredentials = await fireRecoveryCredentialsFromTenant(tenantForJwt);
+    fireRecoveryPassword = statusCredentials?.password ?? "";
+    if (!statusCredentials) {
       response.status(400).json({
         ok: false,
         message:
@@ -4161,11 +4217,7 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       return;
     }
 
-    const jwt = await getFireRecoveryJwt(
-      /** @type {{ username: string, password: string }} */ (
-        fireRecoveryJwtOverrideFromTenant(tenantForJwt)
-      ),
-    );
+    const jwt = await getFireRecoveryJwt(statusCredentials);
     const resp = await postIncidentBillingStatus(jwt, trackingId);
     const now = new Date();
 
@@ -4210,7 +4262,7 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
   } catch (error) {
     response.status(400).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected billing status error.",
+      message: publicFireRecoveryMessage(error, fireRecoveryPassword),
     });
   }
 });

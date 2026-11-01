@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31, about 9:37 p.m. Chicago time):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Fix 5 is built on this practice branch and not released. Next implementation is Fix 6, then Fix 7. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
+**Progress (2026-10-31, evening, America/Chicago):** Part 1 is complete. Part 2 code is complete and not released. The allowed-sender screen is Stage D of the repair plan (step 23), not a Part 3 task. Fixes 5 and 6 are built on this practice branch and not released. Next implementation is Fix 7. Do not create the Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` in this coding session. Do not release this branch until `dispatch@co.iroquois.il.us` is saved for Crescent, because an empty sender list now rejects mail.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -136,7 +136,7 @@ Build order: fix 5, then 6, then 7.
 - **Automated tests:** record built from a NERIS success reply and from an error reply; a browser "success" post is refused or turned into "failed"; billing readiness only accepts server-written records.
 - **Staging check:** confirm staging's `NERIS_BASE_URL` points at the NERIS test system; export one report and see one success row with the real NERIS ID; validation still works; a forced failure shows one failed row.
 
-### Fix 6 — Fire Recovery password stored as readable text (audit HIGH-2; repair plan Stage C Step 13)
+### Fix 6 — Fire Recovery password stored as readable text (audit HIGH-2; repair plan Stage C Step 13) — built on this branch, not released
 - **Verified 2026-10-31:** On a throwaway local database (no staging or production access), a signed-in admin saved the made-up password `Fake-Audit-Pw-7Q2` through `PATCH /api/fire-recovery/settings`. The `Tenant.fireRecoveryApiPassword` column then held exactly `Fake-Audit-Pw-7Q2`. The settings reply did not include it. Staging's code (`submenu/neris-golive-cifpd`) has the same save line, so the issue applies to any password entered on this branch or staging.
 - **Affected code:** existing `Tenant.fireRecoveryApiPassword` column (kept); `server/neris-proxy.mjs` Fire Recovery settings `GET`/`PATCH`, submit, and billing status; new `server/crypto/secretBox.mjs`.
 - **Smallest safe change:** Encrypt with AES-256-GCM before saving, tagged `enc:v1:`, key from a new Render setting `FIRE_RECOVERY_CREDENTIAL_KEY` (different key for staging and production). Settings reply returns only "a password is saved: yes/no". A readable-text value is refused with "re-enter the password" (no automatic conversion). Errors and logs never include the password or the request body. No schema change.

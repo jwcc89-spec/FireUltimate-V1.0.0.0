@@ -5,6 +5,7 @@ import { readFileSync } from "node:fs";
 import http from "node:http";
 import test from "node:test";
 import bcrypt from "bcryptjs";
+import { encryptSecret } from "../crypto/secretBox.mjs";
 import {
   LOGIN_FAILURE_LIMIT,
   LOGIN_FAILURE_MAP_MAX,
@@ -1193,6 +1194,7 @@ test("server sign-in passes", async () => {
 
     const originalFetch = globalThis.fetch;
     let nerisMode = "error";
+    let frLoginMode = "ok";
     globalThis.fetch = async (url, init) => {
       const target = String(url);
       if (target.startsWith("http://127.0.0.1") || target.startsWith("http://localhost")) {
@@ -1211,6 +1213,11 @@ test("server sign-in passes", async () => {
         });
       }
       if (target.includes("LoginAndGetJWTToken")) {
+        if (frLoginMode === "echo") {
+          return new Response(JSON.stringify({ message: `rejected ${init?.body ? String(init.body) : ""}` }), {
+            status: 401,
+          });
+        }
         return new Response(JSON.stringify({ LoginAndGetJWTTokenResult: "jwt-test" }), { status: 200 });
       }
       if (target.includes("addincident")) {
@@ -1220,6 +1227,7 @@ test("server sign-in passes", async () => {
     };
     process.env.NERIS_STATIC_ACCESS_TOKEN = "test-token";
     process.env.NERIS_BASE_URL = "https://neris.invalid/v1";
+    process.env.FIRE_RECOVERY_CREDENTIAL_KEY = "practice-test-key";
     const exportBody = {
       callNumber: "26-RECEIPT",
       reportStatus: "In Review",
@@ -1288,7 +1296,7 @@ test("server sign-in passes", async () => {
         data: {
           fireRecoveryDepartmentName: "Demo Fire",
           fireRecoveryApiUsername: "sandbox-user",
-          fireRecoveryApiPassword: "sandbox-pass",
+          fireRecoveryApiPassword: encryptSecret("sandbox-pass"),
         },
       });
       const fakeBill = await call("/api/fire-recovery/submit", {
@@ -1307,10 +1315,67 @@ test("server sign-in passes", async () => {
       });
       assert.equal(realBill.status, 201, JSON.stringify(realBill.json));
       assert.equal(realBill.json.data.trackingId, "track-1");
+
+      await prisma.tenant.update({
+        where: { id: demo.id },
+        data: { fireRecoveryApiPassword: "Readable-Secret-9" },
+      });
+      const plainBill = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(plainBill.status, 400);
+      assert.equal(plainBill.json.message, "re-enter the password");
+      assert.equal(JSON.stringify(plainBill.json).includes("Readable-Secret-9"), false);
+
+      const leakPassword = "Leak-Check-Pw-42";
+      const savedPassword = await call("/api/fire-recovery/settings", {
+        method: "PATCH",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { fireRecoveryApiPassword: leakPassword },
+      });
+      assert.equal(savedPassword.status, 200, JSON.stringify(savedPassword.json));
+      assert.equal(savedPassword.json.data.passwordIsSet, true);
+      assert.equal(JSON.stringify(savedPassword.json).includes(leakPassword), false);
+      const storedPassword = await prisma.tenant.findUnique({ where: { id: demo.id } });
+      assert.ok(String(storedPassword.fireRecoveryApiPassword).startsWith("enc:v1:"));
+      assert.equal(String(storedPassword.fireRecoveryApiPassword).includes(leakPassword), false);
+      const settingsRead = await call("/api/fire-recovery/settings", { cookie: exportCookie.pair });
+      assert.equal(settingsRead.json.data.passwordIsSet, true);
+      assert.equal(JSON.stringify(settingsRead.json).includes(leakPassword), false);
+
+      frLoginMode = "echo";
+      const leaked = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(leaked.status, 400);
+      assert.equal(JSON.stringify(leaked.json).includes(leakPassword), false);
+      const billingRow = await prisma.fireRecoveryIncidentBilling.findUnique({
+        where: { tenantId_callNumber: { tenantId: demo.id, callNumber: "26-RECEIPT" } },
+      });
+      assert.equal(String(billingRow.lastSubmitError).includes(leakPassword), false);
+
+      process.env.FIRE_RECOVERY_CREDENTIAL_KEY = "wrong-key";
+      const wrongKey = await call("/api/fire-recovery/submit", {
+        method: "POST",
+        cookie: exportCookie.pair,
+        requestOrigin: origin,
+        body: { callNumber: "26-RECEIPT" },
+      });
+      assert.equal(wrongKey.status, 400);
+      assert.equal(wrongKey.json.message, "re-enter the password");
+      assert.equal(JSON.stringify(wrongKey.json).includes(leakPassword), false);
     } finally {
       globalThis.fetch = originalFetch;
       delete process.env.NERIS_STATIC_ACCESS_TOKEN;
       delete process.env.NERIS_BASE_URL;
+      delete process.env.FIRE_RECOVERY_CREDENTIAL_KEY;
     }
   } finally {
     await new Promise((resolve) => server.close(resolve));
