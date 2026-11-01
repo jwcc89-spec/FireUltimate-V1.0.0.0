@@ -2,7 +2,7 @@
 
 **Status:** In progress on the practice branch. Not released. Do not merge.
 **Created:** 2026-10-31, from the independent security audit of the practice branch.
-**Progress (2026-10-31, later the same evening):** Fixes 4, 1, 2, and 3 are built and tested on this branch. Not released. Production's migration list was copied the same evening: 10 names through `20260411190000_fire_recovery_tenant_api_credentials`. This branch adds three more (`add_session`, `add_role_permission_and_account_audit`, `add_neris_report_change`). Do not promote until Crescent has an allowed sender (staging currently has 0). There is no on-screen button for that list yet.
+**Progress (2026-10-31, about 9:30 p.m. Chicago time):** Part 1 hands-on items are complete. Part 2 code (fixes 4, 1, 2, and 3) is built and tested on this branch and is not released. Production has 10 migrations through `20260411190000_fire_recovery_tenant_api_credentials`. This branch adds three more. Do not promote until Crescent has an allowed sender (staging currently has 0). There is no on-screen button for that list yet.
 **Working branch:** `cursor/stage-b-foundation-b5ff`. Every code fix lands here first, then goes to staging (`submenu/neris-golive-cifpd`), then to production (`main`).
 
 Branch facts (checked 2026-10-31):
@@ -21,14 +21,14 @@ Rules for every fix:
 
 ## Part 1 — Hands-on items (no code)
 
-### Do now
+**Status: completed 2026-10-31 (America/Chicago).** Reviewed the same evening. Nothing in this part is still waiting on the operator. Cloudflare Access is still only needed if a planned promotion of this branch is delayed. Asking Fire Recovery USA to change a password is not required: the operator said the staging value was a test password, and both databases now report `0`.
 
-| # | What | Why | Done when |
-|---|---|---|---|
-| 1 | Change the production `admin` and `demo` passwords through the app. | Stage B makes every route require sign-in. A guessable admin password would make that sign-in useless. **This blocks the Stage B release.** | Sign-in with the new passwords works. |
-| 2 | On staging: Neon backup, then clear the saved Fire Recovery password (Admin Functions → Setup/Configuration → Fire Recovery). | Staging's billing submit has no sign-in check until this branch reaches staging, and the password is stored as readable text until fix 6. The current staging value appears to be a test value last changed 2026-04-11, so this is lower urgency unless it turns out to be a working account. | The count query below returns `0`. |
-| 3 | Run the read-only queries below in **both** Neon projects. Send back only counts and migration names. | Promotion applies this branch's database changes to production, and production already has some of them. | Results reviewed. |
-| 4 | In Render, confirm the setting **name** `CAD_INGEST_SECRET` exists on the staging and production API services, and that the Cloudflare email Worker has its matching secret. Do not copy the values. | Production's current code accepts any CAD email if that setting is missing. | Name is present on both services. |
+| # | What | Result |
+|---|---|---|
+| 1 | Change the production `admin` and `demo` passwords through the app. | **Completed.** Production `admin` was changed on `https://cifpdil.fireultimate.app`. That site has no `demo` user, and `https://demo.fireultimate.app` does not exist, so there is no production `demo` password to change. Staging passwords were changed on `cifpdil`, `demo`, and `kankdemo`. |
+| 2 | On staging: Neon backup, then clear the saved Fire Recovery password. | **Completed.** Backup was created. The test password was removed. The count query is `0` on staging and on production. |
+| 3 | Run the read-only queries in both Neon projects. | **Completed.** Results are recorded below. Longest username is 12 in production and 13 on staging, both under the 100-character sign-in cap. Readable-text password count is `0`. No suspended or archived department was reported. Production has the 10 migration names through `20260411190000_fire_recovery_tenant_api_credentials`. |
+| 4 | Confirm the setting name `CAD_INGEST_SECRET` on the staging API, the production API, and the Cloudflare Worker. | **Completed.** The name is present in all three places. The values were not copied. |
 
 **Only if the saved staging value is a real, working Fire Recovery account:** ask Fire Recovery USA to change that password before Fire Recovery goes live (Stage C). The value is also in the 2026-10-28 staging backup and cannot be removed from it. Confirm whether it is real by asking whoever entered it or Fire Recovery USA, not by sending a request to Fire Recovery from staging.
 
@@ -75,7 +75,9 @@ If the readable-text password count is above `0`, reset those accounts to strong
 
 ## Part 2 — Blocks the Stage B sign-in release
 
-Build order: fix 4, then 1, then 2, then 3.
+**Code status: completed on this branch, 2026-10-31. Not released.** Build order was fix 4, then 1, then 2, then 3. Automated tests passed. Staging checks are still open because this branch has not been deployed.
+
+The operator has no Part 2 clicks until a release day. Before that release, the allowed-sender screen still has to be built so Crescent can add `dispatch@co.iroquois.il.us`. Staging reported `cifpdil` with 0 allowed senders. Deploying Fix 3 before that address is saved would reject real dispatch email.
 
 ### Fix 1 — Failed logins can use up server memory (audit HIGH-1) — built on this branch, not released
 
