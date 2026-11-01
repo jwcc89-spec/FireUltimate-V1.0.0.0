@@ -11,28 +11,27 @@
 
 ## 0. How to use this plan (read first, every agent)
 
-1. **This repo file is the source of truth.** A copy in a local `~/.cursor/plans/` folder is not shared with other agents; ignore it.
-2. Before editing anything, read:
+1. Before editing anything, read:
    - `cursoragent-context.md`
    - `.cursor/project-context.md`
    - `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`
    - `docs/plans/security-remediation-plan.md` (Status line)
    - this plan
    - `docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md`
-3. Work one wave at a time (§9). After each wave:
+2. Work one wave at a time (§9). After each wave:
    - Run `npm run lint`, `npm run build`, and `npm test` from `/Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0`.
    - Tick the wave's boxes here.
    - Add a line to §15 (Progress log).
    - Commit and push.
-4. When a decision changes, update §3 in this file, then record it in the repair-plan canvas copy (`docs/plans/canvases/repair-plan.canvas.tsx`, Stage C steps 10–18 and the Decisions table) and in `docs/task-2-multitenant-domain-plan.md`.
-5. **Never:**
+3. When a decision changes, update §3 in this file, then record it in the repair-plan canvas copy (`docs/plans/canvases/repair-plan.canvas.tsx`, Stage C steps 10–18 and the Decisions table) and in `docs/task-2-multitenant-domain-plan.md`.
+4. **Never:**
    - Submit to Fire Recovery from staging with any department ID other than `FD12345678`.
    - Put Fire Recovery usernames or passwords in chat, docs, code, tests, or `DepartmentDetails.payloadJson`.
    - Log billing payloads; they contain names, addresses and insurance details.
    - Commit screenshots that show real people.
    - Change the Prisma schema, migrations, or authentication/authorization code without the operator's explicit approval (§14).
-6. The operator (Jeremy) is new to coding. Give him numbered steps with the exact screen, the exact button, the exact text to type, and what he should see. Terminal steps always start with `cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0`.
-7. All times are 24-hour, app-wide.
+5. The operator (Jeremy) is new to coding. Give him numbered steps with the exact screen, the exact button, the exact text to type, and what he should see. Terminal steps always start with `cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0`.
+6. All times are 24-hour, app-wide.
 
 ---
 

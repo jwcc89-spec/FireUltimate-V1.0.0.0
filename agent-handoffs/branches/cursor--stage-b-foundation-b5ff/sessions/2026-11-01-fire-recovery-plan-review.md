@@ -7,7 +7,7 @@
 - Working branch: `cursor/stage-b-foundation-b5ff`
 
 ## Work completed (documentation only)
-- **`docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`:** the detailed Stage C plan and the source of truth. It started as a local Cursor plan file, which other agents cannot see. It covers:
+- **`docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`:** the detailed Stage C plan. It covers:
   - decisions (§3)
   - the Recovery Hub-style billing form (§5)
   - requirement levels (§6)
