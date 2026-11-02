@@ -68,6 +68,23 @@ describe("fire recovery billing requirements", () => {
     assert.equal(JSON.stringify(parties).includes("person:"), false);
   });
 
+  it("keeps spaces typed into a party field", () => {
+    const party = createParty("p1");
+    party.insuranceCompany = "State Farm ";
+    party.firstName = "Mary Ann";
+    const saved = serializeBilling({
+      version: 1,
+      runType: "MOTOR_VEHICLE",
+      lawEnforcementReportNumber: "Report 12",
+      nerisCode: "",
+      parties: [party],
+    });
+    const loaded = parseBilling(saved);
+    assert.equal(loaded.parties[0]?.insuranceCompany, "State Farm ");
+    assert.equal(loaded.parties[0]?.firstName, "Mary Ann");
+    assert.equal(loaded.lawEnforcementReportNumber, "Report 12");
+  });
+
   it("counts distinct people selected on Resources and skips a canceled unit", () => {
     const result = onScenePersonnel(
       JSON.stringify([

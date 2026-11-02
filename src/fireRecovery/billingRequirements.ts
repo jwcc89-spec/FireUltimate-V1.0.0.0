@@ -117,6 +117,12 @@ function text(value: unknown): string {
   return String(value).trim();
 }
 
+/** Keep spaces the user is still typing. Trimming happens when a value is checked or sent. */
+function typed(value: unknown): string {
+  if (value === null || value === undefined) return "";
+  return String(value);
+}
+
 function incidentTypeKey(value: string): string {
   return text(value)
     .toUpperCase()
@@ -211,29 +217,29 @@ function partyFromUnknown(value: unknown): FireRecoveryParty | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const row = value as Partial<FireRecoveryParty>;
   const party = createParty(text(row.id));
-  party.firstName = text(row.firstName);
-  party.lastName = text(row.lastName);
-  party.street = text(row.street);
-  party.city = text(row.city);
-  party.state = text(row.state);
-  party.zip = text(row.zip);
-  party.phone = text(row.phone);
-  party.email = text(row.email);
+  party.firstName = typed(row.firstName);
+  party.lastName = typed(row.lastName);
+  party.street = typed(row.street);
+  party.city = typed(row.city);
+  party.state = typed(row.state);
+  party.zip = typed(row.zip);
+  party.phone = typed(row.phone);
+  party.email = typed(row.email);
   party.isResident = yesNo(row.isResident);
   party.uninsured = row.uninsured === true;
-  party.insuranceCompany = text(row.insuranceCompany);
-  party.policyNumber = text(row.policyNumber);
-  party.insuranceContactNumber = text(row.insuranceContactNumber);
-  party.vehicleMake = text(row.vehicleMake);
-  party.vehicleModel = text(row.vehicleModel);
-  party.vehicleYear = text(row.vehicleYear);
-  party.licensePlate = text(row.licensePlate);
-  party.vin = text(row.vin);
-  party.otherVehicleDetails = text(row.otherVehicleDetails);
+  party.insuranceCompany = typed(row.insuranceCompany);
+  party.policyNumber = typed(row.policyNumber);
+  party.insuranceContactNumber = typed(row.insuranceContactNumber);
+  party.vehicleMake = typed(row.vehicleMake);
+  party.vehicleModel = typed(row.vehicleModel);
+  party.vehicleYear = typed(row.vehicleYear);
+  party.licensePlate = typed(row.licensePlate);
+  party.vin = typed(row.vin);
+  party.otherVehicleDetails = typed(row.otherVehicleDetails);
   party.atFault = yesNo(row.atFault);
   party.commercialVehicle = row.commercialVehicle === true;
-  party.dotNumber = text(row.dotNumber);
-  party.companyName = text(row.companyName);
+  party.dotNumber = typed(row.dotNumber);
+  party.companyName = typed(row.companyName);
   return party;
 }
 
@@ -245,7 +251,7 @@ export function parseBilling(raw: string): FireRecoveryBilling {
     return {
       version: 1,
       runType: parsed.runType === "COMMERCIAL_TRUCKING" ? "COMMERCIAL_TRUCKING" : "MOTOR_VEHICLE",
-      lawEnforcementReportNumber: text(parsed.lawEnforcementReportNumber),
+      lawEnforcementReportNumber: typed(parsed.lawEnforcementReportNumber),
       nerisCode: text(parsed.nerisCode),
       parties: parsed.parties.map(partyFromUnknown).filter((party): party is FireRecoveryParty => Boolean(party)),
     };
