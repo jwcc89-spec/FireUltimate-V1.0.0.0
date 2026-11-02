@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink, useNavigate, useSearchParams } from "react-router-dom";
 import { ChevronDown, Pencil, Trash2, Users } from "lucide-react";
 import {
   getIncidentCallDetail,
@@ -34,6 +34,7 @@ import {
   billingPrintRows,
   billingValidationIssueLabels,
   composeAddressLine,
+  ensureStructuredLocations,
   incidentLocationParts,
   isFireRecoveryBillable,
   parseRequirementSettings,
@@ -481,7 +482,28 @@ function NerisReportFormPage({
       detail?.initialDispatchCode,
     ],
   );
-  const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>("core");
+  const [searchParams] = useSearchParams();
+  const [activeSectionId, setActiveSectionId] = useState<NerisSectionId>(() => {
+    const requested = searchParams.get("section");
+    const allowed: NerisSectionId[] = [
+      "core",
+      "narrative",
+      "location",
+      "personOwner",
+      "fireRecoveryBilling",
+      "incidentTimes",
+      "resources",
+      "emergingHazards",
+      "hazards",
+      "fire",
+      "exposures",
+      "riskReduction",
+      "medical",
+      "rescuesCasualties",
+      "attachments",
+    ];
+    return allowed.includes(requested as NerisSectionId) ? (requested as NerisSectionId) : "core";
+  });
   const [showRequiredOnly, setShowRequiredOnly] = useState(false);
   const [reportStatus, setReportStatus] = useState<string>(() =>
     persistedDraft?.reportStatus ?? "Draft",
@@ -492,10 +514,14 @@ function NerisReportFormPage({
   const canUnlock =
     reportStatus === "In Review" || (reportStatus === "Exported" && isAdminOrHigher(role));
   const [changeHistory, setChangeHistory] = useState<NerisReportChangeEntry[]>([]);
-  const [formValues, setFormValues] = useState<NerisFormValues>(() => ({
-    ...defaultFormValues,
-    ...(persistedDraft?.formValues ?? {}),
-  }));
+  const [formValues, setFormValues] = useState<NerisFormValues>(() =>
+    ensureStructuredLocations({
+      ...defaultFormValues,
+      ...(persistedDraft?.formValues ?? {}),
+    }),
+  );
+  const [dispatchLocationOpen, setDispatchLocationOpen] = useState(true);
+  const [incidentLocationOpen, setIncidentLocationOpen] = useState(true);
   const autoFillSeedRef = useRef<NerisFormValues>({ ...defaultFormValues });
   const userEditedReportRef = useRef(false);
   useEffect(() => {
@@ -1508,8 +1534,20 @@ function NerisReportFormPage({
   }, [currentSection.id, sectionFields]);
   const displayedSectionFieldsFiltered = useMemo(() => {
     if (!showRequiredOnly) return displayedSectionFields;
-    return displayedSectionFields.filter((field) =>
-      isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
+    const locationParts = new Set([
+      "dispatch_location_street",
+      "dispatch_location_city",
+      "dispatch_location_state",
+      "dispatch_location_zip",
+      "incident_location_street",
+      "incident_location_city",
+      "incident_location_state",
+      "incident_location_zip",
+    ]);
+    return displayedSectionFields.filter(
+      (field) =>
+        locationParts.has(field.id) ||
+        isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
     );
   }, [showRequiredOnly, displayedSectionFields, formValues, adminRequiredFieldIds]);
   const allNerisFields = useMemo(
@@ -1811,13 +1849,9 @@ function NerisReportFormPage({
         const city = fieldId.endsWith("_city") ? sanitizedValue : String(nextValues[`${prefix}_city`] ?? "");
         const state = fieldId.endsWith("_state") ? sanitizedValue : String(nextValues[`${prefix}_state`] ?? "");
         const zip = fieldId.endsWith("_zip") ? sanitizedValue : String(nextValues[`${prefix}_zip`] ?? "");
-        if (street.trim() || city.trim() || state.trim() || zip.trim()) {
-          nextValues[`${prefix}_address`] = composeAddressLine(street, city, state, zip);
-        }
-        if (incidentPart) {
-          if (state.trim()) nextValues.location_state = state.trim();
-          if (zip.trim()) nextValues.location_postal_code = zip.trim();
-        }
+        nextValues[`${prefix}_address`] = composeAddressLine(street, city, state, zip);
+        if (incidentPart && fieldId.endsWith("_state")) nextValues.location_state = state.trim();
+        if (incidentPart && fieldId.endsWith("_zip")) nextValues.location_postal_code = zip.trim();
       }
       return nextValues;
     });
@@ -4718,6 +4752,30 @@ function NerisReportFormPage({
     if (field.id === "location_cross_street_name" && !showCrossStreetTypeField) {
       return null;
     }
+    const dispatchLocationParts = new Set([
+      "dispatch_location_street",
+      "dispatch_location_city",
+      "dispatch_location_state",
+      "dispatch_location_zip",
+    ]);
+    const incidentLocationPartFields = new Set([
+      "incident_location_street",
+      "incident_location_city",
+      "incident_location_state",
+      "incident_location_zip",
+    ]);
+    if (dispatchLocationParts.has(field.id) && !dispatchLocationOpen) return null;
+    if (incidentLocationPartFields.has(field.id) && !incidentLocationOpen) return null;
+    const isLocationSummary =
+      field.id === "dispatch_location_address" || field.id === "incident_location_address";
+    const locationSummaryValue = isLocationSummary
+      ? composeAddressLine(
+          formValues[field.id.replace("_address", "_street")] ?? "",
+          formValues[field.id.replace("_address", "_city")] ?? "",
+          formValues[field.id.replace("_address", "_state")] ?? "",
+          formValues[field.id.replace("_address", "_zip")] ?? "",
+        )
+      : value;
     if (
       isLocationUsedAsIntendedField &&
       (formValues.location_in_use ?? "").trim() !== "YES"
@@ -4750,7 +4808,7 @@ function NerisReportFormPage({
 
     return (
       <div key={fieldKey} className={wrapperClassName}>
-        {!isAidGivenQuestionField ? (
+        {!isAidGivenQuestionField && !isLocationSummary ? (
           <label
             htmlFor={inputId}
             className={isNoActionReasonField ? "neris-field-label-italic" : undefined}
@@ -4758,6 +4816,42 @@ function NerisReportFormPage({
             {field.label}
             {isRequired ? " *" : ""}
           </label>
+        ) : null}
+        {isLocationSummary ? (
+          <div className="neris-location-label-row">
+            <button
+              type="button"
+              className="fr-party-toggle neris-location-toggle"
+              aria-expanded={
+                field.id === "dispatch_location_address" ? dispatchLocationOpen : incidentLocationOpen
+              }
+              onClick={() =>
+                field.id === "dispatch_location_address"
+                  ? setDispatchLocationOpen((previous) => !previous)
+                  : setIncidentLocationOpen((previous) => !previous)
+              }
+            >
+              <span className="fr-party-chevron" aria-hidden="true">
+                {(field.id === "dispatch_location_address" ? dispatchLocationOpen : incidentLocationOpen)
+                  ? "▾"
+                  : "▸"}
+              </span>
+              <span>
+                {field.label}
+                {isRequired ? " *" : ""}
+              </span>
+            </button>
+            {field.id === "incident_location_address" ? (
+              <button
+                type="button"
+                className="link-button"
+                disabled={!canEdit}
+                onClick={fillIncidentLocationFromDispatch}
+              >
+                Same as dispatch
+              </button>
+            ) : null}
+          </div>
         ) : null}
 
         {field.inputKind === "textarea" ? (
@@ -4778,7 +4872,8 @@ function NerisReportFormPage({
           (() => {
             const allowAdminEditReadonly =
               field.id === "incident_neris_id" && isAdminOrHigher(role);
-            const isReadonlyField = field.inputKind === "readonly" && !allowAdminEditReadonly;
+            const isReadonlyField =
+              (field.inputKind === "readonly" && !allowAdminEditReadonly) || isLocationSummary;
             const isIncidentTimesField =
               currentSection.id === "incidentTimes" && field.inputKind === "datetime";
             const isIncidentOnsetTimeField =
@@ -4880,6 +4975,7 @@ function NerisReportFormPage({
             return (
           <input
             id={inputId}
+            className={isLocationSummary ? "neris-location-locked" : undefined}
             type={
               field.inputKind === "readonly"
                 ? "text"
@@ -4889,9 +4985,12 @@ function NerisReportFormPage({
             }
             step={field.inputKind === "time" ? 1 : undefined}
             readOnly={isReadonlyField}
-            value={value}
+            value={isLocationSummary ? locationSummaryValue : value}
             placeholder={field.placeholder}
-            onChange={(event) => updateFieldValue(field.id, event.target.value)}
+            onChange={(event) => {
+              if (isLocationSummary) return;
+              updateFieldValue(field.id, event.target.value);
+            }}
           />
             );
           })()
@@ -8051,20 +8150,6 @@ function NerisReportFormPage({
                     nodes.push(
                       <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
                         {headingLabel}
-                      </div>,
-                    );
-                  }
-                  if (currentSection.id === "core" && field.id === "incident_location_address") {
-                    nodes.push(
-                      <div key="same-as-dispatch" className="field-span-two neris-location-add-links">
-                        <button
-                          type="button"
-                          className="link-button"
-                          disabled={!canEdit}
-                          onClick={fillIncidentLocationFromDispatch}
-                        >
-                          Same as dispatch
-                        </button>
                       </div>,
                     );
                   }

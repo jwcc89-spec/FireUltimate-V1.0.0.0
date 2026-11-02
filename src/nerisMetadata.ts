@@ -1421,7 +1421,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "core",
     label: "Dispatch street address",
     inputKind: "text",
-    layout: "full",
+    layout: "half",
   },
   {
     id: "dispatch_location_city",
@@ -1457,7 +1457,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     sectionId: "core",
     label: "Incident street address",
     inputKind: "text",
-    layout: "full",
+    layout: "half",
   },
   {
     id: "incident_location_city",

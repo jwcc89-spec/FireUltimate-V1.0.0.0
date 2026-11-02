@@ -1,6 +1,6 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 4 is done on the practice branch. Next is Wave 5 (the Export Details preview). Q5 (vendor) still waits. Render, Neon, and production were not changed.
+**Status:** Wave 5 is done on the practice branch. Next is Wave 5b only with the operator on staging, or Wave 6 on this Mac. Q5 (vendor) still waits. Render, Neon, and production were not changed.
 **Updated:** 2026-11-02, morning America/Chicago.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
@@ -476,9 +476,9 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - **Done when:** fake-vendor tests (Wave 6) prove one bill per incident under double clicks, timeouts and errors.
 
 ### Wave 5 — Front end (§8)
-- [ ] Export Details Fire Recovery panel, preview modal, resolve-review modal.
-- [ ] Statuses in the queue column and the Fire Recovery list/detail.
-- [ ] Update button with a time limit and a clear error.
+- [x] Export Details Fire Recovery panel, preview modal, resolve-review modal.
+- [x] Statuses in the queue column and the Fire Recovery list/detail.
+- [x] Update button with a time limit and a clear error.
 - **Promote** Waves 1–5 to staging (pull request into `submenu/neris-golive-cifpd`; operator approves the merge).
 
 ### Wave 5b — Older incidents (§7.6)
@@ -638,6 +638,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-01 — Wave 3 done on `cursor/stage-b-foundation-b5ff` (practice only). Submit reads the Exported report plus the NERIS receipt. The vendor JSON keeps the full NERIS code, sends two parties, clears insurance when Uninsured is checked, and counts selected personnel. Missing required billing fields are refused before any vendor call. `npm test` (40) passed against local `fu_session_test` only. Not deployed. Next is Wave 4 after review.
 - 2026-11-02 — Follow-up on the same branch. Person/Owner no longer has a vehicle section or an owner insurance company. Copy from Person/Owner copies name, phone, and address into the party and leaves vehicle and insurance already on that party. Core has street, city, state, and ZIP for dispatch and for the incident. Same as dispatch copies dispatch into the incident. Motor Vehicle Collision location boxes stay read-only and do not write back to Core.
 - 2026-11-02 — Wave 4 done on `cursor/stage-b-foundation-b5ff` (practice only). Preview returns the payload, department ID, mode, missing Required and Recommended lists, and a hash that ignores CatchCreated. Submit requires that hash, takes one lock, and saves Sent, Failed, or Needs review. A second send of the same incident returns 409 and does not call Fire Recovery again. Resolve-review is admin only. The migration adds `submitStatus` and `submitStartedAt` only. `npm run lint`, `npm run build`, and `npm test` (42) passed against local `fu_session_test` only. The new Core address fields were not clicked in a browser. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 5. The fuller fake-vendor file remains Wave 6.
+- 2026-11-02 — Wave 5 done on the same branch. Export Details has a Fire Recovery panel, a preview window, and an admin resolve-review window. The queue, the Fire Recovery list, and the detail page show Not sent, Submitting, Sent, Failed, or Needs review. Update billing status shows the server's error, including a time-limit failure. The Core dispatch and incident lines are locked and built from the street, city, state, and ZIP fields, which collapse with an arrow and sit on two lines. Same as dispatch sits beside the Incident location label. Not deployed. Do not click Confirm and send on this Mac. Next is Wave 6 on this Mac, or Wave 5b only with the operator on staging.
 
 ---
 

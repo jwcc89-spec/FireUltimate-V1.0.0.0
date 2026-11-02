@@ -4223,6 +4223,72 @@ body.resource-personnel-modal-open {
   padding: 0.56rem 0.65rem;
 }
 
+.neris-location-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 0.28rem;
+}
+
+.neris-location-toggle {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.neris-location-locked {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+.fr-preview-modal {
+  width: min(760px, 94vw);
+}
+
+.fr-preview-banner {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.fr-preview-banner.is-sandbox {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.fr-preview-banner.is-live {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.fr-preview-banner.is-off {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.fr-preview-parties {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.fr-preview-party {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.fr-preview-party h3,
+.fr-preview-party p {
+  margin: 0;
+}
+
+.fr-resolve-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
 .neris-location-add-links {
   display: inline-flex;
   align-items: center;

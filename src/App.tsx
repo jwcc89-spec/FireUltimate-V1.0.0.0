@@ -55,15 +55,17 @@ import {
 import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
+  fireRecoveryStatusLabel,
+  fireRecoveryStatusTone,
   getFireRecoveryIncidents,
   getFireRecoverySettings,
   patchFireRecoverySettings,
-  postFireRecoverySubmit,
   type FireRecoveryIncidentApi,
   type FireRecoverySettingsApi,
 } from "./api/fireRecovery";
 import { FireRecoveryIncidentsPage } from "./pages/FireRecoveryIncidentsPage";
 import { FireRecoveryIncidentDetailPage } from "./pages/FireRecoveryIncidentDetailPage";
+import { FireRecoveryExportPanel } from "./pages/FireRecoveryExportPanel";
 import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
@@ -5763,6 +5765,7 @@ interface NerisExportDetailsPageProps {
   callNumber: string;
   incidentCalls: IncidentCallSummary[];
   exportHistory?: NerisExportRecord[];
+  role: UserRole;
 }
 
 interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
@@ -5934,11 +5937,9 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
-                          {fr?.lastSubmitOk ? (
-                            <span className="tone tone-positive">DataSent</span>
-                          ) : (
-                            <span>—</span>
-                          )}
+                          <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(fr))}`}>
+                            {fireRecoveryStatusLabel(fr)}
+                          </span>
                         </td>
                       ) : null}
                     </tr>
@@ -5962,13 +5963,10 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   );
 }
 
-function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
+function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [], role }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
-  const canViewBilling = permissionGrants?.["billing.view"] === true;
   const canViewExports = permissionGrants?.["neris.export"] === true;
-  const canSubmitBilling = canViewBilling && permissionGrants?.["billing.submit"] === true;
-  const [frSending, setFrSending] = useState(false);
   const incident =
     getIncidentCallDetail(callNumber) ??
     (() => {
@@ -6040,17 +6038,6 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
   }
 
   const latestExport = exportHistory[0] ?? null;
-  const handleSendFireRecovery = () => {
-    setFrSending(true);
-    postFireRecoverySubmit(callNumber)
-      .then(() => {
-        navigate(`/reporting/neris/fire-recovery/${encodeURIComponent(callNumber)}`);
-      })
-      .catch((e: Error) => {
-        window.alert(e?.message ?? "Fire Recovery submit failed.");
-      })
-      .finally(() => setFrSending(false));
-  };
 
   return (
     <section className="page-section">
@@ -6062,16 +6049,6 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </p>
         </div>
         <div className="header-actions">
-          {canSubmitBilling ? (
-            <button
-              type="button"
-              className="primary-button compact-button"
-              disabled={frSending}
-              onClick={handleSendFireRecovery}
-            >
-              {frSending ? "Sending…" : "Send to Fire Recovery"}
-            </button>
-          ) : null}
           <button
             type="button"
             className="secondary-button compact-button"
@@ -6088,6 +6065,12 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </button>
         </div>
       </header>
+
+      <FireRecoveryExportPanel
+        callNumber={callNumber}
+        runNumber={getIncidentDisplayNumber(incident)}
+        role={role}
+      />
 
       <section className="panel-grid two-column">
         <article className="panel">
@@ -13256,7 +13239,7 @@ function RouteResolver({
     content = <NerisExportsPage incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
   } else if (path.startsWith("/reporting/neris/exports/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
-    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
+    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} role={role} />;
   } else if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
     content = (

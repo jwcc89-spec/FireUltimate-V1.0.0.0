@@ -22,6 +22,67 @@ export interface FireRecoveryIncidentApi {
   lastPaymentDate: string;
   paymentPlan: string;
   billingFetchedAt: string | null;
+  submitStatus?: string;
+  submitStartedAt?: string | null;
+}
+
+export interface FireRecoveryPreviewApi {
+  previewHash: string;
+  payload: {
+    IncidentToBillPayload?: {
+      NERISDepartmentId?: string;
+      DepartmentName?: string;
+      IncidentsToBill?: {
+        incident?: {
+          IncidentType?: string;
+          AlarmDateTime?: string;
+          ClearedDateTime?: string;
+          Location?: { Address?: string; City?: string; State?: string; Zip?: string };
+          CostRecovery?: {
+            IncidentNumber?: string;
+            LawEnforcementNumber?: string;
+            TotalPersonnelOnScene?: number;
+            Parties?: Array<{
+              Party?: {
+                First?: string;
+                Last?: string;
+                Address?: string;
+                City?: string;
+                State?: string;
+                Zip?: string;
+                Phone?: string;
+                Vehicle?: { VehicleYear?: string; VehicleMake?: string; VehicleModel?: string; InsuranceCompanyName?: string };
+              };
+            }>;
+          };
+        };
+      };
+    };
+  };
+  departmentId: string;
+  mode: FireRecoveryMode;
+  banner: string;
+  missingRequired: string[];
+  missingRecommended: string[];
+}
+
+export function fireRecoveryStatusLabel(
+  row: { submitStatus?: string; lastSubmitOk?: boolean } | null | undefined,
+): string {
+  const status = String(row?.submitStatus ?? "");
+  if (status === "submitting") return "Submitting";
+  if (status === "sent") return "Sent";
+  if (status === "failed") return "Failed";
+  if (status === "needs_review") return "Needs review";
+  if (row?.lastSubmitOk) return "Sent";
+  return "Not sent";
+}
+
+export function fireRecoveryStatusTone(label: string): string {
+  if (label === "Sent") return "tone tone-positive";
+  if (label === "Failed") return "tone tone-critical";
+  if (label === "Needs review" || label === "Submitting") return "tone tone-warning";
+  return "tone tone-neutral";
 }
 
 export type FireRecoveryMode = "sandbox" | "live" | "off";
@@ -77,10 +138,31 @@ export async function getFireRecoveryIncident(
   }
 }
 
-export async function postFireRecoverySubmit(callNumber: string): Promise<FireRecoveryIncidentApi> {
-  return apiJson<FireRecoveryIncidentApi>("/api/fire-recovery/submit", {
+export async function postFireRecoveryPreview(callNumber: string): Promise<FireRecoveryPreviewApi> {
+  return apiJson<FireRecoveryPreviewApi>("/api/fire-recovery/preview", {
     method: "POST",
     body: JSON.stringify({ callNumber }),
+  });
+}
+
+export async function postFireRecoverySubmit(
+  callNumber: string,
+  previewHash: string,
+): Promise<FireRecoveryIncidentApi> {
+  return apiJson<FireRecoveryIncidentApi>("/api/fire-recovery/submit", {
+    method: "POST",
+    body: JSON.stringify({ callNumber, previewHash }),
+  });
+}
+
+export async function postFireRecoveryResolveReview(body: {
+  callNumber: string;
+  outcome: "not_received" | "received";
+  trackingId?: string;
+}): Promise<FireRecoveryIncidentApi> {
+  return apiJson<FireRecoveryIncidentApi>("/api/fire-recovery/resolve-review", {
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 

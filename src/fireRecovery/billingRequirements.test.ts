@@ -9,6 +9,7 @@ import {
   createParty,
   displayClock,
   findBillingGaps,
+  ensureStructuredLocations,
   incidentLocationParts,
   isFireRecoveryBillable,
   onScenePersonnel,
@@ -132,6 +133,27 @@ describe("fire recovery billing requirements", () => {
       }),
       { street: "100 Specific Ln", city: "Ashkum", state: "IL", zip: "60911" },
     );
+    const filled = ensureStructuredLocations({
+      dispatch_location_address: "1 Main, Crescent, IL 60922",
+      dispatch_location_street: "",
+      dispatch_location_city: "",
+      dispatch_location_state: "",
+      dispatch_location_zip: "",
+      incident_location_address: "9 Oak, Ashkum, IL 60911",
+      incident_location_street: "",
+      incident_location_city: "",
+      incident_location_state: "",
+      incident_location_zip: "",
+      location_state: "IL",
+      location_postal_code: "60911",
+    });
+    assert.equal(filled.dispatch_location_street, "1 Main");
+    assert.equal(filled.dispatch_location_city, "Crescent");
+    assert.equal(filled.dispatch_location_state, "IL");
+    assert.equal(filled.dispatch_location_zip, "60922");
+    assert.equal(filled.dispatch_location_address, "1 Main, Crescent, IL 60922");
+    assert.equal(filled.incident_location_street, "9 Oak");
+    assert.equal(filled.incident_location_address, "9 Oak, Ashkum, IL 60911");
   });
 
   it("lets Uninsured waive the insurance company and lets a department require Is Resident", () => {

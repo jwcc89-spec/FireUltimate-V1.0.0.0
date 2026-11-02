@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
+  fireRecoveryStatusLabel,
+  fireRecoveryStatusTone,
   getFireRecoveryIncident,
   postFireRecoveryBillingStatus,
   type FireRecoveryIncidentApi,
@@ -160,6 +162,14 @@ export function FireRecoveryIncidentDetailPage({
             <div className="table-wrapper">
               <table>
                 <tbody>
+                  <tr>
+                    <th scope="row">Status</th>
+                    <td>
+                      <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(row))}`}>
+                        {fireRecoveryStatusLabel(row)}
+                      </span>
+                    </td>
+                  </tr>
                   <tr>
                     <th scope="row">Tracking ID</th>
                     <td style={{ fontFamily: "ui-monospace, monospace" }}>{row.trackingId || "—"}</td>

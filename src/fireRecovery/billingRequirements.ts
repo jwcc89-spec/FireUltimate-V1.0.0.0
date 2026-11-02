@@ -282,6 +282,58 @@ export function composeAddressLine(street: string, city: string, state: string, 
   return [text(street), text(city), stateZip].filter(Boolean).join(", ");
 }
 
+export function splitAddressLine(address: string): {
+  street: string;
+  city: string;
+  state: string;
+  zip: string;
+} {
+  const parts = text(address)
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  if (parts.length >= 3) {
+    const tokens = parts.slice(2).join(" ").split(/\s+/).filter(Boolean);
+    const zip = tokens.find((token) => /^\d{5}(?:-\d{4})?$/.test(token)) ?? "";
+    const state = tokens.find((token) => /^[A-Za-z]{2}$/.test(token)) ?? "";
+    return { street: parts[0] ?? "", city: parts[1] ?? "", state: state.toUpperCase(), zip };
+  }
+  if (parts.length === 2) {
+    return { street: parts[0] ?? "", city: parts[1] ?? "", state: "", zip: "" };
+  }
+  return { street: text(address), city: "", state: "", zip: "" };
+}
+
+export function ensureStructuredLocations(values: Record<string, string>): Record<string, string> {
+  const next: Record<string, string> = { ...values };
+  (["dispatch_location", "incident_location"] as const).forEach((prefix) => {
+    const streetKey = `${prefix}_street`;
+    const cityKey = `${prefix}_city`;
+    const stateKey = `${prefix}_state`;
+    const zipKey = `${prefix}_zip`;
+    const addressKey = `${prefix}_address`;
+    const hasParts = [streetKey, cityKey, stateKey, zipKey].some((key) => text(next[key]).length > 0);
+    if (!hasParts) {
+      const split = splitAddressLine(String(next[addressKey] ?? ""));
+      if (prefix === "incident_location") {
+        if (!split.state) split.state = text(next.location_state);
+        if (!split.zip) split.zip = text(next.location_postal_code);
+      }
+      next[streetKey] = split.street;
+      next[cityKey] = split.city;
+      next[stateKey] = split.state;
+      next[zipKey] = split.zip;
+    }
+    next[addressKey] = composeAddressLine(
+      String(next[streetKey] ?? ""),
+      String(next[cityKey] ?? ""),
+      String(next[stateKey] ?? ""),
+      String(next[zipKey] ?? ""),
+    );
+  });
+  return next;
+}
+
 export function incidentLocationParts(formValues: Record<string, string>): {
   street: string;
   city: string;
