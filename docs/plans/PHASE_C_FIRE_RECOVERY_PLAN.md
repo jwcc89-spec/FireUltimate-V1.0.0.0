@@ -541,6 +541,15 @@ Repeat this separately for staging and production. Each gets its **own** key.
 
 ### 11.2 Staging sandbox test (Wave 7)
 
+Apply the billing-status columns to the staging database before the clicks. `npx prisma migrate deploy` by itself fails because Prisma does not load `.env.server`. From the repo folder:
+
+```
+cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0
+node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy
+```
+
+This Mac's `.env.server` points at the staging database. Do not run `npm run db:seed`.
+
 1. Sign in at `https://cifpdil.staging.fireultimate.app` as an admin.
 2. Go to **Admin Functions → Setup/Configuration → Fire Recovery**.
    - Enter the department name "Crescent Iroquois Fire Protection District".
@@ -551,9 +560,11 @@ Repeat this separately for staging and production. Each gets its **own** key.
    - On **Fire Recovery Billing**, add two parties: one insured, one with Uninsured checked. Use made-up names.
 4. Export the report to NERIS.
 5. Go to **Reporting → NERIS → View Exports**, open the incident, and look at the **Fire Recovery panel**.
-   - Expect: yellow SANDBOX banner and department ID `FD12345678`.
-6. Click **Preview & Send**. Check every value. Click **Confirm and send** twice quickly.
+   - Before the first successful send, Tracking ID, Invoice status, Amount due, Amount paid, and Last updated stay blank, and **Update billing status** stays gray. That is expected.
+   - On the site as of November 2, the yellow SANDBOX banner and department ID `FD12345678` are inside the window that opens after **Preview & Send**. After the next staging deploy they also show on the panel itself.
+6. Click **Preview & Send**. Check every value, including the yellow banner and `FD12345678`. Click **Confirm and send** twice quickly.
    - Expect: status **Sent**, one tracking ID, no error.
+   - If the window says "Fire Recovery is switched off on this server," stop. The Render sandbox setting is not live.
 7. Click **Update billing status**. Expect a reply or a clear "not available yet" message. Write down what you see.
 8. Try **Preview & Send** again. Expect it to refuse ("Already sent…").
 9. Tell the agent the tracking ID and any messages. The agent records them in §15 and adds them to the vendor email.
@@ -642,6 +653,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-02 — Wave 5 done on the same branch. Export Details has a Fire Recovery panel, a preview window, and an admin resolve-review window. The queue, the Fire Recovery list, and the detail page show Not sent, Submitting, Sent, Failed, or Needs review. Update billing status shows the server's error, including a time-limit failure. The Core dispatch and incident lines are locked and built from the street, city, state, and ZIP fields, which collapse with an arrow and sit on two lines. Same as dispatch sits beside the Incident location label. Not deployed. Do not click Confirm and send on this Mac. Next is Wave 6 on this Mac, or Wave 5b only with the operator on staging.
 - 2026-11-02 — Location follow-up on the same branch. Incident location keeps one state and one ZIP. Country and county sit in that section. Country defaults to US. The separate State/Territory and Postal code fields are hidden; the NERIS payload still sends state, postal code, country, and county. The Motor Vehicle Collision NERIS code box is hidden and the bill uses the Core primary incident type. The NERIS Entity ID screen is Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Incident 12345 then exported successfully: Exported, 201 Created at 11:14:04 America/Chicago. Not deployed. Do not start Wave 5b or Wave 6 until the operator says so.
 - 2026-11-02 — Wave 6 done on the same branch. `server/fireRecovery.test.mjs` talks to a local pretend Fire Recovery server. One incident can be billed once. A clear refusal is Failed and can be fixed. A timeout, HTTP 500, or a reply without Status 1 is Needs review and cannot be resent. Sandbox sends FD12345678. Live sends the department NERIS ID and refuses FD12345678. Unset refuses before any vendor call. A missing required field is refused. Another department's call number is refused. `npm test` passed 44 tests against local `fu_session_test` only. Not deployed. Wave 7 is the operator's staging sandbox test. Do not click Confirm and send on this Mac.
+- 2026-11-02 — Wave 7 click stopped at Preview & Send. The Crescent test report had a NERIS 201 receipt, but the saved report stayed In Review because the export stamp also writes the NERIS id and the locked-report save rejected that change. Preview then said "Export this report to NERIS first." That one saved report was set to Exported so Preview & Send can open without another deploy. The yellow banner and FD12345678 are inside that window on the current site. Tracking ID and Update billing status stay empty until Confirm and send. The practice branch now lets the export stamp save, treats a successful receipt plus In Review as ready to preview, and shows the banner on the panel after the next deploy. Do not start Wave 5b. Do not click Confirm and send on this Mac.
 
 ---
 

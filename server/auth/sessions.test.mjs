@@ -804,7 +804,10 @@ test("server sign-in passes", async (t) => {
       requestOrigin: origin,
       body: {
         baseUpdatedAt: reviewedAgain.json.updatedAt,
-        payload: { reportStatus: "Exported", formValues: { secret_field: secretValue } },
+        payload: {
+          reportStatus: "Exported",
+          formValues: { secret_field: secretValue, incident_neris_id: "FD33333333|lock|1710000000" },
+        },
       },
     });
     assert.equal(exported.status, 200, JSON.stringify(exported.json));
