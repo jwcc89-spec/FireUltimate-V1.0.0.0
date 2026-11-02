@@ -1512,20 +1512,23 @@ function NerisReportFormPage({
     }
 
     const locationFieldOrder = new Map<string, number>([
-      ["location_state", 1],
-      ["location_country", 2],
-      ["location_postal_code", 3],
-      ["location_county", 4],
-      ["location_place_type", 5],
-      ["location_use_primary", 6],
-      ["location_use_secondary", 7],
-      ["location_in_use", 8],
-      ["location_used_as_intended", 9],
-      ["location_vacancy_cause", 10],
-      ["location_direction_of_travel", 11],
-      ["location_cross_street_type", 12],
-      ["location_cross_street_name", 13],
-      ["location_notes", 14],
+      ["incident_location_address", 1],
+      ["incident_location_street", 2],
+      ["incident_location_city", 3],
+      ["location_state", 4],
+      ["location_country", 5],
+      ["location_postal_code", 6],
+      ["location_county", 7],
+      ["location_place_type", 8],
+      ["location_use_primary", 9],
+      ["location_use_secondary", 10],
+      ["location_in_use", 11],
+      ["location_used_as_intended", 12],
+      ["location_vacancy_cause", 13],
+      ["location_direction_of_travel", 14],
+      ["location_cross_street_type", 15],
+      ["location_cross_street_name", 16],
+      ["location_notes", 17],
     ]);
 
     return [...sectionFields].sort((left, right) => {
@@ -1617,9 +1620,8 @@ function NerisReportFormPage({
   const hasNextSection =
     sectionIndex >= 0 && sectionIndex < visibleNerisSections.length - 1;
   const importedLocationAddress =
-    (formValues.incident_location_address ?? "").trim() ||
+    (detail?.address ?? "").trim() ||
     (formValues.dispatch_location_address ?? "").trim() ||
-    detail?.address ||
     "No imported address available.";
   const parsedImportedLocation = useMemo(
     () =>
@@ -1873,6 +1875,25 @@ function NerisReportFormPage({
         if (incidentPart && zip.trim()) nextValues.location_postal_code = zip.trim();
         if (incidentPart && fieldId.endsWith("_zip") && !zip.trim()) nextValues.location_postal_code = "";
       }
+      if (fieldId === "location_state" || fieldId === "location_postal_code") {
+        const stateSource =
+          fieldId === "location_state" ? sanitizedValue : String(nextValues.location_state ?? "");
+        const stateCode = toNerisStateCode(stateSource);
+        const state = stateCode || stateSource.trim();
+        const zip =
+          fieldId === "location_postal_code"
+            ? sanitizedValue.trim()
+            : String(nextValues.location_postal_code ?? "").trim();
+        if (fieldId === "location_state") nextValues.location_state = state;
+        nextValues.incident_location_state = state;
+        nextValues.incident_location_zip = zip;
+        nextValues.incident_location_address = composeAddressLine(
+          String(nextValues.incident_location_street ?? ""),
+          String(nextValues.incident_location_city ?? ""),
+          state,
+          zip,
+        );
+      }
       return nextValues;
     });
 
@@ -2003,53 +2024,35 @@ function NerisReportFormPage({
   ]);
 
   const handlePullLocationFromImportedAddress = () => {
-    const locationUpdates: Record<string, string> = {};
-    if (
-      parsedImportedLocation.locationState &&
-      parsedImportedLocation.locationState !== (formValues.location_state ?? "")
-    ) {
-      locationUpdates.location_state = parsedImportedLocation.locationState;
-    }
-    if (
-      parsedImportedLocation.locationCountry &&
-      parsedImportedLocation.locationCountry !== (formValues.location_country ?? "")
-    ) {
-      locationUpdates.location_country = parsedImportedLocation.locationCountry;
-    }
-    if (
-      parsedImportedLocation.locationPostalCode &&
-      parsedImportedLocation.locationPostalCode !== (formValues.location_postal_code ?? "")
-    ) {
-      locationUpdates.location_postal_code = parsedImportedLocation.locationPostalCode;
-    }
-    if (
-      parsedImportedLocation.locationCounty &&
-      parsedImportedLocation.locationCounty !== (formValues.location_county ?? "")
-    ) {
-      locationUpdates.location_county = parsedImportedLocation.locationCounty;
-    }
-
-    if (Object.keys(locationUpdates).length === 0) {
-      setSaveMessage(
-        "No additional state, country, postal code, or county details were found to apply.",
-      );
+    const address = (detail?.address ?? "").trim();
+    if (!address || address === "No imported address available.") {
+      setSaveMessage("No imported address is available to fill the dispatch location.");
       setErrorMessage("");
       return;
     }
-
+    const split = splitAddressLine(address);
+    const composed =
+      composeAddressLine(split.street, split.city, split.state, split.zip) || address;
+    userEditedReportRef.current = true;
     setFormValues((previous) => ({
       ...previous,
-      ...locationUpdates,
+      dispatch_location_street: split.street,
+      dispatch_location_city: split.city,
+      dispatch_location_state: split.state,
+      dispatch_location_zip: split.zip,
+      dispatch_location_address: composed,
     }));
     setSectionErrors((previous) => {
       const next = { ...previous };
-      delete next.location_state;
-      delete next.location_country;
-      delete next.location_postal_code;
-      delete next.location_county;
+      delete next.dispatch_location_address;
+      delete next.dispatch_location_street;
+      delete next.dispatch_location_city;
+      delete next.dispatch_location_state;
+      delete next.dispatch_location_zip;
       return next;
     });
-    setSaveMessage("Location details pulled from imported address.");
+    setDispatchLocationOpen(true);
+    setSaveMessage("Dispatch location filled from the imported address.");
     setErrorMessage("");
     setValidationIssues([]);
     setValidationModal(null);
@@ -4774,6 +4777,9 @@ function NerisReportFormPage({
       return null;
     }
     if (field.id === "location_cross_street_name" && !showCrossStreetTypeField) {
+      return null;
+    }
+    if (field.id === "incident_location_state" || field.id === "incident_location_zip") {
       return null;
     }
     const dispatchLocationParts = new Set([
@@ -8177,15 +8183,7 @@ function NerisReportFormPage({
                       </div>,
                     );
                   }
-                  if (currentSection.id === "location" && field.id === "location_state") {
-                    nodes.push(
-                      <div
-                        key="heading-location-usage"
-                        className="field-span-two neris-core-field-heading"
-                      >
-                        LOCATION / USAGE
-                      </div>,
-                    );
+                  if (currentSection.id === "core" && field.id === "dispatch_location_address") {
                     nodes.push(
                       <div
                         key="location-imported-address"
@@ -8197,13 +8195,34 @@ function NerisReportFormPage({
                             type="button"
                             className="secondary-button compact-button neris-imported-address-sync-button"
                             onClick={handlePullLocationFromImportedAddress}
+                            disabled={!canEdit}
                           >
-                            Pull location data
+                            Fill dispatch location
                           </button>
                         </div>
                         <div id="location-imported-address-box" className="neris-imported-address">
                           {importedLocationAddress}
                         </div>
+                      </div>,
+                    );
+                  }
+                  if (currentSection.id === "location" && field.id === "incident_location_address") {
+                    nodes.push(
+                      <div
+                        key="heading-incident-location"
+                        className="field-span-two neris-core-field-heading"
+                      >
+                        INCIDENT LOCATION
+                      </div>,
+                    );
+                  }
+                  if (currentSection.id === "location" && field.id === "location_state") {
+                    nodes.push(
+                      <div
+                        key="heading-location-usage"
+                        className="field-span-two neris-core-field-heading"
+                      >
+                        LOCATION / USAGE
                       </div>,
                     );
                   }

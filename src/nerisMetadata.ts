@@ -1514,7 +1514,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "incident_location_address",
-    sectionId: "core",
+    sectionId: "location",
     label: "Incident location",
     inputKind: "text",
     required: true,
@@ -1522,21 +1522,21 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "incident_location_street",
-    sectionId: "core",
+    sectionId: "location",
     label: "Incident street address",
     inputKind: "text",
     layout: "half",
   },
   {
     id: "incident_location_city",
-    sectionId: "core",
+    sectionId: "location",
     label: "Incident city",
     inputKind: "text",
     layout: "half",
   },
   {
     id: "incident_location_state",
-    sectionId: "core",
+    sectionId: "location",
     label: "Incident state",
     inputKind: "select",
     optionsKey: "state",
@@ -1544,7 +1544,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   },
   {
     id: "incident_location_zip",
-    sectionId: "core",
+    sectionId: "location",
     label: "Incident ZIP",
     inputKind: "text",
     layout: "half",

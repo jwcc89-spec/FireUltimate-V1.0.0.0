@@ -1198,19 +1198,29 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     trimValue(formValues.location_state) || baseLocation.state,
     config.defaultState,
   );
+  const normalizedDispatchState = normalizeStateCode(
+    trimValue(formValues.dispatch_location_state) ||
+      trimValue(formValues.location_state) ||
+      dispatchLocation.state,
+    config.defaultState,
+  );
   const normalizedLocationCountry = normalizeCountryCode(
     trimValue(formValues.location_country) || baseLocation.country,
     config.defaultCountry,
   );
   baseLocation.state = normalizedLocationState;
   baseLocation.country = normalizedLocationCountry;
-  dispatchLocation.state = normalizedLocationState;
+  dispatchLocation.state = normalizedDispatchState;
   dispatchLocation.country = normalizedLocationCountry;
 
   const postalCode = trimValue(formValues.location_postal_code);
   if (postalCode) {
     baseLocation.postal_code = postalCode;
-    dispatchLocation.postal_code = postalCode;
+  }
+  const dispatchPostalCode =
+    trimValue(formValues.dispatch_location_zip) || trimValue(formValues.location_postal_code);
+  if (dispatchPostalCode) {
+    dispatchLocation.postal_code = dispatchPostalCode;
   }
   const county = trimValue(formValues.location_county);
   if (county) {
