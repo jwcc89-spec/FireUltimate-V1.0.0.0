@@ -1199,9 +1199,7 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     config.defaultState,
   );
   const normalizedDispatchState = normalizeStateCode(
-    trimValue(formValues.dispatch_location_state) ||
-      trimValue(formValues.location_state) ||
-      dispatchLocation.state,
+    dispatchLocation.state || trimValue(formValues.location_state),
     config.defaultState,
   );
   const normalizedLocationCountry = normalizeCountryCode(
@@ -1213,12 +1211,16 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   dispatchLocation.state = normalizedDispatchState;
   dispatchLocation.country = normalizedLocationCountry;
 
+  const incidentStreet = trimValue(formValues.incident_location_street);
+  const incidentCity = trimValue(formValues.incident_location_city);
+  if (incidentStreet) baseLocation.street = incidentStreet;
+  if (incidentCity) baseLocation.incorporated_municipality = incidentCity;
   const postalCode = trimValue(formValues.location_postal_code);
   if (postalCode) {
     baseLocation.postal_code = postalCode;
   }
   const dispatchPostalCode =
-    trimValue(formValues.dispatch_location_zip) || trimValue(formValues.location_postal_code);
+    trimValue(formValues.dispatch_location_address).match(/\b\d{5}(?:-\d{4})?\b/)?.[0] ?? "";
   if (dispatchPostalCode) {
     dispatchLocation.postal_code = dispatchPostalCode;
   }

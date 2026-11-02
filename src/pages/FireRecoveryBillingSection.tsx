@@ -51,6 +51,8 @@ export function FireRecoveryBillingSection({
   const location = incidentLocationParts(formValues);
   const personnel = onScenePersonnel(formValues.resource_units_json ?? "");
   const incidentTypeOptions = useMemo(() => getNerisValueOptions("incident_type"), []);
+  const stateOptions = useMemo(() => getNerisValueOptions("state"), []);
+  const stateLabel = stateOptions.find((option) => option.value === location.state)?.label ?? location.state;
   const nerisCode = billing.nerisCode || (formValues.primary_incident_type ?? "");
 
   const write = (next: FireRecoveryBilling) => {
@@ -165,7 +167,7 @@ export function FireRecoveryBillingSection({
       <div className="fr-location-row">
         <ReadBox label="Street" value={location.street} required />
         <ReadBox label="City" value={location.city} required />
-        <ReadBox label="State" value={location.state} required />
+        <ReadBox label="State" value={stateLabel} required />
         <ReadBox label="Zip" value={location.zip} required />
       </div>
 
@@ -206,7 +208,7 @@ export function FireRecoveryBillingSection({
                 disabled={readOnly}
                 onClick={() => {
                   if (copyChoices.length === 0) {
-                    setCopyNote("No people or owners were found on Person/Owner.");
+                    setCopyNote("No people were found on Person.");
                     setCopyTargetId("");
                     return;
                   }
@@ -214,7 +216,7 @@ export function FireRecoveryBillingSection({
                   setCopyTargetId(party.id);
                 }}
               >
-                Copy from Person/Owner
+                Copy from Person
               </button>
             )}
           </div>

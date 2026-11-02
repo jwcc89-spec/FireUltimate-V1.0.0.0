@@ -289,67 +289,84 @@ export function composeAddressLine(street: string, city: string, state: string, 
   return [text(street), text(city), stateZip].filter(Boolean).join(", ");
 }
 
+function peelStateAndZip(value: string): { before: string; state: string; zip: string } {
+  const zip = value.match(/\b\d{5}(?:-\d{4})?\b/)?.[0] ?? "";
+  const withoutZip = zip ? value.replace(zip, " ").replace(/\s+/g, " ").trim() : value.trim();
+  const words = withoutZip.split(/\s+/).filter(Boolean);
+  for (let count = Math.min(3, words.length); count >= 1; count -= 1) {
+    const candidate = words.slice(-count).join(" ");
+    const state = toNerisStateCode(candidate);
+    if (state) {
+      return { before: words.slice(0, -count).join(" "), state, zip };
+    }
+  }
+  return { before: withoutZip, state: "", zip };
+}
+
 export function splitAddressLine(address: string): {
   street: string;
   city: string;
   state: string;
   zip: string;
 } {
-  const parts = text(address)
+  const raw = text(address);
+  const parts = raw
     .split(",")
     .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length >= 3) {
-    const tail = parts.slice(2).join(" ");
-    const zip = tail.match(/\b\d{5}(?:-\d{4})?\b/)?.[0] ?? "";
-    const stateWords = tail.replace(zip, " ").replace(/\s+/g, " ").trim();
+    const tail = peelStateAndZip(parts.slice(2).join(" "));
     return {
       street: parts[0] ?? "",
       city: parts[1] ?? "",
-      state: toNerisStateCode(stateWords) || toNerisStateCode(tail),
-      zip,
+      state: tail.state,
+      zip: tail.zip,
     };
   }
   if (parts.length === 2) {
+    const tail = peelStateAndZip(parts[1] ?? "");
+    if (tail.state || tail.zip) {
+      return { street: parts[0] ?? "", city: tail.before, state: tail.state, zip: tail.zip };
+    }
     return { street: parts[0] ?? "", city: parts[1] ?? "", state: "", zip: "" };
   }
-  return { street: text(address), city: "", state: "", zip: "" };
+  const tail = peelStateAndZip(raw);
+  if (!tail.state && !tail.zip) return { street: raw, city: "", state: "", zip: "" };
+  const words = tail.before.split(/\s+/).filter(Boolean);
+  const city = words.length >= 2 ? (words.pop() ?? "") : "";
+  return { street: words.join(" "), city, state: tail.state, zip: tail.zip };
 }
 
 export function ensureStructuredLocations(values: Record<string, string>): Record<string, string> {
   const next: Record<string, string> = { ...values };
-  (["dispatch_location", "incident_location"] as const).forEach((prefix) => {
-    const streetKey = `${prefix}_street`;
-    const cityKey = `${prefix}_city`;
-    const stateKey = `${prefix}_state`;
-    const zipKey = `${prefix}_zip`;
-    const addressKey = `${prefix}_address`;
-    const streetHoldsFullAddress =
-      text(next[streetKey]).includes(",") &&
-      !text(next[cityKey]) &&
-      !text(next[stateKey]) &&
-      !text(next[zipKey]);
-    const hasParts = [streetKey, cityKey, stateKey, zipKey].some((key) => text(next[key]).length > 0);
-    if (!hasParts || streetHoldsFullAddress) {
-      const split = splitAddressLine(String(streetHoldsFullAddress ? next[streetKey] : next[addressKey] ?? ""));
-      if (prefix === "incident_location") {
-        if (!split.state) split.state = text(next.location_state);
-        if (!split.zip) split.zip = text(next.location_postal_code);
-      }
-      next[streetKey] = split.street;
-      next[cityKey] = split.city;
-      next[stateKey] = split.state;
-      next[zipKey] = split.zip;
-    }
-    const stateCode = toNerisStateCode(String(next[stateKey] ?? ""));
-    if (stateCode) next[stateKey] = stateCode;
-    next[addressKey] = composeAddressLine(
-      String(next[streetKey] ?? ""),
-      String(next[cityKey] ?? ""),
-      String(next[stateKey] ?? ""),
-      String(next[zipKey] ?? ""),
-    );
-  });
+  next.dispatch_location_street = "";
+  next.dispatch_location_city = "";
+  next.dispatch_location_state = "";
+  next.dispatch_location_zip = "";
+  const streetKey = "incident_location_street";
+  const cityKey = "incident_location_city";
+  const stateKey = "incident_location_state";
+  const zipKey = "incident_location_zip";
+  const addressKey = "incident_location_address";
+  const streetHoldsFullAddress = text(next[streetKey]).includes(",") && !text(next[cityKey]);
+  const hasParts = [streetKey, cityKey, stateKey, zipKey].some((key) => text(next[key]).length > 0);
+  if (!hasParts || streetHoldsFullAddress) {
+    const split = splitAddressLine(String(streetHoldsFullAddress ? next[streetKey] : next[addressKey] ?? ""));
+    if (!split.state) split.state = text(next.location_state);
+    if (!split.zip) split.zip = text(next.location_postal_code);
+    next[streetKey] = split.street;
+    next[cityKey] = split.city;
+    next[stateKey] = split.state;
+    next[zipKey] = split.zip;
+  }
+  const stateCode = toNerisStateCode(String(next[stateKey] ?? ""));
+  if (stateCode) next[stateKey] = stateCode;
+  next[addressKey] = composeAddressLine(
+    String(next[streetKey] ?? ""),
+    String(next[cityKey] ?? ""),
+    String(next[stateKey] ?? ""),
+    String(next[zipKey] ?? ""),
+  );
   const incidentState = toNerisStateCode(next.incident_location_state ?? "");
   if (incidentState) next.location_state = incidentState;
   if (text(next.incident_location_zip) && !text(next.location_postal_code)) {
@@ -370,17 +387,30 @@ export function incidentLocationParts(formValues: Record<string, string>): {
     state: text(formValues.incident_location_state),
     zip: text(formValues.incident_location_zip),
   };
-  if (structured.street || structured.city || structured.state || structured.zip) return structured;
-  const address = text(formValues.incident_location_address);
-  const parts = address
-    .split(",")
-    .map((part) => part.trim())
-    .filter(Boolean);
+  if (structured.street && !structured.city) {
+    const split = splitAddressLine(structured.street);
+    if (split.city || split.state || split.zip) {
+      return {
+        street: split.street,
+        city: split.city,
+        state: split.state || structured.state || text(formValues.location_state),
+        zip: split.zip || structured.zip || text(formValues.location_postal_code),
+      };
+    }
+  }
+  if (structured.street || structured.city || structured.state || structured.zip) {
+    return {
+      ...structured,
+      state: structured.state || text(formValues.location_state),
+      zip: structured.zip || text(formValues.location_postal_code),
+    };
+  }
+  const split = splitAddressLine(text(formValues.incident_location_address));
   return {
-    street: parts[0] ?? "",
-    city: parts.length >= 3 ? (parts[1] ?? "") : "",
-    state: text(formValues.location_state),
-    zip: text(formValues.location_postal_code),
+    street: split.street,
+    city: split.city,
+    state: split.state || text(formValues.location_state),
+    zip: split.zip || text(formValues.location_postal_code),
   };
 }
 

@@ -401,6 +401,12 @@ function NerisReportFormPage({
   const [fireRecoveryRequirementSettings, setFireRecoveryRequirementSettings] = useState(() =>
     parseRequirementSettings(null),
   );
+  const [personAffiliationOptions, setPersonAffiliationOptions] = useState<string[]>([
+    "driver",
+    "passenger",
+    "billing owner",
+    "maintenance",
+  ]);
   useEffect(() => {
     let cancelled = false;
     void fetch("/api/department-details")
@@ -410,6 +416,11 @@ function NerisReportFormPage({
         setFireRecoveryRequirementSettings(
           parseRequirementSettings(json?.data?.fireRecoveryFieldRequirements),
         );
+        const raw = json?.data?.personAffiliationOptions;
+        if (Array.isArray(raw)) {
+          const options = raw.map((value) => String(value ?? "").trim()).filter(Boolean);
+          if (options.length > 0) setPersonAffiliationOptions(options);
+        }
       })
       .catch(() => undefined);
     return () => {
@@ -522,8 +533,7 @@ function NerisReportFormPage({
       ...(persistedDraft?.formValues ?? {}),
     }),
   );
-  const [dispatchLocationOpen, setDispatchLocationOpen] = useState(false);
-  const [incidentLocationOpen, setIncidentLocationOpen] = useState(false);
+  const [incidentLocationOpen, setIncidentLocationOpen] = useState(true);
   const autoFillSeedRef = useRef<NerisFormValues>({ ...defaultFormValues });
   const userEditedReportRef = useRef(false);
   useEffect(() => {
@@ -1157,22 +1167,6 @@ function NerisReportFormPage({
     },
   }));
   const [personOwnerEditIndex, setPersonOwnerEditIndex] = useState<number | null>(null);
-  const [personOwnerAddOwnerModalOpen, setPersonOwnerAddOwnerModalOpen] = useState(false);
-  const [personOwnerOwnerEditIndex, setPersonOwnerOwnerEditIndex] = useState<number | null>(null);
-  const [personOwnerAddOwnerDraft, setPersonOwnerAddOwnerDraft] = useState<PersonOwnerOwner>(() => ({
-    firstName: "",
-    lastName: "",
-    businessName: "",
-    phone: "",
-    address: {
-      streetHighwayName: "",
-      poBox: "",
-      apartmentNumber: "",
-      city: "",
-      state: "",
-      zipCode: "",
-    },
-  }));
   const resetPersonOwnerAddPersonDraft = () => {
     setPersonOwnerEditIndex(null);
     setPersonOwnerAddPersonDraft({
@@ -1201,34 +1195,6 @@ function NerisReportFormPage({
     setPersonOwnerEditIndex(index);
     setPersonOwnerAddPersonDraft(person);
     setPersonOwnerAddPersonModalOpen(true);
-  };
-  const resetPersonOwnerAddOwnerDraft = () => {
-    setPersonOwnerOwnerEditIndex(null);
-    setPersonOwnerAddOwnerDraft({
-      firstName: "",
-      lastName: "",
-      businessName: "",
-      phone: "",
-      address: {
-        streetHighwayName: "",
-        poBox: "",
-        apartmentNumber: "",
-        city: "",
-        state: "",
-        zipCode: "",
-      },
-    });
-  };
-  const openAddOwnerModal = () => {
-    resetPersonOwnerAddOwnerDraft();
-    setPersonOwnerAddOwnerModalOpen(true);
-  };
-  const openEditOwnerModal = (index: number) => {
-    const owner = personOwnerOwners[index];
-    if (!owner) return;
-    setPersonOwnerOwnerEditIndex(index);
-    setPersonOwnerAddOwnerDraft(owner);
-    setPersonOwnerAddOwnerModalOpen(true);
   };
   const buildPersonOwnerFormOverrides = useCallback(
     (persons: PersonOwnerPerson[], owners: PersonOwnerOwner[]): Partial<NerisFormValues> => {
@@ -1515,20 +1481,22 @@ function NerisReportFormPage({
       ["incident_location_address", 1],
       ["incident_location_street", 2],
       ["incident_location_city", 3],
-      ["location_state", 4],
-      ["location_country", 5],
-      ["location_postal_code", 6],
-      ["location_county", 7],
-      ["location_place_type", 8],
-      ["location_use_primary", 9],
-      ["location_use_secondary", 10],
-      ["location_in_use", 11],
-      ["location_used_as_intended", 12],
-      ["location_vacancy_cause", 13],
-      ["location_direction_of_travel", 14],
-      ["location_cross_street_type", 15],
-      ["location_cross_street_name", 16],
-      ["location_notes", 17],
+      ["incident_location_state", 4],
+      ["incident_location_zip", 5],
+      ["location_state", 6],
+      ["location_country", 7],
+      ["location_postal_code", 8],
+      ["location_county", 9],
+      ["location_use_primary", 10],
+      ["location_place_type", 11],
+      ["location_in_use", 12],
+      ["location_used_as_intended", 13],
+      ["location_use_secondary", 14],
+      ["location_vacancy_cause", 15],
+      ["location_direction_of_travel", 16],
+      ["location_cross_street_type", 17],
+      ["location_cross_street_name", 18],
+      ["location_notes", 19],
     ]);
 
     return [...sectionFields].sort((left, right) => {
@@ -2023,44 +1991,6 @@ function NerisReportFormPage({
     parsedImportedLocation.locationCounty,
   ]);
 
-  const handlePullLocationFromImportedAddress = () => {
-    const address = (detail?.address ?? "").trim();
-    if (!address || address === "No imported address available.") {
-      setSaveMessage("No imported address is available to fill the dispatch location.");
-      setErrorMessage("");
-      return;
-    }
-    const split = splitAddressLine(address);
-    const composed =
-      composeAddressLine(split.street, split.city, split.state, split.zip) || address;
-    userEditedReportRef.current = true;
-    setFormValues((previous) => ({
-      ...previous,
-      dispatch_location_street: split.street,
-      dispatch_location_city: split.city,
-      dispatch_location_state: split.state,
-      dispatch_location_zip: split.zip,
-      dispatch_location_address: composed,
-    }));
-    setSectionErrors((previous) => {
-      const next = { ...previous };
-      delete next.dispatch_location_address;
-      delete next.dispatch_location_street;
-      delete next.dispatch_location_city;
-      delete next.dispatch_location_state;
-      delete next.dispatch_location_zip;
-      return next;
-    });
-    setDispatchLocationOpen(true);
-    setSaveMessage("Dispatch location filled from the imported address.");
-    setErrorMessage("");
-    setValidationIssues([]);
-    setValidationModal(null);
-    if (reportStatus !== "Draft") {
-      setReportStatus("Draft");
-    }
-  };
-
   const markNerisFormDirty = () => {
     userEditedReportRef.current = true;
     setSaveMessage("");
@@ -2070,6 +2000,30 @@ function NerisReportFormPage({
     if (reportStatus !== "Draft") {
       setReportStatus("Draft");
     }
+  };
+  const fillResourceDateWithToday = (
+    unitId: string,
+    field:
+      | "dispatchTime"
+      | "enrouteTime"
+      | "stagedTime"
+      | "onSceneTime"
+      | "returningTime"
+      | "canceledTime"
+      | "clearTime",
+    current: string,
+  ) => {
+    const now = new Date();
+    const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+    const time = formatResourceTimePart(current);
+    updateResourceUnitField(
+      unitId,
+      field,
+      combineResourceDateTimeFromParts(date, time) || `${date}T00:00:00`,
+    );
+    clearResourceUnitValidationErrors(unitId);
+    setResourceTimeDraft(null);
+    markNerisFormDirty();
   };
 
   /** Tenant allowlist: clear aid department if no longer permitted (does not change report lock). */
@@ -4779,22 +4733,21 @@ function NerisReportFormPage({
     if (field.id === "location_cross_street_name" && !showCrossStreetTypeField) {
       return null;
     }
-    if (field.id === "incident_location_state" || field.id === "incident_location_zip") {
+    if (
+      field.id === "dispatch_location_address" ||
+      field.id === "dispatch_location_street" ||
+      field.id === "dispatch_location_city" ||
+      field.id === "dispatch_location_state" ||
+      field.id === "dispatch_location_zip"
+    ) {
       return null;
     }
-    const dispatchLocationParts = new Set([
-      "dispatch_location_street",
-      "dispatch_location_city",
-      "dispatch_location_state",
-      "dispatch_location_zip",
-    ]);
     const incidentLocationPartFields = new Set([
       "incident_location_street",
       "incident_location_city",
       "incident_location_state",
       "incident_location_zip",
     ]);
-    if (dispatchLocationParts.has(field.id) && !dispatchLocationOpen) return null;
     if (incidentLocationPartFields.has(field.id) && !incidentLocationOpen) return null;
     const isLocationSummary =
       field.id === "dispatch_location_address" || field.id === "incident_location_address";
@@ -4852,19 +4805,11 @@ function NerisReportFormPage({
             <button
               type="button"
               className="fr-party-toggle neris-location-toggle"
-              aria-expanded={
-                field.id === "dispatch_location_address" ? dispatchLocationOpen : incidentLocationOpen
-              }
-              onClick={() =>
-                field.id === "dispatch_location_address"
-                  ? setDispatchLocationOpen((previous) => !previous)
-                  : setIncidentLocationOpen((previous) => !previous)
-              }
+              aria-expanded={incidentLocationOpen}
+              onClick={() => setIncidentLocationOpen((previous) => !previous)}
             >
               <span className="fr-party-chevron" aria-hidden="true">
-                {(field.id === "dispatch_location_address" ? dispatchLocationOpen : incidentLocationOpen)
-                  ? "▾"
-                  : "▸"}
+                {incidentLocationOpen ? "▾" : "▸"}
               </span>
               <span>
                 {field.label}
@@ -6852,6 +6797,19 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "dispatchTime",
+                                            unitEntry.dispatchTime,
+                                          )
+                                        }
+                                      >
+                                        Today
+                                      </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -6927,6 +6885,19 @@ function NerisReportFormPage({
                                         }}
                                       >
                                         Clear
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "enrouteTime",
+                                            unitEntry.enrouteTime,
+                                          )
+                                        }
+                                      >
+                                        Today
                                       </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
@@ -7004,6 +6975,19 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "stagedTime",
+                                            unitEntry.stagedTime,
+                                          )
+                                        }
+                                      >
+                                        Today
+                                      </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -7079,6 +7063,19 @@ function NerisReportFormPage({
                                         }}
                                       >
                                         Clear
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "onSceneTime",
+                                            unitEntry.onSceneTime,
+                                          )
+                                        }
+                                      >
+                                        Today
                                       </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
@@ -7156,6 +7153,19 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "returningTime",
+                                            unitEntry.returningTime,
+                                          )
+                                        }
+                                      >
+                                        Today
+                                      </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -7232,6 +7242,19 @@ function NerisReportFormPage({
                                       >
                                         Clear
                                       </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "canceledTime",
+                                            unitEntry.canceledTime,
+                                          )
+                                        }
+                                      >
+                                        Today
+                                      </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
                                       <input
@@ -7307,6 +7330,19 @@ function NerisReportFormPage({
                                         }}
                                       >
                                         Clear
+                                      </button>
+                                      <button
+                                        type="button"
+                                        className="link-button neris-resource-time-clear"
+                                        onClick={() =>
+                                          fillResourceDateWithToday(
+                                            unitEntry.id,
+                                            "clearTime",
+                                            unitEntry.clearTime,
+                                          )
+                                        }
+                                      >
+                                        Today
                                       </button>
                                     </span>
                                     <span className="neris-resource-datetime-inputs">
@@ -7639,63 +7675,6 @@ function NerisReportFormPage({
                     )}
                   </div>
 
-                  <div className="panel">
-                    <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Owner</h3>
-                    <div style={{ height: "0.55rem" }} />
-                    <button
-                      type="button"
-                      className="primary-button compact-button"
-                      onClick={openAddOwnerModal}
-                    >
-                      Add Owner
-                    </button>
-                    <div style={{ height: "0.7rem" }} />
-                    {personOwnerOwners.length ? (
-                      <div style={{ display: "grid", gap: "0.55rem" }}>
-                        {personOwnerOwners.map((o, idx) => (
-                          <div key={`${o.firstName}-${o.lastName}-${idx}`} className="panel">
-                            <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem" }}>
-                              <strong style={{ fontSize: "0.9rem" }}>
-                                {(o.firstName + " " + o.lastName).trim() || "Unnamed owner"}
-                              </strong>
-                              <div style={{ display: "inline-flex", gap: "0.35rem", alignItems: "flex-start" }}>
-                                <button
-                                  type="button"
-                                  className="secondary-button compact-button"
-                                  onClick={() => openEditOwnerModal(idx)}
-                                >
-                                  Edit
-                                </button>
-                                <button
-                                  type="button"
-                                  className="secondary-button compact-button"
-                                  onClick={() => {
-                                    const nextOwners = personOwnerOwners.filter((_, i) => i !== idx);
-                                    stampSavedAt(
-                                      "manual",
-                                      reportStatus,
-                                      undefined,
-                                      buildPersonOwnerFormOverrides(personOwnerPersons, nextOwners),
-                                    );
-                                    if (personOwnerOwnerEditIndex === idx) {
-                                      resetPersonOwnerAddOwnerDraft();
-                                      setPersonOwnerAddOwnerModalOpen(false);
-                                    }
-                                  }}
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="neris-section-placeholder">
-                        <p>No owners added yet.</p>
-                      </div>
-                    )}
-                  </div>
                 </div>
                 {personOwnerAddPersonModalOpen ? (
                   <div
@@ -7777,8 +7756,7 @@ function NerisReportFormPage({
                         />
 
                         <label>Affiliation</label>
-                        <input
-                          type="text"
+                        <select
                           value={personOwnerAddPersonDraft.affiliation}
                           onChange={(e) => {
                             setPersonOwnerAddPersonDraft((prev) => ({
@@ -7786,7 +7764,20 @@ function NerisReportFormPage({
                               affiliation: e.target.value,
                             }));
                           }}
-                        />
+                        >
+                          <option value="">Select affiliation</option>
+                          {personAffiliationOptions.map((option) => (
+                            <option key={option} value={option}>
+                              {option}
+                            </option>
+                          ))}
+                          {personOwnerAddPersonDraft.affiliation &&
+                          !personAffiliationOptions.includes(personOwnerAddPersonDraft.affiliation) ? (
+                            <option value={personOwnerAddPersonDraft.affiliation}>
+                              {personOwnerAddPersonDraft.affiliation}
+                            </option>
+                          ) : null}
+                        </select>
 
                         <div className="state-edit-row">
                           <label>Address</label>
@@ -7951,193 +7942,6 @@ function NerisReportFormPage({
                     </section>
                   </div>
                 ) : null}
-                {personOwnerAddOwnerModalOpen ? (
-                  <div
-                    className="neris-resource-personnel-modal-backdrop"
-                    role="dialog"
-                    aria-modal="true"
-                    onClick={(event) => {
-                      if (event.target === event.currentTarget) {
-                        resetPersonOwnerAddOwnerDraft();
-                        setPersonOwnerAddOwnerModalOpen(false);
-                      }
-                    }}
-                  >
-                    <section className="panel neris-resource-personnel-modal" onWheel={(event) => event.stopPropagation()}>
-                      <div className="neris-resource-personnel-modal-header">
-                        <h3>{personOwnerOwnerEditIndex === null ? "Add Owner" : "Edit Owner"}</h3>
-                        <button
-                          type="button"
-                          className="secondary-button compact-button"
-                          onClick={() => {
-                            resetPersonOwnerAddOwnerDraft();
-                            setPersonOwnerAddOwnerModalOpen(false);
-                          }}
-                        >
-                          Close
-                        </button>
-                      </div>
-                      <div className="settings-form">
-                        <label>First Name</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.firstName}
-                          onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, firstName: e.target.value }))}
-                        />
-                        <label>Last Name</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.lastName}
-                          onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, lastName: e.target.value }))}
-                        />
-                        <label>Business Name</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.businessName}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, businessName: e.target.value }))
-                          }
-                        />
-                        <label>Phone</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.phone}
-                          onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, phone: e.target.value }))}
-                        />
-                        <div className="state-edit-row">
-                          <label>Address</label>
-                          <button
-                            type="button"
-                            className="link-button"
-                            onClick={() => {
-                              const source =
-                                (formValues.incident_location_address ?? "").trim() ||
-                                (formValues.dispatch_location_address ?? "").trim();
-                              const parsed = parseIncidentLocationAddressToPersonAddress(source);
-                              setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, address: parsed }));
-                            }}
-                          >
-                            Same as Incident
-                          </button>
-                        </div>
-                        <label>Street or Highway Name</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.address.streetHighwayName}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({
-                              ...prev,
-                              address: { ...prev.address, streetHighwayName: e.target.value },
-                            }))
-                          }
-                        />
-                        <label>Post Office Box</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.address.poBox}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({
-                              ...prev,
-                              address: { ...prev.address, poBox: e.target.value },
-                            }))
-                          }
-                        />
-                        <label>Apartment Number</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.address.apartmentNumber}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({
-                              ...prev,
-                              address: { ...prev.address, apartmentNumber: e.target.value },
-                            }))
-                          }
-                        />
-                        <label>City</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.address.city}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({
-                              ...prev,
-                              address: { ...prev.address, city: e.target.value },
-                            }))
-                          }
-                        />
-                        <label>State</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.address.state}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({
-                              ...prev,
-                              address: { ...prev.address, state: e.target.value },
-                            }))
-                          }
-                        />
-                        <label>Zip Code</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.address.zipCode}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({
-                              ...prev,
-                              address: { ...prev.address, zipCode: e.target.value },
-                            }))
-                          }
-                        />
-                        <div className="neris-form-actions" style={{ justifyContent: "space-between" }}>
-                          <button
-                            type="button"
-                            className="secondary-button"
-                            onClick={() => {
-                              resetPersonOwnerAddOwnerDraft();
-                              setPersonOwnerAddOwnerModalOpen(false);
-                            }}
-                          >
-                            Cancel
-                          </button>
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() => {
-                              const cleaned: PersonOwnerOwner = {
-                                firstName: personOwnerAddOwnerDraft.firstName.trim(),
-                                lastName: personOwnerAddOwnerDraft.lastName.trim(),
-                                businessName: personOwnerAddOwnerDraft.businessName.trim(),
-                                phone: personOwnerAddOwnerDraft.phone.trim(),
-                                address: {
-                                  streetHighwayName: personOwnerAddOwnerDraft.address.streetHighwayName.trim(),
-                                  poBox: personOwnerAddOwnerDraft.address.poBox.trim(),
-                                  apartmentNumber: personOwnerAddOwnerDraft.address.apartmentNumber.trim(),
-                                  city: personOwnerAddOwnerDraft.address.city.trim(),
-                                  state: personOwnerAddOwnerDraft.address.state.trim(),
-                                  zipCode: personOwnerAddOwnerDraft.address.zipCode.trim(),
-                                },
-                              };
-                              const nextOwners =
-                                personOwnerOwnerEditIndex === null
-                                  ? [...personOwnerOwners, cleaned]
-                                  : personOwnerOwners.map((owner, i) =>
-                                      i === personOwnerOwnerEditIndex ? cleaned : owner,
-                                    );
-                              stampSavedAt(
-                                "manual",
-                                reportStatus,
-                                undefined,
-                                buildPersonOwnerFormOverrides(personOwnerPersons, nextOwners),
-                              );
-                              resetPersonOwnerAddOwnerDraft();
-                              setPersonOwnerAddOwnerModalOpen(false);
-                            }}
-                          >
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                ) : null}
               </div>
             ) : null}
             {currentSection.id === "fireRecoveryBilling" ? (
@@ -8156,17 +7960,7 @@ function NerisReportFormPage({
                     zip: person.address.zipCode,
                   }),
                 )}
-                owners={personOwnerOwners.map(
-                  (owner): CopyContact => ({
-                    firstName: owner.firstName,
-                    lastName: owner.lastName,
-                    phone: owner.phone,
-                    street: owner.address.streetHighwayName,
-                    city: owner.address.city,
-                    state: owner.address.state,
-                    zip: owner.address.zipCode,
-                  }),
-                )}
+                owners={[]}
                 onChange={(json) => updateFieldValue("fire_recovery_billing_json", json)}
                 requirementSettings={fireRecoveryRequirementSettings}
               />
@@ -8190,15 +7984,9 @@ function NerisReportFormPage({
                         className="field-span-two neris-imported-address-block"
                       >
                         <div className="neris-imported-address-header">
-                          <label htmlFor="location-imported-address-box">Imported address</label>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button neris-imported-address-sync-button"
-                            onClick={handlePullLocationFromImportedAddress}
-                            disabled={!canEdit}
-                          >
-                            Fill dispatch location
-                          </button>
+                          <label htmlFor="location-imported-address-box">
+                            Imported address/dispatch location
+                          </label>
                         </div>
                         <div id="location-imported-address-box" className="neris-imported-address">
                           {importedLocationAddress}

@@ -935,6 +935,16 @@ interface IncidentsSetupConfig {
   visibleFields: Record<IncidentSetupRequiredFieldKey, boolean>;
 }
 
+const DEFAULT_PERSON_AFFILIATION_OPTIONS = ["driver", "passenger", "billing owner", "maintenance"];
+
+function normalizePersonAffiliationOptions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_PERSON_AFFILIATION_OPTIONS];
+  const options = Array.from(
+    new Set(raw.map((value) => String(value ?? "").trim()).filter((value) => value.length > 0)),
+  );
+  return options.length > 0 ? options : [...DEFAULT_PERSON_AFFILIATION_OPTIONS];
+}
+
 const DEFAULT_INCIDENTS_SETUP_CONFIG: IncidentsSetupConfig = {
   incidentTypeOptions: ["FIRE", "EMS", "RESCUE", "SERVICE"],
   priorityOptions: ["1", "2", "3", "4"],
@@ -1488,13 +1498,6 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_time_call_create",
   "incident_time_call_answered",
   "incident_time_call_arrival",
-  "incident_time_unit_dispatched",
-  "incident_time_unit_enroute",
-  "incident_time_unit_staged",
-  "incident_time_unit_on_scene",
-  "incident_time_unit_canceled",
-  "incident_time_unit_clear",
-  "incident_time_clear",
   "incident_onset_date",
   "incident_onset_time",
   "incident_location_address",
@@ -6884,6 +6887,9 @@ function DepartmentDetailsPage({
   const [incidentsSetup, setIncidentsSetup] = useState<IncidentsSetupConfig>(() =>
     normalizeIncidentsSetupConfig(initialDepartmentDraft.incidentsSetup),
   );
+  const [personAffiliationOptions, setPersonAffiliationOptions] = useState<string[]>(() =>
+    normalizePersonAffiliationOptions(initialDepartmentDraft.personAffiliationOptions),
+  );
   const [editingIncidentSetupField, setEditingIncidentSetupField] =
     useState<IncidentSetupRequiredFieldKey | null>(null);
   const [incidentSetupOptionDrafts, setIncidentSetupOptionDrafts] = useState<
@@ -8009,6 +8015,7 @@ function DepartmentDetailsPage({
         );
         setMutualAidDepartmentSelections(parseMutualAidSelectionsFromDraft(d));
         setIncidentsSetup(normalizeIncidentsSetupConfig(d.incidentsSetup));
+        setPersonAffiliationOptions(normalizePersonAffiliationOptions(d.personAffiliationOptions));
         setKellyRotations(
           Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
         );
@@ -9150,6 +9157,7 @@ function DepartmentDetailsPage({
       selectedMutualAidIds,
       mutualAidDepartmentSelections: mutualAidSelectionsToPayload(mutualAidDepartmentSelections),
       incidentsSetup,
+      personAffiliationOptions: normalizePersonAffiliationOptions(personAffiliationOptions),
       kellyRotations,
       schedulerEnabled,
       uiPreferencesByUser: nextUiPreferencesByUser,
@@ -9200,6 +9208,7 @@ function DepartmentDetailsPage({
     selectedMutualAidIds,
     mutualAidDepartmentSelections,
     incidentsSetup,
+    personAffiliationOptions,
     shiftInformationEntries,
     stationRecords,
     userTypeValues,
@@ -9555,6 +9564,22 @@ function DepartmentDetailsPage({
                       </div>
                     ))}
                   </div>
+                </article>
+              ) : null}
+              {showNerisConfigurationModule ? (
+                <article className="panel">
+                  <h2>Person affiliation</h2>
+                  <p className="panel-description">
+                    One choice per line. These are the Affiliation options on a NERIS person.
+                  </p>
+                  <textarea
+                    rows={6}
+                    value={personAffiliationOptions.join("\n")}
+                    onChange={(event) => {
+                      setPersonAffiliationOptions(event.target.value.split("\n"));
+                      setAutoSaveTick((previous) => previous + 1);
+                    }}
+                  />
                 </article>
               ) : null}
               {showNerisConfigurationModule && nerisExportSettings && onSaveNerisExportSettings ? (

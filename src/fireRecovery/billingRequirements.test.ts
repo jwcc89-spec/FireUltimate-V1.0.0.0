@@ -164,10 +164,10 @@ describe("fire recovery billing requirements", () => {
       location_state: "IL",
       location_postal_code: "60911",
     });
-    assert.equal(filled.dispatch_location_street, "1 Main");
-    assert.equal(filled.dispatch_location_city, "Crescent");
-    assert.equal(filled.dispatch_location_state, "IL");
-    assert.equal(filled.dispatch_location_zip, "60922");
+    assert.equal(filled.dispatch_location_street, "");
+    assert.equal(filled.dispatch_location_city, "");
+    assert.equal(filled.dispatch_location_state, "");
+    assert.equal(filled.dispatch_location_zip, "");
     assert.equal(filled.dispatch_location_address, "1 Main, Crescent, IL 60922");
     assert.equal(filled.incident_location_street, "9 Oak");
     assert.equal(filled.incident_location_address, "9 Oak, Ashkum, IL 60911");
@@ -191,6 +191,26 @@ describe("fire recovery billing requirements", () => {
     assert.equal(fromStreet.incident_location_state, "IL");
     assert.equal(fromStreet.incident_location_zip, "60922");
     assert.equal(fromStreet.location_state, "IL");
+    const gilman = ensureStructuredLocations({
+      incident_location_street: "2457 Main Street, Gilman, Illinois",
+      incident_location_city: "",
+      incident_location_state: "IL",
+      incident_location_zip: "",
+      incident_location_address: "2457 Main Street, Gilman, Illinois",
+      location_state: "IL",
+      location_postal_code: "",
+    });
+    assert.equal(gilman.incident_location_street, "2457 Main Street");
+    assert.equal(gilman.incident_location_city, "Gilman");
+    assert.equal(gilman.incident_location_state, "IL");
+    assert.equal(gilman.incident_location_zip, "");
+    assert.deepEqual(
+      incidentLocationParts({
+        incident_location_street: "2457 Main Street, Gilman, Illinois",
+        incident_location_state: "Illinois",
+      }),
+      { street: "2457 Main Street", city: "Gilman", state: "IL", zip: "" },
+    );
   });
 
   it("lets Uninsured waive the insurance company and lets a department require Is Resident", () => {
