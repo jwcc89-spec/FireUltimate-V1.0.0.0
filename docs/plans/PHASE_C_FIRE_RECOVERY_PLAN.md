@@ -1,7 +1,7 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 5 is done on the practice branch. Next is Wave 5b only with the operator on staging, or Wave 6 on this Mac. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-02, late morning America/Chicago. Incident 12345 NERIS export succeeded (201 Created, 11:14:04). Wave 4 and Wave 5 code are on the practice branch. Staging promote, Wave 5b, and Wave 6 are not done.
+**Status:** Wave 6 is done on the practice branch. Next is the operator's Wave 7 staging sandbox test, after this branch is merged to staging. Wave 5b still waits. Q5 (vendor) still waits. Render, Neon, and production were not changed.
+**Updated:** 2026-11-02, late morning America/Chicago. Incident 12345 NERIS export succeeded (201 Created, 11:14:04). Wave 6 fake-vendor tests passed (44 tests). Staging promote and Wave 7 clicks are not done.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
 
@@ -486,10 +486,11 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - [ ] Re-export-then-bill button, only if the re-export updates cleanly.
 
 ### Wave 6 — Fake-vendor tests
-- [ ] New `server/fireRecovery.test.mjs`, added to the `npm test` script in `package.json`.
-- [ ] Start a local HTTP server and point `FIRE_RECOVERY_BASE_URL` at it.
-- [ ] Cases: success; HTTP 400 refusal = Failed; HTTP 500 = Needs review; timeout = Needs review; 200 without `Status 1` = Needs review; double submit = one vendor call; resubmit after Sent refused; sandbox/live/unset; missing required field refused; another department's call number refused.
-- [ ] Use the existing test database rule (`postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`). Never point tests at Neon.
+- [x] New `server/fireRecovery.test.mjs`, added to the `npm test` script in `package.json`.
+- [x] Start a local HTTP server and point `FIRE_RECOVERY_BASE_URL` at it.
+- [x] Cases: success; HTTP 400 refusal = Failed; HTTP 500 = Needs review; timeout = Needs review; 200 without `Status 1` = Needs review; double submit = one vendor call; resubmit after Sent refused; sandbox/live/unset; missing required field refused; another department's call number refused.
+- [x] Use the existing test database rule (`postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`). Never point tests at Neon.
+- **Done when:** `npm test` passes against local `fu_session_test` only. This also closes Wave 4's "done when" proof.
 
 ### Wave 7 — Staging sandbox test (operator, §11.2)
 - [ ] Render settings on staging, login entered, two-party sandbox bill, billing status checked, double click checked, results recorded in §15.
@@ -640,6 +641,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-02 — Wave 4 done on `cursor/stage-b-foundation-b5ff` (practice only). Preview returns the payload, department ID, mode, missing Required and Recommended lists, and a hash that ignores CatchCreated. Submit requires that hash, takes one lock, and saves Sent, Failed, or Needs review. A second send of the same incident returns 409 and does not call Fire Recovery again. Resolve-review is admin only. The migration adds `submitStatus` and `submitStartedAt` only. `npm run lint`, `npm run build`, and `npm test` (42) passed against local `fu_session_test` only. The new Core address fields were not clicked in a browser. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 5. The fuller fake-vendor file remains Wave 6.
 - 2026-11-02 — Wave 5 done on the same branch. Export Details has a Fire Recovery panel, a preview window, and an admin resolve-review window. The queue, the Fire Recovery list, and the detail page show Not sent, Submitting, Sent, Failed, or Needs review. Update billing status shows the server's error, including a time-limit failure. The Core dispatch and incident lines are locked and built from the street, city, state, and ZIP fields, which collapse with an arrow and sit on two lines. Same as dispatch sits beside the Incident location label. Not deployed. Do not click Confirm and send on this Mac. Next is Wave 6 on this Mac, or Wave 5b only with the operator on staging.
 - 2026-11-02 — Location follow-up on the same branch. Incident location keeps one state and one ZIP. Country and county sit in that section. Country defaults to US. The separate State/Territory and Postal code fields are hidden; the NERIS payload still sends state, postal code, country, and county. The Motor Vehicle Collision NERIS code box is hidden and the bill uses the Core primary incident type. The NERIS Entity ID screen is Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Incident 12345 then exported successfully: Exported, 201 Created at 11:14:04 America/Chicago. Not deployed. Do not start Wave 5b or Wave 6 until the operator says so.
+- 2026-11-02 — Wave 6 done on the same branch. `server/fireRecovery.test.mjs` talks to a local pretend Fire Recovery server. One incident can be billed once. A clear refusal is Failed and can be fixed. A timeout, HTTP 500, or a reply without Status 1 is Needs review and cannot be resent. Sandbox sends FD12345678. Live sends the department NERIS ID and refuses FD12345678. Unset refuses before any vendor call. A missing required field is refused. Another department's call number is refused. `npm test` passed 44 tests against local `fu_session_test` only. Not deployed. Wave 7 is the operator's staging sandbox test. Do not click Confirm and send on this Mac.
 
 ---
 

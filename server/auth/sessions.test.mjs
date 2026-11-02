@@ -6,6 +6,7 @@ import http from "node:http";
 import test from "node:test";
 import { inspect } from "node:util";
 import bcrypt from "bcryptjs";
+import { Client } from "pg";
 import { encryptSecret } from "../crypto/secretBox.mjs";
 import { permissionForRequest } from "./permissions.mjs";
 import {
@@ -43,7 +44,7 @@ const APPROVED_PUBLIC = new Set([
   "POST /api/cad/inbound-email",
 ]);
 
-test("server sign-in passes", async () => {
+test("server sign-in passes", async (t) => {
   // Known gap D5: originAllowed compares hostnames only. A different scheme or
   // port on the same host is accepted. HTTPS-only at Cloudflare limits this
   // until Stage C. A different host is still refused.
@@ -156,6 +157,14 @@ test("server sign-in passes", async () => {
   assert.equal(normalizeRole("super_admin"), "superadmin");
   assert.equal(normalizeRole("sub-admin"), "subadmin");
   assert.deepEqual([...PUBLIC_API_ROUTES].sort(), [...APPROVED_PUBLIC].sort());
+
+  const lockClient = new Client({ connectionString: DATABASE_URL });
+  await lockClient.connect();
+  await lockClient.query("SELECT pg_advisory_lock(424242)");
+  t.after(async () => {
+    await lockClient.query("SELECT pg_advisory_unlock(424242)").catch(() => {});
+    await lockClient.end().catch(() => {});
+  });
 
   execFileSync("npx", ["prisma", "generate"], { stdio: "inherit", env: process.env });
   execFileSync("npx", ["prisma", "migrate", "deploy"], { stdio: "inherit", env: process.env });

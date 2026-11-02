@@ -18,6 +18,10 @@ Incident location keeps one state and one ZIP. Country and county moved into tha
 
 Incident 12345 first returned 400 Bad Request. The stored reason was "Missing NERIS entity ID." After the operator set the entity, the same report exported: status Exported, last attempt 201 Created at 11:14:04 America/Chicago. The screen is Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.
 
+## Wave 6 (later the same day)
+
+`server/fireRecovery.test.mjs` calls a local pretend Fire Recovery server. `npm test` passed 44 tests on local `fu_session_test` only. One incident is billed once. A clear refusal is Failed. A timeout, HTTP 500, or a reply without Status 1 is Needs review. Sandbox sends FD12345678. Live sends the department NERIS ID and refuses FD12345678. Unset refuses before any vendor call.
+
 ## Next
 
-Wait for the user's review. Do not start Wave 5b or Wave 6. Wave 6 is the local fake-vendor test file.
+Wave 7 is the operator's staging sandbox test. Do not click Confirm and send on this Mac. Do not start Wave 5b.
