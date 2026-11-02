@@ -10,7 +10,6 @@ import {
   incidentLocationParts,
   onScenePersonnel,
   parseBilling,
-  parseRequirementSettings,
   requirementLevel,
   serializeBilling,
   type BillingFixSection,
@@ -31,6 +30,7 @@ type FireRecoveryBillingSectionProps = {
   vehicles: CopyVehicle[];
   onChange: (json: string) => void;
   onOpenSection: (sectionId: BillingFixSection) => void;
+  requirementSettings: Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>;
 };
 
 function barClass(level: RequirementLevel): string {
@@ -48,10 +48,10 @@ export function FireRecoveryBillingSection({
   vehicles,
   onChange,
   onOpenSection,
+  requirementSettings,
 }: FireRecoveryBillingSectionProps) {
   const billing = useMemo(() => parseBilling(rawJson), [rawJson]);
   const [departmentName, setDepartmentName] = useState("this department");
-  const [settings, setSettings] = useState(parseRequirementSettings(null));
   const [replaceAsk, setReplaceAsk] = useState(false);
   const [deleteAskId, setDeleteAskId] = useState("");
   const [copyNote, setCopyNote] = useState("");
@@ -64,7 +64,6 @@ export function FireRecoveryBillingSection({
         if (cancelled || !json?.data) return;
         const name = typeof json.data.departmentName === "string" ? json.data.departmentName.trim() : "";
         if (name) setDepartmentName(name);
-        setSettings(parseRequirementSettings(json.data.fireRecoveryFieldRequirements));
       })
       .catch(() => undefined);
     return () => {
@@ -74,7 +73,7 @@ export function FireRecoveryBillingSection({
 
   const location = incidentLocationParts(formValues);
   const personnel = onScenePersonnel(formValues.resource_units_json ?? "");
-  const gaps = findBillingGaps(billing, formValues, settings, "");
+  const gaps = findBillingGaps(billing, formValues, requirementSettings, "");
   const incidentTypeOptions = useMemo(() => getNerisValueOptions("incident_type"), []);
   const nerisCode = billing.nerisCode || (formValues.primary_incident_type ?? "");
 
@@ -101,7 +100,7 @@ export function FireRecoveryBillingSection({
     setReplaceAsk(false);
   };
 
-  const level = (key: FireRecoveryRequirementKey) => requirementLevel(key, settings);
+  const level = (key: FireRecoveryRequirementKey) => requirementLevel(key, requirementSettings);
 
   return (
     <div className="field-span-two neris-person-owner-module">

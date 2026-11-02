@@ -383,13 +383,14 @@ export function findBillingGaps(
   formValues: Record<string, string>,
   settings: Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>,
   filedByName: string,
+  options?: { omitFiledBy?: boolean },
 ): { required: BillingGap[]; recommended: BillingGap[] } {
   const found: BillingGap[] = [];
   const push = (entry: BillingGap | null) => {
     if (entry) found.push(entry);
   };
 
-  if (!text(filedByName)) {
+  if (!options?.omitFiledBy && !text(filedByName)) {
     push(gap("fr.filedBy", "Form Filed By", "required"));
   }
   if (!text(formValues.incident_onset_date)) {
@@ -460,6 +461,20 @@ export function findBillingGaps(
     required: found.filter((entry) => entry.level === "required"),
     recommended: found.filter((entry) => entry.level === "recommended"),
   };
+}
+
+/** Labels for the NERIS Validate button. Form Filed By is filled in at export, so it is not listed. */
+export function billingValidationIssueLabels(
+  formValues: Record<string, string>,
+  settings: Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>,
+): string[] {
+  const primary = formValues.primary_incident_type ?? "";
+  const additional = formValues.additional_incident_types ?? "";
+  if (!isFireRecoveryBillable(primary, additional)) return [];
+  const gaps = findBillingGaps(parseBilling(formValues.fire_recovery_billing_json ?? ""), formValues, settings, "", {
+    omitFiledBy: true,
+  });
+  return gaps.required.map((entry) => `Fire Recovery Billing - ${entry.label}`);
 }
 
 export function billingPrintRows(

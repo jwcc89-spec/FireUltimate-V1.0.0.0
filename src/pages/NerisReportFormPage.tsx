@@ -32,7 +32,9 @@ import {
 import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowlist";
 import {
   billingPrintRows,
+  billingValidationIssueLabels,
   isFireRecoveryBillable,
+  parseRequirementSettings,
   type CopyContact,
   type CopyVehicle,
 } from "../fireRecovery/billingRequirements";
@@ -392,6 +394,24 @@ function NerisReportFormPage({
     () => new Set(nerisRequiredFieldOverrides),
     [nerisRequiredFieldOverrides],
   );
+  const [fireRecoveryRequirementSettings, setFireRecoveryRequirementSettings] = useState(() =>
+    parseRequirementSettings(null),
+  );
+  useEffect(() => {
+    let cancelled = false;
+    void fetch("/api/department-details")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json: { data?: Record<string, unknown> } | null) => {
+        if (cancelled) return;
+        setFireRecoveryRequirementSettings(
+          parseRequirementSettings(json?.data?.fireRecoveryFieldRequirements),
+        );
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, []);
   const navigate = useNavigate();
   const detail =
     getIncidentCallDetail(callNumber) ??
@@ -3063,6 +3083,12 @@ function NerisReportFormPage({
       const unitValidation = validateResourceUnit(unitEntry, unitIndex);
       Object.assign(mergedErrors, unitValidation.errors);
       Object.assign(customIssueLabelsByFieldId, unitValidation.customIssueLabelsByFieldId);
+    });
+
+    billingValidationIssueLabels(formValues, fireRecoveryRequirementSettings).forEach((label, index) => {
+      const fieldId = `fire_recovery_billing_gap_${index}`;
+      mergedErrors[fieldId] = `${label} is required.`;
+      customIssueLabelsByFieldId[fieldId] = label;
     });
 
     setSectionErrors(mergedErrors);
@@ -8540,6 +8566,7 @@ function NerisReportFormPage({
                 )}
                 onChange={(json) => updateFieldValue("fire_recovery_billing_json", json)}
                 onOpenSection={(sectionId) => setActiveSectionId(sectionId)}
+                requirementSettings={fireRecoveryRequirementSettings}
               />
             ) : null}
             {currentSection.id !== "personOwner" && currentSection.id !== "fireRecoveryBilling"

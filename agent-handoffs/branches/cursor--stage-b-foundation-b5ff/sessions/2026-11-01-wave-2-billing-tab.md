@@ -32,6 +32,12 @@
 - `FIRE_RECOVERY_MODE` and `FIRE_RECOVERY_CREDENTIAL_KEY` were not created on Render.
 - Did not merge to `main`. Did not open a pull request.
 
+## Follow-up the same evening
+- The operator confirmed the motor-vehicle tab appears, and reported that Validate did not require the Fire Recovery fields.
+- `billingValidationIssueLabels` now feeds the NERIS Validate button for a billable incident type.
+- Missing Required fields keep the report on Draft. Recommended fields do not. Form Filed By is omitted because it is filled from the exporter.
+- The Export button still does not check billing fields.
+
 ## Next
 1. Wait for the user's review of Wave 2.
 2. After they say to continue, start Wave 3 (read the exported draft, rewrite the mapping, enforce required fields on the server). Stay on this branch. Pull first.

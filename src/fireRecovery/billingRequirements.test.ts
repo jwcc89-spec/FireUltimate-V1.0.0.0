@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
+  billingValidationIssueLabels,
   copyPartiesFromPersonOwner,
   findBillingGaps,
   incidentLocationParts,
@@ -143,6 +144,46 @@ describe("fire recovery billing requirements", () => {
     const roundTrip = parseBilling(serializeBilling(billing));
     assert.equal(roundTrip.parties[0]?.uninsured, true);
     assert.equal(roundTrip.parties[0]?.id, "p1");
+  });
+
+  it("lists required Fire Recovery fields for Validate and skips Form Filed By", () => {
+    const settings = parseRequirementSettings(null);
+    const motorVehicle = {
+      primary_incident_type: "MEDICAL: INJURY: MOTOR_VEHICLE_COLLISION",
+      incident_onset_date: "2026-11-01",
+      incident_time_call_arrival: "14:05",
+      incident_time_clear: "15:10",
+      incident_internal_id: "26-079",
+      incident_location_address: "1 Main, Crescent, IL 60922",
+      location_state: "IL",
+      location_postal_code: "60922",
+      resource_units_json: JSON.stringify([{ onSceneTime: "14:10", personnel: "Ada Lane" }]),
+    };
+    const empty = billingValidationIssueLabels(motorVehicle, settings);
+    assert.equal(empty.some((label) => label.includes("Form Filed By")), false);
+    assert.equal(empty.some((label) => label.includes("At least one party")), true);
+    const withParty = billingValidationIssueLabels(
+      {
+        ...motorVehicle,
+        fire_recovery_billing_json: serializeBilling({
+          version: 1,
+          runType: "MOTOR_VEHICLE",
+          lawEnforcementReportNumber: "",
+          nerisCode: "",
+          parties: [createParty("p1")],
+        }),
+      },
+      settings,
+    );
+    assert.equal(withParty.some((label) => label.includes("First Name")), true);
+    assert.equal(withParty.some((label) => label.includes("Party Phone")), false);
+    assert.equal(
+      billingValidationIssueLabels(
+        { primary_incident_type: "FIRE: STRUCTURE_FIRE: STRUCTURAL_INVOLVEMENT_FIRE" },
+        settings,
+      ).length,
+      0,
+    );
   });
 
   it("keeps the billing JSON out of the NERIS export builder", () => {

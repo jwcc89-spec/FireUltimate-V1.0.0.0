@@ -270,7 +270,7 @@ Recovery Hub uses one "Vehicle Make & Model" box. We keep two boxes side by side
 - Saving needs `settings.department` (the existing rule for department details).
 
 **Enforcement:**
-- **Browser:** markers and the completeness chip.
+- **Browser:** markers, the completeness chip, and the NERIS **Validate** button. On a motor-vehicle report, Validate lists missing Required billing fields and stays on Draft until they are filled. Form Filed By is left off that list because it is filled from the person who exports. The **Export** button still does not check billing fields (D-10).
 - **Server:** the preview and submit routes recompute missing Required fields from the same defaults plus the department's settings, and refuse with the list.
 - Put the defaults and the "find missing fields" logic in **one shared module**, `src/fireRecovery/billingRequirements.ts` (or `.mjs`). Both the browser and the server import it, so they can't disagree.
 - Recommended fields never block; the preview lists them as "Recommended, missing".
@@ -632,6 +632,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-01 — Plan written. Vendor docs saved (`docs/procedures/vendor/`). Blank Recovery Hub screenshot saved (`docs/plans/assets/phase-c-fire-recovery/`). Billing agreement confirmed. Render keys not yet created on staging or production.
 - 2026-11-01 — Wave 1 done on `cursor/stage-b-foundation-b5ff` (practice only). Submit reads `FIRE_RECOVERY_MODE`: `sandbox` always sends `FD12345678`; `live` sends the department NERIS Entity ID and refuses `FD12345678`; unset or anything else refuses and does not call Fire Recovery. Settings GET and PATCH return `mode`, `departmentId`, and `banner`. The Fire Recovery settings screen shows that line. `npm run lint`, `npm run build`, and `npm test` (27) passed against local `fu_session_test` only. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 2 after review.
 - 2026-11-01 — Wave 2 done on `cursor/stage-b-foundation-b5ff` (practice only). A motor-vehicle NERIS report shows a Fire Recovery Billing section after Person/Owner. The section stores `fire_recovery_billing_json`, copies Person/Owner names at copy time, prints a summary, and is read-only when the report is In Review or Exported. Admin NERIS Required Fields can save `fireRecoveryFieldRequirements`. `server/neris-proxy.mjs` does not read the billing field, so NERIS export stays unchanged. `npm run lint`, `npm run build`, and `npm test` (33) passed against local `fu_session_test` only. The billing tab was not clicked in a browser. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 3 after review.
+- 2026-11-01 — Follow-up on the same branch. The operator found that Validate ignored the Fire Recovery fields. Validate on a motor-vehicle report now lists the missing Required billing fields and stays on Draft until they are filled. Form Filed By is not on that list. Export still does not check billing fields.
 
 ---
 
