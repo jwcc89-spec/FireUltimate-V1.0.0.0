@@ -283,6 +283,17 @@ function applyContact(party: FireRecoveryParty, contact: CopyContact | null) {
   if (!party.insuranceCompany) party.insuranceCompany = text(contact.insuranceCompany);
 }
 
+export function copyIntoParty(
+  party: FireRecoveryParty,
+  contact: CopyContact,
+  vehicle: CopyVehicle | null,
+): FireRecoveryParty {
+  const next: FireRecoveryParty = { ...party };
+  applyContact(next, contact);
+  if (vehicle) applyVehicle(next, vehicle);
+  return next;
+}
+
 function applyVehicle(party: FireRecoveryParty, vehicle: CopyVehicle) {
   party.vehicleMake = text(vehicle.vehicleMake);
   party.vehicleModel = text(vehicle.model);

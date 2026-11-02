@@ -1,7 +1,7 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 2 is done on the practice branch. Next is Wave 3, after review. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-01, about 7:15 p.m. America/Chicago.
+**Status:** Wave 3 is done on the practice branch. Next is Wave 4, after review. Q5 (vendor) still waits. Render, Neon, and production were not changed.
+**Updated:** 2026-11-01, about 9:00 p.m. America/Chicago.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
 
@@ -461,9 +461,9 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - **Done when:** a two-party vehicle accident can be filled, saved, printed and exported to NERIS with billing fields empty, and the chip shows what is missing.
 
 ### Wave 3 — Mapping and data source (§7.1–7.3)
-- [ ] Read billing from the Exported draft plus the receipt.
-- [ ] Rewrite the mapping as a pure function with unit tests: a two-party payload, uninsured, commercial, time format, personnel count, NERIS code not cut short.
-- [ ] Server-side required-field check.
+- [x] Read billing from the Exported draft plus the receipt.
+- [x] Rewrite the mapping as a pure function with unit tests: a two-party payload, uninsured, commercial, time format, personnel count, NERIS code not cut short.
+- [x] Server-side required-field check.
 - **Done when:** unit tests show the exact vendor JSON for a sample report.
 
 ### Wave 4 — Preview, lock, safe results (§7.4)
@@ -635,6 +635,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-01 — Follow-up on the same branch. The operator found that Validate ignored the Fire Recovery fields. Validate on a motor-vehicle report now lists the missing Required billing fields and stays on Draft until they are filled. Form Filed By is not on that list. Export still does not check billing fields.
 - 2026-11-01 — Follow-up on the same branch. Required Fire Recovery labels show an asterisk, the same mark used on Core and Medical. Time Call Cleared reads Incident clear time, then the latest Resources clear time. Total Personnel On-Scene counts the people selected on Resources units that were not canceled en route.
 - 2026-11-01 — Follow-up on the same branch. The report tab is named Motor Vehicle Collision. The Recovery Hub heading, the export sentence, the required/recommended legend, and the colored field bars are removed. Copy from Person/Owner copies people and vehicles even when a vehicle has no person link.
+- 2026-11-01 — Wave 3 done on `cursor/stage-b-foundation-b5ff` (practice only). Submit reads the Exported report plus the NERIS receipt. The vendor JSON keeps the full NERIS code, sends two parties, clears insurance when Uninsured is checked, and counts selected personnel. Missing required billing fields are refused before any vendor call. `npm test` (40) passed against local `fu_session_test` only. Not deployed. Next is Wave 4 after review.
 
 ---
 

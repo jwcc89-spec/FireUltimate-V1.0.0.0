@@ -3765,6 +3765,18 @@ body.resource-personnel-modal-open {
   margin-bottom: 0.8rem;
 }
 
+.fr-party-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.fr-party-heading h3 {
+  margin: 0;
+}
+
 .fr-delete-party {
   color: #b91c1c;
 }

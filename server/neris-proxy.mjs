@@ -16,7 +16,9 @@ import {
 } from "./cadDispatchRuleEngine.mjs";
 import { cadIngestGuard, configuredCadIngestSecret } from "./cad/ingestGuard.mjs";
 import {
-  buildNerisIncidentForBillingPayload,
+  buildFireRecoveryPayload,
+  isMotorVehicleIncident,
+  missingFireRecoveryFields,
   extractIncidentMetadataFromExportPayload,
 } from "./fireRecoveryMapping.mjs";
 import {
@@ -224,6 +226,21 @@ const NERIS_STATE_NAME_TO_CODE = {
 
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
+
+function chicagoLocalStamp(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type) => parts.find((entry) => entry.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
 
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -4126,11 +4143,60 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
       return;
     }
 
-    const meta = extractIncidentMetadataFromExportPayload(parsed);
-    const frBody = buildNerisIncidentForBillingPayload(parsed, latestOk, {
-      nerisDepartmentId: department.departmentId,
-      departmentName: dept,
+    const draft = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
     });
+    const draftPayload =
+      draft?.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload) ? draft.payload : null;
+    if (trimValue(draftPayload?.reportStatus) !== "Exported") {
+      response.status(400).json({
+        ok: false,
+        message: "Export this report to NERIS first.",
+      });
+      return;
+    }
+    const formValues =
+      draftPayload.formValues && typeof draftPayload.formValues === "object" && !Array.isArray(draftPayload.formValues)
+        ? draftPayload.formValues
+        : {};
+    if (!isMotorVehicleIncident(formValues.primary_incident_type, formValues.additional_incident_types)) {
+      response.status(400).json({
+        ok: false,
+        message: "Fire Recovery billing is only for a motor-vehicle incident.",
+      });
+      return;
+    }
+    const departmentDetails = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const requirementSettings =
+      departmentDetails?.payloadJson && typeof departmentDetails.payloadJson === "object"
+        ? departmentDetails.payloadJson.fireRecoveryFieldRequirements
+        : null;
+    const missing = missingFireRecoveryFields(formValues, requirementSettings, latestOk.reportWriterName);
+    if (missing.length > 0) {
+      response.status(400).json({
+        ok: false,
+        message: `Fire Recovery billing is missing required fields: ${missing.join("; ")}.`,
+      });
+      return;
+    }
+
+    const meta = extractIncidentMetadataFromExportPayload({ formValues });
+    const frBody = buildFireRecoveryPayload(
+      formValues,
+      {
+        nerisId,
+        reportWriterName: latestOk.reportWriterName,
+        callNumber,
+      },
+      {
+        departmentId: department.departmentId,
+        departmentName: dept,
+      },
+      { submittedAt: chicagoLocalStamp(new Date()) },
+    );
 
     const jwt = await getFireRecoveryJwt(credentials);
     const { trackingId } = await postAddNerisIncidentForBilling(jwt, frBody);

@@ -4,13 +4,14 @@ import { describe, it } from "node:test";
 import {
   billingValidationIssueLabels,
   callClearedValue,
+  copyIntoParty,
   copyPartiesFromPersonOwner,
+  createParty,
   displayClock,
   findBillingGaps,
   incidentLocationParts,
   isFireRecoveryBillable,
   onScenePersonnel,
-  createParty,
   parseBilling,
   parseRequirementSettings,
   requirementLevel,
@@ -80,6 +81,29 @@ describe("fire recovery billing requirements", () => {
     assert.equal(parties[1]?.firstName, "");
     assert.equal(parties[1]?.vehicleMake, "Skip");
     assert.equal(JSON.stringify(parties).includes("person:"), false);
+  });
+
+  it("copies one selected person into an existing party", () => {
+    const party = copyIntoParty(
+      createParty("p1"),
+      person,
+      {
+        personsInvolved: ["person:0"],
+        vehicleMake: "Ford",
+        model: "Focus",
+        year: "2018",
+        vin: "",
+        licensePlate: "",
+        uninsured: false,
+        insuranceCompanyName: "Acme",
+        policyNumber: "",
+        insuranceCompanyPhone: "",
+      },
+    );
+    assert.equal(party.id, "p1");
+    assert.equal(party.firstName, "Ada");
+    assert.equal(party.vehicleMake, "Ford");
+    assert.equal(JSON.stringify(party).includes("person:"), false);
   });
 
   it("pairs people with vehicles when the vehicle has no person link", () => {

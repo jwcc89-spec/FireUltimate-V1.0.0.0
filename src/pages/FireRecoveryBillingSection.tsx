@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { NerisFlatSingleOptionSelect } from "../NerisFlatSelects";
 import { getNerisValueOptions } from "../nerisMetadata";
 import {
-  copyPartiesFromPersonOwner,
+  copyIntoParty,
   createParty,
   callClearedValue,
   displayClock,
@@ -50,9 +50,9 @@ export function FireRecoveryBillingSection({
   requirementSettings,
 }: FireRecoveryBillingSectionProps) {
   const billing = useMemo(() => parseBilling(rawJson), [rawJson]);
-  const [replaceAsk, setReplaceAsk] = useState(false);
   const [deleteAskId, setDeleteAskId] = useState("");
   const [copyNote, setCopyNote] = useState("");
+  const [copyTargetId, setCopyTargetId] = useState("");
 
   const location = incidentLocationParts(formValues);
   const personnel = onScenePersonnel(formValues.resource_units_json ?? "");
@@ -71,16 +71,34 @@ export function FireRecoveryBillingSection({
     });
   };
 
-  const applyCopy = () => {
-    const parties = copyPartiesFromPersonOwner(persons, owners, vehicles);
-    if (parties.length === 0) {
-      setCopyNote("No people or vehicles were found on Person/Owner.");
-      setReplaceAsk(false);
-      return;
-    }
-    write({ ...billing, parties });
+  const copyChoices = useMemo(() => {
+    const personChoices = persons.map((person, index) => ({
+      value: `person:${index}`,
+      label: [person.firstName, person.lastName].filter((part) => part.trim()).join(" ") || `Person ${index + 1}`,
+    }));
+    const ownerChoices = owners.map((owner, index) => ({
+      value: `owner:${index}`,
+      label: [owner.firstName, owner.lastName].filter((part) => part.trim()).join(" ") || `Owner ${index + 1}`,
+    }));
+    return [...personChoices, ...ownerChoices];
+  }, [owners, persons]);
+
+  const copySelectionIntoParty = (partyId: string, ref: string) => {
+    const [kind, rawIndex] = ref.split(":");
+    const index = Number.parseInt(rawIndex ?? "", 10);
+    const contact = kind === "owner" ? owners[index] : persons[index];
+    if (!contact) return;
+    const linked =
+      vehicles.find((vehicle) => vehicle.personsInvolved.includes(ref)) ??
+      (kind === "person" ? vehicles[index] ?? null : null);
+    write({
+      ...billing,
+      parties: billing.parties.map((party) =>
+        party.id === partyId ? copyIntoParty(party, contact, linked) : party,
+      ),
+    });
+    setCopyTargetId("");
     setCopyNote("");
-    setReplaceAsk(false);
   };
 
   const level = (key: FireRecoveryRequirementKey) => requirementLevel(key, requirementSettings);
@@ -182,18 +200,6 @@ export function FireRecoveryBillingSection({
       <div className="fr-party-actions">
         <button
           type="button"
-          className="secondary-button compact-button"
-          disabled={readOnly}
-          onClick={() => {
-            setCopyNote("");
-            if (billing.parties.length > 0) setReplaceAsk(true);
-            else applyCopy();
-          }}
-        >
-          Copy from Person/Owner
-        </button>
-        <button
-          type="button"
           className="primary-button compact-button"
           disabled={readOnly}
           onClick={() => write({ ...billing, parties: [...billing.parties, createParty()] })}
@@ -201,22 +207,41 @@ export function FireRecoveryBillingSection({
           Add Party
         </button>
       </div>
-      {replaceAsk ? (
-        <p>
-          Replace the current parties?{" "}
-          <button type="button" className="primary-button compact-button" onClick={applyCopy}>
-            Replace
-          </button>{" "}
-          <button type="button" className="secondary-button compact-button" onClick={() => setReplaceAsk(false)}>
-            Cancel
-          </button>
-        </p>
-      ) : null}
       {copyNote ? <p className="field-hint">{copyNote}</p> : null}
 
       {billing.parties.map((party, index) => (
         <article key={party.id} className="fr-party-card">
-          <h3>PARTY {index + 1}</h3>
+          <div className="fr-party-heading">
+            <h3>PARTY {index + 1}</h3>
+            <button
+              type="button"
+              className="secondary-button compact-button"
+              disabled={readOnly}
+              onClick={() => {
+                if (copyChoices.length === 0) {
+                  setCopyNote("No people or owners were found on Person/Owner.");
+                  setCopyTargetId("");
+                  return;
+                }
+                setCopyNote("");
+                setCopyTargetId(party.id);
+              }}
+            >
+              Copy from Person/Owner
+            </button>
+          </div>
+          {copyTargetId === party.id ? (
+            <NerisFlatSingleOptionSelect
+              inputId={`fr-copy-${party.id}`}
+              value=""
+              options={copyChoices}
+              disabled={readOnly}
+              usePortal
+              placeholder="Select a person or owner"
+              searchPlaceholder="Search people"
+              onChange={(nextValue) => copySelectionIntoParty(party.id, nextValue)}
+            />
+          ) : null}
           <div className="fr-party-columns">
             <div>
               <PartyText party={party} field="firstName" label="First Name" level={level("fr.party.firstName")} readOnly={readOnly} onChange={updateParty} />

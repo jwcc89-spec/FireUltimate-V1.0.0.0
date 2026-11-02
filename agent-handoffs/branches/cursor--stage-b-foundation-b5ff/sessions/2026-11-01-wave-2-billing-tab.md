@@ -47,8 +47,12 @@
 - The NERIS section label is Motor Vehicle Collision. The helper sentence, the "Create Motor Vehicle Incident for {department}" heading, the required/recommended legend, and the red and orange field bars are removed.
 - Copy from Person/Owner makes one party per vehicle and fills the name from the vehicle's person link. If that link is missing, it uses the next person or owner. People who are not paired with a vehicle are copied as extra parties. A vehicle with no people is still copied.
 
+## Follow-up: per-party copy and Wave 3
+- Each party card has Copy from Person/Owner. The person picks one person or owner. A linked vehicle fills the vehicle fields. The old Replace-all button is gone.
+- Wave 3: `buildFireRecoveryPayload` in `server/fireRecoveryMapping.mjs`. Submit loads the Exported draft. Missing required fields return 400 before the vendor call. Tests: `server/fireRecoveryMapping.test.mjs`. `npm test` 40 passed on local `fu_session_test`.
+
 ## Next
-1. Wait for the user's review of Wave 2.
-2. After they say to continue, start Wave 3 (read the exported draft, rewrite the mapping, enforce required fields on the server). Stay on this branch. Pull first.
+1. Wait for the user's review of Wave 3.
+2. After they say to continue, start Wave 4 (preview, lock, submit status columns). Stay on this branch. Pull first.
 3. Do not create the Render settings until Wave 7.
 4. Do not run `npm run db:seed`. Do not ask for the staging password.
