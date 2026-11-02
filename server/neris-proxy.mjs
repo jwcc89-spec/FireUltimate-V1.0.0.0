@@ -3522,7 +3522,8 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
         }
       }
       if (previousStatus !== "Draft") {
-        if (contentChanges.length > 0 || (nextStatus !== previousStatus && nextStatus !== "Exported")) {
+        const markingExported = nextStatus === "Exported" && previousStatus !== "Exported";
+        if (!markingExported && (contentChanges.length > 0 || nextStatus !== previousStatus)) {
           response.status(409).json({ ok: false, code: "REPORT_LOCKED", message: REPORT_LOCKED_MESSAGE });
           return;
         }
@@ -4150,7 +4151,8 @@ async function prepareFireRecoveryBill(request) {
   });
   const draftPayload =
     draft?.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload) ? draft.payload : null;
-  if (trimValue(draftPayload?.reportStatus) !== "Exported") {
+  const draftStatus = trimValue(draftPayload?.reportStatus);
+  if (draftStatus !== "Exported" && draftStatus !== "In Review") {
     return { ok: false, status: 400, message: "Export this report to NERIS first." };
   }
   const formValues =
