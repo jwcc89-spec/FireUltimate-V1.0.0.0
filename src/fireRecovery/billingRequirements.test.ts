@@ -72,12 +72,41 @@ describe("fire recovery billing requirements", () => {
         },
       ],
     );
-    assert.equal(parties.length, 1);
+    assert.equal(parties.length, 2);
     assert.equal(parties[0]?.firstName, "Ada");
     assert.equal(parties[0]?.lastName, "Lane");
     assert.equal(parties[0]?.vehicleMake, "Ford");
     assert.equal(parties[0]?.insuranceCompany, "Acme");
+    assert.equal(parties[1]?.firstName, "");
+    assert.equal(parties[1]?.vehicleMake, "Skip");
     assert.equal(JSON.stringify(parties).includes("person:"), false);
+  });
+
+  it("pairs people with vehicles when the vehicle has no person link", () => {
+    const parties = copyPartiesFromPersonOwner(
+      [person, { ...person, firstName: "Bo", lastName: "Kim" }],
+      [{ ...person, firstName: "Owner", lastName: "One", insuranceCompany: "Owner Mutual" }],
+      [
+        {
+          personsInvolved: [],
+          vehicleMake: "Ford",
+          model: "Focus",
+          year: "",
+          vin: "",
+          licensePlate: "",
+          uninsured: false,
+          insuranceCompanyName: "Acme",
+          policyNumber: "",
+          insuranceCompanyPhone: "",
+        },
+      ],
+    );
+    assert.equal(parties[0]?.firstName, "Ada");
+    assert.equal(parties[0]?.vehicleMake, "Ford");
+    assert.equal(parties[0]?.insuranceCompany, "Acme");
+    assert.equal(parties[1]?.firstName, "Bo");
+    assert.equal(parties[2]?.firstName, "Owner");
+    assert.equal(parties[2]?.insuranceCompany, "Owner Mutual");
   });
 
   it("counts distinct people selected on Resources and skips a canceled unit", () => {

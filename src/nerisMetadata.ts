@@ -146,8 +146,8 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   },
   {
     id: "fireRecoveryBilling",
-    label: "Fire Recovery Billing",
-    helper: "Billing details for a motor-vehicle incident. NERIS export does not send this section.",
+    label: "Motor Vehicle Collision",
+    helper: "",
   },
   {
     id: "emergingHazards",
@@ -2353,10 +2353,10 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   {
     id: "fire_recovery_billing_json",
     sectionId: "fireRecoveryBilling",
-    label: "Fire Recovery Billing",
+    label: "Motor Vehicle Collision",
     inputKind: "textarea",
     layout: "full",
-    helperText: "Stored with the report. NERIS export ignores this field.",
+    helperText: "",
   },
   ...NERIS_SECTION_NOTE_FIELDS,
 ];

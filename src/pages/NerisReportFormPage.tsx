@@ -4612,7 +4612,7 @@ function NerisReportFormPage({
 
     const billingRows = billingPrintRows(String(formValues.fire_recovery_billing_json ?? ""), formValues);
     if (billingRows.length > 0) {
-      sections.push({ id: "fireRecoveryBillingSummary", title: "Fire Recovery Billing", rows: billingRows });
+      sections.push({ id: "fireRecoveryBillingSummary", title: "Motor Vehicle Collision", rows: billingRows });
     }
 
     return sections;
@@ -8548,6 +8548,7 @@ function NerisReportFormPage({
                     city: owner.address.city,
                     state: owner.address.state,
                     zip: owner.address.zipCode,
+                    insuranceCompany: owner.insuranceCompany,
                   }),
                 )}
                 vehicles={personOwnerVehicles.map(

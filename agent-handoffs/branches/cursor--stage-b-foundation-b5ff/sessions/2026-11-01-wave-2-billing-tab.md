@@ -43,6 +43,10 @@
 - Time Call Cleared reads Incident clear time first. If that is blank, it uses the latest clear time on a Resources unit that was not canceled. If that is also blank, it uses Incident Times unit clear time.
 - Total Personnel On-Scene counts distinct people selected on Resources units that were not canceled en route.
 
+## Follow-up: tab name and copy
+- The NERIS section label is Motor Vehicle Collision. The helper sentence, the "Create Motor Vehicle Incident for {department}" heading, the required/recommended legend, and the red and orange field bars are removed.
+- Copy from Person/Owner makes one party per vehicle and fills the name from the vehicle's person link. If that link is missing, it uses the next person or owner. People who are not paired with a vehicle are copied as extra parties. A vehicle with no people is still copied.
+
 ## Next
 1. Wait for the user's review of Wave 2.
 2. After they say to continue, start Wave 3 (read the exported draft, rewrite the mapping, enforce required fields on the server). Stay on this branch. Pull first.

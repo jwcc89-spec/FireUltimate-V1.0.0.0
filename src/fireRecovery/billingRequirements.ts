@@ -109,6 +109,7 @@ export type CopyContact = {
   city: string;
   state: string;
   zip: string;
+  insuranceCompany?: string;
 };
 
 export type CopyVehicle = {
@@ -270,17 +271,28 @@ export function serializeBilling(billing: FireRecoveryBilling): string {
   return JSON.stringify(billing);
 }
 
-function contactAt(list: CopyContact[], index: number): CopyContact | null {
-  if (!Number.isInteger(index) || index < 0 || index >= list.length) return null;
-  return list[index] ?? null;
+function applyContact(party: FireRecoveryParty, contact: CopyContact | null) {
+  if (!contact) return;
+  party.firstName = text(contact.firstName);
+  party.lastName = text(contact.lastName);
+  party.phone = text(contact.phone);
+  party.street = text(contact.street);
+  party.city = text(contact.city);
+  party.state = text(contact.state);
+  party.zip = text(contact.zip);
+  if (!party.insuranceCompany) party.insuranceCompany = text(contact.insuranceCompany);
 }
 
-function contactFromRef(ref: string, persons: CopyContact[], owners: CopyContact[]): CopyContact | null {
-  const [kind, rawIndex] = ref.split(":");
-  const index = Number.parseInt(rawIndex ?? "", 10);
-  if (kind === "person") return contactAt(persons, index);
-  if (kind === "owner") return contactAt(owners, index);
-  return null;
+function applyVehicle(party: FireRecoveryParty, vehicle: CopyVehicle) {
+  party.vehicleMake = text(vehicle.vehicleMake);
+  party.vehicleModel = text(vehicle.model);
+  party.vehicleYear = text(vehicle.year);
+  party.vin = text(vehicle.vin);
+  party.licensePlate = text(vehicle.licensePlate);
+  party.uninsured = vehicle.uninsured === true;
+  party.insuranceCompany = vehicle.uninsured ? "" : text(vehicle.insuranceCompanyName) || party.insuranceCompany;
+  party.policyNumber = text(vehicle.policyNumber);
+  party.insuranceContactNumber = text(vehicle.insuranceCompanyPhone);
 }
 
 export function copyPartiesFromPersonOwner(
@@ -289,29 +301,57 @@ export function copyPartiesFromPersonOwner(
   vehicles: CopyVehicle[],
 ): FireRecoveryParty[] {
   const parties: FireRecoveryParty[] = [];
+  const used = new Set<string>();
+  const claim = (kind: "person" | "owner", index: number): CopyContact | null => {
+    const list = kind === "person" ? persons : owners;
+    const key = `${kind}:${index}`;
+    if (used.has(key) || index < 0 || index >= list.length) return null;
+    used.add(key);
+    return list[index] ?? null;
+  };
+  const claimRef = (ref: string): CopyContact | null => {
+    const [kind, rawIndex] = text(ref).split(":");
+    const index = Number.parseInt(rawIndex ?? "", 10);
+    if (kind !== "person" && kind !== "owner") return null;
+    return claim(kind, index);
+  };
+  const claimNext = (): CopyContact | null => {
+    for (let index = 0; index < persons.length; index += 1) {
+      const contact = claim("person", index);
+      if (contact) return contact;
+    }
+    for (let index = 0; index < owners.length; index += 1) {
+      const contact = claim("owner", index);
+      if (contact) return contact;
+    }
+    return null;
+  };
+
   for (const vehicle of vehicles) {
     const involved = Array.isArray(vehicle.personsInvolved) ? vehicle.personsInvolved : [];
-    if (involved.length === 0) continue;
-    const contact = contactFromRef(text(involved[0]), persons, owners);
+    let contact: CopyContact | null = null;
+    for (const ref of involved) {
+      contact = claimRef(ref);
+      if (contact) break;
+    }
+    if (!contact) contact = claimNext();
     const party = createParty();
-    party.firstName = text(contact?.firstName);
-    party.lastName = text(contact?.lastName);
-    party.phone = text(contact?.phone);
-    party.street = text(contact?.street);
-    party.city = text(contact?.city);
-    party.state = text(contact?.state);
-    party.zip = text(contact?.zip);
-    party.vehicleMake = text(vehicle.vehicleMake);
-    party.vehicleModel = text(vehicle.model);
-    party.vehicleYear = text(vehicle.year);
-    party.vin = text(vehicle.vin);
-    party.licensePlate = text(vehicle.licensePlate);
-    party.uninsured = vehicle.uninsured === true;
-    party.insuranceCompany = vehicle.uninsured ? "" : text(vehicle.insuranceCompanyName);
-    party.policyNumber = text(vehicle.policyNumber);
-    party.insuranceContactNumber = text(vehicle.insuranceCompanyPhone);
+    applyContact(party, contact);
+    applyVehicle(party, vehicle);
     parties.push(party);
   }
+
+  const addLeftovers = (kind: "person" | "owner", list: CopyContact[]) => {
+    list.forEach((_, index) => {
+      const contact = claim(kind, index);
+      if (!contact) return;
+      const party = createParty();
+      applyContact(party, contact);
+      parties.push(party);
+    });
+  };
+  addLeftovers("person", persons);
+  addLeftovers("owner", owners);
   return parties;
 }
 
@@ -517,7 +557,7 @@ export function billingValidationIssueLabels(
   const gaps = findBillingGaps(parseBilling(formValues.fire_recovery_billing_json ?? ""), formValues, settings, "", {
     omitFiledBy: true,
   });
-  return gaps.required.map((entry) => `Fire Recovery Billing - ${entry.label}`);
+  return gaps.required.map((entry) => `Motor Vehicle Collision - ${entry.label}`);
 }
 
 export function billingPrintRows(
