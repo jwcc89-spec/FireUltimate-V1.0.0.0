@@ -34,3 +34,12 @@ Also still parked from earlier: Recover Reports, the incident Status list (Draft
 Production is still the older program, plus the one-line admin-key fix from earlier the same day. A production update needs its own backup, its own database steps, the Crescent sender saved first, and a separate yes from you. That pass was not started.
 
 The practice copy of the docs is ahead of the staging program by notes only. Those notes were not pushed onto the staging branch, so staging does not rebuild just because the notes were saved.
+
+## Later the same day — Fire Recovery on the practice branch
+Wave 1 and Wave 2 are on `cursor/stage-b-foundation-b5ff` only. Staging and production were not updated.
+
+Wave 1: Fire Recovery stays off unless the server setting `FIRE_RECOVERY_MODE` is `sandbox` or `live`. The settings screen shows a sentence. There is no on/off switch.
+
+Wave 2: a motor-vehicle NERIS report has a Fire Recovery Billing section after Person/Owner. NERIS export does not send that section. The vendor still receives the old short bill. Wave 3 has not started.
+
+On this Mac, `http://localhost:5173` writes the staging database. Do not click Save Fire Recovery, and do not send a bill from that site. Sign in as `demo` with the staging password. That password is not the word `demo`.

@@ -38,14 +38,14 @@ October 31 session files stay as history. They still say "not released." That wa
 - Do not merge to `main`. Do not fast-forward `submenu/neris-golive-cifpd`.
 - Do not touch production, `fireultimate-prod`, or `fireultimate-api-prod`.
 - Do not rebuild Stage B, security fixes 1–14, Part 0, or the Allowed Senders screen. They are on staging.
-- Do not start Step 15, the Fire Recovery email, or Recover Reports. Do not create `FIRE_RECOVERY_CREDENTIAL_KEY` on Render. Do not save a Fire Recovery password in production.
+- Wave 2 (the Fire Recovery Billing tab) is built on this practice branch. Do not start Wave 3 until the user reviews Wave 2. Do not create `FIRE_RECOVERY_CREDENTIAL_KEY` or `FIRE_RECOVERY_MODE` on Render. Do not save a Fire Recovery password in production. Do not build Recover Reports.
 - Do not build the parked items: incident Status (drop Draft), Configure Table drag, left-menu hiding, canceled-en-route time fill, or per-user Edit My Display.
 - Do not upgrade Prisma. Stay on 7.10.1. Do not change `.npmrc` `engine-strict=true`. Do not raise Render to Node 22.
 - Staging build command that works on Node 20.19: `npm ci --engine-strict=false && npm run build`. Do not add a dashboard `NODE_ENV` variable. Render already sets `NODE_ENV=production` for the running server only.
 - Do not put auth secrets in `DepartmentDetails.payloadJson`.
 - Keep the demo tenant persistent. Do not run seed or `migrate reset`.
 - Tests use only `postgresql://fu:fu@127.0.0.1:5432/fu_session_test?sslmode=disable`. Never Neon.
-- Practice sign-in is `demo` / `demo` on local `fu_practice` only. Do not use `demo` / `demo` on staging.
+- This Mac’s `.env.server` points the local API at the staging Neon database. Username `demo` uses the staging password. That password is not the word `demo`. Do not run `npm run db:seed`. Do not ask the user to paste the password.
 - Do not delete Crescent's staging sender `dispatch@co.iroquois.il.us` (id `allow-cifpdil-dispatch-20261101`). CAD mailbox is `cifpdil@cad.fireultimate.app`.
 - Leave Neon branch `backup-2026-11-01-before-stage-b` alone.
 - The user cannot paste into the terminal. Practice screens are `http://localhost:5173` in the remote desktop browser. Do not send them to port 8787 for the app.
@@ -77,7 +77,7 @@ Before doing any feature work, understand the Branch Rules:
    - parked: Recover Reports, incident Status (unit status, drop Draft later), Configure Table drag, left-menu hiding, canceled-en-route time fill, per-user Edit My Display
    - Now vs Later
 6) Follow beginner-friendly communication: numbered where / click / type / expect. 24-hour time. I cannot paste into the terminal.
-7) Practice site: http://localhost:5173 (Vite). Sign in demo / demo unless I changed it. Do not restart the practice proxy unless it is down or I am locked out.
+7) Practice site: http://localhost:5173 (Vite). On this Mac the API uses the staging database. Sign in as demo with the staging password. Do not restart the practice proxy unless it is down or I am locked out.
 8) After meaningful changes:
    - update this session's single note in agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/
    - keep ACTIVE_CONTEXT.md current

@@ -1,7 +1,7 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 1 is done on the practice branch. Next is Wave 2, after review. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-01, about 5:45 p.m. America/Chicago.
+**Status:** Wave 2 is done on the practice branch. Next is Wave 3, after review. Q5 (vendor) still waits. Render, Neon, and production were not changed.
+**Updated:** 2026-11-01, about 7:15 p.m. America/Chicago.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
 
@@ -451,13 +451,13 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - **Done when:** tests pass, and no code path can send a non-sandbox ID while the mode is `sandbox`.
 
 ### Wave 2 — Fire Recovery Billing tab (§5, §6)
-- [ ] Shared requirements module plus unit tests.
-- [ ] `fire_recovery_billing_json` metadata in `src/nerisMetadata.ts`.
-- [ ] Tab UI in `NerisReportFormPage.tsx`, shown only for the D-2 types and read-only when locked.
-- [ ] Copy from Person/Owner (resolve names at copy time; bug 2.1.6).
-- [ ] Print summary block.
-- [ ] Admin NERIS Required Fields: "Fire Recovery Billing" group saved as `fireRecoveryFieldRequirements`.
-- [ ] Confirm the NERIS export payload is unchanged (compare `buildIncidentPayload` output before and after on a test report).
+- [x] Shared requirements module plus unit tests.
+- [x] `fire_recovery_billing_json` metadata in `src/nerisMetadata.ts`.
+- [x] Tab UI in `NerisReportFormPage.tsx`, shown only for the D-2 types and read-only when locked.
+- [x] Copy from Person/Owner (resolve names at copy time; bug 2.1.6).
+- [x] Print summary block.
+- [x] Admin NERIS Required Fields: "Fire Recovery Billing" group saved as `fireRecoveryFieldRequirements`.
+- [x] Confirm the NERIS export payload is unchanged (compare `buildIncidentPayload` output before and after on a test report).
 - **Done when:** a two-party vehicle accident can be filled, saved, printed and exported to NERIS with billing fields empty, and the chip shows what is missing.
 
 ### Wave 3 — Mapping and data source (§7.1–7.3)
@@ -631,6 +631,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 
 - 2026-11-01 — Plan written. Vendor docs saved (`docs/procedures/vendor/`). Blank Recovery Hub screenshot saved (`docs/plans/assets/phase-c-fire-recovery/`). Billing agreement confirmed. Render keys not yet created on staging or production.
 - 2026-11-01 — Wave 1 done on `cursor/stage-b-foundation-b5ff` (practice only). Submit reads `FIRE_RECOVERY_MODE`: `sandbox` always sends `FD12345678`; `live` sends the department NERIS Entity ID and refuses `FD12345678`; unset or anything else refuses and does not call Fire Recovery. Settings GET and PATCH return `mode`, `departmentId`, and `banner`. The Fire Recovery settings screen shows that line. `npm run lint`, `npm run build`, and `npm test` (27) passed against local `fu_session_test` only. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 2 after review.
+- 2026-11-01 — Wave 2 done on `cursor/stage-b-foundation-b5ff` (practice only). A motor-vehicle NERIS report shows a Fire Recovery Billing section after Person/Owner. The section stores `fire_recovery_billing_json`, copies Person/Owner names at copy time, prints a summary, and is read-only when the report is In Review or Exported. Admin NERIS Required Fields can save `fireRecoveryFieldRequirements`. `server/neris-proxy.mjs` does not read the billing field, so NERIS export stays unchanged. `npm run lint`, `npm run build`, and `npm test` (33) passed against local `fu_session_test` only. The billing tab was not clicked in a browser. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 3 after review.
 
 ---
 

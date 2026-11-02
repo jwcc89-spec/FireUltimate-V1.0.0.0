@@ -31,6 +31,13 @@ import {
 } from "../nerisMetadata";
 import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowlist";
 import {
+  billingPrintRows,
+  isFireRecoveryBillable,
+  type CopyContact,
+  type CopyVehicle,
+} from "../fireRecovery/billingRequirements";
+import { FireRecoveryBillingSection } from "./FireRecoveryBillingSection";
+import {
   buildNarrativeFromTemplate,
   formatNerisValueForNarrative,
   type NarrativeTemplate,
@@ -1632,13 +1639,19 @@ function NerisReportFormPage({
           primaryIncidentCategory === "HAZSIT" || primaryIncidentCategory === "HAZMAT"
         );
       }
+      if (section.id === "fireRecoveryBilling") {
+        return isFireRecoveryBillable(
+          formValues.primary_incident_type ?? "",
+          formValues.additional_incident_types ?? "",
+        );
+      }
       return true;
     });
     if (showRequiredOnly) {
       sections = sections.filter((section) => {
         // This section is client-only (not NERIS required fields), but should remain visible
         // even when the user toggles "Show required fields only".
-        if (section.id === "personOwner") return true;
+        if (section.id === "personOwner" || section.id === "fireRecoveryBilling") return true;
         const fields = getNerisFieldsForSection(section.id);
         return fields.some((field) =>
           isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
@@ -4427,6 +4440,7 @@ function NerisReportFormPage({
       const fields = getNerisFieldsForSection(section.id);
       const rows: PrintSummaryRow[] = [];
       for (const field of fields) {
+        if (field.id === "fire_recovery_billing_json") continue;
         const raw = String(formValues[field.id] ?? "");
         const formatted = formatFieldValueForPrint(field, raw);
         if (!formatted) continue;
@@ -4568,6 +4582,11 @@ function NerisReportFormPage({
           rows: [{ label: "People (raw)", value: raw }],
         });
       }
+    }
+
+    const billingRows = billingPrintRows(String(formValues.fire_recovery_billing_json ?? ""), formValues);
+    if (billingRows.length > 0) {
+      sections.push({ id: "fireRecoveryBillingSummary", title: "Fire Recovery Billing", rows: billingRows });
     }
 
     return sections;
@@ -8478,7 +8497,52 @@ function NerisReportFormPage({
                 ) : null}
               </div>
             ) : null}
-            {currentSection.id !== "personOwner"
+            {currentSection.id === "fireRecoveryBilling" ? (
+              <FireRecoveryBillingSection
+                rawJson={formValues.fire_recovery_billing_json ?? ""}
+                formValues={formValues}
+                readOnly={reportStatus === "In Review" || reportStatus === "Exported"}
+                persons={personOwnerPersons.map(
+                  (person): CopyContact => ({
+                    firstName: person.firstName,
+                    lastName: person.lastName,
+                    phone: person.phone,
+                    street: person.address.streetHighwayName,
+                    city: person.address.city,
+                    state: person.address.state,
+                    zip: person.address.zipCode,
+                  }),
+                )}
+                owners={personOwnerOwners.map(
+                  (owner): CopyContact => ({
+                    firstName: owner.firstName,
+                    lastName: owner.lastName,
+                    phone: owner.phone,
+                    street: owner.address.streetHighwayName,
+                    city: owner.address.city,
+                    state: owner.address.state,
+                    zip: owner.address.zipCode,
+                  }),
+                )}
+                vehicles={personOwnerVehicles.map(
+                  (vehicle): CopyVehicle => ({
+                    personsInvolved: vehicle.personsInvolved,
+                    vehicleMake: vehicle.vehicleMake,
+                    model: vehicle.model,
+                    year: vehicle.year,
+                    vin: vehicle.vin,
+                    licensePlate: vehicle.licensePlate,
+                    uninsured: vehicle.uninsured,
+                    insuranceCompanyName: vehicle.insuranceCompanyName,
+                    policyNumber: vehicle.policyNumber,
+                    insuranceCompanyPhone: vehicle.insuranceCompanyPhone,
+                  }),
+                )}
+                onChange={(json) => updateFieldValue("fire_recovery_billing_json", json)}
+                onOpenSection={(sectionId) => setActiveSectionId(sectionId)}
+              />
+            ) : null}
+            {currentSection.id !== "personOwner" && currentSection.id !== "fireRecoveryBilling"
               ? displayedSectionFieldsFiltered.flatMap((field) => {
                   const nodes: ReactNode[] = [];
                   const headingLabel =

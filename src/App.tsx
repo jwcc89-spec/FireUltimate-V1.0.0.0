@@ -107,6 +107,12 @@ import {
   type NerisFormValues,
   type NerisValueOption,
 } from "./nerisMetadata";
+import {
+  FIRE_RECOVERY_REQUIREMENT_ROWS,
+  parseRequirementSettings,
+  type FireRecoveryRequirementKey,
+  type RequirementLevel,
+} from "./fireRecovery/billingRequirements";
 import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
@@ -6398,6 +6404,7 @@ type PersonnelSortColumn =
 
 function NerisRequiredFieldsAdminPage() {
   const [overrideIds, setOverrideIds] = useState<Set<string>>(new Set());
+  const [billingLevels, setBillingLevels] = useState<Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>>({});
   const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "done" | "error">("loading");
   const [saveStatus, setSaveStatus] = useState<string>("");
 
@@ -6411,6 +6418,7 @@ function NerisRequiredFieldsAdminPage() {
           ? (raw as string[]).map((id) => String(id ?? "").trim()).filter(Boolean)
           : [];
         setOverrideIds(new Set(list));
+        setBillingLevels(parseRequirementSettings(data.fireRecoveryFieldRequirements));
         setLoadStatus("done");
       })
       .catch(() => setLoadStatus("error"));
@@ -6431,7 +6439,11 @@ function NerisRequiredFieldsAdminPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
         const data = json?.data ?? {};
-        const payload = { ...data, nerisRequiredFieldOverrides: Array.from(overrideIds) };
+        const payload = {
+          ...data,
+          nerisRequiredFieldOverrides: Array.from(overrideIds),
+          fireRecoveryFieldRequirements: billingLevels,
+        };
         return fetch("/api/department-details", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -6452,7 +6464,7 @@ function NerisRequiredFieldsAdminPage() {
         }
       })
       .catch(() => setSaveStatus("Save failed."));
-  }, [overrideIds]);
+  }, [overrideIds, billingLevels]);
 
   return (
     <section className="page-section">
@@ -6475,7 +6487,9 @@ function NerisRequiredFieldsAdminPage() {
       {loadStatus === "done" && (
         <div className="panel-grid">
           {NERIS_FORM_SECTIONS.map((section) => {
-            const fields = getNerisFieldsForSection(section.id);
+            const fields = getNerisFieldsForSection(section.id).filter(
+              (field) => field.id !== "fire_recovery_billing_json",
+            );
             if (fields.length === 0) return null;
             return (
               <section key={section.id} className="panel">
@@ -6524,6 +6538,39 @@ function NerisRequiredFieldsAdminPage() {
               </section>
             );
           })}
+          <section className="panel">
+            <h2>Fire Recovery Billing</h2>
+            <p className="field-hint">
+              These choices apply to every party. Is Resident stays Recommended until a department sets it to Required.
+            </p>
+            <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+              {FIRE_RECOVERY_REQUIREMENT_ROWS.map((row) => {
+                const selected = billingLevels[row.key] ?? row.defaultLevel;
+                return (
+                  <li key={row.key} style={{ marginBottom: "0.75rem", maxWidth: "28rem" }}>
+                    <label htmlFor={`fr-level-${row.key}`}>{row.label}</label>
+                    <NerisFlatSingleOptionSelect
+                      inputId={`fr-level-${row.key}`}
+                      value={selected}
+                      options={[
+                        { value: "required", label: "Required" },
+                        { value: "recommended", label: "Recommended" },
+                        { value: "optional", label: "Optional" },
+                      ]}
+                      usePortal
+                      onChange={(nextValue) => {
+                        const level: RequirementLevel =
+                          nextValue === "required" || nextValue === "recommended" || nextValue === "optional"
+                            ? nextValue
+                            : row.defaultLevel;
+                        setBillingLevels((previous) => ({ ...previous, [row.key]: level }));
+                      }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         </div>
       )}
     </section>

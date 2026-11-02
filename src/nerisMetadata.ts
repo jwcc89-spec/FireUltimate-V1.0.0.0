@@ -3,6 +3,7 @@ export type NerisSectionId =
   | "narrative"
   | "location"
   | "personOwner"
+  | "fireRecoveryBilling"
   | "incidentTimes"
   | "resources"
   | "emergingHazards"
@@ -142,6 +143,11 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
     id: "personOwner",
     label: "Person/Owner",
     helper: "",
+  },
+  {
+    id: "fireRecoveryBilling",
+    label: "Fire Recovery Billing",
+    helper: "Billing details for a motor-vehicle incident. NERIS export does not send this section.",
   },
   {
     id: "emergingHazards",
@@ -2344,6 +2350,14 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   { id: "person_owner_vehicle_number_of_injuries", sectionId: "personOwner", label: "Vehicle Occupants - Number of Injuries", inputKind: "text", layout: "half" },
   { id: "person_owner_vehicle_number_of_fatalities", sectionId: "personOwner", label: "Vehicle Occupants - Number of Fatalities", inputKind: "text", layout: "half" },
   { id: "person_owner_vehicle_notes", sectionId: "personOwner", label: "Vehicle - Billing Notes", inputKind: "textarea", rows: 4, layout: "full" },
+  {
+    id: "fire_recovery_billing_json",
+    sectionId: "fireRecoveryBilling",
+    label: "Fire Recovery Billing",
+    inputKind: "textarea",
+    layout: "full",
+    helperText: "Stored with the report. NERIS export ignores this field.",
+  },
   ...NERIS_SECTION_NOTE_FIELDS,
 ];
 

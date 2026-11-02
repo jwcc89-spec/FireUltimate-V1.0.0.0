@@ -3694,6 +3694,89 @@ body.resource-personnel-modal-open {
   opacity: 0.92;
 }
 
+.fr-bill-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.65rem;
+}
+
+.fr-bill-bar-required {
+  border-left: 3px solid #b91c1c;
+  padding-left: 0.45rem;
+}
+
+.fr-bill-bar-recommended {
+  border-left: 3px solid #d97706;
+  padding-left: 0.45rem;
+}
+
+.fr-bill-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.25rem;
+  vertical-align: middle;
+}
+
+.fr-bill-swatch-required {
+  background: #b91c1c;
+}
+
+.fr-bill-swatch-recommended {
+  background: #d97706;
+}
+
+.fr-bill-ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.fr-bill-missing {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.fr-run-type,
+.fr-party-actions,
+.fr-location-row,
+.fr-call-grid,
+.fr-party-columns {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.fr-call-grid,
+.fr-location-row,
+.fr-party-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fr-location-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.fr-party-card {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.fr-delete-party {
+  color: #b91c1c;
+}
+
+@media (max-width: 800px) {
+  .fr-call-grid,
+  .fr-location-row,
+  .fr-party-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 .neris-report-layout {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
