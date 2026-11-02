@@ -520,8 +520,8 @@ function NerisReportFormPage({
       ...(persistedDraft?.formValues ?? {}),
     }),
   );
-  const [dispatchLocationOpen, setDispatchLocationOpen] = useState(true);
-  const [incidentLocationOpen, setIncidentLocationOpen] = useState(true);
+  const [dispatchLocationOpen, setDispatchLocationOpen] = useState(false);
+  const [incidentLocationOpen, setIncidentLocationOpen] = useState(false);
   const autoFillSeedRef = useRef<NerisFormValues>({ ...defaultFormValues });
   const userEditedReportRef = useRef(false);
   useEffect(() => {

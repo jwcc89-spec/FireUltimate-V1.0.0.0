@@ -16,7 +16,11 @@ import { isAdminOrHigher } from "../roleHierarchy";
 import { useMyPermissions } from "../useMyPermissions";
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error && error.message ? error.message : fallback;
+  const message = error instanceof Error && error.message ? error.message : fallback;
+  if (message === "Not found.") {
+    return "This incident has not been exported to NERIS, so there is no bill to preview. Export the report first, then open it from View Exports. If it was already exported, close the API window and start it again with npm run proxy.";
+  }
+  return message;
 }
 
 function PreviewModal({
@@ -192,10 +196,12 @@ export function FireRecoveryExportPanel({
   callNumber,
   runNumber,
   role,
+  hasNerisExport,
 }: {
   callNumber: string;
   runNumber: string;
   role: UserRole;
+  hasNerisExport: boolean;
 }) {
   const permissionGrants = useMyPermissions();
   const canViewBilling = permissionGrants?.["billing.view"] === true;
@@ -232,6 +238,12 @@ export function FireRecoveryExportPanel({
   const openPreview = () => {
     setMessage("");
     setPreviewError("");
+    if (!hasNerisExport) {
+      setMessage(
+        "This incident has not been exported to NERIS, so there is no bill to preview. Export the report, then open it from View Exports.",
+      );
+      return;
+    }
     setSending(true);
     postFireRecoveryPreview(callNumber)
       .then((data) => setPreview(data))

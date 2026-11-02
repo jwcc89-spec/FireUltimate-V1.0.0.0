@@ -6070,6 +6070,7 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
         callNumber={callNumber}
         runNumber={getIncidentDisplayNumber(incident)}
         role={role}
+        hasNerisExport={exportHistory.some((entry) => entry.attemptStatus === "success")}
       />
 
       <section className="panel-grid two-column">
