@@ -8,17 +8,17 @@ The agent states at the end of each response **which agent/model was used**. The
 **Slug:** `cursor--stage-b-foundation-b5ff`  
 **Pull request 31:** https://github.com/jwcc89-spec/FireUltimate-V1.0.0.0/pull/31 — **merged** into `submenu/neris-golive-cifpd` at `d4bbaee` on 2026-11-01, about 1:33 p.m. America/Chicago. Do not merge it again. Do not merge to `main`.
 
-**Where the program is (2026-11-01, America/Chicago):**
-- Staging (`https://cifpdil.staging.fireultimate.app`, Render `fireultimate-api-staging`) runs `d4bbaee`. The Crescent click test passed about 2:09 p.m. No step failed.
-- This practice branch is ahead of staging by documentation commits only. Do not push those onto `submenu/neris-golive-cifpd`. That push redeploys staging.
-- Production (`main`) does not have Stage B. It has the Fix 15 one-line hotfix only. A production release needs a fresh backup of `fireultimate-prod`, the three new migrations, Crescent's sender saved **before** the new program starts, the same Render build command, and a separate approval. Do not start that pass unless the user asks.
+**Where the program is (2026-11-02, 12:29 p.m. America/Chicago):**
+- Staging (`https://cifpdil.staging.fireultimate.app`, Render `fireultimate-api-staging`) runs pull request 34, commit `4c80de8`. The Crescent Stage B click test passed on 2026-11-01. The Fire Recovery sandbox bill passed on 2026-11-02 at 12:21 p.m. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`.
+- This practice branch is two commits ahead: `746ed5e` and `286051c`. Do not push those onto `submenu/neris-golive-cifpd` unless the operator asks. That push redeploys staging.
+- Production (`main`) does not have Stage B or Fire Recovery. Do not start Wave 8 until Fire Recovery answers the November 1 email and the operator says to go ahead. The first production step is a fresh backup and a written yes.
 
 **Relevant docs to read (in order):**
 1. `cursoragent-context.md` — session handoff workflow and branch rules
 2. `.cursor/project-context.md` — project constraints and 24-hour time
 3. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md` — current focus. Trust this file over older session notes.
-4. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-01-staging-promote.md` — what this session shipped
-5. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-01-session-summary.md` — user-readable summary
+4. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-02-wave-7-handoff.md` — start here
+5. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-02-session-summary.md` — user-readable summary
 6. `docs/plans/security-remediation-plan.md` — trust the **Status** line. Staging click test passed. Production is not updated.
 7. `docs/task-2-multitenant-domain-plan.md` — Now vs Later
 8. `docs/plans/canvases/repair-plan.canvas.tsx` — repair plan source. Live canvas was not republished on 2026-11-01: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
@@ -38,7 +38,7 @@ October 31 session files stay as history. They still say "not released." That wa
 - Do not merge to `main`. Do not fast-forward `submenu/neris-golive-cifpd`.
 - Do not touch production, `fireultimate-prod`, or `fireultimate-api-prod`.
 - Do not rebuild Stage B, security fixes 1–14, Part 0, or the Allowed Senders screen. They are on staging.
-- Wave 2 (the Fire Recovery Billing tab) is built on this practice branch. Do not start Wave 3 until the user reviews Wave 2. Do not create `FIRE_RECOVERY_CREDENTIAL_KEY` or `FIRE_RECOVERY_MODE` on Render. Do not save a Fire Recovery password in production. Do not build Recover Reports.
+- Waves 1–7 are done through the staging sandbox bill. Do not start Wave 8 or Wave 5b. The operator is waiting for Fire Recovery USA to answer the November 1 email. Do not create production `FIRE_RECOVERY_CREDENTIAL_KEY` or `FIRE_RECOVERY_MODE`. Staging already has both, with mode `sandbox`. Do not save a Fire Recovery password in production. Do not click Confirm and send on this Mac. Do not build Recover Reports.
 - Do not build the parked items: incident Status (drop Draft), Configure Table drag, left-menu hiding, canceled-en-route time fill, or per-user Edit My Display.
 - Do not upgrade Prisma. Stay on 7.10.1. Do not change `.npmrc` `engine-strict=true`. Do not raise Render to Node 22.
 - Staging build command that works on Node 20.19: `npm ci --engine-strict=false && npm run build`. Do not add a dashboard `NODE_ENV` variable. Render already sets `NODE_ENV=production` for the running server only.
@@ -62,8 +62,8 @@ Before doing any feature work, understand the Branch Rules:
    - cursoragent-context.md
    - .cursor/project-context.md
    - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md
-   - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-01-staging-promote.md
-   - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-01-session-summary.md
+   - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-02-wave-7-handoff.md
+   - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-02-session-summary.md
 4) Read and follow before any edits:
    - docs/agent-execution-contract.md
    - docs/task-2-multitenant-domain-plan.md
@@ -72,7 +72,7 @@ Before doing any feature work, understand the Branch Rules:
    - docs/system_architecture.md, docs/data_model.md, docs/incident-lifecycle.md, and docs/integrations.md when the task touches them
 5) Before coding, summarize:
    - current branch and latest commit
-   - Stage B is on staging. The Crescent click test passed on 2026-11-01. Production is not updated.
+   - Wave 7 sandbox bill passed on staging. Tracking ID c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418. Waiting on Fire Recovery USA. Do not start Wave 8. Production is not updated.
    - pull request 31 is already merged. Do not merge to main.
    - parked: Recover Reports, incident Status (unit status, drop Draft later), Configure Table drag, left-menu hiding, canceled-en-route time fill, per-user Edit My Display
    - Now vs Later
@@ -91,9 +91,9 @@ Before doing any feature work, understand the Branch Rules:
    - end with which agent/model answered
 
 After acknowledging the rules above:
-1) Wait for my next request. Do not start the production release.
+1) Wait. I am waiting for Fire Recovery USA to answer the November 1 email. Do not start Wave 8 or Wave 5b.
 2) Do not rebuild Stage B, fixes 1–14, Part 0, or the Allowed Senders screen.
-3) Do not create FIRE_RECOVERY_CREDENTIAL_KEY. Do not save a Fire Recovery password in production.
+3) Do not create production FIRE_RECOVERY_CREDENTIAL_KEY or FIRE_RECOVERY_MODE. Do not save a Fire Recovery password in production. Do not click Confirm and send on this Mac.
 4) Do not build the parked items. Do not push this practice branch onto submenu/neris-golive-cifpd.
 
 When I say "this session is coming to an end":

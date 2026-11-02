@@ -1,5 +1,7 @@
 # 2026-11-02 — Wave 5 preview screen
 
+Later the same day, the staging sandbox bill passed. The current handoff is `2026-11-02-wave-7-handoff.md`. This file is the Wave 5 record only.
+
 Practice branch `cursor/stage-b-foundation-b5ff` only. Render, Neon, staging, and production were not touched.
 
 ## What changed

@@ -6,7 +6,7 @@ The canvas link is the live view. The `.canvas.tsx` file here is a backup copy. 
 
 | Plan | Status | Canvas | Repo copy |
 |------|--------|--------|-----------|
-| Fire Ultimate — Beginner Repair Plan (Fire Recovery, then CAD) | Stage B is on staging as of 2026-11-01. Stage C Waves 1–6 are on the practice branch. Wave 7 sandbox bill was accepted on staging on 2026-11-02. Production is not updated. The live canvas was not republished; trust the repo copy. | [Open canvas](https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136) | `repair-plan.canvas.tsx` |
+| Fire Ultimate — Beginner Repair Plan (Fire Recovery, then CAD) | Wave 7 sandbox bill was accepted on staging on 2026-11-02. Wave 8 waits for Fire Recovery USA to answer the November 1 email. Production is not updated. The live canvas was not republished; trust the repo copy. | [Open canvas](https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136) | `repair-plan.canvas.tsx` |
 | Fire Ultimate — Secure sessions and access controls design (Steps 5–6) | Older design. Steps 5 and 6 are included in the 2026-11-01 staging deploy. This canvas was not republished. | [Open canvas](https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/a9d0e635-88a9-45c5-89c8-ab93873f7618) | `step-5-6-secure-sessions-design.canvas.tsx` |
 
 ## Rules for agents
