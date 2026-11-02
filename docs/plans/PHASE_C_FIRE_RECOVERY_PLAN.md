@@ -1,7 +1,7 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 6 is done on the practice branch. Next is the operator's Wave 7 staging sandbox test, after this branch is merged to staging. Wave 5b still waits. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-02, late morning America/Chicago. Incident 12345 NERIS export succeeded (201 Created, 11:14:04). Wave 6 fake-vendor tests passed (44 tests). Staging promote and Wave 7 clicks are not done.
+**Status:** Wave 7 sandbox bill is done on Crescent staging. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. Invoice status Unassigned. Wave 5b still waits. Q5 (vendor) still waits. Production is not updated.
+**Updated:** 2026-11-02, 12:22 p.m. America/Chicago. One sandbox bill was accepted. Update billing status returned Unassigned with no amounts.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
 
@@ -493,7 +493,7 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - **Done when:** `npm test` passes against local `fu_session_test` only. This also closes Wave 4's "done when" proof.
 
 ### Wave 7 — Staging sandbox test (operator, §11.2)
-- [ ] Render settings on staging, login entered, two-party sandbox bill, billing status checked, double click checked, results recorded in §15.
+- [x] Render settings on staging, login entered, two-party sandbox bill, billing status checked, results recorded in §15. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. A second Confirm and send closed the window. One Sent row is stored.
 
 ### Wave 8 — Production release and first real bill (§11.3)
 - [ ] Release checklist, settings, login, permissions, one real bill, results recorded.
@@ -589,7 +589,7 @@ Then:
 
 ## 12. Definition of done
 
-- [ ] Staging: a two-party sandbox bill returned a tracking ID; double click sent one bill; resend refused.
+- [x] Staging: a two-party sandbox bill returned tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. One Sent row is stored. Invoice status Unassigned.
 - [ ] Tests: the Wave 6 cases pass in `npm test` and GitHub Actions.
 - [ ] Production: Stage B + C released per the checklist; `FIRE_RECOVERY_MODE=live`; one real Crescent bill has a tracking ID, visible in Recovery Hub.
 - [ ] Docs: this plan's §15 is filled in; the canvas copy, task-2 plan, API reference and handoff files are updated.
@@ -603,7 +603,7 @@ Then:
 >
 > Hello,
 >
-> We are finishing Fire Ultimate's connection to Add NERIS Incident for Billing for Crescent Iroquois Fire Protection District, and will test with sandbox department ID FD12345678 first. Could you help with these questions?
+> We are finishing Fire Ultimate's connection to Add NERIS Incident for Billing for Crescent Iroquois Fire Protection District. On November 2, 2026 we sent one sandbox bill with department ID FD12345678. Fire Recovery accepted it. Tracking ID: c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418. Billing status came back as Unassigned, with no amount due and no amount paid. Could you help with these questions?
 >
 > 1. Login: is the RH public API login in our Welcome email for the sandbox only, or also for Crescent's real bills?
 > 2. Sandbox: please confirm that submissions with FD12345678 are never billed. Can sandbox incidents be cleared after testing?
@@ -654,6 +654,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-02 — Location follow-up on the same branch. Incident location keeps one state and one ZIP. Country and county sit in that section. Country defaults to US. The separate State/Territory and Postal code fields are hidden; the NERIS payload still sends state, postal code, country, and county. The Motor Vehicle Collision NERIS code box is hidden and the bill uses the Core primary incident type. The NERIS Entity ID screen is Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Incident 12345 then exported successfully: Exported, 201 Created at 11:14:04 America/Chicago. Not deployed. Do not start Wave 5b or Wave 6 until the operator says so.
 - 2026-11-02 — Wave 6 done on the same branch. `server/fireRecovery.test.mjs` talks to a local pretend Fire Recovery server. One incident can be billed once. A clear refusal is Failed and can be fixed. A timeout, HTTP 500, or a reply without Status 1 is Needs review and cannot be resent. Sandbox sends FD12345678. Live sends the department NERIS ID and refuses FD12345678. Unset refuses before any vendor call. A missing required field is refused. Another department's call number is refused. `npm test` passed 44 tests against local `fu_session_test` only. Not deployed. Wave 7 is the operator's staging sandbox test. Do not click Confirm and send on this Mac.
 - 2026-11-02 — Wave 7 click stopped at Preview & Send. The Crescent test report had a NERIS 201 receipt, but the saved report stayed In Review because the export stamp also writes the NERIS id and the locked-report save rejected that change. Preview then said "Export this report to NERIS first." That one saved report was set to Exported so Preview & Send can open without another deploy. The yellow banner and FD12345678 are inside that window on the current site. Tracking ID and Update billing status stay empty until Confirm and send. The practice branch now lets the export stamp save, treats a successful receipt plus In Review as ready to preview, and shows the banner on the panel after the next deploy. Do not start Wave 5b. Do not click Confirm and send on this Mac.
+- 2026-11-02 — Wave 7 sandbox bill accepted on cifpdil staging at 12:21 p.m. America/Chicago. Yellow SANDBOX banner and FD12345678 were in the preview. Party, run number, incident type, alarm, cleared time, location, and personnel looked correct. Status Sent. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. A second Confirm and send closed the window. One Sent row is stored. Update billing status at 12:22 p.m. said "Billing status updated." Invoice status Unassigned. Amount due and amount paid were blank. Last updated changed to that time. Do not start Wave 5b. Production is not updated.
 
 ---
 
