@@ -4,6 +4,7 @@ import { getNerisValueOptions } from "../nerisMetadata";
 import {
   copyPartiesFromPersonOwner,
   createParty,
+  callClearedValue,
   displayClock,
   displayRunDate,
   findBillingGaps,
@@ -37,6 +38,10 @@ function barClass(level: RequirementLevel): string {
   if (level === "required") return "fr-bill-bar fr-bill-bar-required";
   if (level === "recommended") return "fr-bill-bar fr-bill-bar-recommended";
   return "fr-bill-bar";
+}
+
+function requiredMark(level: RequirementLevel): string {
+  return level === "required" ? " *" : "";
 }
 
 export function FireRecoveryBillingSection({
@@ -149,17 +154,20 @@ export function FireRecoveryBillingSection({
       <p className="field-hint">Filled in from the person who exports this report to NERIS.</p>
 
       <div className="fr-call-grid">
-        <ReadBox label="Run Date" value={displayRunDate(formValues.incident_onset_date ?? "")} />
-        <ReadBox label="Time Alarm Received" value={displayClock(formValues.incident_time_call_arrival ?? "")} />
-        <ReadBox label="Time Call Cleared" value={displayClock(formValues.incident_time_clear ?? "")} />
-        <ReadBox label="Run Number" value={formValues.incident_internal_id ?? ""} />
+        <ReadBox label="Run Date" value={displayRunDate(formValues.incident_onset_date ?? "")} required />
+        <ReadBox label="Time Alarm Received" value={displayClock(formValues.incident_time_call_arrival ?? "")} required />
+        <ReadBox label="Time Call Cleared" value={displayClock(callClearedValue(formValues))} required />
+        <ReadBox label="Run Number" value={formValues.incident_internal_id ?? ""} required />
         <ReadBox
           label="Total Personnel On-Scene"
           value={String(personnel.count)}
           title={personnel.names.join(", ")}
+          required
         />
         <div className={barClass(level("fr.lawEnforcementNumber"))}>
-          <label htmlFor="fr-law-number">Law Enforcement Agency Report Number</label>
+          <label htmlFor="fr-law-number">
+            Law Enforcement Agency Report Number{requiredMark(level("fr.lawEnforcementNumber"))}
+          </label>
           <input
             id="fr-law-number"
             type="text"
@@ -169,7 +177,7 @@ export function FireRecoveryBillingSection({
           />
         </div>
         <div className={barClass(level("fr.nerisCode"))}>
-          <label htmlFor="fr-neris-code">NERIS Code</label>
+          <label htmlFor="fr-neris-code">NERIS Code{requiredMark(level("fr.nerisCode"))}</label>
           <NerisFlatSingleOptionSelect
             inputId="fr-neris-code"
             value={nerisCode}
@@ -183,10 +191,10 @@ export function FireRecoveryBillingSection({
         </div>
       </div>
       <div className="fr-location-row">
-        <ReadBox label="Street" value={location.street} />
-        <ReadBox label="City" value={location.city} />
-        <ReadBox label="State" value={location.state} />
-        <ReadBox label="Zip" value={location.zip} />
+        <ReadBox label="Street" value={location.street} required />
+        <ReadBox label="City" value={location.city} required />
+        <ReadBox label="State" value={location.state} required />
+        <ReadBox label="Zip" value={location.zip} required />
       </div>
       {gaps.required
         .filter((entry) => entry.fixSection)
@@ -252,7 +260,9 @@ export function FireRecoveryBillingSection({
               <PartyText party={party} field="phone" label="Party Phone" level={level("fr.party.phone")} readOnly={readOnly} onChange={updateParty} />
               <PartyText party={party} field="email" label="Party Email" level={level("fr.party.email")} readOnly={readOnly} onChange={updateParty} />
               <div className={barClass(level("fr.party.isResident"))}>
-                <label htmlFor={`fr-resident-${party.id}`}>Is Resident?</label>
+                <label htmlFor={`fr-resident-${party.id}`}>
+                  Is Resident?{requiredMark(level("fr.party.isResident"))}
+                </label>
                 <NerisFlatSingleOptionSelect
                   inputId={`fr-resident-${party.id}`}
                   value={party.isResident}
@@ -300,7 +310,9 @@ export function FireRecoveryBillingSection({
               <PartyText party={party} field="vin" label="VIN" level={level("fr.party.vin")} readOnly={readOnly} onChange={updateParty} />
               <PartyText party={party} field="otherVehicleDetails" label="Other Vehicle Details" level="optional" readOnly={readOnly} onChange={updateParty} />
               <div className={barClass(level("fr.party.atFault"))}>
-                <label htmlFor={`fr-fault-${party.id}`}>At Fault Party</label>
+                <label htmlFor={`fr-fault-${party.id}`}>
+                  At Fault Party{requiredMark(level("fr.party.atFault"))}
+                </label>
                 <NerisFlatSingleOptionSelect
                   inputId={`fr-fault-${party.id}`}
                   value={party.atFault}
@@ -370,10 +382,23 @@ export function FireRecoveryBillingSection({
   );
 }
 
-function ReadBox({ label, value, title }: { label: string; value: string; title?: string }) {
+function ReadBox({
+  label,
+  value,
+  title,
+  required = false,
+}: {
+  label: string;
+  value: string;
+  title?: string;
+  required?: boolean;
+}) {
   return (
     <div className="fr-bill-bar" title={title}>
-      <label>{label}</label>
+      <label>
+        {label}
+        {required ? " *" : ""}
+      </label>
       <input type="text" value={value} readOnly />
     </div>
   );
@@ -400,7 +425,10 @@ function PartyText({
 }) {
   return (
     <div className={barClass(level)}>
-      <label htmlFor={`fr-${field}-${party.id}`}>{label}</label>
+      <label htmlFor={`fr-${field}-${party.id}`}>
+        {label}
+        {requiredMark(level)}
+      </label>
       <input
         id={`fr-${field}-${party.id}`}
         type="text"

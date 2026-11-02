@@ -3,7 +3,9 @@ import { readFileSync } from "node:fs";
 import { describe, it } from "node:test";
 import {
   billingValidationIssueLabels,
+  callClearedValue,
   copyPartiesFromPersonOwner,
+  displayClock,
   findBillingGaps,
   incidentLocationParts,
   isFireRecoveryBillable,
@@ -78,17 +80,45 @@ describe("fire recovery billing requirements", () => {
     assert.equal(JSON.stringify(parties).includes("person:"), false);
   });
 
-  it("counts distinct people on units that arrived and skips a canceled unit", () => {
+  it("counts distinct people selected on Resources and skips a canceled unit", () => {
     const result = onScenePersonnel(
       JSON.stringify([
         { onSceneTime: "10:01", personnel: "Ada Lane, Bo Kim", isCanceledEnroute: false },
-        { onSceneTime: "10:05", personnel: "Ada Lane", isCanceledEnroute: false },
-        { onSceneTime: "", personnel: "Skipped", isCanceledEnroute: false },
+        { personnel: "Ada Lane", isCanceledEnroute: false },
+        { personnel: "Cam Ortiz", isCanceledEnroute: false },
         { onSceneTime: "10:02", personnel: "Canceled", isCanceledEnroute: true },
       ]),
     );
-    assert.deepEqual(result.names, ["Ada Lane", "Bo Kim"]);
-    assert.equal(result.count, 2);
+    assert.deepEqual(result.names, ["Ada Lane", "Bo Kim", "Cam Ortiz"]);
+    assert.equal(result.count, 3);
+  });
+
+  it("reads Time Call Cleared from Incident Times, then the latest Resources clear time", () => {
+    assert.equal(
+      displayClock(
+        callClearedValue({
+          incident_time_clear: "2026-11-01T15:10:00",
+          resource_units_json: JSON.stringify([{ clearTime: "2026-11-01T16:00:00" }]),
+        }),
+      ),
+      "15:10",
+    );
+    assert.equal(
+      displayClock(
+        callClearedValue({
+          resource_units_json: JSON.stringify([
+            { clearTime: "2026-11-01T14:00:00", isCanceledEnroute: false },
+            { clearTime: "2026-11-01T16:40:00", isCanceledEnroute: false },
+            { clearTime: "2026-11-01T18:00:00", isCanceledEnroute: true },
+          ]),
+        }),
+      ),
+      "16:40",
+    );
+    assert.equal(
+      displayClock(callClearedValue({ incident_time_unit_clear: "2026-11-01T17:05:00" })),
+      "17:05",
+    );
   });
 
   it("reads city from a street, city, state address", () => {

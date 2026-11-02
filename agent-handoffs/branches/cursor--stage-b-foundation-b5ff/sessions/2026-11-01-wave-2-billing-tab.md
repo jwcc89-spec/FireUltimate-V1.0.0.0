@@ -38,6 +38,11 @@
 - Missing Required fields keep the report on Draft. Recommended fields do not. Form Filed By is omitted because it is filled from the exporter.
 - The Export button still does not check billing fields.
 
+## Follow-up: labels, clear time, personnel
+- Required Fire Recovery labels use the same ` *` mark as Core and Medical. Recommended and optional labels have no asterisk. Uninsured removes the insurance asterisk.
+- Time Call Cleared reads Incident clear time first. If that is blank, it uses the latest clear time on a Resources unit that was not canceled. If that is also blank, it uses Incident Times unit clear time.
+- Total Personnel On-Scene counts distinct people selected on Resources units that were not canceled en route.
+
 ## Next
 1. Wait for the user's review of Wave 2.
 2. After they say to continue, start Wave 3 (read the exported draft, rewrite the mapping, enforce required fields on the server). Stay on this branch. Pull first.

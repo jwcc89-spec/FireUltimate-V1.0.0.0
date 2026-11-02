@@ -345,6 +345,53 @@ export function displayClock(value: string): string {
   return match?.[1] ?? text(value);
 }
 
+function personnelNames(value: unknown): string[] {
+  if (Array.isArray(value)) {
+    return value.map((entry) => text(entry)).filter((entry) => entry.length > 0);
+  }
+  return text(value)
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function timeSortKey(value: string): string {
+  const trimmed = text(value).replace(" ", "T");
+  const dated = trimmed.match(/(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2})(?::(\d{2}))?/);
+  if (dated) return `${dated[1]}T${dated[2]}:${dated[3] ?? "00"}`;
+  const clock = trimmed.match(/(\d{2}:\d{2})(?::(\d{2}))?/);
+  if (clock) return `0000-00-00T${clock[1]}:${clock[2] ?? "00"}`;
+  return "";
+}
+
+/** Incident clear time, then the latest Resources clear time, then Incident Times unit clear time. */
+export function callClearedValue(formValues: Record<string, string>): string {
+  const incidentClear = text(formValues.incident_time_clear) || text(formValues.time_incident_clear);
+  if (incidentClear) return incidentClear;
+  const resourceClears: string[] = [];
+  const raw = formValues.resource_units_json ?? "";
+  if (text(raw)) {
+    try {
+      const units = JSON.parse(raw) as unknown;
+      if (Array.isArray(units)) {
+        for (const unit of units) {
+          if (!unit || typeof unit !== "object") continue;
+          const row = unit as Record<string, unknown>;
+          if (row.isCanceledEnroute === true) continue;
+          const clear = text(row.clearTime);
+          if (clear) resourceClears.push(clear);
+        }
+      }
+    } catch {
+      resourceClears.length = 0;
+    }
+  }
+  if (resourceClears.length > 0) {
+    return resourceClears.slice().sort((left, right) => timeSortKey(left).localeCompare(timeSortKey(right))).at(-1) ?? "";
+  }
+  return text(formValues.incident_time_unit_clear);
+}
+
 export function onScenePersonnel(resourceUnitsJson: string): { count: number; names: string[] } {
   if (!text(resourceUnitsJson)) return { count: 0, names: [] };
   try {
@@ -355,11 +402,7 @@ export function onScenePersonnel(resourceUnitsJson: string): { count: number; na
       if (!unit || typeof unit !== "object") continue;
       const row = unit as Record<string, unknown>;
       if (row.isCanceledEnroute === true) continue;
-      if (!text(row.onSceneTime)) continue;
-      for (const name of text(row.personnel).split(",")) {
-        const trimmed = name.trim();
-        if (trimmed) names.add(trimmed);
-      }
+      for (const name of personnelNames(row.personnel)) names.add(name);
     }
     return { count: names.size, names: [...names] };
   } catch {
@@ -399,7 +442,7 @@ export function findBillingGaps(
   if (!text(formValues.incident_time_call_arrival)) {
     push(gap("fr.alarm", "Time Alarm Received", "required", "incidentTimes", "Incident Times"));
   }
-  if (!text(formValues.incident_time_clear)) {
+  if (!text(callClearedValue(formValues))) {
     push(gap("fr.clear", "Time Call Cleared", "required", "incidentTimes", "Incident Times"));
   }
   if (!text(formValues.incident_internal_id)) {
