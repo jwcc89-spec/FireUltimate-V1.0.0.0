@@ -14,9 +14,10 @@ function getFireRecoveryBaseUrl() {
 /**
  * Obtain JWT using tenant-stored Fire Recovery login only (no .env fallback).
  * @param {{ username: string, password: string }} credentials
+ * @param {AbortSignal} [signal]
  * @returns {Promise<string>}
  */
-export async function getFireRecoveryJwt(credentials) {
+export async function getFireRecoveryJwt(credentials, signal) {
   const u = trimValue(credentials?.username);
   const p = trimValue(credentials?.password);
   if (!u || !p) {
@@ -40,6 +41,7 @@ export async function getFireRecoveryJwt(credentials) {
       "Content-Type": "text/plain",
     },
     body,
+    signal,
   });
   const text = await res.text();
   let json;
@@ -61,51 +63,38 @@ export async function getFireRecoveryJwt(credentials) {
 }
 
 /**
- * Add NERIS Incident for Billing (vendor-preferred flow).
+ * Add NERIS Incident for Billing. Returns the raw HTTP result so the caller can
+ * mark Sent, Failed, or Needs review without treating every error as a failed bill.
  * @param {string} jwt
- * @param {Record<string, unknown>} payload — buildNerisIncidentForBillingPayload output
- * @returns {Promise<{ trackingId: string, raw: unknown }>}
+ * @param {Record<string, unknown>} payload
+ * @param {number} [timeoutMs]
  */
-export async function postAddNerisIncidentForBilling(jwt, payload) {
+export async function postAddNerisIncidentForBilling(jwt, payload, timeoutMs = 45000) {
   const baseUrl = getFireRecoveryBaseUrl();
   const url = `${baseUrl.replace(/\/$/, "")}/Primary/restapi/rhpublicapi/flows/v2apis/incidents/rms/addincident`;
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${jwt}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(payload),
-  });
-  const text = await res.text();
-  let json;
+  const timeout = AbortSignal.timeout(timeoutMs);
   try {
-    json = JSON.parse(text);
-  } catch {
-    throw new Error(
-      `Fire Recovery Add NERIS Incident for Billing returned non-JSON (HTTP ${res.status}).`,
-    );
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${jwt}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: timeout,
+    });
+    const text = await res.text();
+    let json = null;
+    try {
+      json = JSON.parse(text);
+    } catch {
+      json = null;
+    }
+    return { httpStatus: res.status, json, timedOut: false, networkError: false };
+  } catch (error) {
+    const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+    return { httpStatus: 0, json: null, timedOut, networkError: !timedOut };
   }
-  if (!res.ok) {
-    const err =
-      json?.Done?.error ||
-      json?.message ||
-      json?.error ||
-      text.slice(0, 500) ||
-      `HTTP ${res.status}`;
-    throw new Error(String(err));
-  }
-  const trackingId = trimValue(json?.Done?.TrackingId);
-  const apiResp = json?.Done?.["API Response"];
-  if (!trackingId) {
-    const msg =
-      (apiResp && typeof apiResp === "object" && trimValue(apiResp.Message)) ||
-      trimValue(json?.message) ||
-      text.slice(0, 500) ||
-      "Fire Recovery did not return Done.TrackingId.";
-    throw new Error(msg);
-  }
-  return { trackingId, raw: json };
 }
 
 /**
@@ -113,7 +102,7 @@ export async function postAddNerisIncidentForBilling(jwt, payload) {
  * @param {string} trackingId
  * @returns {Promise<Record<string, unknown>>}
  */
-export async function postIncidentBillingStatus(jwt, trackingId) {
+export async function postIncidentBillingStatus(jwt, trackingId, timeoutMs = 45000) {
   const baseUrl = getFireRecoveryBaseUrl();
   const url = `${baseUrl.replace(/\/$/, "")}/Primary/restapi/rhpublicapi/flows/incidentbillingstatus/getbillingstatusforincident`;
   const res = await fetch(url, {
@@ -122,6 +111,7 @@ export async function postIncidentBillingStatus(jwt, trackingId) {
       Authorization: `Bearer ${jwt}`,
       "Content-Type": "application/json",
     },
+    signal: AbortSignal.timeout(timeoutMs),
     body: JSON.stringify({
       IncidentBillingStatus: {
         IncidentTrackingID: trackingId,

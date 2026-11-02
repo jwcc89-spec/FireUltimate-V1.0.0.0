@@ -315,6 +315,9 @@ const decided = [
   ["November 1, 2026", "Fire Recovery", "Is Resident means the person lives in the fire district. It is always sent; Fire Recovery then bills only the insurance.", "15"],
   ["November 1, 2026", "Fire Recovery", "At Fault is an optional yes/no per party. Run type is Motor Vehicle or Commercial Trucking, with a commercial vehicle checkbox and DOT number per party. Billed types: the three NERIS motor-vehicle types, primary or additional.", "15"],
   ["November 1, 2026", "Fire Recovery", "The Person/Owner tab stays exactly as it is. The earlier ideas (Is Owner / Is Driver checkboxes, removing Add Owner, removing 'Owner - Insurance Company') are cancelled.", "15"],
+  ["November 2, 2026", "Fire Recovery", "Updated the November 1 Person/Owner decision. The owner Insurance Company field and the Vehicle section are removed. Copy from Person/Owner copies name, phone, and address only. Vehicle, insurance, and the law-enforcement number come from Motor Vehicle Collision and do not write back to Core.", "15"],
+  ["November 2, 2026", "Fire Recovery", "Core has street, city, state, and ZIP for the dispatch location and the incident location. Same as dispatch copies the dispatch parts into the incident. Motor Vehicle Collision shows those incident parts as read-only.", "15"],
+  ["November 2, 2026", "Fire Recovery", "Wave 4 is on the practice branch only. Preview hashes the bill without the clock. Submit takes one lock. A second send returns Already sent and does not call Fire Recovery again. An unclear reply is Needs review and stays blocked until an admin resolves it. Not on staging.", "15"],
   ["November 1, 2026", "Fire Recovery", "Is Resident is required for Crescent because a local ordinance bars billing residents directly. Recovery Hub itself marks it recommended. Only an admin adds missing billing info after export: unlock, edit, export to NERIS again.", "5, 15"],
   ["November 1, 2026", "Fire Recovery", "Send the narrative and responding units, as Fire Recovery's documentation asks. The full vendor documentation is saved in docs/procedures/vendor/.", "15"],
   ["November 1, 2026", "Fire Recovery", "An unclear vendor reply shows 'Needs review: check Recovery Hub' and blocks resending until an admin clears it.", "12, 14"],
@@ -324,7 +327,7 @@ const decided = [
 
 const decisions = [
   ["Fire Recovery", "Reply to Fire Recovery with the account email for the sandbox Welcome Message. Their reply mentions support@fireultimatehq.com as the existing account; confirm whether to use it."],
-  ["Fire Recovery", "Approve, before Wave 4 of docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md: an add-only billing status column, and permission-map entries for the new preview and resolve-review routes. Also confirm which report time is 'Time Alarm Received' and that Run Number is Crescent's incident number (plan section 14)."],
+  ["Fire Recovery", "Wave 5 is next: the Export Details preview, the resolve-review window, and the queue statuses. Check the new Core street, city, state, and ZIP fields and the Same as dispatch button on a motor-vehicle report before that screen is used. Do not send a bill from this Mac."],
   ["Fire Recovery", "Before Monday: confirm Fire Recovery's Welcome Message (sandbox API login) arrived, whether FIRE_RECOVERY_CREDENTIAL_KEY exists on staging and production Render, and whether Crescent's billing agreement and fee schedule are set up with Fire Recovery."],
 ];
 
@@ -694,7 +697,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 1, 2026, Chicago · Stage C Wave 3 (vendor bill) is on the practice branch only · Waves 1 and 2 are on the same branch · Stage B is on staging · Crescent click test passed · Production is not updated · Part 4 (D1–D7) is deferred · Do not merge to main · Live canvas was not republished with this copy</Text>
+        <Text size="small" tone="tertiary">Updated November 2, 2026, Chicago · Stage C Wave 4 (preview and send lock) is on the practice branch only · Waves 1–3 are on the same branch · Stage B is on staging · Crescent click test passed · Production is not updated · Part 4 (D1–D7) is deferred · Do not merge to main · Live canvas was not republished with this copy</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B is on Crescent staging (November 1, 2026)">

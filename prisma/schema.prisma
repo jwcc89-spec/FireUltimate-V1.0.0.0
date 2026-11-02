@@ -46,6 +46,8 @@ model FireRecoveryIncidentBilling {
   lastSubmitAt          DateTime?
   lastSubmitOk          Boolean   @default(false)
   lastSubmitError       String    @default("")
+  submitStatus          String    @default("")
+  submitStartedAt       DateTime?
   incidentType          String    @default("")
   incidentDateLabel     String    @default("")
   invoiceId             String    @default("")

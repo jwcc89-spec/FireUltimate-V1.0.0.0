@@ -208,6 +208,13 @@ function localDateTime(value, fallbackDate) {
 }
 
 function locationParts(formValues) {
+  const structured = {
+    street: trimValue(formValues.incident_location_street),
+    city: trimValue(formValues.incident_location_city),
+    state: trimValue(formValues.incident_location_state),
+    zip: trimValue(formValues.incident_location_zip),
+  };
+  if (structured.street || structured.city || structured.state || structured.zip) return structured;
   const address = trimValue(formValues.incident_location_address);
   const parts = address.split(",").map((part) => part.trim()).filter(Boolean);
   return {
@@ -338,6 +345,42 @@ export function missingFireRecoveryFields(formValues, settings, filedByName) {
   return missing;
 }
 
+export function missingRecommendedFireRecoveryFields(formValues, settings) {
+  const missing = [];
+  const values = formValues && typeof formValues === "object" ? formValues : {};
+  const billing = parseBilling(values.fire_recovery_billing_json);
+  const note = (key, label, value) => {
+    if (requirementLevel(key, settings) === "recommended" && !trimValue(value)) missing.push(label);
+  };
+  note("fr.lawEnforcementNumber", "Law Enforcement Agency Report Number", billing.lawEnforcementReportNumber);
+  const code = trimValue(billing.nerisCode) || trimValue(values.primary_incident_type);
+  note("fr.nerisCode", "NERIS Code", code);
+  (billing.parties ?? []).forEach((party, index) => {
+    const title = `Party ${index + 1}`;
+    const blank = (key, label, value) => {
+      if (requirementLevel(key, settings) === "recommended" && !trimValue(value)) missing.push(`${title} — ${label}`);
+    };
+    blank("fr.party.firstName", "First Name", party.firstName);
+    blank("fr.party.lastName", "Last Name", party.lastName);
+    const addressMissing = !trimValue(party.street) || !trimValue(party.city) || !trimValue(party.state) || !trimValue(party.zip);
+    if (requirementLevel("fr.party.address", settings) === "recommended" && addressMissing) {
+      missing.push(`${title} — Party Address (street, city, state, zip)`);
+    }
+    blank("fr.party.phone", "Party Phone", party.phone);
+    blank("fr.party.email", "Party Email", party.email);
+    blank("fr.party.isResident", "Is Resident?", party.isResident);
+    if (!party.uninsured) blank("fr.party.insuranceCompany", "Insurance Company / Liable Party", party.insuranceCompany);
+    blank("fr.party.policyNumber", "Policy Number", party.policyNumber);
+    blank("fr.party.insuranceContact", "Insurance Contact Number", party.insuranceContactNumber);
+    blank("fr.party.vehicleMake", "Vehicle Make", party.vehicleMake);
+    blank("fr.party.vehicleModel", "Vehicle Model", party.vehicleModel);
+    blank("fr.party.licensePlate", "License Plate", party.licensePlate);
+    blank("fr.party.vin", "VIN", party.vin);
+    blank("fr.party.atFault", "At Fault Party", party.atFault);
+  });
+  return missing;
+}
+
 function yes(value) {
   return trimValue(value).toUpperCase() === "YES";
 }
@@ -395,18 +438,7 @@ export function buildFireRecoveryPayload(formValues, receipt, tenant, submitter)
   const units = resourceUnits(values);
   const activeUnits = units.filter((unit) => unit.isCanceledEnroute !== true);
   const filed = parseHumanNameParts(receipt?.reportWriterName);
-  const lawFromBilling = trimValue(billing.lawEnforcementReportNumber);
-  let lawNumber = lawFromBilling;
-  if (!lawNumber) {
-    try {
-      const vehicles = JSON.parse(trimValue(values.person_owner_vehicles_json) || "[]");
-      if (Array.isArray(vehicles)) {
-        lawNumber = trimValue(vehicles.find((vehicle) => trimValue(vehicle?.policeReportFileNumber))?.policeReportFileNumber);
-      }
-    } catch {
-      lawNumber = "";
-    }
-  }
+  const lawNumber = trimValue(billing.lawEnforcementReportNumber);
   const earliestOnScene = activeUnits
     .map((unit) => localDateTime(unit.onSceneTime, runDate))
     .filter(Boolean)

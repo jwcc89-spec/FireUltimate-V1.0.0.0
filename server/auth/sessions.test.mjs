@@ -485,6 +485,42 @@ test("server sign-in passes", async () => {
       body: { callNumber: "1" },
     });
     assert.equal(deniedBilling.status, 403);
+    const signedOutPreview = await call("/api/fire-recovery/preview", {
+      method: "POST",
+      requestOrigin: origin,
+      body: { callNumber: "1" },
+    });
+    assert.equal(signedOutPreview.status, 401);
+    const deniedPreview = await call("/api/fire-recovery/preview", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { callNumber: "1" },
+    });
+    assert.equal(deniedPreview.status, 403);
+    await prisma.rolePermission.upsert({
+      where: { tenantId_permission: { tenantId: demo.id, permission: "billing.submit" } },
+      create: { tenantId: demo.id, permission: "billing.submit", minimumRole: "user" },
+      update: { minimumRole: "user" },
+    });
+    const grantedPreview = await call("/api/fire-recovery/preview", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { callNumber: "1" },
+    });
+    assert.notEqual(grantedPreview.status, 401);
+    assert.notEqual(grantedPreview.status, 403);
+    const deniedResolve = await call("/api/fire-recovery/resolve-review", {
+      method: "POST",
+      cookie: ffCookie.pair,
+      requestOrigin: origin,
+      body: { callNumber: "1", outcome: "not_received" },
+    });
+    assert.equal(deniedResolve.status, 403);
+    await prisma.rolePermission.delete({
+      where: { tenantId_permission: { tenantId: demo.id, permission: "billing.submit" } },
+    });
     const deniedUser = await call("/api/users", {
       method: "POST",
       cookie: ffCookie.pair,
@@ -1327,7 +1363,10 @@ test("server sign-in passes", async () => {
           mode: String(process.env.FIRE_RECOVERY_MODE ?? ""),
           body: parsedBody,
         });
-        return new Response(JSON.stringify({ Done: { TrackingId: "track-1" } }), { status: 200 });
+        return new Response(
+          JSON.stringify({ Done: { TrackingId: "track-1", "API Response": { Status: 1, Message: "Success" } } }),
+          { status: 200 },
+        );
       }
       return new Response("unexpected upstream", { status: 500, statusText: "Error" });
     };
@@ -1501,12 +1540,22 @@ test("server sign-in passes", async () => {
           },
         },
       });
-      const realBill = await call("/api/fire-recovery/submit", {
-        method: "POST",
-        cookie: exportCookie.pair,
-        requestOrigin: origin,
-        body: { callNumber: "26-RECEIPT" },
-      });
+      const submitPrepared = async (callNumber) => {
+        const preview = await call("/api/fire-recovery/preview", {
+          method: "POST",
+          cookie: exportCookie.pair,
+          requestOrigin: origin,
+          body: { callNumber },
+        });
+        assert.equal(preview.status, 200, JSON.stringify(preview.json));
+        return call("/api/fire-recovery/submit", {
+          method: "POST",
+          cookie: exportCookie.pair,
+          requestOrigin: origin,
+          body: { callNumber, previewHash: preview.json.data.previewHash },
+        });
+      };
+      const realBill = await submitPrepared("26-RECEIPT");
       assert.equal(realBill.status, 201, JSON.stringify(realBill.json));
       assert.equal(realBill.json.data.trackingId, "track-1");
       assert.equal(tenantAfterSave.nerisEntityId, "FD33333333");
@@ -1515,6 +1564,11 @@ test("server sign-in passes", async () => {
         "FD12345678",
         "sandbox mode must send FD12345678 even when the department NERIS ID is different",
       );
+      const callsAfterFirstBill = addIncidentBodies.length;
+      const secondBill = await submitPrepared("26-RECEIPT");
+      assert.equal(secondBill.status, 409, JSON.stringify(secondBill.json));
+      assert.match(secondBill.json.message, /Already sent/);
+      assert.equal(addIncidentBodies.length, callsAfterFirstBill);
 
       await prisma.tenant.update({
         where: { id: demo.id },
@@ -1548,12 +1602,10 @@ test("server sign-in passes", async () => {
       assert.equal(JSON.stringify(settingsRead.json).includes(leakPassword), false);
 
       frLoginMode = "echo";
-      const leaked = await call("/api/fire-recovery/submit", {
-        method: "POST",
-        cookie: exportCookie.pair,
-        requestOrigin: origin,
-        body: { callNumber: "26-RECEIPT" },
+      await prisma.fireRecoveryIncidentBilling.deleteMany({
+        where: { tenantId: demo.id, callNumber: "26-RECEIPT" },
       });
+      const leaked = await submitPrepared("26-RECEIPT");
       assert.equal(leaked.status, 400);
       assert.equal(JSON.stringify(leaked.json).includes(leakPassword), false);
       const billingRow = await prisma.fireRecoveryIncidentBilling.findUnique({
@@ -1618,12 +1670,10 @@ test("server sign-in passes", async () => {
         where: { id: demo.id },
         data: { nerisEntityId: "FD33333333" },
       });
-      const liveRealBill = await call("/api/fire-recovery/submit", {
-        method: "POST",
-        cookie: exportCookie.pair,
-        requestOrigin: origin,
-        body: { callNumber: "26-RECEIPT" },
+      await prisma.fireRecoveryIncidentBilling.deleteMany({
+        where: { tenantId: demo.id, callNumber: "26-RECEIPT" },
       });
+      const liveRealBill = await submitPrepared("26-RECEIPT");
       assert.equal(liveRealBill.status, 201, JSON.stringify(liveRealBill.json));
       assert.equal(
         addIncidentBodies.at(-1)?.body?.IncidentToBillPayload?.NERISDepartmentId,
@@ -1634,12 +1684,10 @@ test("server sign-in passes", async () => {
       assert.equal(liveSettings.json.data.departmentId, "FD33333333");
 
       process.env.FIRE_RECOVERY_MODE = "sandbox";
-      const sandboxAgain = await call("/api/fire-recovery/submit", {
-        method: "POST",
-        cookie: exportCookie.pair,
-        requestOrigin: origin,
-        body: { callNumber: "26-RECEIPT" },
+      await prisma.fireRecoveryIncidentBilling.deleteMany({
+        where: { tenantId: demo.id, callNumber: "26-RECEIPT" },
       });
+      const sandboxAgain = await submitPrepared("26-RECEIPT");
       assert.equal(sandboxAgain.status, 201, JSON.stringify(sandboxAgain.json));
       assert.equal(
         addIncidentBodies.at(-1)?.body?.IncidentToBillPayload?.NERISDepartmentId,
@@ -1670,6 +1718,8 @@ test("server sign-in passes", async () => {
     assert.equal(permissionForRequest("HEAD", "/api/fire-recovery/incidents"), "billing.view");
     assert.equal(permissionForRequest("GET", "/api/fire-recovery/incidents/26-1"), "billing.view");
     assert.equal(permissionForRequest("POST", "/api/fire-recovery/submit"), "billing.submit");
+    assert.equal(permissionForRequest("POST", "/api/fire-recovery/preview"), "billing.submit");
+    assert.equal(permissionForRequest("POST", "/api/fire-recovery/resolve-review"), null);
     assert.equal(permissionForRequest("GET", "/api/neris/export-history"), "neris.export");
     assert.equal(permissionForRequest("POST", "/api/neris/export-history"), "neris.export");
     const billingUser = await call("/api/auth/login", {

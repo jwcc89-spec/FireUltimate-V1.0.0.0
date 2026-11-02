@@ -42,95 +42,29 @@ describe("fire recovery billing requirements", () => {
     assert.equal(isFireRecoveryBillable("MEDICAL: ILLNESS", ""), false);
   });
 
-  it("copies the person's name at copy time and does not store a list position", () => {
-    const parties = copyPartiesFromPersonOwner(
-      [person],
-      [],
-      [
-        {
-          personsInvolved: ["person:0"],
-          vehicleMake: "Ford",
-          model: "Focus",
-          year: "2018",
-          vin: "VIN1",
-          licensePlate: "ABC123",
-          uninsured: false,
-          insuranceCompanyName: "Acme",
-          policyNumber: "P1",
-          insuranceCompanyPhone: "555-0199",
-        },
-        {
-          personsInvolved: [],
-          vehicleMake: "Skip",
-          model: "Me",
-          year: "",
-          vin: "",
-          licensePlate: "",
-          uninsured: false,
-          insuranceCompanyName: "",
-          policyNumber: "",
-          insuranceCompanyPhone: "",
-        },
-      ],
-    );
-    assert.equal(parties.length, 2);
-    assert.equal(parties[0]?.firstName, "Ada");
-    assert.equal(parties[0]?.lastName, "Lane");
-    assert.equal(parties[0]?.vehicleMake, "Ford");
-    assert.equal(parties[0]?.insuranceCompany, "Acme");
-    assert.equal(parties[1]?.firstName, "");
-    assert.equal(parties[1]?.vehicleMake, "Skip");
-    assert.equal(JSON.stringify(parties).includes("person:"), false);
-  });
-
-  it("copies one selected person into an existing party", () => {
-    const party = copyIntoParty(
-      createParty("p1"),
-      person,
-      {
-        personsInvolved: ["person:0"],
-        vehicleMake: "Ford",
-        model: "Focus",
-        year: "2018",
-        vin: "",
-        licensePlate: "",
-        uninsured: false,
-        insuranceCompanyName: "Acme",
-        policyNumber: "",
-        insuranceCompanyPhone: "",
-      },
-    );
+  it("copies people and owners without taking vehicle or insurance from Person/Owner", () => {
+    const kept = {
+      ...createParty("p1"),
+      vehicleMake: "Ford",
+      vehicleModel: "Focus",
+      insuranceCompany: "Acme",
+    };
+    const party = copyIntoParty(kept, person);
     assert.equal(party.id, "p1");
     assert.equal(party.firstName, "Ada");
     assert.equal(party.vehicleMake, "Ford");
-    assert.equal(JSON.stringify(party).includes("person:"), false);
-  });
-
-  it("pairs people with vehicles when the vehicle has no person link", () => {
+    assert.equal(party.insuranceCompany, "Acme");
     const parties = copyPartiesFromPersonOwner(
       [person, { ...person, firstName: "Bo", lastName: "Kim" }],
-      [{ ...person, firstName: "Owner", lastName: "One", insuranceCompany: "Owner Mutual" }],
-      [
-        {
-          personsInvolved: [],
-          vehicleMake: "Ford",
-          model: "Focus",
-          year: "",
-          vin: "",
-          licensePlate: "",
-          uninsured: false,
-          insuranceCompanyName: "Acme",
-          policyNumber: "",
-          insuranceCompanyPhone: "",
-        },
-      ],
+      [{ ...person, firstName: "Owner", lastName: "One" }],
     );
+    assert.equal(parties.length, 3);
     assert.equal(parties[0]?.firstName, "Ada");
-    assert.equal(parties[0]?.vehicleMake, "Ford");
-    assert.equal(parties[0]?.insuranceCompany, "Acme");
     assert.equal(parties[1]?.firstName, "Bo");
     assert.equal(parties[2]?.firstName, "Owner");
-    assert.equal(parties[2]?.insuranceCompany, "Owner Mutual");
+    assert.equal(parties[0]?.vehicleMake, "");
+    assert.equal(parties[0]?.insuranceCompany, "");
+    assert.equal(JSON.stringify(parties).includes("person:"), false);
   });
 
   it("counts distinct people selected on Resources and skips a canceled unit", () => {
@@ -182,6 +116,21 @@ describe("fire recovery billing requirements", () => {
         location_postal_code: "60922",
       }),
       { street: "1 Main", city: "Crescent", state: "IL", zip: "60922" },
+    );
+  });
+
+  it("uses the Core incident street, city, state, and ZIP when they are filled", () => {
+    assert.deepEqual(
+      incidentLocationParts({
+        incident_location_address: "1 Main, Crescent, IL 60922",
+        incident_location_street: "100 Specific Ln",
+        incident_location_city: "Ashkum",
+        incident_location_state: "IL",
+        incident_location_zip: "60911",
+        location_state: "IL",
+        location_postal_code: "60922",
+      }),
+      { street: "100 Specific Ln", city: "Ashkum", state: "IL", zip: "60911" },
     );
   });
 
@@ -272,5 +221,6 @@ describe("fire recovery billing requirements", () => {
   it("keeps the billing JSON out of the NERIS export builder", () => {
     const source = readFileSync(new URL("../../server/neris-proxy.mjs", import.meta.url), "utf8");
     assert.equal(source.includes("fire_recovery_billing_json"), false);
+    assert.equal(source.includes("person_owner_vehicles_json"), false);
   });
 });

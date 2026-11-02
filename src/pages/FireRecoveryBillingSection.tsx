@@ -7,15 +7,12 @@ import {
   callClearedValue,
   displayClock,
   displayRunDate,
-  findBillingGaps,
   incidentLocationParts,
   onScenePersonnel,
   parseBilling,
   requirementLevel,
   serializeBilling,
-  type BillingFixSection,
   type CopyContact,
-  type CopyVehicle,
   type FireRecoveryBilling,
   type FireRecoveryParty,
   type FireRecoveryRequirementKey,
@@ -28,9 +25,7 @@ type FireRecoveryBillingSectionProps = {
   readOnly: boolean;
   persons: CopyContact[];
   owners: CopyContact[];
-  vehicles: CopyVehicle[];
   onChange: (json: string) => void;
-  onOpenSection: (sectionId: BillingFixSection) => void;
   requirementSettings: Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>;
 };
 
@@ -44,19 +39,17 @@ export function FireRecoveryBillingSection({
   readOnly,
   persons,
   owners,
-  vehicles,
   onChange,
-  onOpenSection,
   requirementSettings,
 }: FireRecoveryBillingSectionProps) {
   const billing = useMemo(() => parseBilling(rawJson), [rawJson]);
   const [deleteAskId, setDeleteAskId] = useState("");
   const [copyNote, setCopyNote] = useState("");
   const [copyTargetId, setCopyTargetId] = useState("");
+  const [collapsedPartyIds, setCollapsedPartyIds] = useState<string[]>([]);
 
   const location = incidentLocationParts(formValues);
   const personnel = onScenePersonnel(formValues.resource_units_json ?? "");
-  const gaps = findBillingGaps(billing, formValues, requirementSettings, "");
   const incidentTypeOptions = useMemo(() => getNerisValueOptions("incident_type"), []);
   const nerisCode = billing.nerisCode || (formValues.primary_incident_type ?? "");
 
@@ -88,13 +81,10 @@ export function FireRecoveryBillingSection({
     const index = Number.parseInt(rawIndex ?? "", 10);
     const contact = kind === "owner" ? owners[index] : persons[index];
     if (!contact) return;
-    const linked =
-      vehicles.find((vehicle) => vehicle.personsInvolved.includes(ref)) ??
-      (kind === "person" ? vehicles[index] ?? null : null);
     write({
       ...billing,
       parties: billing.parties.map((party) =>
-        party.id === partyId ? copyIntoParty(party, contact, linked) : party,
+        party.id === partyId ? copyIntoParty(party, contact) : party,
       ),
     });
     setCopyTargetId("");
@@ -102,20 +92,19 @@ export function FireRecoveryBillingSection({
   };
 
   const level = (key: FireRecoveryRequirementKey) => requirementLevel(key, requirementSettings);
+  const toggleParty = (partyId: string) => {
+    setCollapsedPartyIds((current) =>
+      current.includes(partyId) ? current.filter((id) => id !== partyId) : [...current, partyId],
+    );
+  };
 
   return (
     <div className="field-span-two neris-person-owner-module">
-      <p>
-        <span className={`neris-status-pill ${gaps.required.length === 0 ? "fr-bill-ready" : "fr-bill-missing"}`}>
-          {gaps.required.length === 0 ? "Ready to bill" : `${gaps.required.length} required fields missing`}
-        </span>
-      </p>
       {readOnly ? (
         <p className="neris-lock-banner">This report is locked. An admin can unlock it to edit billing.</p>
       ) : null}
 
-      <div className="fr-run-type" role="group" aria-label="Run Type">
-        <span>Run Type</span>
+      <div className="fr-run-type" role="group" aria-label="Incident type">
         <button
           type="button"
           className={billing.runType === "MOTOR_VEHICLE" ? "primary-button compact-button" : "secondary-button compact-button"}
@@ -135,9 +124,6 @@ export function FireRecoveryBillingSection({
           Commercial Trucking Incident
         </button>
       </div>
-
-      <label className="fr-bill-bar">Form Filed By</label>
-      <p className="field-hint">Filled in from the person who exports this report to NERIS.</p>
 
       <div className="fr-call-grid">
         <ReadBox label="Run Date" value={displayRunDate(formValues.incident_onset_date ?? "")} required />
@@ -182,25 +168,11 @@ export function FireRecoveryBillingSection({
         <ReadBox label="State" value={location.state} required />
         <ReadBox label="Zip" value={location.zip} required />
       </div>
-      {gaps.required
-        .filter((entry) => entry.fixSection)
-        .map((entry) => (
-          <p key={entry.key} className="field-hint">
-            {entry.label}.{" "}
-            <button
-              type="button"
-              className="secondary-button compact-button"
-              onClick={() => onOpenSection(entry.fixSection as BillingFixSection)}
-            >
-              Fix this in the report&apos;s {entry.fixSectionLabel} section
-            </button>
-          </p>
-        ))}
 
       <div className="fr-party-actions">
         <button
           type="button"
-          className="primary-button compact-button"
+          className="primary-button compact-button fr-add-party"
           disabled={readOnly}
           onClick={() => write({ ...billing, parties: [...billing.parties, createParty()] })}
         >
@@ -209,27 +181,45 @@ export function FireRecoveryBillingSection({
       </div>
       {copyNote ? <p className="field-hint">{copyNote}</p> : null}
 
-      {billing.parties.map((party, index) => (
-        <article key={party.id} className="fr-party-card">
+      {billing.parties.map((party, index) => {
+        const collapsed = collapsedPartyIds.includes(party.id);
+        return (
+        <article key={party.id} className={`fr-party-card${collapsed ? " is-collapsed" : ""}`}>
           <div className="fr-party-heading">
-            <h3>PARTY {index + 1}</h3>
             <button
               type="button"
-              className="secondary-button compact-button"
-              disabled={readOnly}
-              onClick={() => {
-                if (copyChoices.length === 0) {
-                  setCopyNote("No people or owners were found on Person/Owner.");
-                  setCopyTargetId("");
-                  return;
-                }
-                setCopyNote("");
-                setCopyTargetId(party.id);
-              }}
+              className="fr-party-toggle"
+              aria-expanded={!collapsed}
+              aria-controls={`fr-party-body-${party.id}`}
+              onClick={() => toggleParty(party.id)}
             >
-              Copy from Person/Owner
+              <span className="fr-party-chevron" aria-hidden="true">
+                {collapsed ? "▸" : "▾"}
+              </span>
+              <span>PARTY {index + 1}</span>
+              {collapsed ? <span className="fr-party-summary">{partySummary(party)}</span> : null}
             </button>
+            {collapsed ? null : (
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                disabled={readOnly}
+                onClick={() => {
+                  if (copyChoices.length === 0) {
+                    setCopyNote("No people or owners were found on Person/Owner.");
+                    setCopyTargetId("");
+                    return;
+                  }
+                  setCopyNote("");
+                  setCopyTargetId(party.id);
+                }}
+              >
+                Copy from Person/Owner
+              </button>
+            )}
           </div>
+          {collapsed ? null : (
+          <div id={`fr-party-body-${party.id}`}>
           {copyTargetId === party.id ? (
             <NerisFlatSingleOptionSelect
               inputId={`fr-copy-${party.id}`}
@@ -366,13 +356,21 @@ export function FireRecoveryBillingSection({
               Delete This Party
             </button>
           )}
+          </div>
+          )}
         </article>
-      ))}
-      {gaps.recommended.length > 0 ? (
-        <p className="field-hint">Recommended, missing: {gaps.recommended.map((entry) => entry.label).join("; ")}</p>
-      ) : null}
+        );
+      })}
     </div>
   );
+}
+
+function partySummary(party: FireRecoveryParty): string {
+  const name = [party.firstName, party.lastName].filter((part) => part.trim()).join(" ");
+  const vehicle = [party.vehicleYear, party.vehicleMake, party.vehicleModel]
+    .filter((part) => part.trim())
+    .join(" ");
+  return [name || "No name yet", vehicle].filter(Boolean).join(" · ");
 }
 
 function ReadBox({

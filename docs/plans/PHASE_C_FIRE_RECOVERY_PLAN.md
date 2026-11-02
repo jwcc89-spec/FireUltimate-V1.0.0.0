@@ -1,7 +1,7 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 3 is done on the practice branch. Next is Wave 4, after review. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-01, about 9:00 p.m. America/Chicago.
+**Status:** Wave 4 is done on the practice branch. Next is Wave 5 (the Export Details preview). Q5 (vendor) still waits. Render, Neon, and production were not changed.
+**Updated:** 2026-11-02, morning America/Chicago.
 **Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
 **Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
 
@@ -68,7 +68,7 @@
 | Send button | `src/App.tsx` about line 6036–6066, NERIS **Export Details** page (`/reporting/neris/exports/:callNumber`) | "Send to Fire Recovery" posts immediately: no preview, no confirm, no lock. |
 | Lists | `src/pages/FireRecoveryIncidentsPage.tsx`, `src/pages/FireRecoveryIncidentDetailPage.tsx`, `src/api/fireRecovery.ts`; queue column `src/App.tsx` about line 5877 | Shows `-` or `DataSent`. Detail has an Update (billing status) button. |
 | Settings screen | `SetupFireRecoveryPanel`, `src/App.tsx` about line 12227 (Admin Functions → Setup/Configuration → Fire Recovery) | Department name, API username, password. |
-| Person/Owner/Vehicle section of the NERIS report | `src/pages/NerisReportFormPage.tsx` (types about line 630; JSON in `person_owner_persons_json`, `person_owner_owners_json`, `person_owner_vehicles_json`) | General contacts section. **Stays as-is** (decision D-6). |
+| Person/Owner section of the NERIS report | `src/pages/NerisReportFormPage.tsx` (`person_owner_persons_json`, `person_owner_owners_json`) | People and owners stay. The vehicle section and the owner Insurance Company field were removed on 2026-11-02 (operator). Billing vehicle, insurance, and law-enforcement number come only from Motor Vehicle Collision. |
 | Required-field admin | `NerisRequiredFieldsAdminPage`, `src/App.tsx` about line 6398; stored as `nerisRequiredFieldOverrides` (list of field IDs) in department details | Can only *add* required fields. |
 | Tests | `server/auth/sessions.test.mjs` (permissions, encryption, tenant isolation for billing) | No vendor success/failure/timeout tests. |
 
@@ -92,7 +92,7 @@
 | D-3 | Sandbox safety | Render setting `FIRE_RECOVERY_MODE`: `sandbox` = always send `FD12345678`; `live` = send the department's NERIS Entity ID and refuse `FD12345678`; unset/anything else = refuse every submit. No database change |
 | D-4 | Where billing data is entered | A new **Fire Recovery Billing** tab inside the NERIS report, laid out like Recovery Hub's "Create New Motor Vehicle Incident" form (§5). Saved with the report. No database change for the form itself |
 | D-5 | Changes after export | Only an admin adds missing billing info later: admin unlocks the Exported report, edits the Fire Recovery Billing tab, and exports to NERIS again. Billing is blocked while the report is not Exported |
-| D-6 | Person/Owner tab | Left exactly as it is. The earlier ideas (Is Owner / Is Driver checkboxes, removing Add Owner, removing "Owner - Insurance Company") are **cancelled** |
+| D-6 | Person/Owner tab | Updated 2026-11-02 (operator): remove the owner Insurance Company field and the Vehicle / Add Vehicle section. People and owners stay. Copy from Person/Owner copies name, phone, and address only. Is Owner / Is Driver checkboxes stay cancelled. |
 | D-7 | Party | A party is one billing card: name and address, insurance, vehicle. No driver/owner concept, matching Recovery Hub. A parked car's owner is entered as that vehicle's party |
 | D-8 | Copy from report | A "Copy from Person/Owner" button pre-fills party cards from the Person/Owner/Vehicle section; staff edit after copying |
 | D-9 | Required fields | App defaults follow Fire Recovery's minimum list (§4, §6). **Is Resident is required for Crescent** (local ordinance: residents are not billed directly), set as Crescent's department setting; Fire Recovery itself does not require it. An admin can change any billing field between Required / Recommended / Optional in Admin Functions |
@@ -176,10 +176,10 @@ Use a 3px left/right bar on the input the way Recovery Hub does: red for Require
 | Time Alarm Received | `incident_time_call_arrival` (call arrival at dispatch; §14 Q3) | 24-hour `HH:MM` |
 | Time Call Cleared | `incident_time_clear`, otherwise the latest Resources unit clear time, otherwise Incident Times unit clear time | 24-hour |
 | Run Number | `incident_internal_id` (Crescent incident number, e.g. `26-079`) | Confirmed (§14 Q4) |
-| Law Enforcement Agency Report Number | **Editable** text, new | Optional. If blank, the server falls back to the first Person/Owner vehicle's `policeReportFileNumber` |
+| Law Enforcement Agency Report Number | **Editable** text on Motor Vehicle Collision | Optional. The server uses only this billing field. A blank value stays blank. |
 | Total Personnel On-Scene | Count of distinct people selected on Resources units that were not canceled en route (`resource_units_json`) | Show the count, and the names on hover |
 | NERIS Code | **Editable** `DD-S` with the NERIS incident type list, pre-filled from `primary_incident_type` | D-15 |
-| Incident Location | street, city, state, zip from the report's location fields (`incident_location_address`, `location_state`, `location_postal_code`; city field to be confirmed in code) | Four boxes in one row, like Recovery Hub |
+| Incident Location | Read-only street, city, state, and ZIP | Core has those four parts for dispatch and for the incident, plus the existing single-line address. Filled Core parts win. Otherwise the single line is parsed only when it has at least three comma parts. A Same as dispatch button copies dispatch into the incident parts. Typing on Motor Vehicle Collision does not write back to Core. |
 
 **Buttons:**
 - "Copy from Person/Owner" (D-8). Creates one party per Person/Owner **vehicle** that has persons involved.
@@ -343,7 +343,7 @@ type FireRecoveryBilling = {
 | `CostRecovery.PrincipleIncidentType` | same NERIS code as `IncidentType`. Fix today's cut-at-the-first-colon bug |
 | `CostRecovery.NerisIdIncident` | receipt `nerisId` |
 | `CostRecovery.IncidentNumber` | Run Number (`incident_internal_id`) |
-| `CostRecovery.LawEnforcementNumber` | tab value, else first vehicle `policeReportFileNumber`, else "" |
+| `CostRecovery.LawEnforcementNumber` | Motor Vehicle Collision law-enforcement number, else "" |
 | `CostRecovery.CatchCreated` | submit time, `YYYY-MM-DDTHH:MM:SS` local |
 | `CostRecovery.TotalPersonnelOnScene` | §5.2 count |
 | `CostRecovery.FiledBy` | the NERIS exporter (receipt `reportWriterName`), with first/middle/last from that account's display name, else the username split |
@@ -468,11 +468,11 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 
 ### Wave 4 — Preview, lock, safe results (§7.4)
 - [x] §14 Q1 and Q2 approved (2026-11-01).
-- [ ] Add-only migration: `submitStatus`, `submitStartedAt` on `FireRecoveryIncidentBilling`. Leave existing columns unchanged.
-- [ ] Preview route + hash; submit with hash; atomic lock.
-- [ ] Time limits; `Status 1` check; Sent / Failed / Needs review; never clear a tracking ID.
-- [ ] Resolve-review route.
-- [ ] Permission map entries plus tests (signed out 401; regular user 403; officer with grant allowed).
+- [x] Add-only migration: `submitStatus`, `submitStartedAt` on `FireRecoveryIncidentBilling`. Leave existing columns unchanged.
+- [x] Preview route + hash; submit with hash; atomic lock.
+- [x] Time limits; `Status 1` check; Sent / Failed / Needs review; never clear a tracking ID.
+- [x] Resolve-review route.
+- [x] Permission map entries plus tests (signed out 401; regular user 403; officer with grant allowed).
 - **Done when:** fake-vendor tests (Wave 6) prove one bill per incident under double clicks, timeouts and errors.
 
 ### Wave 5 — Front end (§8)
@@ -636,6 +636,8 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-01 — Follow-up on the same branch. Required Fire Recovery labels show an asterisk, the same mark used on Core and Medical. Time Call Cleared reads Incident clear time, then the latest Resources clear time. Total Personnel On-Scene counts the people selected on Resources units that were not canceled en route.
 - 2026-11-01 — Follow-up on the same branch. The report tab is named Motor Vehicle Collision. The Recovery Hub heading, the export sentence, the required/recommended legend, and the colored field bars are removed. Copy from Person/Owner copies people and vehicles even when a vehicle has no person link.
 - 2026-11-01 — Wave 3 done on `cursor/stage-b-foundation-b5ff` (practice only). Submit reads the Exported report plus the NERIS receipt. The vendor JSON keeps the full NERIS code, sends two parties, clears insurance when Uninsured is checked, and counts selected personnel. Missing required billing fields are refused before any vendor call. `npm test` (40) passed against local `fu_session_test` only. Not deployed. Next is Wave 4 after review.
+- 2026-11-02 — Follow-up on the same branch. Person/Owner no longer has a vehicle section or an owner insurance company. Copy from Person/Owner copies name, phone, and address into the party and leaves vehicle and insurance already on that party. Core has street, city, state, and ZIP for dispatch and for the incident. Same as dispatch copies dispatch into the incident. Motor Vehicle Collision location boxes stay read-only and do not write back to Core.
+- 2026-11-02 — Wave 4 done on `cursor/stage-b-foundation-b5ff` (practice only). Preview returns the payload, department ID, mode, missing Required and Recommended lists, and a hash that ignores CatchCreated. Submit requires that hash, takes one lock, and saves Sent, Failed, or Needs review. A second send of the same incident returns 409 and does not call Fire Recovery again. Resolve-review is admin only. The migration adds `submitStatus` and `submitStartedAt` only. `npm run lint`, `npm run build`, and `npm test` (42) passed against local `fu_session_test` only. The new Core address fields were not clicked in a browser. Not deployed. Render, Neon, staging, and production were not touched. Next is Wave 5. The fuller fake-vendor file remains Wave 6.
 
 ---
 
@@ -649,6 +651,6 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - Automatic billing status refresh
 - Bulk status, payment reconciliation, totals
 - Invoice and inspection billing
-- Simplifying the Person/Owner tab (D-6)
+- Further Person/Owner simplification beyond the 2026-11-02 removal of the vehicle section and owner insurance company
 - CAD Stage D
 - Parked items in ACTIVE_CONTEXT

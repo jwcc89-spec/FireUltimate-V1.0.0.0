@@ -33,10 +33,11 @@ import { readConfiguredMutualAidAidDepartmentOptions } from "../mutualAidAllowli
 import {
   billingPrintRows,
   billingValidationIssueLabels,
+  composeAddressLine,
+  incidentLocationParts,
   isFireRecoveryBillable,
   parseRequirementSettings,
   type CopyContact,
-  type CopyVehicle,
 } from "../fireRecovery/billingRequirements";
 import { FireRecoveryBillingSection } from "./FireRecoveryBillingSection";
 import {
@@ -667,40 +668,7 @@ function NerisReportFormPage({
     lastName: string;
     businessName: string;
     phone: string;
-    insuranceCompany: string;
     address: PersonOwnerAddress;
-  };
-
-  type PersonOwnerVehicle = {
-    vehicleType: string;
-    vehicleMake: string;
-    model: string;
-    color: string;
-    year: string;
-    vin: string;
-    licensePlate: string;
-    licensePlateState: string;
-    licensePlateExpires: string;
-    personsInvolved: string[];
-    uninsured: boolean;
-    insuredName: string;
-    policyNumber: string;
-    policyType: string;
-    claimNumber: string;
-    insuranceCompanyName: string;
-    insuranceCompanyPhone: string;
-    insuranceCompanyAddress: string;
-    insuranceCompanyEmail: string;
-    insuranceAgentName: string;
-    insuranceAgentCompany: string;
-    insuranceAgentAddress: string;
-    insuranceAgentPhone: string;
-    lawEnforcementOfficer: string;
-    policeReportFileNumber: string;
-    numberOfOccupants: string;
-    numberOfInjuries: string;
-    numberOfFatalities: string;
-    notes: string;
   };
 
   const parseIncidentLocationAddressToPersonAddress = (
@@ -1136,7 +1104,6 @@ function NerisReportFormPage({
             lastName: String(maybe.lastName ?? ""),
             businessName: String(maybe.businessName ?? ""),
             phone: String(maybe.phone ?? ""),
-            insuranceCompany: String(maybe.insuranceCompany ?? ""),
             address: normalizedAddress,
           };
         })
@@ -1145,53 +1112,6 @@ function NerisReportFormPage({
       return [];
     }
   }, [formValues.person_owner_owners_json]);
-  const personOwnerVehicles = useMemo<PersonOwnerVehicle[]>(() => {
-    const raw = formValues.person_owner_vehicles_json ?? "";
-    if (!raw.trim()) return [];
-    try {
-      const parsed = JSON.parse(raw) as unknown;
-      if (!Array.isArray(parsed)) return [];
-      return parsed.map((v) => {
-        const maybe = v as Partial<PersonOwnerVehicle>;
-        return {
-          vehicleType: String(maybe.vehicleType ?? ""),
-          vehicleMake: String(maybe.vehicleMake ?? ""),
-          model: String(maybe.model ?? ""),
-          color: String(maybe.color ?? ""),
-          year: String(maybe.year ?? ""),
-          vin: String(maybe.vin ?? ""),
-          licensePlate: String(maybe.licensePlate ?? ""),
-          licensePlateState: String(maybe.licensePlateState ?? ""),
-          licensePlateExpires: String(maybe.licensePlateExpires ?? ""),
-          personsInvolved: Array.isArray(maybe.personsInvolved)
-            ? maybe.personsInvolved.map((x) => String(x ?? "").trim()).filter(Boolean)
-            : [],
-          uninsured: Boolean(maybe.uninsured),
-          insuredName: String(maybe.insuredName ?? ""),
-          policyNumber: String(maybe.policyNumber ?? ""),
-          policyType: String(maybe.policyType ?? ""),
-          claimNumber: String(maybe.claimNumber ?? ""),
-          insuranceCompanyName: String(maybe.insuranceCompanyName ?? ""),
-          insuranceCompanyPhone: String(maybe.insuranceCompanyPhone ?? ""),
-          insuranceCompanyAddress: String(maybe.insuranceCompanyAddress ?? ""),
-          insuranceCompanyEmail: String(maybe.insuranceCompanyEmail ?? ""),
-          insuranceAgentName: String(maybe.insuranceAgentName ?? ""),
-          insuranceAgentCompany: String(maybe.insuranceAgentCompany ?? ""),
-          insuranceAgentAddress: String(maybe.insuranceAgentAddress ?? ""),
-          insuranceAgentPhone: String(maybe.insuranceAgentPhone ?? ""),
-          lawEnforcementOfficer: String(maybe.lawEnforcementOfficer ?? ""),
-          policeReportFileNumber: String(maybe.policeReportFileNumber ?? ""),
-          numberOfOccupants: String(maybe.numberOfOccupants ?? ""),
-          numberOfInjuries: String(maybe.numberOfInjuries ?? ""),
-          numberOfFatalities: String(maybe.numberOfFatalities ?? ""),
-          notes: String(maybe.notes ?? ""),
-        };
-      });
-    } catch {
-      return [];
-    }
-  }, [formValues.person_owner_vehicles_json]);
-
   const [personOwnerAddPersonModalOpen, setPersonOwnerAddPersonModalOpen] = useState(false);
   const [personOwnerAddPersonDraft, setPersonOwnerAddPersonDraft] = useState<PersonOwnerPerson>(() => ({
     firstName: "",
@@ -1216,7 +1136,6 @@ function NerisReportFormPage({
     lastName: "",
     businessName: "",
     phone: "",
-    insuranceCompany: "",
     address: {
       streetHighwayName: "",
       poBox: "",
@@ -1226,43 +1145,6 @@ function NerisReportFormPage({
       zipCode: "",
     },
   }));
-  const [personOwnerAddVehicleModalOpen, setPersonOwnerAddVehicleModalOpen] = useState(false);
-  const [personOwnerVehicleEditIndex, setPersonOwnerVehicleEditIndex] = useState<number | null>(null);
-  const [personOwnerVehicleInvolvedPicker, setPersonOwnerVehicleInvolvedPicker] = useState("");
-  const [personOwnerVehicleShowInvolvedSelector, setPersonOwnerVehicleShowInvolvedSelector] =
-    useState(false);
-  const [personOwnerAddVehicleDraft, setPersonOwnerAddVehicleDraft] = useState<PersonOwnerVehicle>(() => ({
-    vehicleType: "",
-    vehicleMake: "",
-    model: "",
-    color: "",
-    year: "",
-    vin: "",
-    licensePlate: "",
-    licensePlateState: "",
-    licensePlateExpires: "",
-    personsInvolved: [],
-    uninsured: false,
-    insuredName: "",
-    policyNumber: "",
-    policyType: "",
-    claimNumber: "",
-    insuranceCompanyName: "",
-    insuranceCompanyPhone: "",
-    insuranceCompanyAddress: "",
-    insuranceCompanyEmail: "",
-    insuranceAgentName: "",
-    insuranceAgentCompany: "",
-    insuranceAgentAddress: "",
-    insuranceAgentPhone: "",
-    lawEnforcementOfficer: "",
-    policeReportFileNumber: "",
-    numberOfOccupants: "",
-    numberOfInjuries: "",
-    numberOfFatalities: "",
-    notes: "",
-  }));
-
   const resetPersonOwnerAddPersonDraft = () => {
     setPersonOwnerEditIndex(null);
     setPersonOwnerAddPersonDraft({
@@ -1281,12 +1163,10 @@ function NerisReportFormPage({
       },
     });
   };
-
   const openAddPersonModal = () => {
     resetPersonOwnerAddPersonDraft();
     setPersonOwnerAddPersonModalOpen(true);
   };
-
   const openEditPersonModal = (index: number) => {
     const person = personOwnerPersons[index];
     if (!person) return;
@@ -1301,7 +1181,6 @@ function NerisReportFormPage({
       lastName: "",
       businessName: "",
       phone: "",
-      insuranceCompany: "",
       address: {
         streetHighwayName: "",
         poBox: "",
@@ -1323,92 +1202,8 @@ function NerisReportFormPage({
     setPersonOwnerAddOwnerDraft(owner);
     setPersonOwnerAddOwnerModalOpen(true);
   };
-
-  const resetPersonOwnerAddVehicleDraft = () => {
-    setPersonOwnerVehicleEditIndex(null);
-    setPersonOwnerVehicleInvolvedPicker("");
-    setPersonOwnerVehicleShowInvolvedSelector(false);
-    setPersonOwnerAddVehicleDraft({
-      vehicleType: "",
-      vehicleMake: "",
-      model: "",
-      color: "",
-      year: "",
-      vin: "",
-      licensePlate: "",
-      licensePlateState: "",
-      licensePlateExpires: "",
-      personsInvolved: [],
-      uninsured: false,
-      insuredName: "",
-      policyNumber: "",
-      policyType: "",
-      claimNumber: "",
-      insuranceCompanyName: "",
-      insuranceCompanyPhone: "",
-      insuranceCompanyAddress: "",
-      insuranceCompanyEmail: "",
-      insuranceAgentName: "",
-      insuranceAgentCompany: "",
-      insuranceAgentAddress: "",
-      insuranceAgentPhone: "",
-      lawEnforcementOfficer: "",
-      policeReportFileNumber: "",
-      numberOfOccupants: "",
-      numberOfInjuries: "",
-      numberOfFatalities: "",
-      notes: "",
-    });
-  };
-  const openAddVehicleModal = () => {
-    resetPersonOwnerAddVehicleDraft();
-    setPersonOwnerAddVehicleModalOpen(true);
-  };
-  const openEditVehicleModal = (index: number) => {
-    const vehicle = personOwnerVehicles[index];
-    if (!vehicle) return;
-    setPersonOwnerVehicleEditIndex(index);
-    setPersonOwnerVehicleInvolvedPicker("");
-    setPersonOwnerVehicleShowInvolvedSelector(false);
-    setPersonOwnerAddVehicleDraft(vehicle);
-    setPersonOwnerAddVehicleModalOpen(true);
-  };
-  const personOwnerInvolvedOptions = useMemo(
-    () => [
-      ...personOwnerPersons.map((p, idx) => ({
-        value: `person:${idx}`,
-        label: [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(" ") || `Person ${idx + 1}`,
-      })),
-      ...personOwnerOwners.map((o, idx) => ({
-        value: `owner:${idx}`,
-        label: [o.firstName.trim(), o.lastName.trim()].filter(Boolean).join(" ") || `Owner ${idx + 1}`,
-      })),
-    ],
-    [personOwnerPersons, personOwnerOwners],
-  );
-  const resolveInvolvedDisplayName = useCallback(
-    (ref: string): string => {
-      const [kind, rawIndex] = ref.split(":");
-      const index = Number.parseInt(rawIndex ?? "", 10);
-      if (!Number.isFinite(index) || index < 0) return ref;
-      if (kind === "person") {
-        const p = personOwnerPersons[index];
-        return p ? [p.firstName.trim(), p.lastName.trim()].filter(Boolean).join(" ") || ref : ref;
-      }
-      if (kind === "owner") {
-        const o = personOwnerOwners[index];
-        return o ? [o.firstName.trim(), o.lastName.trim()].filter(Boolean).join(" ") || ref : ref;
-      }
-      return ref;
-    },
-    [personOwnerPersons, personOwnerOwners],
-  );
   const buildPersonOwnerFormOverrides = useCallback(
-    (
-      persons: PersonOwnerPerson[],
-      owners: PersonOwnerOwner[],
-      vehicles: PersonOwnerVehicle[],
-    ): Partial<NerisFormValues> => {
+    (persons: PersonOwnerPerson[], owners: PersonOwnerOwner[]): Partial<NerisFormValues> => {
       const join = (values: string[]) =>
         values
           .map((value) => value.trim())
@@ -1417,7 +1212,6 @@ function NerisReportFormPage({
       return {
         person_owner_persons_json: JSON.stringify(persons),
         person_owner_owners_json: JSON.stringify(owners),
-        person_owner_vehicles_json: JSON.stringify(vehicles),
         person_owner_person_first_name: join(persons.map((p) => p.firstName)),
         person_owner_person_last_name: join(persons.map((p) => p.lastName)),
         person_owner_person_business_name: join(persons.map((p) => p.businessName)),
@@ -1433,59 +1227,46 @@ function NerisReportFormPage({
         person_owner_owner_last_name: join(owners.map((o) => o.lastName)),
         person_owner_owner_business_name: join(owners.map((o) => o.businessName)),
         person_owner_owner_phone: join(owners.map((o) => o.phone)),
-        person_owner_owner_insurance_company: join(owners.map((o) => o.insuranceCompany)),
         person_owner_owner_address_street: join(owners.map((o) => o.address.streetHighwayName)),
         person_owner_owner_address_po_box: join(owners.map((o) => o.address.poBox)),
         person_owner_owner_address_apartment: join(owners.map((o) => o.address.apartmentNumber)),
         person_owner_owner_address_city: join(owners.map((o) => o.address.city)),
         person_owner_owner_address_state: join(owners.map((o) => o.address.state)),
         person_owner_owner_address_zip: join(owners.map((o) => o.address.zipCode)),
-        person_owner_vehicle_type: join(vehicles.map((v) => v.vehicleType)),
-        person_owner_vehicle_make: join(vehicles.map((v) => v.vehicleMake)),
-        person_owner_vehicle_model: join(vehicles.map((v) => v.model)),
-        person_owner_vehicle_color: join(vehicles.map((v) => v.color)),
-        person_owner_vehicle_year: join(vehicles.map((v) => v.year)),
-        person_owner_vehicle_vin: join(vehicles.map((v) => v.vin)),
-        person_owner_vehicle_license_plate: join(vehicles.map((v) => v.licensePlate)),
-        person_owner_vehicle_state: join(vehicles.map((v) => v.licensePlateState)),
-        person_owner_vehicle_license_plate_expires: join(vehicles.map((v) => v.licensePlateExpires)),
-        person_owner_vehicle_persons_involved: join(
-          vehicles.map((v) => v.personsInvolved.map((ref) => resolveInvolvedDisplayName(ref)).join(", ")),
-        ),
-        person_owner_vehicle_uninsured: join(vehicles.map((v) => (v.uninsured ? "YES" : "NO"))),
-        person_owner_vehicle_insured_name: join(vehicles.map((v) => v.insuredName)),
-        person_owner_vehicle_policy_number: join(vehicles.map((v) => v.policyNumber)),
-        person_owner_vehicle_policy_type: join(vehicles.map((v) => v.policyType)),
-        person_owner_vehicle_claim_number: join(vehicles.map((v) => v.claimNumber)),
-        person_owner_vehicle_insurance_company_name: join(vehicles.map((v) => v.insuranceCompanyName)),
-        person_owner_vehicle_insurance_company_phone: join(
-          vehicles.map((v) => v.insuranceCompanyPhone),
-        ),
-        person_owner_vehicle_insurance_company_address: join(
-          vehicles.map((v) => v.insuranceCompanyAddress),
-        ),
-        person_owner_vehicle_insurance_company_email: join(vehicles.map((v) => v.insuranceCompanyEmail)),
-        person_owner_vehicle_insurance_agent_name: join(vehicles.map((v) => v.insuranceAgentName)),
-        person_owner_vehicle_insurance_agent_company: join(
-          vehicles.map((v) => v.insuranceAgentCompany),
-        ),
-        person_owner_vehicle_insurance_agent_address: join(
-          vehicles.map((v) => v.insuranceAgentAddress),
-        ),
-        person_owner_vehicle_insurance_agent_phone: join(vehicles.map((v) => v.insuranceAgentPhone)),
-        person_owner_vehicle_law_enforcement_officer: join(
-          vehicles.map((v) => v.lawEnforcementOfficer),
-        ),
-        person_owner_vehicle_police_report_file_number: join(
-          vehicles.map((v) => v.policeReportFileNumber),
-        ),
-        person_owner_vehicle_number_of_occupants: join(vehicles.map((v) => v.numberOfOccupants)),
-        person_owner_vehicle_number_of_injuries: join(vehicles.map((v) => v.numberOfInjuries)),
-        person_owner_vehicle_number_of_fatalities: join(vehicles.map((v) => v.numberOfFatalities)),
-        person_owner_vehicle_notes: join(vehicles.map((v) => v.notes)),
+        person_owner_owner_insurance_company: "",
+        person_owner_vehicles_json: "[]",
+        person_owner_vehicle_type: "",
+        person_owner_vehicle_make: "",
+        person_owner_vehicle_model: "",
+        person_owner_vehicle_color: "",
+        person_owner_vehicle_year: "",
+        person_owner_vehicle_vin: "",
+        person_owner_vehicle_license_plate: "",
+        person_owner_vehicle_state: "",
+        person_owner_vehicle_license_plate_expires: "",
+        person_owner_vehicle_persons_involved: "",
+        person_owner_vehicle_uninsured: "",
+        person_owner_vehicle_insured_name: "",
+        person_owner_vehicle_policy_number: "",
+        person_owner_vehicle_policy_type: "",
+        person_owner_vehicle_claim_number: "",
+        person_owner_vehicle_insurance_company_name: "",
+        person_owner_vehicle_insurance_company_phone: "",
+        person_owner_vehicle_insurance_company_address: "",
+        person_owner_vehicle_insurance_company_email: "",
+        person_owner_vehicle_insurance_agent_name: "",
+        person_owner_vehicle_insurance_agent_company: "",
+        person_owner_vehicle_insurance_agent_address: "",
+        person_owner_vehicle_insurance_agent_phone: "",
+        person_owner_vehicle_law_enforcement_officer: "",
+        person_owner_vehicle_police_report_file_number: "",
+        person_owner_vehicle_number_of_occupants: "",
+        person_owner_vehicle_number_of_injuries: "",
+        person_owner_vehicle_number_of_fatalities: "",
+        person_owner_vehicle_notes: "",
       };
     },
-    [resolveInvolvedDisplayName],
+    [],
   );
 
   const [activeResourcePersonnelUnitId, setActiveResourcePersonnelUnitId] = useState<string | null>(
@@ -1929,6 +1710,37 @@ function NerisReportFormPage({
     });
   }, [nerisExportSettings.vendorCode, formValues.fd_neris_id]);
 
+  const fillIncidentLocationFromDispatch = () => {
+    userEditedReportRef.current = true;
+    setFormValues((previous) => {
+      const street = String(previous.dispatch_location_street ?? "").trim();
+      const city = String(previous.dispatch_location_city ?? "").trim();
+      const state = String(previous.dispatch_location_state ?? "").trim();
+      const zip = String(previous.dispatch_location_zip ?? "").trim();
+      const hasParts = Boolean(street || city || state || zip);
+      const address = hasParts
+        ? composeAddressLine(street, city, state, zip)
+        : String(previous.dispatch_location_address ?? "").trim();
+      const parsed = hasParts
+        ? { street, city, state, zip }
+        : incidentLocationParts({
+            incident_location_address: address,
+            location_state: String(previous.location_state ?? ""),
+            location_postal_code: String(previous.location_postal_code ?? ""),
+          });
+      return {
+        ...previous,
+        incident_location_street: parsed.street,
+        incident_location_city: parsed.city,
+        incident_location_state: parsed.state,
+        incident_location_zip: parsed.zip,
+        incident_location_address: address || composeAddressLine(parsed.street, parsed.city, parsed.state, parsed.zip),
+        location_state: parsed.state || String(previous.location_state ?? ""),
+        location_postal_code: parsed.zip || String(previous.location_postal_code ?? ""),
+      };
+    });
+  };
+
   const updateFieldValue = (fieldId: string, value: string) => {
     userEditedReportRef.current = true;
     const sanitizedValue =
@@ -1982,6 +1794,30 @@ function NerisReportFormPage({
       }
       if (fieldId === "incident_aid_agency_type" && sanitizedValue === "FIRE_DEPARTMENT") {
         nextValues.incident_aid_nonfd = "";
+      }
+      const dispatchPart =
+        fieldId === "dispatch_location_street" ||
+        fieldId === "dispatch_location_city" ||
+        fieldId === "dispatch_location_state" ||
+        fieldId === "dispatch_location_zip";
+      const incidentPart =
+        fieldId === "incident_location_street" ||
+        fieldId === "incident_location_city" ||
+        fieldId === "incident_location_state" ||
+        fieldId === "incident_location_zip";
+      if (dispatchPart || incidentPart) {
+        const prefix = dispatchPart ? "dispatch_location" : "incident_location";
+        const street = fieldId.endsWith("_street") ? sanitizedValue : String(nextValues[`${prefix}_street`] ?? "");
+        const city = fieldId.endsWith("_city") ? sanitizedValue : String(nextValues[`${prefix}_city`] ?? "");
+        const state = fieldId.endsWith("_state") ? sanitizedValue : String(nextValues[`${prefix}_state`] ?? "");
+        const zip = fieldId.endsWith("_zip") ? sanitizedValue : String(nextValues[`${prefix}_zip`] ?? "");
+        if (street.trim() || city.trim() || state.trim() || zip.trim()) {
+          nextValues[`${prefix}_address`] = composeAddressLine(street, city, state, zip);
+        }
+        if (incidentPart) {
+          if (state.trim()) nextValues.location_state = state.trim();
+          if (zip.trim()) nextValues.location_postal_code = zip.trim();
+        }
       }
       return nextValues;
     });
@@ -4521,7 +4357,7 @@ function NerisReportFormPage({
       sections.push({ id: "resourceSummary", title: "Resources", rows: resourceRows });
     }
 
-    if (personOwnerPersons.length > 0 || personOwnerOwners.length > 0 || personOwnerVehicles.length > 0) {
+    if (personOwnerPersons.length > 0 || personOwnerOwners.length > 0) {
       const formatPersonAddressForPrint = (address: PersonOwnerAddress): string => {
         const bits: string[] = [];
         const streetBits: string[] = [];
@@ -4559,44 +4395,14 @@ function NerisReportFormPage({
           o.businessName.trim() ? `(${o.businessName.trim()})` : "",
         ].filter(Boolean);
         const phoneBit = o.phone.trim() ? `Phone: ${o.phone.trim()}` : "";
-        const insuranceBit = o.insuranceCompany.trim()
-          ? `Insurance: ${o.insuranceCompany.trim()}`
-          : "";
         const addressBit = formatPersonAddressForPrint(o.address);
-        const value = [nameBits.join(" "), phoneBit, insuranceBit, addressBit]
-          .filter(Boolean)
-          .join(" • ");
+        const value = [nameBits.join(" "), phoneBit, addressBit].filter(Boolean).join(" • ");
         return { label: `Owner #${index + 1}`, value };
       });
-      const vehicleRows: PrintSummaryRow[] = personOwnerVehicles.map((v, index) => {
-        const vehicleLine = [
-          v.vehicleMake.trim(),
-          v.model.trim(),
-          v.color.trim(),
-          v.year.trim(),
-        ]
-          .filter(Boolean)
-          .join(" ");
-        const vehicleMeta = [v.vehicleType.trim(), v.licensePlate.trim(), v.licensePlateState.trim()]
-          .filter(Boolean)
-          .join(" • ");
-        const insuranceLine = v.uninsured
-          ? "Uninsured"
-          : [v.insuranceCompanyName.trim(), v.policyNumber.trim()].filter(Boolean).join(" • ");
-        const involvedLine = (v.personsInvolved ?? [])
-          .map((ref) => resolveInvolvedDisplayName(ref))
-          .filter(Boolean)
-          .join(", ");
-        const value = [vehicleLine, vehicleMeta, involvedLine && `People/Owners: ${involvedLine}`, insuranceLine]
-          .filter(Boolean)
-          .join(" | ");
-        return { label: `Vehicle #${index + 1}`, value };
-      });
-
       sections.push({
         id: "personOwnerSummary",
         title: "Person/Owner",
-        rows: [...personRows, ...ownerRows, ...vehicleRows],
+        rows: [...personRows, ...ownerRows],
       });
     } else {
       // If the JSON exists but parsing failed (or the data shape changed), still show something.
@@ -4623,8 +4429,6 @@ function NerisReportFormPage({
     resourceUnits,
     personOwnerPersons,
     personOwnerOwners,
-    personOwnerVehicles,
-    resolveInvolvedDisplayName,
   ]);
 
   const handlePrintSummary = () => {
@@ -7684,11 +7488,7 @@ function NerisReportFormPage({
                                       "manual",
                                       reportStatus,
                                       undefined,
-                                      buildPersonOwnerFormOverrides(
-                                        nextPersons,
-                                        personOwnerOwners,
-                                        personOwnerVehicles,
-                                      ),
+                                      buildPersonOwnerFormOverrides(nextPersons, personOwnerOwners),
                                     );
                                     if (personOwnerEditIndex === idx) {
                                       resetPersonOwnerAddPersonDraft();
@@ -7746,11 +7546,7 @@ function NerisReportFormPage({
                                       "manual",
                                       reportStatus,
                                       undefined,
-                                      buildPersonOwnerFormOverrides(
-                                        personOwnerPersons,
-                                        nextOwners,
-                                        personOwnerVehicles,
-                                      ),
+                                      buildPersonOwnerFormOverrides(personOwnerPersons, nextOwners),
                                     );
                                     if (personOwnerOwnerEditIndex === idx) {
                                       resetPersonOwnerAddOwnerDraft();
@@ -7772,85 +7568,6 @@ function NerisReportFormPage({
                     )}
                   </div>
                 </div>
-
-                <div className="panel">
-                  <h3 style={{ margin: 0, fontSize: "0.92rem" }}>Vehicle</h3>
-                  <div style={{ height: "0.55rem" }} />
-                  <button
-                    type="button"
-                    className="primary-button compact-button"
-                    onClick={openAddVehicleModal}
-                  >
-                    Add Vehicle
-                  </button>
-                  <div style={{ height: "0.7rem" }} />
-                  {personOwnerVehicles.length ? (
-                    <div style={{ display: "grid", gap: "0.55rem" }}>
-                      {personOwnerVehicles.map((v, idx) => (
-                        <div key={`${v.vin}-${v.licensePlate}-${idx}`} className="panel">
-                          <div style={{ display: "flex", justifyContent: "space-between", gap: "0.8rem" }}>
-                            <div style={{ display: "grid", gap: "0.26rem" }}>
-                              <strong style={{ fontSize: "0.9rem" }}>
-                                {[v.vehicleMake, v.model, v.color, v.year].filter((x) => x.trim()).join(" ") ||
-                                  `Vehicle ${idx + 1}`}
-                              </strong>
-                              <span style={{ color: "#475569", fontSize: "0.76rem" }}>
-                                {(v.personsInvolved ?? [])
-                                  .map((ref) => resolveInvolvedDisplayName(ref))
-                                  .filter(Boolean)
-                                  .join(", ")}
-                              </span>
-                              <span style={{ color: "#475569", fontSize: "0.76rem" }}>
-                                {v.uninsured
-                                  ? "Uninsured"
-                                  : [v.insuranceCompanyName.trim(), v.policyNumber.trim()]
-                                      .filter(Boolean)
-                                      .join(" • ")}
-                              </span>
-                            </div>
-                            <div style={{ display: "inline-flex", gap: "0.35rem", alignItems: "flex-start" }}>
-                              <button
-                                type="button"
-                                className="secondary-button compact-button"
-                                onClick={() => openEditVehicleModal(idx)}
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                className="secondary-button compact-button"
-                                onClick={() => {
-                                  const nextVehicles = personOwnerVehicles.filter((_, i) => i !== idx);
-                                  stampSavedAt(
-                                    "manual",
-                                    reportStatus,
-                                    undefined,
-                                    buildPersonOwnerFormOverrides(
-                                      personOwnerPersons,
-                                      personOwnerOwners,
-                                      nextVehicles,
-                                    ),
-                                  );
-                                  if (personOwnerVehicleEditIndex === idx) {
-                                    resetPersonOwnerAddVehicleDraft();
-                                    setPersonOwnerAddVehicleModalOpen(false);
-                                  }
-                                }}
-                              >
-                                Delete
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="neris-section-placeholder">
-                      <p>No vehicles added yet.</p>
-                    </div>
-                  )}
-                </div>
-
                 {personOwnerAddPersonModalOpen ? (
                   <div
                     className="neris-resource-personnel-modal-backdrop"
@@ -8091,11 +7808,7 @@ function NerisReportFormPage({
                                 "manual",
                                 reportStatus,
                                 undefined,
-                                buildPersonOwnerFormOverrides(
-                                  nextPersons,
-                                  personOwnerOwners,
-                                  personOwnerVehicles,
-                                ),
+                                buildPersonOwnerFormOverrides(nextPersons, personOwnerOwners),
                               );
 
                               resetPersonOwnerAddPersonDraft();
@@ -8161,14 +7874,6 @@ function NerisReportFormPage({
                           type="text"
                           value={personOwnerAddOwnerDraft.phone}
                           onChange={(e) => setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, phone: e.target.value }))}
-                        />
-                        <label>Insurance Company</label>
-                        <input
-                          type="text"
-                          value={personOwnerAddOwnerDraft.insuranceCompany}
-                          onChange={(e) =>
-                            setPersonOwnerAddOwnerDraft((prev) => ({ ...prev, insuranceCompany: e.target.value }))
-                          }
                         />
                         <div className="state-edit-row">
                           <label>Address</label>
@@ -8272,7 +7977,6 @@ function NerisReportFormPage({
                                 lastName: personOwnerAddOwnerDraft.lastName.trim(),
                                 businessName: personOwnerAddOwnerDraft.businessName.trim(),
                                 phone: personOwnerAddOwnerDraft.phone.trim(),
-                                insuranceCompany: personOwnerAddOwnerDraft.insuranceCompany.trim(),
                                 address: {
                                   streetHighwayName: personOwnerAddOwnerDraft.address.streetHighwayName.trim(),
                                   poBox: personOwnerAddOwnerDraft.address.poBox.trim(),
@@ -8292,226 +7996,10 @@ function NerisReportFormPage({
                                 "manual",
                                 reportStatus,
                                 undefined,
-                                buildPersonOwnerFormOverrides(
-                                  personOwnerPersons,
-                                  nextOwners,
-                                  personOwnerVehicles,
-                                ),
+                                buildPersonOwnerFormOverrides(personOwnerPersons, nextOwners),
                               );
                               resetPersonOwnerAddOwnerDraft();
                               setPersonOwnerAddOwnerModalOpen(false);
-                            }}
-                          >
-                            Save
-                          </button>
-                        </div>
-                      </div>
-                    </section>
-                  </div>
-                ) : null}
-                {personOwnerAddVehicleModalOpen ? (
-                  <div
-                    className="neris-resource-personnel-modal-backdrop"
-                    role="dialog"
-                    aria-modal="true"
-                    onClick={(event) => {
-                      if (event.target === event.currentTarget) {
-                        resetPersonOwnerAddVehicleDraft();
-                        setPersonOwnerAddVehicleModalOpen(false);
-                      }
-                    }}
-                  >
-                    <section className="panel neris-resource-personnel-modal" onWheel={(event) => event.stopPropagation()}>
-                      <div className="neris-resource-personnel-modal-header">
-                        <h3>{personOwnerVehicleEditIndex === null ? "Add Vehicle" : "Edit Vehicle"}</h3>
-                        <button
-                          type="button"
-                          className="secondary-button compact-button"
-                          onClick={() => {
-                            resetPersonOwnerAddVehicleDraft();
-                            setPersonOwnerAddVehicleModalOpen(false);
-                          }}
-                        >
-                          Close
-                        </button>
-                      </div>
-                      <div className="settings-form">
-                        <h4 style={{ margin: "0.2rem 0" }}>Vehicle Info</h4>
-                        <label>Vehicle Type</label><input type="text" value={personOwnerAddVehicleDraft.vehicleType} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, vehicleType: e.target.value }))} />
-                        <label>Vehicle Make</label><input type="text" value={personOwnerAddVehicleDraft.vehicleMake} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, vehicleMake: e.target.value }))} />
-                        <label>Model</label><input type="text" value={personOwnerAddVehicleDraft.model} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, model: e.target.value }))} />
-                        <label>Color</label><input type="text" value={personOwnerAddVehicleDraft.color} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, color: e.target.value }))} />
-                        <label>Year</label><input type="text" value={personOwnerAddVehicleDraft.year} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, year: e.target.value }))} />
-                        <label>Vin</label><input type="text" value={personOwnerAddVehicleDraft.vin} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, vin: e.target.value }))} />
-                        <label>License Plate</label><input type="text" value={personOwnerAddVehicleDraft.licensePlate} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, licensePlate: e.target.value }))} />
-                        <label>State</label><input type="text" value={personOwnerAddVehicleDraft.licensePlateState} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, licensePlateState: e.target.value }))} />
-                        <label>License Plate Expires</label><input type="text" value={personOwnerAddVehicleDraft.licensePlateExpires} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, licensePlateExpires: e.target.value }))} />
-
-                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Persons Involved</h4>
-                        <button
-                          type="button"
-                          className="primary-button compact-button"
-                          onClick={() => setPersonOwnerVehicleShowInvolvedSelector((prev) => !prev)}
-                        >
-                          Add
-                        </button>
-                        {personOwnerVehicleShowInvolvedSelector ? (
-                          <>
-                            <select
-                              value={personOwnerVehicleInvolvedPicker}
-                              onChange={(e) => setPersonOwnerVehicleInvolvedPicker(e.target.value)}
-                            >
-                              <option value="">Select person/owner</option>
-                              {personOwnerInvolvedOptions.map((opt) => (
-                                <option key={opt.value} value={opt.value}>{opt.label}</option>
-                              ))}
-                            </select>
-                            <button
-                              type="button"
-                              className="secondary-button compact-button"
-                              onClick={() => {
-                                const pick = personOwnerVehicleInvolvedPicker.trim();
-                                if (!pick) return;
-                                setPersonOwnerAddVehicleDraft((prev) => ({
-                                  ...prev,
-                                  personsInvolved: prev.personsInvolved.includes(pick)
-                                    ? prev.personsInvolved
-                                    : [...prev.personsInvolved, pick],
-                                }));
-                                setPersonOwnerVehicleInvolvedPicker("");
-                                setPersonOwnerVehicleShowInvolvedSelector(false);
-                              }}
-                            >
-                              Add Selected
-                            </button>
-                          </>
-                        ) : null}
-                        {(personOwnerAddVehicleDraft.personsInvolved ?? []).length ? (
-                          <div style={{ display: "grid", gap: "0.25rem" }}>
-                            {personOwnerAddVehicleDraft.personsInvolved.map((ref) => (
-                              <div key={ref} style={{ display: "flex", justifyContent: "space-between", gap: "0.5rem" }}>
-                                <span style={{ fontSize: "0.78rem" }}>{resolveInvolvedDisplayName(ref)}</span>
-                                <button
-                                  type="button"
-                                  className="secondary-button compact-button"
-                                  onClick={() =>
-                                    setPersonOwnerAddVehicleDraft((prev) => ({
-                                      ...prev,
-                                      personsInvolved: prev.personsInvolved.filter((x) => x !== ref),
-                                    }))
-                                  }
-                                >
-                                  Remove
-                                </button>
-                              </div>
-                            ))}
-                          </div>
-                        ) : null}
-
-                        <div className="state-edit-row">
-                          <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Insurance Info</h4>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() =>
-                              setPersonOwnerAddVehicleDraft((prev) => ({
-                                ...prev,
-                                uninsured: !prev.uninsured,
-                              }))
-                            }
-                          >
-                            Uninsured
-                          </button>
-                        </div>
-                        {!personOwnerAddVehicleDraft.uninsured ? (
-                          <>
-                            <label>Insured Name</label><input type="text" value={personOwnerAddVehicleDraft.insuredName} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuredName: e.target.value }))} />
-                            <label>Policy Number</label><input type="text" value={personOwnerAddVehicleDraft.policyNumber} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, policyNumber: e.target.value }))} />
-                            <label>Policy Type</label><input type="text" value={personOwnerAddVehicleDraft.policyType} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, policyType: e.target.value }))} />
-                            <label>Claim Number</label><input type="text" value={personOwnerAddVehicleDraft.claimNumber} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, claimNumber: e.target.value }))} />
-                            <label>Insurance Company Name</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyName} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyName: e.target.value }))} />
-                            <label>Insurance Company Phone</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyPhone} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyPhone: e.target.value }))} />
-                            <label>Insurance Company Address</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyAddress} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyAddress: e.target.value }))} />
-                            <label>Insurance Company Email</label><input type="text" value={personOwnerAddVehicleDraft.insuranceCompanyEmail} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceCompanyEmail: e.target.value }))} />
-                            <label>Insurance Agent name</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentName} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentName: e.target.value }))} />
-                            <label>Insurance Agent Company</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentCompany} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentCompany: e.target.value }))} />
-                            <label>Insurance Agent Address</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentAddress} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentAddress: e.target.value }))} />
-                            <label>Insurance Agent Phone</label><input type="text" value={personOwnerAddVehicleDraft.insuranceAgentPhone} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, insuranceAgentPhone: e.target.value }))} />
-                          </>
-                        ) : (
-                          <p className="field-hint" style={{ margin: 0 }}>
-                            Marked as uninsured. Insurance fields are hidden.
-                          </p>
-                        )}
-
-                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Law Enforcement</h4>
-                        <label>Law Enforcement Officer</label><input type="text" value={personOwnerAddVehicleDraft.lawEnforcementOfficer} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, lawEnforcementOfficer: e.target.value }))} />
-                        <label>Police Report / File Number</label><input type="text" value={personOwnerAddVehicleDraft.policeReportFileNumber} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, policeReportFileNumber: e.target.value }))} />
-
-                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Occupant Info</h4>
-                        <label>Number of Occupants</label><input type="text" value={personOwnerAddVehicleDraft.numberOfOccupants} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, numberOfOccupants: e.target.value }))} />
-                        <label>Number of Injuries</label><input type="text" value={personOwnerAddVehicleDraft.numberOfInjuries} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, numberOfInjuries: e.target.value }))} />
-                        <label>Number of Fatalities</label><input type="text" value={personOwnerAddVehicleDraft.numberOfFatalities} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, numberOfFatalities: e.target.value }))} />
-
-                        <h4 style={{ margin: "0.6rem 0 0.2rem" }}>Billing Notes</h4>
-                        <label>Notes</label><textarea rows={4} value={personOwnerAddVehicleDraft.notes} onChange={(e) => setPersonOwnerAddVehicleDraft((prev) => ({ ...prev, notes: e.target.value }))} />
-
-                        <div className="neris-form-actions" style={{ justifyContent: "space-between" }}>
-                          <button type="button" className="secondary-button" onClick={() => { resetPersonOwnerAddVehicleDraft(); setPersonOwnerAddVehicleModalOpen(false); }}>Cancel</button>
-                          <button
-                            type="button"
-                            className="primary-button"
-                            onClick={() => {
-                              const cleaned: PersonOwnerVehicle = {
-                                ...personOwnerAddVehicleDraft,
-                                vehicleType: personOwnerAddVehicleDraft.vehicleType.trim(),
-                                vehicleMake: personOwnerAddVehicleDraft.vehicleMake.trim(),
-                                model: personOwnerAddVehicleDraft.model.trim(),
-                                color: personOwnerAddVehicleDraft.color.trim(),
-                                year: personOwnerAddVehicleDraft.year.trim(),
-                                vin: personOwnerAddVehicleDraft.vin.trim(),
-                                licensePlate: personOwnerAddVehicleDraft.licensePlate.trim(),
-                                licensePlateState: personOwnerAddVehicleDraft.licensePlateState.trim(),
-                                licensePlateExpires: personOwnerAddVehicleDraft.licensePlateExpires.trim(),
-                                personsInvolved: personOwnerAddVehicleDraft.personsInvolved,
-                                uninsured: personOwnerAddVehicleDraft.uninsured,
-                                insuredName: personOwnerAddVehicleDraft.insuredName.trim(),
-                                policyNumber: personOwnerAddVehicleDraft.policyNumber.trim(),
-                                policyType: personOwnerAddVehicleDraft.policyType.trim(),
-                                claimNumber: personOwnerAddVehicleDraft.claimNumber.trim(),
-                                insuranceCompanyName: personOwnerAddVehicleDraft.insuranceCompanyName.trim(),
-                                insuranceCompanyPhone: personOwnerAddVehicleDraft.insuranceCompanyPhone.trim(),
-                                insuranceCompanyAddress: personOwnerAddVehicleDraft.insuranceCompanyAddress.trim(),
-                                insuranceCompanyEmail: personOwnerAddVehicleDraft.insuranceCompanyEmail.trim(),
-                                insuranceAgentName: personOwnerAddVehicleDraft.insuranceAgentName.trim(),
-                                insuranceAgentCompany: personOwnerAddVehicleDraft.insuranceAgentCompany.trim(),
-                                insuranceAgentAddress: personOwnerAddVehicleDraft.insuranceAgentAddress.trim(),
-                                insuranceAgentPhone: personOwnerAddVehicleDraft.insuranceAgentPhone.trim(),
-                                lawEnforcementOfficer: personOwnerAddVehicleDraft.lawEnforcementOfficer.trim(),
-                                policeReportFileNumber: personOwnerAddVehicleDraft.policeReportFileNumber.trim(),
-                                numberOfOccupants: personOwnerAddVehicleDraft.numberOfOccupants.trim(),
-                                numberOfInjuries: personOwnerAddVehicleDraft.numberOfInjuries.trim(),
-                                numberOfFatalities: personOwnerAddVehicleDraft.numberOfFatalities.trim(),
-                                notes: personOwnerAddVehicleDraft.notes.trim(),
-                              };
-                              const nextVehicles =
-                                personOwnerVehicleEditIndex === null
-                                  ? [...personOwnerVehicles, cleaned]
-                                  : personOwnerVehicles.map((vehicle, i) =>
-                                      i === personOwnerVehicleEditIndex ? cleaned : vehicle,
-                                    );
-                              stampSavedAt(
-                                "manual",
-                                reportStatus,
-                                undefined,
-                                buildPersonOwnerFormOverrides(
-                                  personOwnerPersons,
-                                  personOwnerOwners,
-                                  nextVehicles,
-                                ),
-                              );
-                              resetPersonOwnerAddVehicleDraft();
-                              setPersonOwnerAddVehicleModalOpen(false);
                             }}
                           >
                             Save
@@ -8548,25 +8036,9 @@ function NerisReportFormPage({
                     city: owner.address.city,
                     state: owner.address.state,
                     zip: owner.address.zipCode,
-                    insuranceCompany: owner.insuranceCompany,
-                  }),
-                )}
-                vehicles={personOwnerVehicles.map(
-                  (vehicle): CopyVehicle => ({
-                    personsInvolved: vehicle.personsInvolved,
-                    vehicleMake: vehicle.vehicleMake,
-                    model: vehicle.model,
-                    year: vehicle.year,
-                    vin: vehicle.vin,
-                    licensePlate: vehicle.licensePlate,
-                    uninsured: vehicle.uninsured,
-                    insuranceCompanyName: vehicle.insuranceCompanyName,
-                    policyNumber: vehicle.policyNumber,
-                    insuranceCompanyPhone: vehicle.insuranceCompanyPhone,
                   }),
                 )}
                 onChange={(json) => updateFieldValue("fire_recovery_billing_json", json)}
-                onOpenSection={(sectionId) => setActiveSectionId(sectionId)}
                 requirementSettings={fireRecoveryRequirementSettings}
               />
             ) : null}
@@ -8579,6 +8051,20 @@ function NerisReportFormPage({
                     nodes.push(
                       <div key={`heading-${field.id}`} className="field-span-two neris-core-field-heading">
                         {headingLabel}
+                      </div>,
+                    );
+                  }
+                  if (currentSection.id === "core" && field.id === "incident_location_address") {
+                    nodes.push(
+                      <div key="same-as-dispatch" className="field-span-two neris-location-add-links">
+                        <button
+                          type="button"
+                          className="link-button"
+                          disabled={!canEdit}
+                          onClick={fillIncidentLocationFromDispatch}
+                        >
+                          Same as dispatch
+                        </button>
                       </div>,
                     );
                   }

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import { buildFireRecoveryPayload, missingFireRecoveryFields } from "./fireRecoveryMapping.mjs";
+import {
+  buildFireRecoveryPayload,
+  missingFireRecoveryFields,
+  missingRecommendedFireRecoveryFields,
+} from "./fireRecoveryMapping.mjs";
 
 const nerisCode = "MEDICAL: INJURY: MOTOR_VEHICLE_COLLISION";
 
@@ -131,13 +135,15 @@ describe("fire recovery mapping", () => {
     assert.equal(incident.IncidentActionsTaken[0].IncidentActionsTakenCode, "PROVIDE_BASIC_LIFE_SUPPORT");
   });
 
-  it("uses the vehicle police report number when the billing number is blank", () => {
+  it("uses the Motor Vehicle Collision law enforcement number and ignores a Person/Owner vehicle number", () => {
     const formValues = sampleFormValues();
+    const payload = buildFireRecoveryPayload(formValues, { nerisId: "N", reportWriterName: "Ada Lane", callNumber: "c" }, { departmentId: "FD12345678", departmentName: "Crescent Fire" }, { submittedAt: "2026-11-01T20:48:00" });
+    assert.equal(payload.IncidentToBillPayload.IncidentsToBill.incident.CostRecovery.LawEnforcementNumber, "PD-100");
     const billing = JSON.parse(formValues.fire_recovery_billing_json);
     billing.lawEnforcementReportNumber = "";
     formValues.fire_recovery_billing_json = JSON.stringify(billing);
-    const payload = buildFireRecoveryPayload(formValues, { nerisId: "N", reportWriterName: "Ada Lane", callNumber: "c" }, { departmentId: "FD12345678", departmentName: "Crescent Fire" }, { submittedAt: "2026-11-01T20:48:00" });
-    assert.equal(payload.IncidentToBillPayload.IncidentsToBill.incident.CostRecovery.LawEnforcementNumber, "LE-9");
+    const blank = buildFireRecoveryPayload(formValues, { nerisId: "N", reportWriterName: "Ada Lane", callNumber: "c" }, { departmentId: "FD12345678", departmentName: "Crescent Fire" }, { submittedAt: "2026-11-01T20:48:00" });
+    assert.equal(blank.IncidentToBillPayload.IncidentsToBill.incident.CostRecovery.LawEnforcementNumber, "");
   });
 
   it("refuses a bill that is missing a required party field and lets Uninsured waive insurance", () => {
@@ -154,5 +160,9 @@ describe("fire recovery mapping", () => {
     const waived = missingFireRecoveryFields(formValues, { "fr.party.isResident": "required" }, "Ada Lane");
     assert.equal(waived.some((label) => label.includes("Insurance")), false);
     assert.equal(waived.some((label) => label.includes("Is Resident")), true);
+    const recommended = missingRecommendedFireRecoveryFields(sampleFormValues(), null);
+    assert.equal(recommended.includes("Party 1 — Policy Number"), true);
+    assert.equal(recommended.includes("Party 2 — Party Phone"), true);
+    assert.equal(recommended.includes("Party 1 — Party Phone"), false);
   });
 });
