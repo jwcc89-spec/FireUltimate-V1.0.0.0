@@ -358,7 +358,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 
 ### In progress (Fire Recovery USA — not Task-2 schema core)
 - **Incident billing handoff (UX + API):** See **`docs/plans/FIRE_RECOVERY_INCIDENT_BILLING_UX_PLAN.md`** — Incident Export Queue **FireRecovery** column + per-row export; NERIS submenu **Fire Recovery** entry; **Fire Recovery Incidents for Billing** list; detail **Update** (Get Incident Billing Status). Tenant-scoped; secrets not in `DepartmentDetails.payloadJson`.
-- **2026-11-02 location follow-up:** One incident state and one incident ZIP. Country and county are in Incident location. Country defaults to US. Hidden State/Territory and Postal code still feed the NERIS location. The Motor Vehicle Collision NERIS code box is hidden and uses the Core primary type. Demo export 400 is a missing NERIS Entity ID, not In Review. Do not start Wave 5b or Wave 6.
+- **2026-11-02 location follow-up:** One incident state and one incident ZIP. Country and county are in Incident location. Country defaults to US. Hidden State/Territory and Postal code still feed the NERIS location. The Motor Vehicle Collision NERIS code box is hidden and uses the Core primary type. The NERIS Entity ID is set at Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Incident 12345 exported 201 Created at 11:14:04 America/Chicago. Do not start Wave 5b or Wave 6 until the operator says so.
 
 ### Later (deferred hardening backlog)
 - Complete staging and production verification of the new incident workflow configuration surface (`Admin Functions -> Department Details -> Incidents Setup`) and incident linkage behavior (`Incident #` sync between incident queue and NERIS form).

@@ -22,7 +22,7 @@ export async function getFireRecoveryJwt(credentials, signal) {
   const p = trimValue(credentials?.password);
   if (!u || !p) {
     throw new Error(
-      "Fire Recovery username and password must be set for this tenant under Admin → Setup/Configuration → Fire Recovery.",
+      "Fire Recovery username and password must be set for this tenant under Admin Functions → Setup/Configuration → Fire Recovery.",
     );
   }
   const cred = { username: u, password: p };

@@ -69,7 +69,7 @@ All paths below are appended to the base host (e.g. `.../Primary/REST/...`).
 ### Subsequent requests
 
 - Header: **`Authorization: Bearer <token>`**
-- **Fire Ultimate:** JWT credentials come from **per-tenant** username/password (**Admin → Setup/Configuration → Fire Recovery**), not from `.env.server`.
+- **Fire Ultimate:** JWT credentials come from **per-tenant** username/password (**Admin Functions → Setup/Configuration → Fire Recovery**), not from `.env.server`.
 - **Add NERIS Incident for Billing** uses Bearer auth only (no `SubscriptionKey` in the body). Some other vendor flows still reference **`SubscriptionKey`** in payloads.
 
 ---

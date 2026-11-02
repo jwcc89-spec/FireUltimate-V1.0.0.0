@@ -13,7 +13,7 @@ export const FIRE_RECOVERY_SANDBOX_DEPARTMENT_ID = "FD12345678";
 const NERIS_ENTITY_ID_PATTERN = /^(FD|VN|FM|FA)\d{8}$/;
 
 const LIVE_ENTITY_MESSAGE =
-  "Set this tenant's NERIS Entity ID (FD########) in Setup/Configuration, and Fire Recovery department name under Setup/Configuration → Fire Recovery, before submitting.";
+  "Set this tenant's NERIS Entity ID (FD########) in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration, and the Fire Recovery department name under Admin Functions → Setup/Configuration → Fire Recovery, before submitting.";
 
 const LIVE_SANDBOX_MESSAGE =
   "Live Fire Recovery refuses the sandbox department ID FD12345678. Set this department's NERIS Entity ID before submitting a real bill.";

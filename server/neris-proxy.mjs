@@ -4094,7 +4094,7 @@ async function prepareFireRecoveryBill(request) {
       ok: false,
       status: 400,
       message:
-        "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+        "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
     };
   }
   const credentials = await fireRecoveryCredentialsFromTenant(tenant);
@@ -4103,7 +4103,7 @@ async function prepareFireRecoveryBill(request) {
       ok: false,
       status: 400,
       message:
-        "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+        "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
     };
   }
   const dept = trimValue(tenant?.fireRecoveryDepartmentName);
@@ -4112,7 +4112,7 @@ async function prepareFireRecoveryBill(request) {
       ok: false,
       status: 400,
       message:
-        "Set Fire Recovery department name (Admin → Setup/Configuration → Fire Recovery) before submitting.",
+        "Set Fire Recovery department name (Admin Functions → Setup/Configuration → Fire Recovery) before submitting.",
     };
   }
   const latestOk = await prisma.nerisExportHistory.findFirst({
@@ -4463,7 +4463,7 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       response.status(400).json({
         ok: false,
         message:
-          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+          "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
       });
       return;
     }
@@ -4473,7 +4473,7 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       response.status(400).json({
         ok: false,
         message:
-          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+          "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
       });
       return;
     }
@@ -5641,7 +5641,7 @@ app.get("/api/neris/debug/entity-check", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set this tenant's NERIS entity ID in Department Details.",
+        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -5788,7 +5788,7 @@ app.get("/api/neris/debug/incident", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?entityId=... or set this tenant's NERIS entity ID in Department Details.",
+        "Missing NERIS entity ID. Provide ?entityId=... or set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -6074,7 +6074,7 @@ app.post("/api/neris/validate", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+        "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -6156,7 +6156,7 @@ app.post("/api/neris/export", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+        "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }

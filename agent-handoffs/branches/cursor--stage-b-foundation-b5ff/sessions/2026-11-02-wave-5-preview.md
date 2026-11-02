@@ -16,7 +16,7 @@ Wave 5b (re-export, then bill) is still waiting on a staging NERIS re-export che
 
 Incident location keeps one state and one ZIP. Country and county moved into that section. Country defaults to US. The separate State/Territory and Postal code fields are hidden. Export still sends `state`, `postal_code`, `country`, and `county`. The Motor Vehicle Collision NERIS code box is hidden; Fire Recovery uses the Core primary incident type.
 
-Incident 12345's export returned 400 Bad Request. The stored reason is "Missing NERIS entity ID." The demo tenant's NERIS Entity ID is empty. A Draft attempt one minute earlier failed the same way, so In Review did not cause it. The department NERIS Entity ID has to be set before another export. Do not copy Crescent's entity onto demo.
+Incident 12345 first returned 400 Bad Request. The stored reason was "Missing NERIS entity ID." After the operator set the entity, the same report exported: status Exported, last attempt 201 Created at 11:14:04 America/Chicago. The screen is Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.
 
 ## Next
 

@@ -3208,7 +3208,7 @@ function NerisReportFormPage({
     const existingIncidentNerisId = getExistingIncidentNerisIdHint();
     if (!exportUrl) {
       throw new Error(
-        "Export is not configured. Add Export URL in Admin Functions > Customization > NERIS Export Configuration.",
+        "Export is not configured. Add the Export URL in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
       );
     }
 
@@ -4205,7 +4205,7 @@ function NerisReportFormPage({
       const requestedEntityId = getRequestedEntityId(requestConfig).trim();
       if (!requestedEntityId) {
         throw new Error(
-          "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+          "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
         );
       }
 
