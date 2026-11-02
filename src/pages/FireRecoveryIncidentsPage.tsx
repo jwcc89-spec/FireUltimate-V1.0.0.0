@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import { NavLink, useNavigate } from "react-router-dom";
 import {
+  fireRecoveryStatusLabel,
+  fireRecoveryStatusTone,
   getFireRecoveryIncidents,
   type FireRecoveryIncidentApi,
 } from "../api/fireRecovery";
@@ -128,6 +130,7 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
               <thead>
                 <tr>
                   <th>Incident #</th>
+                  <th>Status</th>
                   <th>Incident Date</th>
                   <th>Export Date</th>
                   <th>Invoice Status</th>
@@ -163,6 +166,11 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
                           {call ? getIncidentDisplayNumber(call) : r.callNumber}
                         </strong>
                       </td>
+                      <td>
+                        <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(r))}`}>
+                          {fireRecoveryStatusLabel(r)}
+                        </span>
+                      </td>
                       <td>{r.incidentDateLabel || "—"}</td>
                       <td>{r.exportDateLabel || "—"}</td>
                       <td>{r.invoiceStatus || "—"}</td>
@@ -183,11 +191,10 @@ export function FireRecoveryIncidentsPage({ incidentCalls }: FireRecoveryInciden
                 })}
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={12}>
+                    <td colSpan={13}>
                       <div className="empty-message">
-                        No Fire Recovery billing rows yet. Open an incident from the NERIS Export Queue,
-                        then use <strong>Send to Fire Recovery</strong> on the export detail view after
-                        a successful NERIS export.
+                        No Fire Recovery billing rows yet. Open an incident from View Exports, then use
+                        Preview &amp; Send after a successful NERIS export.
                       </div>
                     </td>
                   </tr>

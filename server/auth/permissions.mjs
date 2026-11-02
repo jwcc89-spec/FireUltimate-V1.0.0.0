@@ -107,7 +107,12 @@ export function permissionForRequest(method, path, body) {
   ) {
     return "billing.view";
   }
-  if (verb === "POST" && (route === "/api/fire-recovery/submit" || route === "/api/fire-recovery/billing-status")) {
+  if (
+    verb === "POST" &&
+    (route === "/api/fire-recovery/submit" ||
+      route === "/api/fire-recovery/preview" ||
+      route === "/api/fire-recovery/billing-status")
+  ) {
     return "billing.submit";
   }
   if ((verb === "GET" || verb === "PATCH") && route === "/api/fire-recovery/settings") {

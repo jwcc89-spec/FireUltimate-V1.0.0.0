@@ -18,7 +18,7 @@
 
 | Data | Persists? | Notes |
 |------|-----------|--------|
-| **NERIS Export Configuration** (Admin → Customization) | **No** | Stored in localStorage only (`readNerisExportSettings` / `writeNerisExportSettings`). There is no API to save/load these settings per tenant yet. To make them persist, we’d add a tenant-scoped API and load/save from the server. |
+| **NERIS Export Configuration** (Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration) | **Yes, for the entity ID** | The NERIS Entity ID is saved with `PATCH /api/neris/settings` and copied onto `Tenant.nerisEntityId`. |
 | **NERIS report form draft** (in-progress form values before Export) | **No** | Stored in localStorage keyed by incident `callNumber` (`readNerisDraft` / `writeNerisDraft`). To persist across browsers we’d need to save drafts to the server (e.g. new endpoint or a field on the Incident model). |
 
 ---

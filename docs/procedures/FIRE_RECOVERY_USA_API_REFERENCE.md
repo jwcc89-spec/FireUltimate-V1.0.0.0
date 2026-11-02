@@ -14,6 +14,8 @@ This document is the **project-local reference** for integrating Fire Ultimate w
 
 The structured API details below were **captured from the Fire Recovery Postman / published API guide** (2026). If vendor URLs or fields change, update this file and the server integration together.
 
+**Full vendor copy (2026-11-01):** [`vendor/fire-recovery-usa-api-collection-2026-11-01.json`](vendor/fire-recovery-usa-api-collection-2026-11-01.json) is the complete published Postman collection behind `https://doc.firerecoveryusa.com/`. It holds every endpoint, description, example body, and example response, and contains no credentials. To refresh it, download `https://documenter.gw.postman.com/api/collections/28810799/2sAYdmjSor?segregateAuth=true&versionTag=latest` and save it under a new date. When this file and the vendor copy disagree, the vendor copy wins.
+
 ---
 
 ## Hosts and environments
@@ -67,7 +69,7 @@ All paths below are appended to the base host (e.g. `.../Primary/REST/...`).
 ### Subsequent requests
 
 - Header: **`Authorization: Bearer <token>`**
-- **Fire Ultimate:** JWT credentials come from **per-tenant** username/password (**Admin → Setup/Configuration → Fire Recovery**), not from `.env.server`.
+- **Fire Ultimate:** JWT credentials come from **per-tenant** username/password (**Admin Functions → Setup/Configuration → Fire Recovery**), not from `.env.server`.
 - **Add NERIS Incident for Billing** uses Bearer auth only (no `SubscriptionKey` in the body). Some other vendor flows still reference **`SubscriptionKey`** in payloads.
 
 ---
@@ -92,7 +94,7 @@ Vendor documentation states:
 **Request body (top level):**
 
 - `IncidentToBillPayload` (object)
-  - `NERISDepartmentId` (string) — NERIS department identifier (this app uses the tenant **NERIS Entity ID**, e.g. `FD########`).
+  - `NERISDepartmentId` (string) — NERIS department identifier. As of Wave 1, the server setting `FIRE_RECOVERY_MODE` chooses it: `sandbox` always sends `FD12345678`, `live` sends the tenant NERIS Entity ID and refuses `FD12345678`, and unset refuses the submit. No database change.
   - `DepartmentName` (string) — display name for the department.
   - `IncidentsToBill` (object)
     - `incident` (object)
@@ -100,7 +102,29 @@ Vendor documentation states:
       - **Added in the current vendor docs (checked 2026-10-29), same `incident` object:** `AlarmDateTime`, `FirstUnitOnSceneDateTime`, `ClearedDateTime`, `CanceledInRoute`, `IncidentID`, `IncidentType`, `IncidentTypeDescription`, `Narrative`, `HazmatNarrative`, `Location` (`LocationID`, `Address`, `City`, `State`, `Zip`), `Occupancydata`, `Stations.Station`, `IncidentActionsTaken[]`, `RespondingUnits[]` (unit number, type, on-scene/clear times, canceled en route, actions, narrative).
       - **`Parties[]` item shape:** `{ "Party": { First, Middle, Last, Address, City, State, Zip, Phone, Email, DOB, SSNumber, PartySSN, Isresident (bool), AtFault (bool), InvolvementType, InvolTypeDescript, Occupant, Vehicle: { VehicleYear, VehicleMake, VehicleModel, VehicleVIN, LicensePlate, VehicleOther, CommercialVehicle (bool), Owner (bool), CompanyName, InsuranceCompanyName, InsuranceContactNumber, PolicyNumber, DOTNumber } } }`. One party per vehicle.
       - **Fire Recovery minimums (from the department, 2026-10-29):** per party: first and last name, address, Is Resident, insurance company, vehicle make and model (helpful: phone, policy number, insurance contact number, VIN, license plate). Per call: incident date, alarm time, cleared time, run number, personnel on scene, location (helpful: law enforcement report number, NFIRS code).
-      - **Current gap:** `server/fireRecoveryMapping.mjs` sends only `CostRecovery` with empty `Parties`. Tracked as repair plan Step 15.
+      - **Current gap:** `server/fireRecoveryMapping.mjs` sends only `CostRecovery` with empty `Parties`. Tracked as repair plan Step 15. Wave 2 (practice branch, 2026-11-01) stores the typed parties in the report as `fire_recovery_billing_json`. NERIS export does not read that field. The vendor mapping still does not send it.
+
+**Vendor notes from the full documentation (checked 2026-11-01):**
+
+- **Behavioral notes:** `RespondingUnits` should be sent when unit-level details are available. `Narrative` should be included when incident notes are needed for billing review.
+- **Nested shapes:**
+  - Each `RespondingUnits[]` item has `UnitNumber`, `UnitDescription`, `UnitTypeCode`, `UnitTypeDescription`, `UnitOnsceneDateTime`, `UnitClearDateTime`, `UnitCanceledEnRoute` (bool), `UnitNarrative`, and `UnitActionsTakens[]` (`UnitActionsTakenCode`, `UnitActionsTakenDescription`).
+  - Each `IncidentActionsTaken[]` item has `IncidentActionsTakenCode` and `IncidentActionsTakenDescription`.
+  - `Occupancydata` has `Occupancyid`, `OccupancyName`, `Address`, `City`, `State`, `Zip`, `Phone`, and `Email`.
+  - Party addresses use separate `Address`, `City`, `State`, and `Zip` fields.
+- **Date format:** examples use `0001-01-01T00:00:00`, with no time zone. Send the department's local time (confirmed by the operator 2026-11-01).
+- **Minimum fields (operator, 2026-11-01):** listed in `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` §4. Send one law enforcement report number only. The run number goes in both `IncidentNumber` and `IncidentID`.
+- **Required fields:** the vendor documentation marks **no** field as required and lists no allowed values for `InvolvementType`. The department's minimums above are the rule.
+- **Success check:** success is `Done["API Response"].Status === 1` with `Message: "Success"` and a `Done.TrackingId`. The client should require both. Today it checks only the tracking ID.
+
+**Decisions for Fire Ultimate (2026-11-01, final):** see `docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md` §3 (decisions), §5 (form), §6 (required fields) and §7.3 (field-by-field mapping). In short:
+
+- Only motor-vehicle incidents are billed (three NERIS types, primary or additional).
+- Billing parties are entered on a new **Fire Recovery Billing** tab in the NERIS report, laid out like Recovery Hub's "Create New Motor Vehicle Incident" form. They are not taken from the Person/Owner section, which stays as it is; a "Copy from Person/Owner" button can pre-fill them.
+- A party is one card (name and address, insurance, vehicle), with no driver or owner concept. `Isresident` is required for Crescent (local ordinance); an admin can change any billing field's requirement level.
+- The narrative and responding units are sent.
+- Staging is forced to sandbox ID `FD12345678` by the Render setting `FIRE_RECOVERY_MODE`, and production refuses that ID.
+- Recovery Hub's screen marks required fields red and recommended fields orange. A blank-form reference image is at `docs/plans/assets/phase-c-fire-recovery/recovery-hub-create-motor-vehicle-incident-blank.png`.
 
 **Success response (example shape):**
 
@@ -189,7 +213,7 @@ Use when you **do not already have** a tracking ID.
 **Body (text/JSON):**
 
 - `outputtype`: `"Json"`
-- `SubscriptionKey`
+- `SubscriptionKey` (still listed by the vendor on 2026-11-01, even though Add NERIS Incident for Billing no longer needs one; ask the vendor how to look up a tracking ID without it)
 - `IncidentNumber`
 - `AlarmDatetime` (ISO-style datetime string, e.g. `0001-01-01T00:00:00` in template)
 
@@ -249,6 +273,21 @@ Use when you **do not already have** a tracking ID.
 
 **Success:** `Done.BulkIncidentBillingStatusResponse` — array of per-incident status objects (same financial fields as single call; types may be strings in bulk responses per vendor examples).
 
+**Vendor example (single status):** amounts arrive as strings (`"InvoiceAmount": "2564.00"`), and `InvoiceStatus` is text such as `"Payment Received"`.
+
+### Reporting endpoints (added by the vendor; not used yet)
+
+Both need a `SubscriptionKey` in the body. Dates use `M/D/YYYY`, and results are paged with `Limit` and `Offset`.
+
+| Purpose | Path |
+|--------|------|
+| Get Payment Reconciliation (payments in a date range) | `/Primary/restapi/rhpublicapi/flows/incidentbillingstatus/getpaymentreconciliation` |
+| Get Totals (billing totals in a date range) | `/Primary/restapi/rhpublicapi/flows/incidentbillingstatus/gettotals` |
+
+### Invoice billing (added by the vendor; out of scope)
+
+`Add Invoice For Billing` (`/Primary/restapi/rhpublicapi/flows/v1apis/invoices/addinvoiceforbilling`) and `Get Invoice Billing Status` (`/Primary/restapi/rhpublicapi/flows/v1apis/invoices/getinvoicebillingstatus`) bill businesses for items such as permits and inspections. They are not part of incident billing.
+
 ---
 
 ## Inspection billing (defer — reference only)
@@ -285,4 +324,4 @@ Inspection bodies are large (occupancy, person-to-bill, violations, fees, etc.).
 
 ---
 
-*Last updated: 2026-04-11 — Populated from Postman / API export (incident-first; inspection deferred).*
+*Last updated: 2026-11-01 — Full vendor collection saved under `vendor/`; vendor notes and Fire Ultimate field decisions added. First populated 2026-04-11.*

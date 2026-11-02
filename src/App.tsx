@@ -55,14 +55,17 @@ import {
 import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
 import {
+  fireRecoveryStatusLabel,
+  fireRecoveryStatusTone,
   getFireRecoveryIncidents,
   getFireRecoverySettings,
   patchFireRecoverySettings,
-  postFireRecoverySubmit,
   type FireRecoveryIncidentApi,
+  type FireRecoverySettingsApi,
 } from "./api/fireRecovery";
 import { FireRecoveryIncidentsPage } from "./pages/FireRecoveryIncidentsPage";
 import { FireRecoveryIncidentDetailPage } from "./pages/FireRecoveryIncidentDetailPage";
+import { FireRecoveryExportPanel } from "./pages/FireRecoveryExportPanel";
 import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
@@ -106,6 +109,12 @@ import {
   type NerisFormValues,
   type NerisValueOption,
 } from "./nerisMetadata";
+import {
+  FIRE_RECOVERY_REQUIREMENT_ROWS,
+  parseRequirementSettings,
+  type FireRecoveryRequirementKey,
+  type RequirementLevel,
+} from "./fireRecovery/billingRequirements";
 import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
@@ -926,6 +935,16 @@ interface IncidentsSetupConfig {
   visibleFields: Record<IncidentSetupRequiredFieldKey, boolean>;
 }
 
+const DEFAULT_PERSON_AFFILIATION_OPTIONS = ["driver", "passenger", "billing owner", "maintenance"];
+
+function normalizePersonAffiliationOptions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_PERSON_AFFILIATION_OPTIONS];
+  const options = Array.from(
+    new Set(raw.map((value) => String(value ?? "").trim()).filter((value) => value.length > 0)),
+  );
+  return options.length > 0 ? options : [...DEFAULT_PERSON_AFFILIATION_OPTIONS];
+}
+
 const DEFAULT_INCIDENTS_SETUP_CONFIG: IncidentsSetupConfig = {
   incidentTypeOptions: ["FIRE", "EMS", "RESCUE", "SERVICE"],
   priorityOptions: ["1", "2", "3", "4"],
@@ -1479,13 +1498,6 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_time_call_create",
   "incident_time_call_answered",
   "incident_time_call_arrival",
-  "incident_time_unit_dispatched",
-  "incident_time_unit_enroute",
-  "incident_time_unit_staged",
-  "incident_time_unit_on_scene",
-  "incident_time_unit_canceled",
-  "incident_time_unit_clear",
-  "incident_time_clear",
   "incident_onset_date",
   "incident_onset_time",
   "incident_location_address",
@@ -1496,12 +1508,12 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "location_in_use",
   "location_used_as_intended",
   "location_vacancy_cause",
-  "location_state",
+  "incident_location_state",
+  "incident_location_zip",
   "location_country",
   "location_direction_of_travel",
   "location_cross_street_type",
   "location_cross_street_name",
-  "location_postal_code",
   "location_county",
   "dispatch_center_id",
   "dispatch_determinate_code",
@@ -5756,6 +5768,7 @@ interface NerisExportDetailsPageProps {
   callNumber: string;
   incidentCalls: IncidentCallSummary[];
   exportHistory?: NerisExportRecord[];
+  role: UserRole;
 }
 
 interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
@@ -5927,11 +5940,9 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
-                          {fr?.lastSubmitOk ? (
-                            <span className="tone tone-positive">DataSent</span>
-                          ) : (
-                            <span>—</span>
-                          )}
+                          <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(fr))}`}>
+                            {fireRecoveryStatusLabel(fr)}
+                          </span>
                         </td>
                       ) : null}
                     </tr>
@@ -5955,13 +5966,10 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   );
 }
 
-function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
+function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [], role }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
-  const canViewBilling = permissionGrants?.["billing.view"] === true;
   const canViewExports = permissionGrants?.["neris.export"] === true;
-  const canSubmitBilling = canViewBilling && permissionGrants?.["billing.submit"] === true;
-  const [frSending, setFrSending] = useState(false);
   const incident =
     getIncidentCallDetail(callNumber) ??
     (() => {
@@ -6033,17 +6041,6 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
   }
 
   const latestExport = exportHistory[0] ?? null;
-  const handleSendFireRecovery = () => {
-    setFrSending(true);
-    postFireRecoverySubmit(callNumber)
-      .then(() => {
-        navigate(`/reporting/neris/fire-recovery/${encodeURIComponent(callNumber)}`);
-      })
-      .catch((e: Error) => {
-        window.alert(e?.message ?? "Fire Recovery submit failed.");
-      })
-      .finally(() => setFrSending(false));
-  };
 
   return (
     <section className="page-section">
@@ -6055,16 +6052,6 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </p>
         </div>
         <div className="header-actions">
-          {canSubmitBilling ? (
-            <button
-              type="button"
-              className="primary-button compact-button"
-              disabled={frSending}
-              onClick={handleSendFireRecovery}
-            >
-              {frSending ? "Sending…" : "Send to Fire Recovery"}
-            </button>
-          ) : null}
           <button
             type="button"
             className="secondary-button compact-button"
@@ -6081,6 +6068,13 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </button>
         </div>
       </header>
+
+      <FireRecoveryExportPanel
+        callNumber={callNumber}
+        runNumber={getIncidentDisplayNumber(incident)}
+        role={role}
+        hasNerisExport={exportHistory.some((entry) => entry.attemptStatus === "success")}
+      />
 
       <section className="panel-grid two-column">
         <article className="panel">
@@ -6397,6 +6391,7 @@ type PersonnelSortColumn =
 
 function NerisRequiredFieldsAdminPage() {
   const [overrideIds, setOverrideIds] = useState<Set<string>>(new Set());
+  const [billingLevels, setBillingLevels] = useState<Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>>({});
   const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "done" | "error">("loading");
   const [saveStatus, setSaveStatus] = useState<string>("");
 
@@ -6410,6 +6405,7 @@ function NerisRequiredFieldsAdminPage() {
           ? (raw as string[]).map((id) => String(id ?? "").trim()).filter(Boolean)
           : [];
         setOverrideIds(new Set(list));
+        setBillingLevels(parseRequirementSettings(data.fireRecoveryFieldRequirements));
         setLoadStatus("done");
       })
       .catch(() => setLoadStatus("error"));
@@ -6430,7 +6426,11 @@ function NerisRequiredFieldsAdminPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
         const data = json?.data ?? {};
-        const payload = { ...data, nerisRequiredFieldOverrides: Array.from(overrideIds) };
+        const payload = {
+          ...data,
+          nerisRequiredFieldOverrides: Array.from(overrideIds),
+          fireRecoveryFieldRequirements: billingLevels,
+        };
         return fetch("/api/department-details", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -6451,7 +6451,7 @@ function NerisRequiredFieldsAdminPage() {
         }
       })
       .catch(() => setSaveStatus("Save failed."));
-  }, [overrideIds]);
+  }, [overrideIds, billingLevels]);
 
   return (
     <section className="page-section">
@@ -6474,7 +6474,12 @@ function NerisRequiredFieldsAdminPage() {
       {loadStatus === "done" && (
         <div className="panel-grid">
           {NERIS_FORM_SECTIONS.map((section) => {
-            const fields = getNerisFieldsForSection(section.id);
+            const fields = getNerisFieldsForSection(section.id).filter(
+              (field) =>
+                field.id !== "fire_recovery_billing_json" &&
+                field.id !== "location_state" &&
+                field.id !== "location_postal_code",
+            );
             if (fields.length === 0) return null;
             return (
               <section key={section.id} className="panel">
@@ -6523,6 +6528,39 @@ function NerisRequiredFieldsAdminPage() {
               </section>
             );
           })}
+          <section className="panel">
+            <h2>Fire Recovery Billing</h2>
+            <p className="field-hint">
+              These choices apply to every party. Is Resident stays Recommended until a department sets it to Required.
+            </p>
+            <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+              {FIRE_RECOVERY_REQUIREMENT_ROWS.map((row) => {
+                const selected = billingLevels[row.key] ?? row.defaultLevel;
+                return (
+                  <li key={row.key} style={{ marginBottom: "0.75rem", maxWidth: "28rem" }}>
+                    <label htmlFor={`fr-level-${row.key}`}>{row.label}</label>
+                    <NerisFlatSingleOptionSelect
+                      inputId={`fr-level-${row.key}`}
+                      value={selected}
+                      options={[
+                        { value: "required", label: "Required" },
+                        { value: "recommended", label: "Recommended" },
+                        { value: "optional", label: "Optional" },
+                      ]}
+                      usePortal
+                      onChange={(nextValue) => {
+                        const level: RequirementLevel =
+                          nextValue === "required" || nextValue === "recommended" || nextValue === "optional"
+                            ? nextValue
+                            : row.defaultLevel;
+                        setBillingLevels((previous) => ({ ...previous, [row.key]: level }));
+                      }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
         </div>
       )}
     </section>
@@ -6851,6 +6889,9 @@ function DepartmentDetailsPage({
   );
   const [incidentsSetup, setIncidentsSetup] = useState<IncidentsSetupConfig>(() =>
     normalizeIncidentsSetupConfig(initialDepartmentDraft.incidentsSetup),
+  );
+  const [personAffiliationOptions, setPersonAffiliationOptions] = useState<string[]>(() =>
+    normalizePersonAffiliationOptions(initialDepartmentDraft.personAffiliationOptions),
   );
   const [editingIncidentSetupField, setEditingIncidentSetupField] =
     useState<IncidentSetupRequiredFieldKey | null>(null);
@@ -7977,6 +8018,7 @@ function DepartmentDetailsPage({
         );
         setMutualAidDepartmentSelections(parseMutualAidSelectionsFromDraft(d));
         setIncidentsSetup(normalizeIncidentsSetupConfig(d.incidentsSetup));
+        setPersonAffiliationOptions(normalizePersonAffiliationOptions(d.personAffiliationOptions));
         setKellyRotations(
           Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
         );
@@ -9118,6 +9160,7 @@ function DepartmentDetailsPage({
       selectedMutualAidIds,
       mutualAidDepartmentSelections: mutualAidSelectionsToPayload(mutualAidDepartmentSelections),
       incidentsSetup,
+      personAffiliationOptions: normalizePersonAffiliationOptions(personAffiliationOptions),
       kellyRotations,
       schedulerEnabled,
       uiPreferencesByUser: nextUiPreferencesByUser,
@@ -9168,6 +9211,7 @@ function DepartmentDetailsPage({
     selectedMutualAidIds,
     mutualAidDepartmentSelections,
     incidentsSetup,
+    personAffiliationOptions,
     shiftInformationEntries,
     stationRecords,
     userTypeValues,
@@ -9523,6 +9567,22 @@ function DepartmentDetailsPage({
                       </div>
                     ))}
                   </div>
+                </article>
+              ) : null}
+              {showNerisConfigurationModule ? (
+                <article className="panel">
+                  <h2>Person affiliation</h2>
+                  <p className="panel-description">
+                    One choice per line. These are the Affiliation options on a NERIS person.
+                  </p>
+                  <textarea
+                    rows={6}
+                    value={personAffiliationOptions.join("\n")}
+                    onChange={(event) => {
+                      setPersonAffiliationOptions(event.target.value.split("\n"));
+                      setAutoSaveTick((previous) => previous + 1);
+                    }}
+                  />
                 </article>
               ) : null}
               {showNerisConfigurationModule && nerisExportSettings && onSaveNerisExportSettings ? (
@@ -12229,20 +12289,28 @@ function SetupFireRecoveryPanel() {
   const [apiUsername, setApiUsername] = useState("");
   const [apiPasswordInput, setApiPasswordInput] = useState("");
   const [passwordIsSet, setPasswordIsSet] = useState(false);
+  const [serverMode, setServerMode] = useState<FireRecoverySettingsApi["mode"] | "">("");
+  const [serverDepartmentId, setServerDepartmentId] = useState("");
+  const [serverBanner, setServerBanner] = useState("");
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+
+  const applyFireRecoverySettings = (d: FireRecoverySettingsApi) => {
+    setDepartmentName(d.departmentName);
+    setApiUsername(d.apiUsername ?? "");
+    setPasswordIsSet(d.passwordIsSet);
+    setServerMode(d.mode);
+    setServerDepartmentId(d.departmentId ?? "");
+    setServerBanner(d.banner ?? "");
+  };
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
         const d = await getFireRecoverySettings();
-        if (!cancelled) {
-          setDepartmentName(d.departmentName);
-          setApiUsername(d.apiUsername ?? "");
-          setPasswordIsSet(d.passwordIsSet);
-        }
+        if (!cancelled) applyFireRecoverySettings(d);
       } catch {
         // leave empty
       }
@@ -12269,9 +12337,7 @@ function SetupFireRecoveryPanel() {
     }
     patchFireRecoverySettings(payload)
       .then((d) => {
-        setDepartmentName(d.departmentName);
-        setApiUsername(d.apiUsername ?? "");
-        setPasswordIsSet(d.passwordIsSet);
+        applyFireRecoverySettings(d);
         setApiPasswordInput("");
         setMessage("Fire Recovery settings saved.");
       })
@@ -12287,7 +12353,7 @@ function SetupFireRecoveryPanel() {
     setError("");
     patchFireRecoverySettings({ fireRecoveryApiPassword: "" })
       .then((d) => {
-        setPasswordIsSet(d.passwordIsSet);
+        applyFireRecoverySettings(d);
         setApiPasswordInput("");
         setMessage("Saved Fire Recovery API password removed.");
       })
@@ -12303,12 +12369,22 @@ function SetupFireRecoveryPanel() {
         <h2>Fire Recovery</h2>
       </div>
       <div className="settings-form">
+        {serverBanner ? (
+          <p className="field-hint" id="fire-recovery-mode-banner">
+            <strong>{serverBanner}</strong>
+            {serverDepartmentId
+              ? ` Department ID that will be sent: ${serverDepartmentId}.`
+              : serverMode === "live"
+                ? " No department ID will be sent. Live mode needs this department's NERIS Entity ID, and FD12345678 is refused."
+                : ""}
+          </p>
+        ) : null}
         <p className="field-hint">
           <strong>Username</strong> and <strong>password</strong> here are required for Fire Recovery API
           calls (JWT for <strong>Add NERIS Incident for Billing</strong> and billing status). The server
           does not use <code>.env.server</code> for Fire Recovery login—only these tenant fields. The
-          tenant <strong>NERIS Entity ID</strong> (FD########) is set elsewhere in Setup/Configuration.
-          Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server may point to dev vs production host.
+          line above comes from the server setting <code>FIRE_RECOVERY_MODE</code>. It is not saved with
+          these fields. Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server may point at another host.
         </p>
 
         <label htmlFor="setup-fr-username">Username</label>
@@ -13192,7 +13268,7 @@ function RouteResolver({
     content = <NerisExportsPage incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
   } else if (path.startsWith("/reporting/neris/exports/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
-    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
+    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} role={role} />;
   } else if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
     content = (

@@ -16,7 +16,10 @@ import {
 } from "./cadDispatchRuleEngine.mjs";
 import { cadIngestGuard, configuredCadIngestSecret } from "./cad/ingestGuard.mjs";
 import {
-  buildNerisIncidentForBillingPayload,
+  buildFireRecoveryPayload,
+  isMotorVehicleIncident,
+  missingFireRecoveryFields,
+  missingRecommendedFireRecoveryFields,
   extractIncidentMetadataFromExportPayload,
 } from "./fireRecoveryMapping.mjs";
 import {
@@ -24,6 +27,17 @@ import {
   postAddNerisIncidentForBilling,
   postIncidentBillingStatus,
 } from "./fireRecoveryClient.mjs";
+import {
+  fireRecoveryModeBanner,
+  readFireRecoveryMode,
+  resolveFireRecoveryDepartmentId,
+} from "./fireRecoveryMode.mjs";
+import {
+  classifyVendorReply,
+  displaySubmitStatus,
+  nextTrackingId,
+  previewHash,
+} from "./fireRecoverySubmit.mjs";
 import { decryptSecret, encryptSecret, isEncryptedSecret } from "./crypto/secretBox.mjs";
 import { PublicError, publicErrorMessage } from "./http/publicError.mjs";
 import {
@@ -219,6 +233,21 @@ const NERIS_STATE_NAME_TO_CODE = {
 
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
+
+function chicagoLocalStamp(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type) => parts.find((entry) => entry.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
 
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
@@ -1166,22 +1195,37 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     config.defaultCountry,
   );
   const normalizedLocationState = normalizeStateCode(
-    trimValue(formValues.location_state) || baseLocation.state,
+    trimValue(formValues.incident_location_state) ||
+      trimValue(formValues.location_state) ||
+      baseLocation.state,
+    config.defaultState,
+  );
+  const normalizedDispatchState = normalizeStateCode(
+    dispatchLocation.state || trimValue(formValues.location_state),
     config.defaultState,
   );
   const normalizedLocationCountry = normalizeCountryCode(
-    trimValue(formValues.location_country) || baseLocation.country,
-    config.defaultCountry,
+    trimValue(formValues.location_country) || baseLocation.country || "US",
+    config.defaultCountry || "US",
   );
   baseLocation.state = normalizedLocationState;
   baseLocation.country = normalizedLocationCountry;
-  dispatchLocation.state = normalizedLocationState;
+  dispatchLocation.state = normalizedDispatchState;
   dispatchLocation.country = normalizedLocationCountry;
 
-  const postalCode = trimValue(formValues.location_postal_code);
+  const incidentStreet = trimValue(formValues.incident_location_street);
+  const incidentCity = trimValue(formValues.incident_location_city);
+  if (incidentStreet) baseLocation.street = incidentStreet;
+  if (incidentCity) baseLocation.incorporated_municipality = incidentCity;
+  const postalCode =
+    trimValue(formValues.incident_location_zip) || trimValue(formValues.location_postal_code);
   if (postalCode) {
     baseLocation.postal_code = postalCode;
-    dispatchLocation.postal_code = postalCode;
+  }
+  const dispatchPostalCode =
+    trimValue(formValues.dispatch_location_address).match(/\b\d{5}(?:-\d{4})?\b/)?.[0] ?? "";
+  if (dispatchPostalCode) {
+    dispatchLocation.postal_code = dispatchPostalCode;
   }
   const county = trimValue(formValues.location_county);
   if (county) {
@@ -3821,6 +3865,20 @@ function formatFireRecoveryExportDateLabel(value) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
+function fireRecoverySettingsData(tenant) {
+  const mode = readFireRecoveryMode();
+  const resolved = resolveFireRecoveryDepartmentId(mode, tenant?.nerisEntityId);
+  return {
+    subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
+    departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
+    apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
+    passwordIsSet: isEncryptedSecret(tenant?.fireRecoveryApiPassword),
+    mode,
+    departmentId: resolved.departmentId,
+    banner: fireRecoveryModeBanner(mode),
+  };
+}
+
 function fireRecoveryBillingRowToApi(row) {
   const due = row.invoiceAmountDue ?? "";
   return {
@@ -3844,6 +3902,8 @@ function fireRecoveryBillingRowToApi(row) {
     lastPaymentDate: row.lastPaymentDate ?? "",
     paymentPlan: row.paymentPlan ? "Yes" : "No",
     billingFetchedAt: row.billingFetchedAt ? row.billingFetchedAt.toISOString() : null,
+    submitStatus: displaySubmitStatus(row),
+    submitStartedAt: row.submitStartedAt ? row.submitStartedAt.toISOString() : null,
   };
 }
 
@@ -3868,6 +3928,7 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
     const tenant = await prisma.tenant.findUnique({
       where: { id: tenantId },
       select: {
+        nerisEntityId: true,
         fireRecoverySubscriptionKey: true,
         fireRecoveryDepartmentName: true,
         fireRecoveryApiUsername: true,
@@ -3876,12 +3937,7 @@ app.get("/api/fire-recovery/settings", async (request, response) => {
     });
     response.json({
       ok: true,
-      data: {
-        subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
-        departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
-        apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
-        passwordIsSet: isEncryptedSecret(tenant?.fireRecoveryApiPassword),
-      },
+      data: fireRecoverySettingsData(tenant),
     });
   } catch (error) {
     response.status(500).json({
@@ -3946,6 +4002,7 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
       where: { id: tenantId },
       data,
       select: {
+        nerisEntityId: true,
         fireRecoverySubscriptionKey: true,
         fireRecoveryDepartmentName: true,
         fireRecoveryApiUsername: true,
@@ -3954,12 +4011,7 @@ app.patch("/api/fire-recovery/settings", async (request, response) => {
     });
     response.json({
       ok: true,
-      data: {
-        subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant.fireRecoverySubscriptionKey),
-        departmentName: trimValue(tenant.fireRecoveryDepartmentName),
-        apiUsername: trimValue(tenant.fireRecoveryApiUsername),
-        passwordIsSet: isEncryptedSecret(tenant.fireRecoveryApiPassword),
-      },
+      data: fireRecoverySettingsData(tenant),
     });
   } catch (error) {
     response.status(500).json({
@@ -4020,9 +4072,321 @@ app.get("/api/fire-recovery/incidents/:callNumber", async (request, response) =>
   }
 });
 
-app.post("/api/fire-recovery/submit", async (request, response) => {
-  let fireRecoveryPassword = "";
+async function prepareFireRecoveryBill(request) {
+  const tenantId = request.tenant?.id;
+  if (!tenantId) return { ok: false, status: 400, message: "Missing tenant context." };
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const callNumber = trimValue(body.callNumber);
+  if (!callNumber) return { ok: false, status: 400, message: "callNumber is required." };
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      nerisEntityId: true,
+      fireRecoveryDepartmentName: true,
+      fireRecoveryApiUsername: true,
+      fireRecoveryApiPassword: true,
+    },
+  });
+  const mode = readFireRecoveryMode();
+  const department = resolveFireRecoveryDepartmentId(mode, tenant?.nerisEntityId);
+  if (!tenantHasFireRecoveryLogin(tenant)) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
+    };
+  }
+  const credentials = await fireRecoveryCredentialsFromTenant(tenant);
+  if (!credentials) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
+    };
+  }
+  const dept = trimValue(tenant?.fireRecoveryDepartmentName);
+  if (!dept) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Set Fire Recovery department name (Admin Functions → Setup/Configuration → Fire Recovery) before submitting.",
+    };
+  }
+  const latestOk = await prisma.nerisExportHistory.findFirst({
+    where: {
+      tenantId,
+      callNumber,
+      attemptStatus: "success",
+      responseDetail: { startsWith: SERVER_EXPORT_RECEIPT },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!latestOk?.submittedPayloadPreview) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "No successful NERIS export payload found for this incident. Export the NERIS report successfully first.",
+    };
+  }
+  const nerisId = trimValue(latestOk.nerisId);
+  if (!nerisId) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "NERIS incident ID is missing from export history. Re-export the NERIS report so the response includes a NERIS incident id.",
+    };
+  }
+  const parsed = parseExportPayloadPreview(latestOk.submittedPayloadPreview);
+  if (!parsed) {
+    return { ok: false, status: 400, message: "Stored export payload is not valid JSON; cannot map to Fire Recovery." };
+  }
+  const draft = await prisma.nerisDraft.findUnique({
+    where: { tenantId_callNumber: { tenantId, callNumber } },
+  });
+  const draftPayload =
+    draft?.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload) ? draft.payload : null;
+  if (trimValue(draftPayload?.reportStatus) !== "Exported") {
+    return { ok: false, status: 400, message: "Export this report to NERIS first." };
+  }
+  const formValues =
+    draftPayload.formValues && typeof draftPayload.formValues === "object" && !Array.isArray(draftPayload.formValues)
+      ? draftPayload.formValues
+      : {};
+  if (!isMotorVehicleIncident(formValues.primary_incident_type, formValues.additional_incident_types)) {
+    return { ok: false, status: 400, message: "Fire Recovery billing is only for a motor-vehicle incident." };
+  }
+  const departmentDetails = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const requirementSettings =
+    departmentDetails?.payloadJson && typeof departmentDetails.payloadJson === "object"
+      ? departmentDetails.payloadJson.fireRecoveryFieldRequirements
+      : null;
+  const missing = missingFireRecoveryFields(formValues, requirementSettings, latestOk.reportWriterName);
+  const departmentId = department.ok ? department.departmentId : "";
+  const payload = buildFireRecoveryPayload(
+    formValues,
+    { nerisId, reportWriterName: latestOk.reportWriterName, callNumber },
+    { departmentId, departmentName: dept },
+    { submittedAt: chicagoLocalStamp(new Date()) },
+  );
+  return {
+    ok: true,
+    tenantId,
+    callNumber,
+    mode,
+    department,
+    credentials,
+    password: credentials.password,
+    formValues,
+    requirementSettings,
+    missing,
+    payload,
+    hash: previewHash(payload),
+    meta: extractIncidentMetadataFromExportPayload({ formValues }),
+    banner: fireRecoveryModeBanner(mode),
+    departmentId,
+  };
+}
+
+function fireRecoveryTimeoutMs(name, fallback) {
+  const parsed = Number.parseInt(String(process.env[name] ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function claimFireRecoverySubmitLock(tenantId, callNumber) {
+  const now = new Date();
   try {
+    await prisma.fireRecoveryIncidentBilling.create({
+      data: {
+        tenantId,
+        callNumber,
+        submitStatus: "submitting",
+        submitStartedAt: now,
+      },
+    });
+    return true;
+  } catch (error) {
+    if (error?.code !== "P2002") throw error;
+  }
+  const updated = await prisma.fireRecoveryIncidentBilling.updateMany({
+    where: {
+      tenantId,
+      callNumber,
+      AND: [
+        { OR: [{ trackingId: null }, { trackingId: "" }] },
+        { submitStatus: { in: ["", "not_sent", "failed"] } },
+      ],
+    },
+    data: {
+      submitStatus: "submitting",
+      submitStartedAt: now,
+      lastSubmitError: "",
+    },
+  });
+  return updated.count === 1;
+}
+
+async function saveFireRecoveryOutcome(prepared, outcome) {
+  const existing = await prisma.fireRecoveryIncidentBilling.findUnique({
+    where: { tenantId_callNumber: { tenantId: prepared.tenantId, callNumber: prepared.callNumber } },
+  });
+  const now = new Date();
+  return prisma.fireRecoveryIncidentBilling.upsert({
+    where: { tenantId_callNumber: { tenantId: prepared.tenantId, callNumber: prepared.callNumber } },
+    create: {
+      tenantId: prepared.tenantId,
+      callNumber: prepared.callNumber,
+      trackingId: nextTrackingId("", outcome.trackingId),
+      lastSubmitAt: now,
+      lastSubmitOk: outcome.outcome === "sent",
+      lastSubmitError: outcome.message.slice(0, 2000),
+      submitStatus: outcome.outcome,
+      submitStartedAt: now,
+      incidentType: prepared.meta.incidentType,
+      incidentDateLabel: prepared.meta.incidentDateLabel,
+    },
+    update: {
+      trackingId: nextTrackingId(existing?.trackingId, outcome.trackingId),
+      lastSubmitAt: now,
+      lastSubmitOk: outcome.outcome === "sent",
+      lastSubmitError: outcome.message.slice(0, 2000),
+      submitStatus: outcome.outcome,
+      incidentType: prepared.meta.incidentType,
+      incidentDateLabel: prepared.meta.incidentDateLabel,
+    },
+  });
+}
+
+app.post("/api/fire-recovery/preview", async (request, response) => {
+  try {
+    const prepared = await prepareFireRecoveryBill(request);
+    if (!prepared.ok) {
+      response.status(prepared.status).json({ ok: false, message: prepared.message });
+      return;
+    }
+    response.json({
+      ok: true,
+      data: {
+        previewHash: prepared.hash,
+        payload: prepared.payload,
+        departmentId: prepared.departmentId,
+        mode: prepared.mode,
+        banner: prepared.banner,
+        missingRequired: prepared.missing,
+        missingRecommended: missingRecommendedFireRecoveryFields(prepared.formValues, prepared.requirementSettings),
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected Fire Recovery preview error."),
+    });
+  }
+});
+
+app.post("/api/fire-recovery/submit", async (request, response) => {
+  let prepared = null;
+  let locked = false;
+  try {
+    prepared = await prepareFireRecoveryBill(request);
+    if (!prepared.ok) {
+      response.status(prepared.status).json({ ok: false, message: prepared.message });
+      return;
+    }
+    if (!prepared.department.ok) {
+      response.status(400).json({ ok: false, message: prepared.department.message });
+      return;
+    }
+    if (prepared.missing.length > 0) {
+      response.status(400).json({
+        ok: false,
+        message: `Fire Recovery billing is missing required fields: ${prepared.missing.join("; ")}.`,
+      });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    if (trimValue(body.previewHash) !== prepared.hash) {
+      response.status(400).json({
+        ok: false,
+        message: "The report changed since the preview. Preview again.",
+      });
+      return;
+    }
+    locked = await claimFireRecoverySubmitLock(prepared.tenantId, prepared.callNumber);
+    if (!locked) {
+      response.status(409).json({
+        ok: false,
+        message: "Already sent, being sent, or needs review.",
+      });
+      return;
+    }
+    let jwt;
+    try {
+      jwt = await getFireRecoveryJwt(
+        prepared.credentials,
+        AbortSignal.timeout(fireRecoveryTimeoutMs("FIRE_RECOVERY_LOGIN_TIMEOUT_MS", 20000)),
+      );
+    } catch (error) {
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      const outcome = timedOut
+        ? classifyVendorReply({ timedOut: true })
+        : { outcome: "failed", trackingId: "", message: publicFireRecoveryMessage(error, prepared.password) };
+      const row = await saveFireRecoveryOutcome(prepared, outcome);
+      response.status(timedOut ? 409 : 400).json({
+        ok: false,
+        message: outcome.message,
+        data: fireRecoveryBillingRowToApi(row),
+      });
+      return;
+    }
+    const vendor = await postAddNerisIncidentForBilling(
+      jwt,
+      prepared.payload,
+      fireRecoveryTimeoutMs("FIRE_RECOVERY_POST_TIMEOUT_MS", 45000),
+    );
+    const outcome = classifyVendorReply(vendor);
+    const row = await saveFireRecoveryOutcome(prepared, outcome);
+    if (outcome.outcome === "sent") {
+      response.status(201).json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+      return;
+    }
+    response.status(outcome.outcome === "failed" ? 400 : 409).json({
+      ok: false,
+      message: outcome.message,
+      data: fireRecoveryBillingRowToApi(row),
+    });
+  } catch (error) {
+    const message = publicFireRecoveryMessage(error, prepared?.password ?? "");
+    if (locked && prepared?.ok) {
+      try {
+        await saveFireRecoveryOutcome(prepared, {
+          outcome: "needs_review",
+          trackingId: "",
+          message,
+        });
+      } catch {
+        // The lock stays. A later read shows a stale Submitting row as Needs review.
+      }
+      response.status(409).json({ ok: false, message });
+      return;
+    }
+    response.status(400).json({ ok: false, message });
+  }
+});
+
+app.post("/api/fire-recovery/resolve-review", async (request, response) => {
+  try {
+    if (roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({ ok: false, code: "FORBIDDEN", message: "You do not have permission to do that." });
+      return;
+    }
     const tenantId = request.tenant?.id;
     if (!tenantId) {
       response.status(400).json({ ok: false, message: "Missing tenant context." });
@@ -4030,157 +4394,46 @@ app.post("/api/fire-recovery/submit", async (request, response) => {
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const callNumber = trimValue(body.callNumber);
-    if (!callNumber) {
-      response.status(400).json({ ok: false, message: "callNumber is required." });
+    const outcome = trimValue(body.outcome);
+    if (!callNumber || (outcome !== "not_received" && outcome !== "received")) {
+      response.status(400).json({ ok: false, message: "callNumber and outcome are required." });
       return;
     }
-
-    const tenant = await prisma.tenant.findUnique({
-      where: { id: tenantId },
-      select: {
-        nerisEntityId: true,
-        fireRecoveryDepartmentName: true,
-        fireRecoveryApiUsername: true,
-        fireRecoveryApiPassword: true,
-      },
-    });
-    if (!tenantHasFireRecoveryLogin(tenant)) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
-      });
-      return;
-    }
-    const credentials = await fireRecoveryCredentialsFromTenant(tenant);
-    fireRecoveryPassword = credentials?.password ?? "";
-    if (!credentials) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
-      });
-      return;
-    }
-    const nerisDepartmentId = trimValue(tenant?.nerisEntityId);
-    const dept = trimValue(tenant?.fireRecoveryDepartmentName);
-    if (!nerisDepartmentId || !NERIS_ENTITY_ID_PATTERN.test(nerisDepartmentId)) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "Set this tenant's NERIS Entity ID (FD########) in Setup/Configuration, and Fire Recovery department name under Setup/Configuration → Fire Recovery, before submitting.",
-      });
-      return;
-    }
-    if (!dept) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "Set Fire Recovery department name (Admin → Setup/Configuration → Fire Recovery) before submitting.",
-      });
-      return;
-    }
-
-    const latestOk = await prisma.nerisExportHistory.findFirst({
-      where: {
-        tenantId,
-        callNumber,
-        attemptStatus: "success",
-        responseDetail: { startsWith: SERVER_EXPORT_RECEIPT },
-      },
-      orderBy: { createdAt: "desc" },
-    });
-    if (!latestOk?.submittedPayloadPreview) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "No successful NERIS export payload found for this incident. Export the NERIS report successfully first.",
-      });
-      return;
-    }
-
-    const nerisId = trimValue(latestOk.nerisId);
-    if (!nerisId) {
-      response.status(400).json({
-        ok: false,
-        message:
-          "NERIS incident ID is missing from export history. Re-export the NERIS report so the response includes a NERIS incident id.",
-      });
-      return;
-    }
-
-    const parsed = parseExportPayloadPreview(latestOk.submittedPayloadPreview);
-    if (!parsed) {
-      response.status(400).json({
-        ok: false,
-        message: "Stored export payload is not valid JSON; cannot map to Fire Recovery.",
-      });
-      return;
-    }
-
-    const meta = extractIncidentMetadataFromExportPayload(parsed);
-    const frBody = buildNerisIncidentForBillingPayload(parsed, latestOk, {
-      nerisDepartmentId,
-      departmentName: dept,
-    });
-
-    const jwt = await getFireRecoveryJwt(credentials);
-    const { trackingId } = await postAddNerisIncidentForBilling(jwt, frBody);
-
-    const now = new Date();
-    const row = await prisma.fireRecoveryIncidentBilling.upsert({
+    const existing = await prisma.fireRecoveryIncidentBilling.findUnique({
       where: { tenantId_callNumber: { tenantId, callNumber } },
-      create: {
-        tenantId,
-        callNumber,
-        trackingId,
-        lastSubmitAt: now,
-        lastSubmitOk: true,
-        lastSubmitError: "",
-        incidentType: meta.incidentType,
-        incidentDateLabel: meta.incidentDateLabel,
-      },
-      update: {
-        trackingId,
-        lastSubmitAt: now,
-        lastSubmitOk: true,
-        lastSubmitError: "",
-        incidentType: meta.incidentType,
-        incidentDateLabel: meta.incidentDateLabel,
-      },
     });
-
-    response.status(201).json({
-      ok: true,
-      data: fireRecoveryBillingRowToApi(row),
-    });
-  } catch (error) {
-    const msg = publicFireRecoveryMessage(error, fireRecoveryPassword);
-    try {
-      const tenantId = request.tenant?.id;
-      const body = request.body && typeof request.body === "object" ? request.body : {};
-      const callNumber = trimValue(body.callNumber);
-      if (tenantId && callNumber) {
-        await prisma.fireRecoveryIncidentBilling.upsert({
-          where: { tenantId_callNumber: { tenantId, callNumber } },
-          create: {
-            tenantId,
-            callNumber,
-            lastSubmitAt: new Date(),
-            lastSubmitOk: false,
-            lastSubmitError: msg.slice(0, 2000),
-          },
-          update: {
-            lastSubmitAt: new Date(),
-            lastSubmitOk: false,
-            lastSubmitError: msg.slice(0, 2000),
-          },
-        });
-      }
-    } catch {
-      // ignore secondary persist errors
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "Fire Recovery row not found for this incident." });
+      return;
     }
-    response.status(400).json({ ok: false, message: msg });
+    const providedTrackingId = trimValue(body.trackingId);
+    if (outcome === "received" && !providedTrackingId && !trimValue(existing.trackingId)) {
+      response.status(400).json({ ok: false, message: "Enter the tracking ID from Recovery Hub." });
+      return;
+    }
+    const row = await prisma.fireRecoveryIncidentBilling.update({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      data:
+        outcome === "received"
+          ? {
+              submitStatus: "sent",
+              lastSubmitOk: true,
+              lastSubmitError: "",
+              trackingId: nextTrackingId(existing.trackingId, providedTrackingId),
+            }
+          : {
+              submitStatus: "failed",
+              lastSubmitOk: false,
+              lastSubmitError: "Checked in Recovery Hub: this bill was not received.",
+              trackingId: nextTrackingId(existing.trackingId, ""),
+            },
+    });
+    response.json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected Fire Recovery review error."),
+    });
   }
 });
 
@@ -4210,7 +4463,7 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       response.status(400).json({
         ok: false,
         message:
-          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+          "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
       });
       return;
     }
@@ -4220,7 +4473,7 @@ app.post("/api/fire-recovery/billing-status", async (request, response) => {
       response.status(400).json({
         ok: false,
         message:
-          "Fire Recovery username and password are required. Set them under Admin → Setup/Configuration → Fire Recovery for this tenant.",
+          "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
       });
       return;
     }
@@ -5388,7 +5641,7 @@ app.get("/api/neris/debug/entity-check", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set this tenant's NERIS entity ID in Department Details.",
+        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -5535,7 +5788,7 @@ app.get("/api/neris/debug/incident", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?entityId=... or set this tenant's NERIS entity ID in Department Details.",
+        "Missing NERIS entity ID. Provide ?entityId=... or set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -5821,7 +6074,7 @@ app.post("/api/neris/validate", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+        "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -5903,7 +6156,7 @@ app.post("/api/neris/export", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+        "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }

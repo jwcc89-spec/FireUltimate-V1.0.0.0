@@ -3,6 +3,7 @@ export type NerisSectionId =
   | "narrative"
   | "location"
   | "personOwner"
+  | "fireRecoveryBilling"
   | "incidentTimes"
   | "resources"
   | "emergingHazards"
@@ -141,6 +142,11 @@ export const NERIS_FORM_SECTIONS: NerisSectionConfig[] = [
   {
     id: "personOwner",
     label: "Person/Owner",
+    helper: "",
+  },
+  {
+    id: "fireRecoveryBilling",
+    label: "Motor Vehicle Collision",
     helper: "",
   },
   {
@@ -1257,6 +1263,73 @@ export const NERIS_VALUE_SETS = {
   ],
 } as const satisfies Record<string, NerisValueOption[]>;
 
+const NERIS_STATE_NAMES: Record<string, string> = {
+  ALABAMA: "AL",
+  ALASKA: "AK",
+  ARIZONA: "AZ",
+  ARKANSAS: "AR",
+  CALIFORNIA: "CA",
+  COLORADO: "CO",
+  CONNECTICUT: "CT",
+  DELAWARE: "DE",
+  "DISTRICT OF COLUMBIA": "DC",
+  FLORIDA: "FL",
+  GEORGIA: "GA",
+  HAWAII: "HI",
+  IDAHO: "ID",
+  ILLINOIS: "IL",
+  INDIANA: "IN",
+  IOWA: "IA",
+  KANSAS: "KS",
+  KENTUCKY: "KY",
+  LOUISIANA: "LA",
+  MAINE: "ME",
+  MARYLAND: "MD",
+  MASSACHUSETTS: "MA",
+  MICHIGAN: "MI",
+  MINNESOTA: "MN",
+  MISSISSIPPI: "MS",
+  MISSOURI: "MO",
+  MONTANA: "MT",
+  NEBRASKA: "NE",
+  NEVADA: "NV",
+  "NEW HAMPSHIRE": "NH",
+  "NEW JERSEY": "NJ",
+  "NEW MEXICO": "NM",
+  "NEW YORK": "NY",
+  "NORTH CAROLINA": "NC",
+  "NORTH DAKOTA": "ND",
+  OHIO: "OH",
+  OKLAHOMA: "OK",
+  OREGON: "OR",
+  PENNSYLVANIA: "PA",
+  "RHODE ISLAND": "RI",
+  "SOUTH CAROLINA": "SC",
+  "SOUTH DAKOTA": "SD",
+  TENNESSEE: "TN",
+  TEXAS: "TX",
+  UTAH: "UT",
+  VERMONT: "VT",
+  VIRGINIA: "VA",
+  WASHINGTON: "WA",
+  "WEST VIRGINIA": "WV",
+  WISCONSIN: "WI",
+  WYOMING: "WY",
+};
+
+/** NERIS State / Territory stores a code such as IL, not the state name. */
+export function toNerisStateCode(value: string): string {
+  const raw = String(value ?? "").trim().toUpperCase().replace(/\./g, "");
+  if (!raw) return "";
+  const codes = new Set(NERIS_VALUE_SETS.state.map((option) => option.value));
+  if (codes.has(raw)) return raw;
+  const named = NERIS_STATE_NAMES[raw];
+  if (named && codes.has(named)) return named;
+  const stateZip = raw.match(/^([A-Z]{2})\s+\d{5}(?:-\d{4})?$/);
+  if (stateZip && codes.has(stateZip[1])) return stateZip[1];
+  return "";
+}
+
 const NERIS_SECTION_NOTE_IDS: NerisSectionId[] = [
   "location",
   "incidentTimes",
@@ -1411,12 +1484,70 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "full",
   },
   {
-    id: "incident_location_address",
+    id: "dispatch_location_street",
     sectionId: "core",
+    label: "Dispatch street address",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
+    id: "dispatch_location_city",
+    sectionId: "core",
+    label: "Dispatch city",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
+    id: "dispatch_location_state",
+    sectionId: "core",
+    label: "Dispatch state",
+    inputKind: "select",
+    optionsKey: "state",
+    layout: "half",
+  },
+  {
+    id: "dispatch_location_zip",
+    sectionId: "core",
+    label: "Dispatch ZIP",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
+    id: "incident_location_address",
+    sectionId: "location",
     label: "Incident location",
     inputKind: "text",
     required: true,
     layout: "full",
+  },
+  {
+    id: "incident_location_street",
+    sectionId: "location",
+    label: "Incident street address",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
+    id: "incident_location_city",
+    sectionId: "location",
+    label: "Incident city",
+    inputKind: "text",
+    layout: "half",
+  },
+  {
+    id: "incident_location_state",
+    sectionId: "location",
+    label: "Incident state",
+    inputKind: "select",
+    optionsKey: "state",
+    layout: "half",
+  },
+  {
+    id: "incident_location_zip",
+    sectionId: "location",
+    label: "Incident ZIP",
+    inputKind: "text",
+    layout: "half",
   },
   {
     id: "initial_dispatch_code",
@@ -1582,6 +1713,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Primary location use",
     inputKind: "select",
     optionsKey: "location_use",
+    required: true,
     layout: "half",
   },
   {
@@ -1701,55 +1833,6 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Call arrival time",
     inputKind: "datetime",
     required: true,
-    layout: "half",
-  },
-  {
-    id: "incident_time_unit_dispatched",
-    sectionId: "incidentTimes",
-    label: "Unit dispatched time",
-    inputKind: "datetime",
-    layout: "half",
-  },
-  {
-    id: "incident_time_unit_enroute",
-    sectionId: "incidentTimes",
-    label: "Unit enroute time",
-    inputKind: "datetime",
-    layout: "half",
-  },
-  {
-    id: "incident_time_unit_staged",
-    sectionId: "incidentTimes",
-    label: "Unit staged time",
-    inputKind: "datetime",
-    layout: "half",
-  },
-  {
-    id: "incident_time_unit_on_scene",
-    sectionId: "incidentTimes",
-    label: "Unit on-scene time",
-    inputKind: "datetime",
-    layout: "half",
-  },
-  {
-    id: "incident_time_unit_canceled",
-    sectionId: "incidentTimes",
-    label: "Unit canceled time",
-    inputKind: "datetime",
-    layout: "half",
-  },
-  {
-    id: "incident_time_unit_clear",
-    sectionId: "incidentTimes",
-    label: "Unit clear time",
-    inputKind: "datetime",
-    layout: "half",
-  },
-  {
-    id: "incident_time_clear",
-    sectionId: "incidentTimes",
-    label: "Incident clear time",
-    inputKind: "datetime",
     layout: "half",
   },
   {
@@ -2308,42 +2391,20 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
   { id: "person_owner_owner_last_name", sectionId: "personOwner", label: "Owner - Last Name", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_business_name", sectionId: "personOwner", label: "Owner - Business Name", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_phone", sectionId: "personOwner", label: "Owner - Phone", inputKind: "text", layout: "half" },
-  { id: "person_owner_owner_insurance_company", sectionId: "personOwner", label: "Owner - Insurance Company", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_address_street", sectionId: "personOwner", label: "Owner Address - Street/Highway", inputKind: "text", layout: "full" },
   { id: "person_owner_owner_address_po_box", sectionId: "personOwner", label: "Owner Address - PO Box", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_address_apartment", sectionId: "personOwner", label: "Owner Address - Apartment", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_address_city", sectionId: "personOwner", label: "Owner Address - City", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_address_state", sectionId: "personOwner", label: "Owner Address - State", inputKind: "text", layout: "half" },
   { id: "person_owner_owner_address_zip", sectionId: "personOwner", label: "Owner Address - Zip", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_type", sectionId: "personOwner", label: "Vehicle - Type", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_make", sectionId: "personOwner", label: "Vehicle - Make", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_model", sectionId: "personOwner", label: "Vehicle - Model", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_color", sectionId: "personOwner", label: "Vehicle - Color", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_year", sectionId: "personOwner", label: "Vehicle - Year", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_vin", sectionId: "personOwner", label: "Vehicle - VIN", inputKind: "text", layout: "full" },
-  { id: "person_owner_vehicle_license_plate", sectionId: "personOwner", label: "Vehicle - License Plate", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_state", sectionId: "personOwner", label: "Vehicle - License Plate State", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_license_plate_expires", sectionId: "personOwner", label: "Vehicle - License Plate Expires", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_persons_involved", sectionId: "personOwner", label: "Vehicle - Persons Involved", inputKind: "text", layout: "full" },
-  { id: "person_owner_vehicle_uninsured", sectionId: "personOwner", label: "Vehicle - Uninsured", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insured_name", sectionId: "personOwner", label: "Vehicle Insurance - Insured Name", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_policy_number", sectionId: "personOwner", label: "Vehicle Insurance - Policy Number", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_policy_type", sectionId: "personOwner", label: "Vehicle Insurance - Policy Type", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_claim_number", sectionId: "personOwner", label: "Vehicle Insurance - Claim Number", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insurance_company_name", sectionId: "personOwner", label: "Vehicle Insurance - Company Name", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insurance_company_phone", sectionId: "personOwner", label: "Vehicle Insurance - Company Phone", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insurance_company_address", sectionId: "personOwner", label: "Vehicle Insurance - Company Address", inputKind: "text", layout: "full" },
-  { id: "person_owner_vehicle_insurance_company_email", sectionId: "personOwner", label: "Vehicle Insurance - Company Email", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insurance_agent_name", sectionId: "personOwner", label: "Vehicle Insurance - Agent Name", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insurance_agent_company", sectionId: "personOwner", label: "Vehicle Insurance - Agent Company", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_insurance_agent_address", sectionId: "personOwner", label: "Vehicle Insurance - Agent Address", inputKind: "text", layout: "full" },
-  { id: "person_owner_vehicle_insurance_agent_phone", sectionId: "personOwner", label: "Vehicle Insurance - Agent Phone", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_law_enforcement_officer", sectionId: "personOwner", label: "Vehicle - Law Enforcement Officer", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_police_report_file_number", sectionId: "personOwner", label: "Vehicle - Police Report/File Number", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_number_of_occupants", sectionId: "personOwner", label: "Vehicle Occupants - Number of Occupants", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_number_of_injuries", sectionId: "personOwner", label: "Vehicle Occupants - Number of Injuries", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_number_of_fatalities", sectionId: "personOwner", label: "Vehicle Occupants - Number of Fatalities", inputKind: "text", layout: "half" },
-  { id: "person_owner_vehicle_notes", sectionId: "personOwner", label: "Vehicle - Billing Notes", inputKind: "textarea", rows: 4, layout: "full" },
+  {
+    id: "fire_recovery_billing_json",
+    sectionId: "fireRecoveryBilling",
+    label: "Motor Vehicle Collision",
+    inputKind: "textarea",
+    layout: "full",
+    helperText: "",
+  },
   ...NERIS_SECTION_NOTE_FIELDS,
 ];
 
@@ -2636,7 +2697,15 @@ export function createDefaultNerisFormValues({
     fd_neris_id: "",
     dispatch_center_id: "0000",
     dispatch_location_address: address ?? "",
+    dispatch_location_street: "",
+    dispatch_location_city: "",
+    dispatch_location_state: "",
+    dispatch_location_zip: "",
     incident_location_address: address ?? "",
+    incident_location_street: "",
+    incident_location_city: "",
+    incident_location_state: "",
+    incident_location_zip: "",
     location_state: locationState,
     location_country: locationCountry,
     location_in_use: "",
