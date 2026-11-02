@@ -320,6 +320,7 @@ const decided = [
   ["November 2, 2026", "Fire Recovery", "Wave 4 is on the practice branch only. Preview hashes the bill without the clock. Submit takes one lock. A second send returns Already sent and does not call Fire Recovery again. An unclear reply is Needs review and stays blocked until an admin resolves it. Not on staging.", "15"],
   ["November 2, 2026", "Fire Recovery", "Dispatch location and Incident location on Core are locked. Each line is built from the street, city, state, and ZIP under it. An arrow hides those four fields. They use two rows, and street is half a row. Same as dispatch sits beside the Incident location label.", "15"],
   ["November 2, 2026", "Fire Recovery", "Wave 5 is on the practice branch only. Export Details uses Preview & Send instead of an instant send. An admin can resolve Needs review. The queue and Fire Recovery list show Not sent, Submitting, Sent, Failed, or Needs review. Do not click Confirm and send from this Mac.", "15"],
+  ["November 2, 2026", "NERIS", "Incident location keeps one state and one ZIP. Country and county sit in that section, and country defaults to US. State/Territory and Postal code are no longer separate fields. The export still sends state, postal code, country, and county. The Motor Vehicle Collision NERIS code box is hidden and uses the Core primary incident type. A 400 that only says Bad Request can be a missing NERIS Entity ID. In Review does not block export.", "15"],
   ["November 1, 2026", "Fire Recovery", "Is Resident is required for Crescent because a local ordinance bars billing residents directly. Recovery Hub itself marks it recommended. Only an admin adds missing billing info after export: unlock, edit, export to NERIS again.", "5, 15"],
   ["November 1, 2026", "Fire Recovery", "Send the narrative and responding units, as Fire Recovery's documentation asks. The full vendor documentation is saved in docs/procedures/vendor/.", "15"],
   ["November 1, 2026", "Fire Recovery", "An unclear vendor reply shows 'Needs review: check Recovery Hub' and blocks resending until an admin clears it.", "12, 14"],
@@ -699,7 +700,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 2, 2026, Chicago · Stage C Wave 5 (Export Details preview) is on the practice branch only · Waves 1–4 are on the same branch · Stage B is on staging · Crescent click test passed · Production is not updated · Part 4 (D1–D7) is deferred · Do not merge to main · Live canvas was not republished with this copy</Text>
+        <Text size="small" tone="tertiary">Updated November 2, 2026, Chicago · Location state and ZIP are no longer duplicated · Stage C Wave 5 is on the practice branch only · Do not start Wave 5b or Wave 6 · Stage B is on staging · Production is not updated · Do not merge to main · Live canvas was not republished with this copy</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B is on Crescent staging (November 1, 2026)">

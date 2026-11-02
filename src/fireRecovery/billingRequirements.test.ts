@@ -191,6 +191,8 @@ describe("fire recovery billing requirements", () => {
     assert.equal(fromStreet.incident_location_state, "IL");
     assert.equal(fromStreet.incident_location_zip, "60922");
     assert.equal(fromStreet.location_state, "IL");
+    assert.equal(fromStreet.location_postal_code, "60922");
+    assert.equal(fromStreet.location_country, "US");
     const gilman = ensureStructuredLocations({
       incident_location_street: "2457 Main Street, Gilman, Illinois",
       incident_location_city: "",

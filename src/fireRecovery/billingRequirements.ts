@@ -69,7 +69,7 @@ export type FireRecoveryRequirementRow = {
 
 export const FIRE_RECOVERY_REQUIREMENT_ROWS: FireRecoveryRequirementRow[] = [
   { key: "fr.lawEnforcementNumber", label: "Law Enforcement Agency Report Number", defaultLevel: "optional" },
-  { key: "fr.nerisCode", label: "NERIS Code (pre-filled from the report)", defaultLevel: "optional" },
+  { key: "fr.nerisCode", label: "NERIS Code (uses the Core primary incident type)", defaultLevel: "optional" },
   { key: "fr.party.firstName", label: "First Name", defaultLevel: "required" },
   { key: "fr.party.lastName", label: "Last Name", defaultLevel: "required" },
   { key: "fr.party.address", label: "Party Address (street, city, state, zip)", defaultLevel: "required" },
@@ -369,9 +369,12 @@ export function ensureStructuredLocations(values: Record<string, string>): Recor
   );
   const incidentState = toNerisStateCode(next.incident_location_state ?? "");
   if (incidentState) next.location_state = incidentState;
-  if (text(next.incident_location_zip) && !text(next.location_postal_code)) {
+  if (text(next.incident_location_zip)) {
     next.location_postal_code = text(next.incident_location_zip);
+  } else if (text(next.location_postal_code)) {
+    next.incident_location_zip = text(next.location_postal_code);
   }
+  if (!text(next.location_country)) next.location_country = "US";
   return next;
 }
 

@@ -50,10 +50,8 @@ export function FireRecoveryBillingSection({
 
   const location = incidentLocationParts(formValues);
   const personnel = onScenePersonnel(formValues.resource_units_json ?? "");
-  const incidentTypeOptions = useMemo(() => getNerisValueOptions("incident_type"), []);
   const stateOptions = useMemo(() => getNerisValueOptions("state"), []);
   const stateLabel = stateOptions.find((option) => option.value === location.state)?.label ?? location.state;
-  const nerisCode = billing.nerisCode || (formValues.primary_incident_type ?? "");
 
   const write = (next: FireRecoveryBilling) => {
     onChange(serializeBilling(next));
@@ -148,19 +146,6 @@ export function FireRecoveryBillingSection({
             value={billing.lawEnforcementReportNumber}
             disabled={readOnly}
             onChange={(event) => write({ ...billing, lawEnforcementReportNumber: event.target.value })}
-          />
-        </div>
-        <div className="fr-bill-bar">
-          <label htmlFor="fr-neris-code">NERIS Code{requiredMark(level("fr.nerisCode"))}</label>
-          <NerisFlatSingleOptionSelect
-            inputId="fr-neris-code"
-            value={nerisCode}
-            options={incidentTypeOptions}
-            disabled={readOnly}
-            usePortal
-            placeholder="Incident type"
-            searchPlaceholder="Search incident types"
-            onChange={(nextValue) => write({ ...billing, nerisCode: nextValue })}
           />
         </div>
       </div>

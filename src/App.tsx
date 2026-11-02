@@ -1508,12 +1508,12 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "location_in_use",
   "location_used_as_intended",
   "location_vacancy_cause",
-  "location_state",
+  "incident_location_state",
+  "incident_location_zip",
   "location_country",
   "location_direction_of_travel",
   "location_cross_street_type",
   "location_cross_street_name",
-  "location_postal_code",
   "location_county",
   "dispatch_center_id",
   "dispatch_determinate_code",
@@ -6475,7 +6475,10 @@ function NerisRequiredFieldsAdminPage() {
         <div className="panel-grid">
           {NERIS_FORM_SECTIONS.map((section) => {
             const fields = getNerisFieldsForSection(section.id).filter(
-              (field) => field.id !== "fire_recovery_billing_json",
+              (field) =>
+                field.id !== "fire_recovery_billing_json" &&
+                field.id !== "location_state" &&
+                field.id !== "location_postal_code",
             );
             if (fields.length === 0) return null;
             return (

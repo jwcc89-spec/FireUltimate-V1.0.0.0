@@ -395,7 +395,14 @@ function NerisReportFormPage({
   >([]);
 
   const adminRequiredFieldIds = useMemo(
-    () => new Set(nerisRequiredFieldOverrides),
+    () =>
+      new Set(
+        nerisRequiredFieldOverrides.map((fieldId) => {
+          if (fieldId === "location_state") return "incident_location_state";
+          if (fieldId === "location_postal_code") return "incident_location_zip";
+          return fieldId;
+        }),
+      ),
     [nerisRequiredFieldOverrides],
   );
   const [fireRecoveryRequirementSettings, setFireRecoveryRequirementSettings] = useState(() =>
@@ -1483,20 +1490,18 @@ function NerisReportFormPage({
       ["incident_location_city", 3],
       ["incident_location_state", 4],
       ["incident_location_zip", 5],
-      ["location_state", 6],
-      ["location_country", 7],
-      ["location_postal_code", 8],
-      ["location_county", 9],
-      ["location_use_primary", 10],
-      ["location_place_type", 11],
-      ["location_in_use", 12],
-      ["location_used_as_intended", 13],
-      ["location_use_secondary", 14],
-      ["location_vacancy_cause", 15],
-      ["location_direction_of_travel", 16],
-      ["location_cross_street_type", 17],
-      ["location_cross_street_name", 18],
-      ["location_notes", 19],
+      ["location_country", 6],
+      ["location_county", 7],
+      ["location_use_primary", 8],
+      ["location_place_type", 9],
+      ["location_in_use", 10],
+      ["location_used_as_intended", 11],
+      ["location_use_secondary", 12],
+      ["location_vacancy_cause", 13],
+      ["location_direction_of_travel", 14],
+      ["location_cross_street_type", 15],
+      ["location_cross_street_name", 16],
+      ["location_notes", 17],
     ]);
 
     return [...sectionFields].sort((left, right) => {
@@ -4738,7 +4743,9 @@ function NerisReportFormPage({
       field.id === "dispatch_location_street" ||
       field.id === "dispatch_location_city" ||
       field.id === "dispatch_location_state" ||
-      field.id === "dispatch_location_zip"
+      field.id === "dispatch_location_zip" ||
+      field.id === "location_state" ||
+      field.id === "location_postal_code"
     ) {
       return null;
     }
@@ -8004,7 +8011,7 @@ function NerisReportFormPage({
                       </div>,
                     );
                   }
-                  if (currentSection.id === "location" && field.id === "location_state") {
+                  if (currentSection.id === "location" && field.id === "location_use_primary") {
                     nodes.push(
                       <div
                         key="heading-location-usage"
