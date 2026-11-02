@@ -2,6 +2,7 @@
  * Fire Recovery billing rules shared by the report tab and, later, the server.
  * Requirement levels live here so the screen and the submit check stay the same.
  */
+import { toNerisStateCode } from "../nerisMetadata";
 
 export type FireRecoveryRunType = "MOTOR_VEHICLE" | "COMMERCIAL_TRUCKING";
 export type YesNoBlank = "" | "YES" | "NO";
@@ -293,10 +294,15 @@ export function splitAddressLine(address: string): {
     .map((part) => part.trim())
     .filter(Boolean);
   if (parts.length >= 3) {
-    const tokens = parts.slice(2).join(" ").split(/\s+/).filter(Boolean);
-    const zip = tokens.find((token) => /^\d{5}(?:-\d{4})?$/.test(token)) ?? "";
-    const state = tokens.find((token) => /^[A-Za-z]{2}$/.test(token)) ?? "";
-    return { street: parts[0] ?? "", city: parts[1] ?? "", state: state.toUpperCase(), zip };
+    const tail = parts.slice(2).join(" ");
+    const zip = tail.match(/\b\d{5}(?:-\d{4})?\b/)?.[0] ?? "";
+    const stateWords = tail.replace(zip, " ").replace(/\s+/g, " ").trim();
+    return {
+      street: parts[0] ?? "",
+      city: parts[1] ?? "",
+      state: toNerisStateCode(stateWords) || toNerisStateCode(tail),
+      zip,
+    };
   }
   if (parts.length === 2) {
     return { street: parts[0] ?? "", city: parts[1] ?? "", state: "", zip: "" };
@@ -312,9 +318,14 @@ export function ensureStructuredLocations(values: Record<string, string>): Recor
     const stateKey = `${prefix}_state`;
     const zipKey = `${prefix}_zip`;
     const addressKey = `${prefix}_address`;
+    const streetHoldsFullAddress =
+      text(next[streetKey]).includes(",") &&
+      !text(next[cityKey]) &&
+      !text(next[stateKey]) &&
+      !text(next[zipKey]);
     const hasParts = [streetKey, cityKey, stateKey, zipKey].some((key) => text(next[key]).length > 0);
-    if (!hasParts) {
-      const split = splitAddressLine(String(next[addressKey] ?? ""));
+    if (!hasParts || streetHoldsFullAddress) {
+      const split = splitAddressLine(String(streetHoldsFullAddress ? next[streetKey] : next[addressKey] ?? ""));
       if (prefix === "incident_location") {
         if (!split.state) split.state = text(next.location_state);
         if (!split.zip) split.zip = text(next.location_postal_code);
@@ -324,6 +335,8 @@ export function ensureStructuredLocations(values: Record<string, string>): Recor
       next[stateKey] = split.state;
       next[zipKey] = split.zip;
     }
+    const stateCode = toNerisStateCode(String(next[stateKey] ?? ""));
+    if (stateCode) next[stateKey] = stateCode;
     next[addressKey] = composeAddressLine(
       String(next[streetKey] ?? ""),
       String(next[cityKey] ?? ""),
@@ -331,6 +344,11 @@ export function ensureStructuredLocations(values: Record<string, string>): Recor
       String(next[zipKey] ?? ""),
     );
   });
+  const incidentState = toNerisStateCode(next.incident_location_state ?? "");
+  if (incidentState) next.location_state = incidentState;
+  if (text(next.incident_location_zip) && !text(next.location_postal_code)) {
+    next.location_postal_code = text(next.incident_location_zip);
+  }
   return next;
 }
 

@@ -1263,6 +1263,73 @@ export const NERIS_VALUE_SETS = {
   ],
 } as const satisfies Record<string, NerisValueOption[]>;
 
+const NERIS_STATE_NAMES: Record<string, string> = {
+  ALABAMA: "AL",
+  ALASKA: "AK",
+  ARIZONA: "AZ",
+  ARKANSAS: "AR",
+  CALIFORNIA: "CA",
+  COLORADO: "CO",
+  CONNECTICUT: "CT",
+  DELAWARE: "DE",
+  "DISTRICT OF COLUMBIA": "DC",
+  FLORIDA: "FL",
+  GEORGIA: "GA",
+  HAWAII: "HI",
+  IDAHO: "ID",
+  ILLINOIS: "IL",
+  INDIANA: "IN",
+  IOWA: "IA",
+  KANSAS: "KS",
+  KENTUCKY: "KY",
+  LOUISIANA: "LA",
+  MAINE: "ME",
+  MARYLAND: "MD",
+  MASSACHUSETTS: "MA",
+  MICHIGAN: "MI",
+  MINNESOTA: "MN",
+  MISSISSIPPI: "MS",
+  MISSOURI: "MO",
+  MONTANA: "MT",
+  NEBRASKA: "NE",
+  NEVADA: "NV",
+  "NEW HAMPSHIRE": "NH",
+  "NEW JERSEY": "NJ",
+  "NEW MEXICO": "NM",
+  "NEW YORK": "NY",
+  "NORTH CAROLINA": "NC",
+  "NORTH DAKOTA": "ND",
+  OHIO: "OH",
+  OKLAHOMA: "OK",
+  OREGON: "OR",
+  PENNSYLVANIA: "PA",
+  "RHODE ISLAND": "RI",
+  "SOUTH CAROLINA": "SC",
+  "SOUTH DAKOTA": "SD",
+  TENNESSEE: "TN",
+  TEXAS: "TX",
+  UTAH: "UT",
+  VERMONT: "VT",
+  VIRGINIA: "VA",
+  WASHINGTON: "WA",
+  "WEST VIRGINIA": "WV",
+  WISCONSIN: "WI",
+  WYOMING: "WY",
+};
+
+/** NERIS State / Territory stores a code such as IL, not the state name. */
+export function toNerisStateCode(value: string): string {
+  const raw = String(value ?? "").trim().toUpperCase().replace(/\./g, "");
+  if (!raw) return "";
+  const codes = new Set(NERIS_VALUE_SETS.state.map((option) => option.value));
+  if (codes.has(raw)) return raw;
+  const named = NERIS_STATE_NAMES[raw];
+  if (named && codes.has(named)) return named;
+  const stateZip = raw.match(/^([A-Z]{2})\s+\d{5}(?:-\d{4})?$/);
+  if (stateZip && codes.has(stateZip[1])) return stateZip[1];
+  return "";
+}
+
 const NERIS_SECTION_NOTE_IDS: NerisSectionId[] = [
   "location",
   "incidentTimes",
@@ -1434,7 +1501,8 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     id: "dispatch_location_state",
     sectionId: "core",
     label: "Dispatch state",
-    inputKind: "text",
+    inputKind: "select",
+    optionsKey: "state",
     layout: "half",
   },
   {
@@ -1470,7 +1538,8 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     id: "incident_location_state",
     sectionId: "core",
     label: "Incident state",
-    inputKind: "text",
+    inputKind: "select",
+    optionsKey: "state",
     layout: "half",
   },
   {

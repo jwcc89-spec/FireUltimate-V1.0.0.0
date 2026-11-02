@@ -154,6 +154,26 @@ describe("fire recovery billing requirements", () => {
     assert.equal(filled.dispatch_location_address, "1 Main, Crescent, IL 60922");
     assert.equal(filled.incident_location_street, "9 Oak");
     assert.equal(filled.incident_location_address, "9 Oak, Ashkum, IL 60911");
+    assert.equal(filled.location_state, "IL");
+    const fromStreet = ensureStructuredLocations({
+      dispatch_location_street: "",
+      dispatch_location_city: "",
+      dispatch_location_state: "",
+      dispatch_location_zip: "",
+      dispatch_location_address: "",
+      incident_location_street: "100 Main St, Crescent, Illinois 60922",
+      incident_location_city: "",
+      incident_location_state: "",
+      incident_location_zip: "",
+      incident_location_address: "",
+      location_state: "",
+      location_postal_code: "",
+    });
+    assert.equal(fromStreet.incident_location_street, "100 Main St");
+    assert.equal(fromStreet.incident_location_city, "Crescent");
+    assert.equal(fromStreet.incident_location_state, "IL");
+    assert.equal(fromStreet.incident_location_zip, "60922");
+    assert.equal(fromStreet.location_state, "IL");
   });
 
   it("lets Uninsured waive the insurance company and lets a department require Is Resident", () => {

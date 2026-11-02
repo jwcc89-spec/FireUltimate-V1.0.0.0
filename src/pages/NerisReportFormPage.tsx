@@ -23,6 +23,7 @@ import {
   getNerisFieldsForSection,
   getNerisValueOptions,
   isFieldEffectivelyRequired,
+  toNerisStateCode,
   validateNerisSection,
   type NerisFieldMetadata,
   type NerisFormValues,
@@ -36,6 +37,7 @@ import {
   composeAddressLine,
   ensureStructuredLocations,
   incidentLocationParts,
+  splitAddressLine,
   isFireRecoveryBillable,
   parseRequirementSettings,
   type CopyContact,
@@ -1845,13 +1847,31 @@ function NerisReportFormPage({
         fieldId === "incident_location_zip";
       if (dispatchPart || incidentPart) {
         const prefix = dispatchPart ? "dispatch_location" : "incident_location";
-        const street = fieldId.endsWith("_street") ? sanitizedValue : String(nextValues[`${prefix}_street`] ?? "");
-        const city = fieldId.endsWith("_city") ? sanitizedValue : String(nextValues[`${prefix}_city`] ?? "");
-        const state = fieldId.endsWith("_state") ? sanitizedValue : String(nextValues[`${prefix}_state`] ?? "");
-        const zip = fieldId.endsWith("_zip") ? sanitizedValue : String(nextValues[`${prefix}_zip`] ?? "");
+        let street = fieldId.endsWith("_street") ? sanitizedValue : String(nextValues[`${prefix}_street`] ?? "");
+        let city = fieldId.endsWith("_city") ? sanitizedValue : String(nextValues[`${prefix}_city`] ?? "");
+        let state = fieldId.endsWith("_state") ? sanitizedValue : String(nextValues[`${prefix}_state`] ?? "");
+        let zip = fieldId.endsWith("_zip") ? sanitizedValue : String(nextValues[`${prefix}_zip`] ?? "");
+        if (fieldId.endsWith("_street") && street.includes(",") && !city.trim() && !state.trim() && !zip.trim()) {
+          const split = splitAddressLine(street);
+          street = split.street;
+          city = split.city;
+          state = split.state;
+          zip = split.zip;
+          nextValues[`${prefix}_street`] = street;
+          nextValues[`${prefix}_city`] = city;
+          nextValues[`${prefix}_state`] = state;
+          nextValues[`${prefix}_zip`] = zip;
+        }
+        const stateCode = toNerisStateCode(state);
+        if (stateCode) {
+          state = stateCode;
+          nextValues[`${prefix}_state`] = stateCode;
+        }
         nextValues[`${prefix}_address`] = composeAddressLine(street, city, state, zip);
-        if (incidentPart && fieldId.endsWith("_state")) nextValues.location_state = state.trim();
-        if (incidentPart && fieldId.endsWith("_zip")) nextValues.location_postal_code = zip.trim();
+        if (incidentPart && stateCode) nextValues.location_state = stateCode;
+        if (incidentPart && fieldId.endsWith("_state") && !state.trim()) nextValues.location_state = "";
+        if (incidentPart && zip.trim()) nextValues.location_postal_code = zip.trim();
+        if (incidentPart && fieldId.endsWith("_zip") && !zip.trim()) nextValues.location_postal_code = "";
       }
       return nextValues;
     });
@@ -2938,12 +2958,13 @@ function NerisReportFormPage({
   };
 
   const buildValidationSnapshot = () => {
+    const syncedValues = ensureStructuredLocations(formValues);
     const mergedErrors: Record<string, string> = {};
     const customIssueLabelsByFieldId: Record<string, string> = {};
     for (const section of NERIS_FORM_SECTIONS) {
       const validation = validateNerisSection(
         section.id,
-        formValues,
+        syncedValues,
         adminRequiredFieldIds,
       );
       Object.assign(mergedErrors, validation.errors);
@@ -2972,6 +2993,7 @@ function NerisReportFormPage({
     return {
       mergedErrors,
       issueLabels,
+      syncedValues,
     };
   };
 
@@ -3008,14 +3030,14 @@ function NerisReportFormPage({
       .join(" ");
   };
 
-  const applyValidationFailure = (issueLabels: string[]) => {
+  const applyValidationFailure = (issueLabels: string[], valuesToSave: NerisFormValues = formValues) => {
     if (issueLabels.length === 0) {
       return;
     }
     const serializedAidEntries = buildStoredAdditionalAidEntries();
     const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
     persistNerisDraft({
-      formValues,
+      formValues: valuesToSave,
       reportStatus: "Draft",
       lastSavedAt,
       additionalAidEntries: serializedAidEntries,
@@ -3033,12 +3055,13 @@ function NerisReportFormPage({
   };
 
   const handleCheckForErrors = () => {
-    const { mergedErrors, issueLabels } = buildValidationSnapshot();
+    const { mergedErrors, issueLabels, syncedValues } = buildValidationSnapshot();
+    setFormValues(syncedValues);
     setSectionErrors(mergedErrors);
     setValidationIssues(issueLabels);
 
     if (issueLabels.length > 0) {
-      applyValidationFailure(issueLabels);
+      applyValidationFailure(issueLabels, syncedValues);
       return;
     }
 
@@ -3052,6 +3075,7 @@ function NerisReportFormPage({
       "manual",
       "In Review",
       "Check for Errors passed. Status updated to In Review.",
+      syncedValues,
     );
   };
 
