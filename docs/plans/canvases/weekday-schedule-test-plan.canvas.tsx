@@ -81,9 +81,9 @@ const stages: StageDef[] = [
 
 const findings = [
   ["Setup", "No screen creates a new department. It takes the tenant:create script or the platform admin API, which only the program owner can run.", "Parked & future"],
-  ["Setup", "November 3: Admin menu reordered. Personnel Management is second. Neris Reporting, Hydrants, Customization, then Dispatch Parsing Settings. Beta items (Overtime Hiring, Point Tracker, Manage Groups, Expiration Tracker, Reports) sit under that. Audit Logs is last.", "Done"],
-  ["Setup", "November 3: Edit Users window widened so the name, username, user type, and reset-password columns fit without sideways scrolling on a normal desktop.", "Done"],
-  ["Setup", "November 3: Reporting renamed to Neris Reporting. Each required-field section (Core, Location, and the rest, including Fire Recovery Billing) has an arrow and can be collapsed.", "Done"],
+  ["Setup", "November 3: Admin menu reordered. Personnel Management is second. NERIS Reporting, Hydrants, Customization, then Dispatch Parsing Settings. Beta items sit under that. Audit Logs is last.", "Done"],
+  ["Setup", "November 3: Edit Users and Edit Personnel windows are wide enough for their columns on a normal desktop.", "Done"],
+  ["Setup", "November 3: Reporting renamed to NERIS Reporting. Required-field sections start collapsed. Click a section name to open it.", "Done"],
   ["Setup", "November 3: Scheduler Personnel stayed empty after accounts were created, because the roster was not filled from the account list on page load. Opening Edit Personnel now lists every account. Click Save Scheduler Settings after assigning shifts.", "Done"],
   ["Setup", "Shift Duration is a number of hours. The test shift is saved as 8a-8p, 08:00, 12 hours, Daily.", "Noted"],
   ["Setup", "Additional Fields showing 8 is the built-in list (Info, Chief on Call, Vacation, Kelly Day, Injured, Sick, Other, Trade).", "Noted"],
@@ -101,11 +101,13 @@ const decided = [
 ];
 
 const stillOpen = [
-  ["Weekday choice", "Should 'Selected weekdays' be a new Recurrence option with day checkboxes, or a separate 'Days of week' field?"],
-  ["Crews", "Does this department have one weekday crew, or several crews that rotate between weeks?"],
+  ["Schedule mode", "Recommended: one picker at the top of Scheduler Settings, Career or Paid-on-call. Career keeps today's 24/48 setup. Paid-on-call posts empty seats and people sign up. Waiting on your yes before any of that is built."],
+  ["Sign-up rules", "If you say yes: can a person sign up only when they have the required qualification? Can they remove their own name? Does an admin have to approve?"],
+  ["Posting window", "How far ahead are empty seats created: one month, six weeks, or a number the admin types?"],
+  ["Weekday choice", "For paid-on-call, Monday–Friday becomes the template that creates the empty seats, not a rotating shift."],
+  ["Crews", "Watseka is one paid-on-call crew. No standing shift, apparatus, or station on each person."],
   ["Holidays", "Are holidays worked or skipped?"],
-  ["Overtime pieces", "For a 12-hour shift, what is the normal overtime piece: 12 hours, 6 hours, or something else?"],
-  ["Kelly days", "Do Kelly days apply to this department at all?"],
+  ["Kelly days", "Kelly days stay on the career schedule only."],
 ];
 
 function StepCard({ s }: { s: Step }) {
@@ -226,7 +228,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Step 2 in progress · Admin menu, Edit Users width, Neris Reporting sections, and the empty personnel list are fixed locally · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Step 2 in progress · NERIS sections start collapsed · Personnel window widened · Paid-on-call schedule mode is proposed and not built · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">

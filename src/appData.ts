@@ -463,7 +463,7 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
-        label: "Neris Reporting",
+        label: "NERIS Reporting",
         path: "/admin-functions/reporting",
         summary: "NERIS required fields and narrative builder.",
         isBuilt: true,

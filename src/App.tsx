@@ -6482,7 +6482,7 @@ function NerisRequiredFieldsAdminPage() {
             );
             if (fields.length === 0) return null;
             return (
-              <details key={section.id} className="panel neris-required-section" open>
+              <details key={section.id} className="panel neris-required-section">
                 <summary>
                   <h2>{section.label}</h2>
                 </summary>
@@ -6530,7 +6530,7 @@ function NerisRequiredFieldsAdminPage() {
               </details>
             );
           })}
-          <details className="panel neris-required-section" open>
+          <details className="panel neris-required-section">
             <summary>
               <h2>Fire Recovery Billing</h2>
             </summary>
@@ -6694,7 +6694,7 @@ function ReportingAdminPage() {
       <section className="neris-report-layout reporting-admin-layout">
         <aside className="panel neris-sidebar reporting-admin-sidebar">
           <div className="neris-sidebar-header">
-            <h2>Neris Reporting</h2>
+            <h2>NERIS Reporting</h2>
             <p>Admin modules</p>
           </div>
           <nav className="neris-section-nav" aria-label="Reporting module navigation">
@@ -9726,7 +9726,7 @@ function DepartmentDetailsPage({
       {activeCollectionEditor && activeCollectionDefinition ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
           <article
-            className={`panel department-editor-modal${isUsersEditor ? " department-editor-modal-wide" : ""}`}
+            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor ? " department-editor-modal-wide" : ""}`}
           >
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
@@ -11799,7 +11799,9 @@ function DepartmentDetailsPage({
 
       {isEntryFormOpen ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
-          <article className="panel department-editor-modal">
+          <article
+            className={`panel department-editor-modal${isSchedulerPersonnelEditor ? " department-editor-modal-wide" : ""}`}
+          >
             <div className="panel-header">
               <h2>
                 {isUsersEditor
