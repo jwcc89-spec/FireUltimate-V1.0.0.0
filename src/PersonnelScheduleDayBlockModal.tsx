@@ -96,6 +96,11 @@ interface PersonnelScheduleDayBlockModalProps {
     proposedEnd: number,
   ) => string | null;
   apparatusOverrideBlockMessage?: (dateKey: string, personName: string) => string | null;
+  apparatusSeatQualificationMessage?: (
+    unitId: string,
+    slotIndex: number,
+    personName: string,
+  ) => string | null;
   onScheduleNotice: (message: string) => void;
   /** When segment count becomes 1, exit segment mode and store a single 24h assignment. */
   collapseSegmentModeToSingleSlot: (
@@ -140,6 +145,7 @@ export function PersonnelScheduleDayBlockModal({
   setSegmentsForSlot,
   assertApparatusTimeOverlap,
   apparatusOverrideBlockMessage,
+  apparatusSeatQualificationMessage,
   onScheduleNotice,
   collapseSegmentModeToSingleSlot,
   onClose,
@@ -326,6 +332,19 @@ export function PersonnelScheduleDayBlockModal({
       const segmentRows = ensureSegmentRows(unitId, slotIndex);
       const targetSeg = segmentRows.find((s) => s.id === targetSegmentId);
       if (!targetSeg) return;
+      if (supportRowType === "apparatus" && apparatusSeatQualificationMessage) {
+        const qualificationMsg = apparatusSeatQualificationMessage(
+          unitId,
+          slotIndex,
+          draggedPerson,
+        );
+        if (qualificationMsg) {
+          onScheduleNotice(qualificationMsg);
+          setDraggedPerson(null);
+          setDragOverSlot(null);
+          return;
+        }
+      }
       if (supportRowType === "apparatus" && apparatusOverrideBlockMessage) {
         const overrideMsg = apparatusOverrideBlockMessage(dateKey, draggedPerson);
         if (overrideMsg) {
@@ -401,6 +420,7 @@ export function PersonnelScheduleDayBlockModal({
     },
     [
       apparatusOverrideBlockMessage,
+      apparatusSeatQualificationMessage,
       assertApparatusTimeOverlap,
       dateKey,
       draggedPerson,
@@ -683,6 +703,24 @@ export function PersonnelScheduleDayBlockModal({
               return (
                 <div key={row.id} className="personnel-schedule-modal-apparatus">
                   <strong>{row.label}</strong>
+                  {(row.id === "support-info" || row.id === "support-trade") &&
+                  coverageLines.length > 0 ? (
+                    <div className="personnel-schedule-coverage-info">
+                      {coverageLines.map((line) => (
+                        <div
+                          key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
+                          className={line.overtime ? "personnel-schedule-overtime-name" : undefined}
+                          style={
+                            line.overtime
+                              ? undefined
+                              : { color: colorForPersonnelName(line.personnelName) }
+                          }
+                        >
+                          {line.text}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="personnel-schedule-modal-slots">
                     {slots.map((name, slotIdx) => {
                       const isRequired = slotIdx < row.minimumPersonnel;
@@ -773,27 +811,6 @@ export function PersonnelScheduleDayBlockModal({
                           >
                             {isTextRow ? (
                               <>
-                                {(row.id === "support-info" || row.id === "support-trade") &&
-                                slotIdx === 0 &&
-                                coverageLines.length > 0 ? (
-                                  <div className="personnel-schedule-coverage-info">
-                                    {coverageLines.map((line) => (
-                                      <div
-                                        key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
-                                        className={
-                                          line.overtime ? "personnel-schedule-overtime-name" : undefined
-                                        }
-                                        style={
-                                          line.overtime
-                                            ? undefined
-                                            : { color: colorForPersonnelName(line.personnelName) }
-                                        }
-                                      >
-                                        {line.text}
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : null}
                                 <input
                                   type="text"
                                   maxLength={25}
@@ -918,6 +935,21 @@ export function PersonnelScheduleDayBlockModal({
                                                   value={segment.personnelName}
                                                   onChange={(event) => {
                                                     const nextName = event.target.value;
+                                                    if (
+                                                      row.rowType === "apparatus" &&
+                                                      nextName.trim() &&
+                                                      apparatusSeatQualificationMessage
+                                                    ) {
+                                                      const qualificationMsg = apparatusSeatQualificationMessage(
+                                                        row.unitId,
+                                                        slotIdx,
+                                                        nextName,
+                                                      );
+                                                      if (qualificationMsg) {
+                                                        onScheduleNotice(qualificationMsg);
+                                                        return;
+                                                      }
+                                                    }
                                                     if (
                                                       row.rowType === "apparatus" &&
                                                       nextName.trim() &&

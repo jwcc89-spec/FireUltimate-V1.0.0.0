@@ -721,7 +721,7 @@ export function PersonnelSchedulePage({
       applyOvertimeSplitChange(nextSplit);
       const targetRow = scheduleRows.find((row) => row.unitId === unitId);
 
-      if (!enabled) {
+          if (!enabled) {
         setScheduleAssignments((previous) => {
           const next = { ...previous };
           const dayData = { ...(next[storageDateKey] ?? {}) } as Record<
@@ -737,53 +737,62 @@ export function PersonnelSchedulePage({
           saveScheduleAssignments(next);
           return next;
         });
+        setScheduleSlotSegments((previous) => {
+          const day = { ...(previous[storageDateKey] ?? {}) };
+          const unitRows = Array.isArray(day[unitId]) ? [...day[unitId]!] : [];
+          while (unitRows.length <= slotIndex) unitRows.push([]);
+          unitRows[slotIndex] = [];
+          const next = {
+            ...previous,
+            [storageDateKey]: {
+              ...day,
+              [unitId]: unitRows,
+            },
+          };
+          saveScheduleSlotSegments(next);
+          return next;
+        });
       } else {
-        const existingSegments = getSegmentsForSlot(dateKey, unitId, slotIndex).filter(
-          (segment) => segment.source !== "auto_hire",
-        );
-        if (existingSegments.length === 0) {
-          const segmentCount =
-            targetRow?.rowType === "apparatus" ? Math.max(1, overtimeSplitCount) : 1;
-          const totalWindow = Math.max(15, shiftWindowEndMinutes - shiftWindowStartMinutes);
-          const segmentLength = Math.max(15, Math.floor(totalWindow / segmentCount));
-          const defaults: ScheduleSegment[] = Array.from({ length: segmentCount }, (_, index) => {
-            const startMinutes = shiftWindowStartMinutes + index * segmentLength;
-            const endMinutes =
-              index === segmentCount - 1
-                ? shiftWindowEndMinutes
-                : shiftWindowStartMinutes + (index + 1) * segmentLength;
-            return {
-              id: `${dateKey}-${unitId}-${slotIndex}-default-${index}`,
-              assigneeType: "personnel",
-              personnelName: "",
-              startMinutes,
-              endMinutes,
-              source: "manual",
-              overtime: false,
-            };
-          });
-          setScheduleSlotSegments((previous) => {
-            const day = { ...(previous[storageDateKey] ?? {}) };
-            const unitRows = Array.isArray(day[unitId]) ? [...day[unitId]!] : [];
-            while (unitRows.length <= slotIndex) unitRows.push([]);
-            unitRows[slotIndex] = defaults;
-            const next = {
-              ...previous,
-              [storageDateKey]: {
-                ...day,
-                [unitId]: unitRows,
-              },
-            };
-            saveScheduleSlotSegments(next);
-            return next;
-          });
-        }
+        const segmentCount =
+          targetRow?.rowType === "apparatus" ? Math.max(1, overtimeSplitCount) : 1;
+        const totalWindow = Math.max(15, shiftWindowEndMinutes - shiftWindowStartMinutes);
+        const segmentLength = Math.max(15, Math.floor(totalWindow / segmentCount));
+        const defaults: ScheduleSegment[] = Array.from({ length: segmentCount }, (_, index) => {
+          const startMinutes = shiftWindowStartMinutes + index * segmentLength;
+          const endMinutes =
+            index === segmentCount - 1
+              ? shiftWindowEndMinutes
+              : shiftWindowStartMinutes + (index + 1) * segmentLength;
+          return {
+            id: `${dateKey}-${unitId}-${slotIndex}-default-${index}`,
+            assigneeType: "personnel",
+            personnelName: "",
+            startMinutes,
+            endMinutes,
+            source: "manual",
+            overtime: false,
+          };
+        });
+        setScheduleSlotSegments((previous) => {
+          const day = { ...(previous[storageDateKey] ?? {}) };
+          const unitRows = Array.isArray(day[unitId]) ? [...day[unitId]!] : [];
+          while (unitRows.length <= slotIndex) unitRows.push([]);
+          unitRows[slotIndex] = defaults;
+          const next = {
+            ...previous,
+            [storageDateKey]: {
+              ...day,
+              [unitId]: unitRows,
+            },
+          };
+          saveScheduleSlotSegments(next);
+          return next;
+        });
       }
       setLastScheduleAction("Updated segment mode.");
     },
     [
       effectiveShift,
-      getSegmentsForSlot,
       overtimeSplitCount,
       scheduleOvertimeSplit,
       shiftWindowEndMinutes,
@@ -1241,6 +1250,28 @@ export function PersonnelSchedulePage({
       return `${trimmed} is on ${overrideRow.label}. Remove them from ${overrideRow.label} before scheduling them on apparatus.`;
     },
     [effectiveShift, scheduleAssignments, scheduleRows, scheduleSlotSegments],
+  );
+
+  const apparatusSeatQualificationMessage = useCallback(
+    (unitId: string, slotIndex: number, personName: string): string | null => {
+      const trimmed = personName.trim();
+      if (!trimmed) return null;
+      const row = scheduleRows.find(
+        (entry) => entry.unitId === unitId && entry.rowType === "apparatus",
+      );
+      if (!row || slotIndex >= row.minimumPersonnel) return null;
+      const requiredQualification = row.requiredQualifications[slotIndex]?.trim() ?? "";
+      if (!requiredQualification) return null;
+      const requiredRank =
+        qualificationRankMap.get(requiredQualification) ?? Number.POSITIVE_INFINITY;
+      const personBestRank = getBestQualificationRankForPerson(
+        personnelByName.get(trimmed),
+        qualificationRankMap,
+      );
+      if (Number.isFinite(personBestRank) && personBestRank <= requiredRank) return null;
+      return "You do not meet the minimum qualifications.";
+    },
+    [personnelByName, qualificationRankMap, scheduleRows],
   );
 
   const assertApparatusTimeOverlap = useCallback(
@@ -1786,6 +1817,7 @@ export function PersonnelSchedulePage({
         .filter((entry) => entry.rowType === "apparatus")
         .forEach((entry) => {
           for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
+            if (!isOvertimeEnabledForSlot(dateKey, entry.unitId, slotIndex)) continue;
             getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
               const destination = segment.overtime
                 ? departmentData.overtimeSummaryTarget
@@ -1798,6 +1830,7 @@ export function PersonnelSchedulePage({
         .filter((entry) => entry.segmentDisplayIn === target)
         .forEach((entry) => {
           for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
+            if (!isOvertimeEnabledForSlot(dateKey, entry.unitId, slotIndex)) continue;
             getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
               segments.push(segment);
             });
@@ -1805,7 +1838,7 @@ export function PersonnelSchedulePage({
         });
       return formatSegmentCoverageLines(segments);
     },
-    [departmentData.overtimeSummaryTarget, departmentData.segmentSummaryTarget, getSegmentsForSlot, scheduleRows],
+    [departmentData.overtimeSummaryTarget, departmentData.segmentSummaryTarget, getSegmentsForSlot, isOvertimeEnabledForSlot, scheduleRows],
   );
 
   if (isLoading && departmentData.personnel.length === 0) {
@@ -2078,6 +2111,26 @@ export function PersonnelSchedulePage({
                         }`}
                         onDoubleClick={() => setEditDayBlock({ date, dateKey })}
                       >
+                        {(row.id === "support-info" || row.id === "support-trade") &&
+                        coverageLines.length > 0 ? (
+                          <div className="personnel-schedule-coverage-info">
+                            {coverageLines.map((line) => (
+                              <div
+                                key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
+                                className={
+                                  line.overtime ? "personnel-schedule-overtime-name" : undefined
+                                }
+                                style={
+                                  line.overtime
+                                    ? undefined
+                                    : { color: colorForPersonnelName(line.personnelName) }
+                                }
+                              >
+                                {line.text}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
                         <div className="personnel-schedule-slots">
                           {displaySlots.map((name, slotIdx) => {
                             const storedSegments = getSegmentsForSlot(
@@ -2241,27 +2294,6 @@ export function PersonnelSchedulePage({
                                   });
                                 }}
                               >
-                                {(row.id === "support-info" || row.id === "support-trade") &&
-                                slotIdx === 0 &&
-                                coverageLines.length > 0 ? (
-                                  <div className="personnel-schedule-coverage-info">
-                                    {coverageLines.map((line) => (
-                                      <div
-                                        key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
-                                        className={
-                                          line.overtime ? "personnel-schedule-overtime-name" : undefined
-                                        }
-                                        style={
-                                          line.overtime
-                                            ? undefined
-                                            : { color: colorForPersonnelName(line.personnelName) }
-                                        }
-                                      >
-                                        {line.text}
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : null}
                                 {isTextRow ? (
                                   <input
                                     type="text"
@@ -2433,6 +2465,7 @@ export function PersonnelSchedulePage({
           setSegmentsForSlot={setSegmentsForSlot}
           assertApparatusTimeOverlap={assertApparatusTimeOverlap}
           apparatusOverrideBlockMessage={apparatusOverrideBlockMessage}
+          apparatusSeatQualificationMessage={apparatusSeatQualificationMessage}
           onScheduleNotice={setScheduleNotice}
           collapseSegmentModeToSingleSlot={collapseSegmentModeToSingleSlot}
           onClose={() => {
