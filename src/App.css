@@ -2695,6 +2695,55 @@ tbody tr:last-of-type td {
   gap: 0.55rem;
 }
 
+.shift-information-core-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.shift-information-core-fields label,
+.overtime-setup-fields label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.shift-information-core-fields input,
+.shift-information-core-fields select,
+.overtime-setup-fields input,
+.overtime-setup-fields select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.overtime-setup-fields {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.overtime-setup-fields-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.department-field-disabled {
+  opacity: 0.45;
+}
+
+.department-field-disabled input,
+.department-field-disabled select {
+  background-color: #f1f5f9;
+  color: #64748b;
+}
+
 .department-edit-grid label {
   display: grid;
   gap: 0.2rem;
@@ -5804,7 +5853,10 @@ body.printing-neris .neris-print-root {
 .personnel-schedule-slot-required-invalid {
   background-color: #fef2f2;
   border-color: #fecaca;
-  color: #991b1b;
+}
+
+.personnel-schedule-slot-name-unqualified {
+  color: #b91c1c;
   font-weight: 700;
 }
 

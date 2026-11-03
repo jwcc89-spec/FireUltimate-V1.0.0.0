@@ -10888,7 +10888,7 @@ function DepartmentDetailsPage({
                 <p className="field-hint">
                   This is only for a normal split shift, such as one person from 08:00 to 15:00. Overtime hours are chosen in Overtime Setup.
                 </p>
-                <div className="department-edit-grid">
+                <div className="shift-information-core-fields">
                   <label>
                     Shift Type
                     <input type="text" value={shiftDraft.shiftType} onChange={(event) => setShiftDraft((previous) => ({ ...previous, shiftType: event.target.value }))} />
@@ -10931,6 +10931,8 @@ function DepartmentDetailsPage({
                       ))}
                     </select>
                   </label>
+                </div>
+                <div className="department-edit-grid">
                   {shiftDraft.recurrence === "Custom" ? (
                     <label>
                       Custom Recurrence
@@ -11345,20 +11347,7 @@ function DepartmentDetailsPage({
 
             {isOvertimeSetupEditor ? (
               <>
-                <div className="department-edit-grid">
-                  <label>
-                    Standard Overtime Slot (hours)
-                    <input
-                      type="number"
-                      min={1}
-                      value={standardOvertimeSlot}
-                      onChange={(event) =>
-                        setStandardOvertimeSlot(
-                          Math.max(1, Number.parseInt(event.target.value, 10) || 1),
-                        )
-                      }
-                    />
-                  </label>
+                <div className="overtime-setup-fields">
                   <label className="additional-field-check">
                     <input
                       type="checkbox"
@@ -11367,18 +11356,35 @@ function DepartmentDetailsPage({
                     />
                     Allow Scheduled Overtime
                   </label>
-                  <label>
-                    Show overtime times in
-                    <select
-                      value={overtimeSummaryTarget}
-                      onChange={(event) =>
-                        setOvertimeSummaryTarget(event.target.value === "trades" ? "trades" : "info")
-                      }
-                    >
-                      <option value="info">Info</option>
-                      <option value="trades">Trades</option>
-                    </select>
-                  </label>
+                  <div className="overtime-setup-fields-row">
+                    <label className={allowScheduledOvertime ? undefined : "department-field-disabled"}>
+                      Standard Overtime Slot (hours)
+                      <input
+                        type="number"
+                        min={1}
+                        value={standardOvertimeSlot}
+                        disabled={!allowScheduledOvertime}
+                        onChange={(event) =>
+                          setStandardOvertimeSlot(
+                            Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className={allowScheduledOvertime ? undefined : "department-field-disabled"}>
+                      Show overtime times in
+                      <select
+                        value={overtimeSummaryTarget}
+                        disabled={!allowScheduledOvertime}
+                        onChange={(event) =>
+                          setOvertimeSummaryTarget(event.target.value === "trades" ? "trades" : "info")
+                        }
+                      >
+                        <option value="info">Info</option>
+                        <option value="trades">Trades</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem" }}>
                   Allow Scheduled Overtime keeps the OT checkbox on each split piece. Uncheck it to hide that checkbox.

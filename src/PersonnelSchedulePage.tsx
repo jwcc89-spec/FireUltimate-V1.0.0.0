@@ -958,7 +958,23 @@ export function PersonnelSchedulePage({
             );
           });
           if (existsInOverrideSupport || existsInOverrideSupportSegments) {
-            blockedAssignmentReason = `Cannot assign ${personName}: remove from Apparatus override field first (e.g. Vacation/Sick/Kelly).`;
+            const overrideRow = scheduleRows.find((row) => {
+              if (!isOverrideSupportPersonnelRow(row)) return false;
+              const rowSlots = dayData[row.unitId] ?? [];
+              const onRow = rowSlots.some((slotValue) =>
+                parseAssignedNames(slotValue).includes(personName),
+              );
+              const segRows = scheduleSlotSegments[storageDateKey]?.[row.unitId] ?? [];
+              const onSeg = segRows.some((segments) =>
+                Array.isArray(segments)
+                  ? segments.some((segment) => segment.personnelName === personName)
+                  : false,
+              );
+              return onRow || onSeg;
+            });
+            blockedAssignmentReason = overrideRow
+              ? `${personName} is on ${overrideRow.label}. Remove them from ${overrideRow.label} before scheduling them on apparatus.`
+              : `${personName} is on an Apparatus override row. Remove them from that row before scheduling them on apparatus.`;
             return prev;
           }
           const overlapMsg = computeCrossApparatusOverlapMessage({
@@ -1201,6 +1217,30 @@ export function PersonnelSchedulePage({
       scheduleSlotSegments,
       getAssignmentsForDay,
     ],
+  );
+
+  const apparatusOverrideBlockMessage = useCallback(
+    (dateKey: string, personName: string): string | null => {
+      const trimmed = personName.trim();
+      if (!trimmed) return null;
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      const dayData = scheduleAssignments[storageDateKey] ?? {};
+      const overrideRow = scheduleRows.find((row) => {
+        if (!isOverrideSupportPersonnelRow(row)) return false;
+        const slots = dayData[row.unitId] ?? [];
+        const onRow = slots.some((slotValue) => parseAssignedNames(slotValue).includes(trimmed));
+        const segRows = scheduleSlotSegments[storageDateKey]?.[row.unitId] ?? [];
+        const onSeg = segRows.some((segments) =>
+          Array.isArray(segments)
+            ? segments.some((segment) => segment.personnelName.trim() === trimmed)
+            : false,
+        );
+        return onRow || onSeg;
+      });
+      if (!overrideRow) return null;
+      return `${trimmed} is on ${overrideRow.label}. Remove them from ${overrideRow.label} before scheduling them on apparatus.`;
+    },
+    [effectiveShift, scheduleAssignments, scheduleRows, scheduleSlotSegments],
   );
 
   const assertApparatusTimeOverlap = useCallback(
@@ -2117,26 +2157,33 @@ export function PersonnelSchedulePage({
                               row.rowType === "apparatus" &&
                               slotIdx < row.minimumPersonnel &&
                               isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx);
+                            const unqualifiedNames = new Set<string>();
                             const isRequiredInvalid =
                               isRequired &&
                               requiredQualification.length > 0 &&
                               (() => {
-                                if (row.rowType !== "apparatus") {
-                                  return (
+                                if (row.rowType !== "apparatus" || !segmentModeEnabled) {
+                                  const fails =
                                     slotNames.length > 0 &&
                                     !targetSlotOvertimeEnabled &&
-                                    !(slotBestRank <= requiredRank)
-                                  );
-                                }
-                                if (!segmentModeEnabled) {
-                                  return (
-                                    slotNames.length > 0 &&
-                                    !targetSlotOvertimeEnabled &&
-                                    !(slotBestRank <= requiredRank)
-                                  );
+                                    !(slotBestRank <= requiredRank);
+                                  if (fails) {
+                                    slotNames.forEach((slotName) => {
+                                      const person = personnelByName.get(slotName);
+                                      const pr = getBestQualificationRankForPerson(
+                                        person,
+                                        qualificationRankMap,
+                                      );
+                                      if (!(Number.isFinite(pr) && pr <= requiredRank)) {
+                                        unqualifiedNames.add(slotName.trim());
+                                      }
+                                    });
+                                  }
+                                  return fails;
                                 }
                                 const segs = storedSegments.filter((s) => s.source !== "auto_hire");
                                 if (segs.length === 0) return false;
+                                let failed = false;
                                 for (const seg of segs) {
                                   if (!seg.personnelName.trim() || seg.personnelName === "HIRE") {
                                     continue;
@@ -2148,10 +2195,11 @@ export function PersonnelSchedulePage({
                                     qualificationRankMap,
                                   );
                                   if (!(Number.isFinite(pr) && pr <= requiredRank)) {
-                                    return true;
+                                    unqualifiedNames.add(seg.personnelName.trim());
+                                    failed = true;
                                   }
                                 }
-                                return false;
+                                return failed;
                               })();
                             const isTextRow =
                               row.rowType === "support" &&
@@ -2305,6 +2353,7 @@ export function PersonnelSchedulePage({
                                         : slotNames.length > 1
                                           ? formatScheduleSegmentToken(entry)
                                           : formatSchedulePersonnelDisplayName(entry);
+                                      const isUnqualified = unqualifiedNames.has(entry.trim());
                                       return (
                                         <span
                                           key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
@@ -2313,12 +2362,16 @@ export function PersonnelSchedulePage({
                                               ? "personnel-schedule-hire-token"
                                               : isUnfilledSegment
                                                 ? "personnel-schedule-open-token"
-                                                : isOffShiftInOtSlot
-                                                  ? "personnel-schedule-slot-name-off-shift"
-                                                  : undefined
+                                                : isUnqualified
+                                                  ? "personnel-schedule-slot-name-unqualified"
+                                                  : isOffShiftInOtSlot
+                                                    ? "personnel-schedule-slot-name-off-shift"
+                                                    : undefined
                                           }
                                           style={
-                                            !isUnfilledSegment && colorForPersonnelName(entry)
+                                            !isUnfilledSegment &&
+                                            !isUnqualified &&
+                                            colorForPersonnelName(entry)
                                               ? { color: colorForPersonnelName(entry) }
                                               : undefined
                                           }
@@ -2379,6 +2432,7 @@ export function PersonnelSchedulePage({
           getSegmentsForSlot={getSegmentsForSlot}
           setSegmentsForSlot={setSegmentsForSlot}
           assertApparatusTimeOverlap={assertApparatusTimeOverlap}
+          apparatusOverrideBlockMessage={apparatusOverrideBlockMessage}
           onScheduleNotice={setScheduleNotice}
           collapseSegmentModeToSingleSlot={collapseSegmentModeToSingleSlot}
           onClose={() => {

@@ -95,6 +95,7 @@ interface PersonnelScheduleDayBlockModalProps {
     proposedStart: number,
     proposedEnd: number,
   ) => string | null;
+  apparatusOverrideBlockMessage?: (dateKey: string, personName: string) => string | null;
   onScheduleNotice: (message: string) => void;
   /** When segment count becomes 1, exit segment mode and store a single 24h assignment. */
   collapseSegmentModeToSingleSlot: (
@@ -138,6 +139,7 @@ export function PersonnelScheduleDayBlockModal({
   getSegmentsForSlot,
   setSegmentsForSlot,
   assertApparatusTimeOverlap,
+  apparatusOverrideBlockMessage,
   onScheduleNotice,
   collapseSegmentModeToSingleSlot,
   onClose,
@@ -324,6 +326,15 @@ export function PersonnelScheduleDayBlockModal({
       const segmentRows = ensureSegmentRows(unitId, slotIndex);
       const targetSeg = segmentRows.find((s) => s.id === targetSegmentId);
       if (!targetSeg) return;
+      if (supportRowType === "apparatus" && apparatusOverrideBlockMessage) {
+        const overrideMsg = apparatusOverrideBlockMessage(dateKey, draggedPerson);
+        if (overrideMsg) {
+          onScheduleNotice(overrideMsg);
+          setDraggedPerson(null);
+          setDragOverSlot(null);
+          return;
+        }
+      }
       if (
         supportRowType === "apparatus" &&
         assertApparatusTimeOverlap &&
@@ -389,6 +400,7 @@ export function PersonnelScheduleDayBlockModal({
       setDragOverSlot(null);
     },
     [
+      apparatusOverrideBlockMessage,
       assertApparatusTimeOverlap,
       dateKey,
       draggedPerson,
@@ -906,6 +918,20 @@ export function PersonnelScheduleDayBlockModal({
                                                   value={segment.personnelName}
                                                   onChange={(event) => {
                                                     const nextName = event.target.value;
+                                                    if (
+                                                      row.rowType === "apparatus" &&
+                                                      nextName.trim() &&
+                                                      apparatusOverrideBlockMessage
+                                                    ) {
+                                                      const overrideMsg = apparatusOverrideBlockMessage(
+                                                        dateKey,
+                                                        nextName,
+                                                      );
+                                                      if (overrideMsg) {
+                                                        onScheduleNotice(overrideMsg);
+                                                        return;
+                                                      }
+                                                    }
                                                     if (
                                                       row.rowType === "apparatus" &&
                                                       assertApparatusTimeOverlap &&

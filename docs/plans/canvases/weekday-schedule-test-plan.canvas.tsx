@@ -104,6 +104,7 @@ const decided = [
   ["November 3, 2026", "Info on the schedule", "Additional fields use labeled Rows visible and Maximum rows. Info, Kelly Day, Trades, and Injury can be hidden but not deleted. A segmented personnel field can show its times in Info, in Trades, or not at all."],
   ["November 3, 2026", "Segmented shift vs overtime", "A segmented shift and overtime are separate. Segmented hours are chosen in Shift Information. Overtime hours are chosen in Overtime Setup. An empty split piece says OPEN in red. It says HIRE only when that piece's OT box is checked, and that name is red and bold."],
   ["November 3, 2026", "Scheduler settings layout", "Shift Information and Scheduler Apparatus put the edit form above the list. Qualifications can be removed. Additional fields can use 0 visible rows, and the usual starting value stays 1."],
+  ["November 3, 2026", "Injury and a split seat", "A person on Injury, Vacation, Sick, or Kelly Day cannot be placed on a truck until they are removed from that row. Only the person who misses a seat's qualification is shown in bold red."],
 ];
 
 const stillOpen = [
@@ -229,7 +230,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Segmented hours are chosen in Shift Information · OPEN is red · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Injury blocks a truck assignment · Only the unqualified name is bold · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">
