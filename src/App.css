@@ -2221,6 +2221,40 @@ tbody tr:last-of-type td {
   gap: 0.7rem;
 }
 
+.department-editor-modal-wide {
+  width: min(1040px, 96vw);
+}
+
+.neris-required-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.neris-required-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.neris-required-section > summary::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  border-right: 2px solid #334155;
+  border-bottom: 2px solid #334155;
+  transform: rotate(-45deg);
+  flex: 0 0 auto;
+}
+
+.neris-required-section[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.neris-required-section > summary h2 {
+  margin: 0;
+}
+
 /* DD-M/DD-S dropdown panels in department editor: render in portal to avoid clipping and box expansion */
 
 .department-qualifications-field-label {

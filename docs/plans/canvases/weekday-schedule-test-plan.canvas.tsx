@@ -81,10 +81,15 @@ const stages: StageDef[] = [
 
 const findings = [
   ["Setup", "No screen creates a new department. It takes the tenant:create script or the platform admin API, which only the program owner can run.", "Parked & future"],
-  ["Setup", "Shift Start Time is required before the schedule page will show anything.", "Watch in Step 2"],
-  ["Schedule", "No weekday recurrence. Daily includes weekends.", "Step 3"],
-  ["Schedule", "Rotation day counting depends on the letters A, B and C in the shift name.", "Step 4"],
-  ["Schedule", "Standard Overtime Slot defaults to 24 hours, which is longer than a 12-hour shift.", "Step 5"],
+  ["Setup", "November 3: Admin menu reordered. Personnel Management is second. Neris Reporting, Hydrants, Customization, then Dispatch Parsing Settings. Beta items (Overtime Hiring, Point Tracker, Manage Groups, Expiration Tracker, Reports) sit under that. Audit Logs is last.", "Done"],
+  ["Setup", "November 3: Edit Users window widened so the name, username, user type, and reset-password columns fit without sideways scrolling on a normal desktop.", "Done"],
+  ["Setup", "November 3: Reporting renamed to Neris Reporting. Each required-field section (Core, Location, and the rest, including Fire Recovery Billing) has an arrow and can be collapsed.", "Done"],
+  ["Setup", "November 3: Scheduler Personnel stayed empty after accounts were created, because the roster was not filled from the account list on page load. Opening Edit Personnel now lists every account. Click Save Scheduler Settings after assigning shifts.", "Done"],
+  ["Setup", "Shift Duration is a number of hours. The test shift is saved as 8a-8p, 08:00, 12 hours, Daily.", "Noted"],
+  ["Setup", "Additional Fields showing 8 is the built-in list (Info, Chief on Call, Vacation, Kelly Day, Injured, Sick, Other, Trade).", "Noted"],
+  ["Schedule", "No weekday recurrence. Daily includes weekends. The test shift uses Daily, so Saturday and Sunday will appear.", "Step 3"],
+  ["Schedule", "Rotation day counting depends on the letters A, B and C in the shift name. The test shift is named 8a-8p, so it does not use the A/B/C offset.", "Step 4"],
+  ["Schedule", "Standard Overtime Slot is still 24 hours, which is longer than this 12-hour shift. It was left unchanged during setup.", "Step 5"],
   ["Schedule", "Recurrence 'Every other Day' and 'Every 2 days' both mean every 2nd day, which may confuse admins.", "Step 3"],
 ];
 
@@ -221,7 +226,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Step 1 done · Step 2 (your from-scratch setup) is next · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Step 2 in progress · Admin menu, Edit Users width, Neris Reporting sections, and the empty personnel list are fixed locally · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">

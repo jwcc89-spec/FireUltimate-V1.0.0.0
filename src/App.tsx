@@ -6482,8 +6482,10 @@ function NerisRequiredFieldsAdminPage() {
             );
             if (fields.length === 0) return null;
             return (
-              <section key={section.id} className="panel">
-                <h2>{section.label}</h2>
+              <details key={section.id} className="panel neris-required-section" open>
+                <summary>
+                  <h2>{section.label}</h2>
+                </summary>
                 <ul style={{ listStyle: "none", paddingLeft: 0 }}>
                   {fields.map((field) => {
                     const requiredByNeris = isFieldRequiredByNeris(field);
@@ -6525,11 +6527,13 @@ function NerisRequiredFieldsAdminPage() {
                     );
                   })}
                 </ul>
-              </section>
+              </details>
             );
           })}
-          <section className="panel">
-            <h2>Fire Recovery Billing</h2>
+          <details className="panel neris-required-section" open>
+            <summary>
+              <h2>Fire Recovery Billing</h2>
+            </summary>
             <p className="field-hint">
               These choices apply to every party. Is Resident stays Recommended until a department sets it to Required.
             </p>
@@ -6560,7 +6564,7 @@ function NerisRequiredFieldsAdminPage() {
                 );
               })}
             </ul>
-          </section>
+          </details>
         </div>
       )}
     </section>
@@ -6690,7 +6694,7 @@ function ReportingAdminPage() {
       <section className="neris-report-layout reporting-admin-layout">
         <aside className="panel neris-sidebar reporting-admin-sidebar">
           <div className="neris-sidebar-header">
-            <h2>Reporting</h2>
+            <h2>Neris Reporting</h2>
             <p>Admin modules</p>
           </div>
           <nav className="neris-section-nav" aria-label="Reporting module navigation">
@@ -6773,6 +6777,35 @@ interface DepartmentDetailsPageProps {
   adminModuleId?: DepartmentDetailsAdminModuleId;
   nerisExportSettings?: NerisExportSettings;
   onSaveNerisExportSettings?: (nextSettings: NerisExportSettings) => void;
+}
+
+function mergeSchedulerPersonnelWithUsers(
+  users: DepartmentUserRecord[],
+  existing: DepartmentPersonnelRecord[],
+): DepartmentPersonnelRecord[] {
+  const byName = new Map(
+    existing
+      .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+      .filter(([name]) => name.length > 0),
+  );
+  return users
+    .map((user) => {
+      const userName = user.name.trim();
+      if (!userName) return null;
+      const match = byName.get(userName.toLocaleLowerCase());
+      if (match) {
+        return { ...match, name: userName, userType: user.userType || match.userType };
+      }
+      return {
+        name: userName,
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: user.userType,
+        qualifications: [],
+      } satisfies DepartmentPersonnelRecord;
+    })
+    .filter((entry): entry is DepartmentPersonnelRecord => entry !== null);
 }
 
 function DepartmentDetailsPage({
@@ -7958,16 +7991,19 @@ function DepartmentDetailsPage({
         const usersRes = await fetch("/api/users");
         if (usersRes.ok && isMounted) {
           const usersJson = (await usersRes.json()) as { ok?: boolean; users?: { id: string; username: string; userType: string; name?: string }[] };
+          const savedPersonnel = Array.isArray(d.schedulerPersonnelRecords)
+            ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
+            : [];
           if (usersJson?.ok && Array.isArray(usersJson.users)) {
-            setUserRecords(
-              usersJson.users.map((u) => ({
-                id: u.id,
-                name: String(u.name ?? u.username ?? "").trim(),
-                userType: String(u.userType ?? "User").trim(),
-                username: String(u.username ?? "").trim(),
-                password: "",
-              })),
-            );
+            const loadedUsers = usersJson.users.map((u) => ({
+              id: u.id,
+              name: String(u.name ?? u.username ?? "").trim(),
+              userType: String(u.userType ?? "User").trim(),
+              username: String(u.username ?? "").trim(),
+              password: "",
+            }));
+            setUserRecords(loadedUsers);
+            setPersonnelRecords(mergeSchedulerPersonnelWithUsers(loadedUsers, savedPersonnel));
           } else {
             setUserRecords(
               Array.isArray(d.userRecords)
@@ -7982,6 +8018,7 @@ function DepartmentDetailsPage({
                     .filter((entry) => entry.name.length > 0)
                 : [],
             );
+            setPersonnelRecords(savedPersonnel);
           }
         } else if (isMounted) {
           setUserRecords(
@@ -7997,12 +8034,12 @@ function DepartmentDetailsPage({
                   .filter((entry) => entry.name.length > 0)
               : [],
           );
+          setPersonnelRecords(
+            Array.isArray(d.schedulerPersonnelRecords)
+              ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
+              : [],
+          );
         }
-        setPersonnelRecords(
-          Array.isArray(d.schedulerPersonnelRecords)
-            ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
-            : [],
-        );
         setSchedulerEnabled(Boolean(d.schedulerEnabled ?? false));
         setStandardOvertimeSlot(
           Math.max(1, Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24)),
@@ -9688,7 +9725,9 @@ function DepartmentDetailsPage({
 
       {activeCollectionEditor && activeCollectionDefinition ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
-          <article className="panel department-editor-modal">
+          <article
+            className={`panel department-editor-modal${isUsersEditor ? " department-editor-modal-wide" : ""}`}
+          >
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
               <button type="button" className="secondary-button compact-button" onClick={closeCollectionEditor}>
