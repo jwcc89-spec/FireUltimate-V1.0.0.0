@@ -9,6 +9,10 @@ export interface PersonnelScheduleRow {
   unitId: string;
   unitType: string;
   slotCount: number;
+  /** Additional fields: how many rows show before any are filled. */
+  rowsVisible?: number;
+  /** Additional fields: the most rows a day can open. */
+  maximumRows?: number;
   minimumPersonnel: number;
   requiredQualifications: string[];
   stationName?: string;
@@ -38,6 +42,8 @@ export interface PersonnelScheduleData {
     id: string;
     fieldName: string;
     numberOfSlots: number;
+    rowsVisible: number;
+    maximumRows: number;
     valueMode: ScheduleSupportValueMode;
     /** Stored as personnelOverride; admin UI label: Apparatus override. */
     personnelOverride: boolean;

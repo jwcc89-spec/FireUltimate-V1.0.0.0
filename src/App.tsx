@@ -415,9 +415,27 @@ interface AdditionalFieldRecord {
   id: string;
   fieldName: string;
   numberOfSlots: number;
+  rowsVisible: number;
+  maximumRows: number;
   valueMode: AdditionalFieldValueMode;
   personnelOverride: boolean;
   segmentedModeEnabled: boolean;
+}
+
+const DEFAULT_MAXIMUM_ADDITIONAL_ROWS = 12;
+
+function readAdditionalRowCounts(entry: {
+  numberOfSlots?: unknown;
+  rowsVisible?: unknown;
+  maximumRows?: unknown;
+}): { numberOfSlots: number; rowsVisible: number; maximumRows: number } {
+  const legacySlots = Math.max(1, Math.floor(Number(entry.numberOfSlots ?? 1) || 1));
+  const rowsVisible = Math.max(1, Math.floor(Number(entry.rowsVisible ?? legacySlots) || legacySlots));
+  const maximumRows = Math.max(
+    rowsVisible,
+    Math.floor(Number(entry.maximumRows ?? Math.max(legacySlots, DEFAULT_MAXIMUM_ADDITIONAL_ROWS)) || DEFAULT_MAXIMUM_ADDITIONAL_ROWS),
+  );
+  return { rowsVisible, maximumRows, numberOfSlots: maximumRows };
 }
 
 interface DepartmentNerisEntityOption {
@@ -679,14 +697,14 @@ const DEFAULT_USER_TABLE_COLUMN_WIDTHS: Record<UserTableColumnId, number> = {
   userType: 180,
 };
 const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
-  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false },
-  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-info", fieldName: "Info", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-injured", fieldName: "Injured", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-trade", fieldName: "Trade", numberOfSlots: 12, rowsVisible: 8, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
 ];
 
 function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
@@ -700,13 +718,15 @@ function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
       const fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
       const valueModeRaw = String((entry as { valueMode?: unknown }).valueMode ?? "personnel").trim().toLowerCase();
       const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
-      const numberOfSlots = Math.max(1, Math.floor(Number((entry as { numberOfSlots?: unknown }).numberOfSlots ?? 1) || 1));
+      const { numberOfSlots, rowsVisible, maximumRows } = readAdditionalRowCounts(
+        entry as { numberOfSlots?: unknown; rowsVisible?: unknown; maximumRows?: unknown },
+      );
       const personnelOverride = Boolean((entry as { personnelOverride?: unknown }).personnelOverride);
       const segmentedModeEnabled = Boolean(
         (entry as { segmentedModeEnabled?: unknown }).segmentedModeEnabled,
       );
       if (!fieldName) return null;
-      return { id, fieldName, numberOfSlots, valueMode, personnelOverride, segmentedModeEnabled };
+      return { id, fieldName, numberOfSlots, rowsVisible, maximumRows, valueMode, personnelOverride, segmentedModeEnabled };
     })
     .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
 
@@ -7036,7 +7056,9 @@ function DepartmentDetailsPage({
   const [additionalFieldDraft, setAdditionalFieldDraft] = useState<AdditionalFieldRecord>({
     id: "",
     fieldName: "",
-    numberOfSlots: 1,
+    numberOfSlots: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
+    rowsVisible: 1,
+    maximumRows: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
     valueMode: "personnel",
     personnelOverride: true,
     segmentedModeEnabled: false,
@@ -7488,7 +7510,7 @@ function DepartmentDetailsPage({
   );
   const kellySlotCount = useMemo(() => {
     const kellyField = additionalFieldRecords.find((record) => record.id === "support-kelly-day");
-    return Math.max(1, Math.floor(Number(kellyField?.numberOfSlots ?? 2) || 2));
+    return Math.max(1, Math.floor(Number(kellyField?.rowsVisible ?? kellyField?.numberOfSlots ?? 2) || 2));
   }, [additionalFieldRecords]);
   const kellyOccurrencePreview = useMemo(() => {
     if (!kellyMultiAddDraft.startsOn) {
@@ -8145,7 +8167,9 @@ function DepartmentDetailsPage({
       setAdditionalFieldDraft({
         id: "",
         fieldName: "",
-        numberOfSlots: 1,
+        numberOfSlots: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
+        rowsVisible: 1,
+        maximumRows: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
         valueMode: "personnel",
         personnelOverride: true,
         segmentedModeEnabled: false,
@@ -9072,7 +9096,9 @@ function DepartmentDetailsPage({
     setAdditionalFieldDraft({
       id: "",
       fieldName: "",
-      numberOfSlots: 1,
+      numberOfSlots: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
+      rowsVisible: 1,
+      maximumRows: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
       valueMode: "personnel",
       personnelOverride: true,
       segmentedModeEnabled: false,
@@ -9084,7 +9110,11 @@ function DepartmentDetailsPage({
     if (!normalizedName) {
       return;
     }
-    const normalizedSlots = Math.max(1, Math.floor(Number(additionalFieldDraft.numberOfSlots) || 1));
+    const rowsVisible = Math.max(1, Math.floor(Number(additionalFieldDraft.rowsVisible) || 1));
+    const maximumRows = Math.max(
+      rowsVisible,
+      Math.floor(Number(additionalFieldDraft.maximumRows) || rowsVisible),
+    );
     const normalizedMode: AdditionalFieldValueMode =
       additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
     const normalizedOverride =
@@ -9114,7 +9144,9 @@ function DepartmentDetailsPage({
       const normalizedRow: AdditionalFieldRecord = {
         id: nextId,
         fieldName: normalizedName,
-        numberOfSlots: normalizedSlots,
+        numberOfSlots: maximumRows,
+        rowsVisible,
+        maximumRows,
         valueMode: preserveKellyId ? "personnel" : normalizedMode,
         personnelOverride: preserveKellyId ? true : normalizedOverride,
         segmentedModeEnabled: normalizedSegmented,
@@ -10835,14 +10867,41 @@ function DepartmentDetailsPage({
                   <input
                     type="number"
                     min={1}
-                    value={additionalFieldDraft.numberOfSlots}
+                    aria-label="Rows visible"
+                    value={additionalFieldDraft.rowsVisible}
                     onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => ({
-                        ...previous,
-                        numberOfSlots: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
-                      }))
+                      setAdditionalFieldDraft((previous) => {
+                        const rowsVisible = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                        return {
+                          ...previous,
+                          rowsVisible,
+                          maximumRows: Math.max(rowsVisible, previous.maximumRows),
+                          numberOfSlots: Math.max(rowsVisible, previous.maximumRows),
+                        };
+                      })
                     }
-                    placeholder={additionalFieldDraft.valueMode === "text" ? "Shown on schedule" : "Number of Slots"}
+                    placeholder="Rows visible"
+                    title="How many rows show before any are filled"
+                  />
+                  <input
+                    type="number"
+                    min={1}
+                    aria-label="Maximum rows"
+                    value={additionalFieldDraft.maximumRows}
+                    onChange={(event) =>
+                      setAdditionalFieldDraft((previous) => {
+                        const maximumRows = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                        const rowsVisible = Math.min(previous.rowsVisible, maximumRows);
+                        return {
+                          ...previous,
+                          rowsVisible,
+                          maximumRows,
+                          numberOfSlots: maximumRows,
+                        };
+                      })
+                    }
+                    placeholder="Maximum rows"
+                    title="The most rows a day can open"
                   />
                   <select
                     value={additionalFieldDraft.valueMode}
@@ -10860,7 +10919,11 @@ function DepartmentDetailsPage({
                     <option value="text">Text</option>
                     <option value="personnel">Personnel</option>
                   </select>
-                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <label
+                    className="field-hint"
+                    style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}
+                    title="When checked, a person placed here is taken off the apparatus for those hours. The apparatus keeps them only for the hours outside this row."
+                  >
                     <input
                       type="checkbox"
                       checked={
@@ -10877,7 +10940,11 @@ function DepartmentDetailsPage({
                     />
                     Apparatus override
                   </label>
-                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <label
+                    className="field-hint"
+                    style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}
+                    title="Lets this personnel row be split into timed pieces, such as part of a shift, instead of the whole shift."
+                  >
                     <input
                       type="checkbox"
                       checked={
@@ -10903,8 +10970,8 @@ function DepartmentDetailsPage({
                   </button>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                  Text behaves like the Info row. Personnel allows slot assignments in Personnel Schedule.
-                  For Info, the number is how many notes show on the schedule. Open a day to add more notes than that.
+                  Text rows can be typed on the schedule. Personnel rows are filled by choosing a person.
+                  Rows visible is how many rows start on the schedule and in the day. After a row is filled, press Enter or click away and another row appears, up to Maximum rows.
                 </p>
                 <div className="department-qualifications-list-wrapper">
                   <div className="table-wrapper">
@@ -10913,7 +10980,8 @@ function DepartmentDetailsPage({
                         <tr>
                           <th style={{ width: "32px" }} aria-label="Drag to reorder" />
                           <th>Field Name</th>
-                          <th style={{ width: "110px" }}>Slots</th>
+                          <th style={{ width: "110px" }}>Rows visible</th>
+                          <th style={{ width: "120px" }}>Maximum rows</th>
                           <th style={{ width: "120px" }}>Type</th>
                           <th style={{ width: "160px" }}>Apparatus override</th>
                           <th style={{ width: "140px" }}>Segmented Mode</th>
@@ -10923,7 +10991,7 @@ function DepartmentDetailsPage({
                       <tbody>
                         {additionalFieldRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="department-apparatus-empty">
+                            <td colSpan={8} className="department-apparatus-empty">
                               No additional fields. Add one above.
                             </td>
                           </tr>
@@ -10971,7 +11039,8 @@ function DepartmentDetailsPage({
                                   </small>
                                 ) : null}
                               </td>
-                              <td>{entry.numberOfSlots}</td>
+                              <td>{entry.rowsVisible}</td>
+                              <td>{entry.maximumRows}</td>
                               <td>{entry.valueMode === "text" ? "Text" : "Personnel"}</td>
                               <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
                               <td>{entry.valueMode === "personnel" && entry.segmentedModeEnabled ? "Yes" : "No"}</td>

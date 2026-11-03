@@ -7,7 +7,7 @@ import {
   parseTimeToMinutes,
   type ScheduleSegment,
 } from "./scheduleStorage";
-import { formatScheduleSegmentToken, formatSegmentCoverageLines, qualificationColorHex } from "./scheduleUtils";
+import { formatScheduleSegmentToken, formatSegmentCoverageLines, qualificationColorHex, visibleAdditionalRowCount } from "./scheduleUtils";
 
 type ModalRowType = "apparatus" | "support";
 type ModalSupportValueMode = "text" | "personnel";
@@ -18,6 +18,8 @@ interface ModalScheduleRow {
   rowType: ModalRowType;
   unitId: string;
   slotCount: number;
+  rowsVisible?: number;
+  maximumRows?: number;
   minimumPersonnel: number;
   supportValueMode?: ModalSupportValueMode;
   supportSegmentedMode?: boolean;
@@ -48,10 +50,12 @@ interface PersonnelScheduleDayBlockModalProps {
     unitId: string,
     slotCount: number,
     keepExtraSlots?: boolean,
+    padToSlotCount?: boolean,
   ) => string[];
   assignPersonToSlot: (dateKey: string, unitId: string, slotIndex: number, personName: string) => void;
   clearSlotValue: (dateKey: string, unitId: string, slotIndex: number) => void;
   updateTextSlotValue: (dateKey: string, unitId: string, slotIndex: number, textValue: string) => void;
+  revealNextSupportRow: (dateKey: string, unitId: string) => void;
   importAssignmentsForDay: (dateKey: string) => void;
   assignedOnDay: (dateKey: string) => Set<string>;
   isOvertimeEnabledForSlot: (dateKey: string, unitId: string, slotIndex: number) => boolean;
@@ -110,6 +114,7 @@ export function PersonnelScheduleDayBlockModal({
   assignPersonToSlot,
   clearSlotValue,
   updateTextSlotValue,
+  revealNextSupportRow,
   importAssignmentsForDay,
   assignedOnDay,
   isOvertimeEnabledForSlot,
@@ -624,12 +629,28 @@ export function PersonnelScheduleDayBlockModal({
               Previous action: {lastScheduleAction}
             </p>
             {scheduleRows.map((row) => {
-              const slots = getAssignmentsForDay(
-                dateKey,
-                row.unitId,
-                row.slotCount,
-                row.id === "support-info",
-              );
+              const storedSlots =
+                row.rowType === "support"
+                  ? getAssignmentsForDay(
+                      dateKey,
+                      row.unitId,
+                      row.maximumRows ?? row.slotCount,
+                      true,
+                      false,
+                    )
+                  : getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+              const visibleCount =
+                row.rowType === "support"
+                  ? visibleAdditionalRowCount(
+                      storedSlots,
+                      row.rowsVisible ?? 1,
+                      row.maximumRows ?? row.slotCount,
+                    )
+                  : storedSlots.length;
+              const slots =
+                row.rowType === "support"
+                  ? Array.from({ length: visibleCount }, (_, index) => storedSlots[index] ?? "")
+                  : storedSlots;
               const coverageLines =
                 row.id === "support-info"
                   ? formatSegmentCoverageLines(
@@ -745,34 +766,41 @@ export function PersonnelScheduleDayBlockModal({
                             }
                           >
                             {isTextRow ? (
-                              row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
-                                <div className="personnel-schedule-coverage-info">
-                                  {coverageLines.map((line) => (
-                                    <div
-                                      key={`${line.personnelName}-${line.text}`}
-                                      style={{ color: colorForPersonnelName(line.personnelName) }}
-                                    >
-                                      {line.text}
-                                    </div>
-                                  ))}
-                                </div>
-                              ) : (
-                              <input
-                                type="text"
-                                maxLength={25}
-                                value={name}
-                                className="personnel-schedule-info-input"
-                                placeholder="Type info..."
-                                onChange={(event) =>
-                                  updateTextSlotValue(
-                                    dateKey,
-                                    row.unitId,
-                                    slotIdx,
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                              )
+                              <>
+                                {row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
+                                  <div className="personnel-schedule-coverage-info">
+                                    {coverageLines.map((line) => (
+                                      <div
+                                        key={`${line.personnelName}-${line.text}`}
+                                        style={{ color: colorForPersonnelName(line.personnelName) }}
+                                      >
+                                        {line.text}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                <input
+                                  type="text"
+                                  maxLength={25}
+                                  value={name}
+                                  className="personnel-schedule-info-input"
+                                  placeholder="Type info..."
+                                  onChange={(event) =>
+                                    updateTextSlotValue(
+                                      dateKey,
+                                      row.unitId,
+                                      slotIdx,
+                                      event.target.value,
+                                    )
+                                  }
+                                  onBlur={() => revealNextSupportRow(dateKey, row.unitId)}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== "Enter") return;
+                                    event.preventDefault();
+                                    revealNextSupportRow(dateKey, row.unitId);
+                                  }}
+                                />
+                              </>
                             ) : (() => {
                               const names = parseAssignedNames(name);
                               const isSegmentMode = isSegmentModeAtSlot;
@@ -989,17 +1017,6 @@ export function PersonnelScheduleDayBlockModal({
                       );
                     })}
                   </div>
-                  {row.id === "support-info" ? (
-                    <button
-                      type="button"
-                      className="secondary-button compact-button"
-                      onClick={() =>
-                        updateTextSlotValue(dateKey, row.unitId, slots.length, "")
-                      }
-                    >
-                      Add info
-                    </button>
-                  ) : null}
                 </div>
               );
             })}

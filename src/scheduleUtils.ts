@@ -344,6 +344,46 @@ export function reorderAssignedByRequirementCoverage(
   return [...selectedNames, ...remaining];
 }
 
+/** How many additional-field rows to show. One blank row can follow the last filled row. */
+export function visibleAdditionalRowCount(
+  stored: string[],
+  rowsVisible: number,
+  maximumRows: number,
+): number {
+  const max = Math.max(1, Math.floor(maximumRows) || 1);
+  const min = Math.min(max, Math.max(1, Math.floor(rowsVisible) || 1));
+  const limited = stored.slice(0, max);
+  let lastFilled = -1;
+  for (let index = 0; index < limited.length; index += 1) {
+    if (String(limited[index] ?? "").trim()) lastFilled = index;
+  }
+  let count = Math.max(min, lastFilled + 1);
+  const trailingEmpties = limited.length - (lastFilled + 1);
+  if (trailingEmpties === 1 && count < max) count += 1;
+  return Math.min(max, count);
+}
+
+/** After a row is filled, keep one empty row below it until the maximum is reached. */
+export function withNextAdditionalRow(
+  stored: string[],
+  rowsVisible: number,
+  maximumRows: number,
+): string[] {
+  const max = Math.max(1, Math.floor(maximumRows) || 1);
+  const limited = stored.slice(0, max).map((value) => String(value ?? ""));
+  let lastFilled = -1;
+  for (let index = 0; index < limited.length; index += 1) {
+    if (limited[index].trim()) lastFilled = index;
+  }
+  const visible = visibleAdditionalRowCount(limited, rowsVisible, max);
+  if (lastFilled < 0 || visible > lastFilled + 1 || visible >= max) {
+    return limited.slice(0, visible);
+  }
+  const next = limited.slice(0, lastFilled + 1);
+  next.push("");
+  return next;
+}
+
 /** True when this person fills a required seat that is still open. */
 export function personCanJoinApparatus(
   personName: string,

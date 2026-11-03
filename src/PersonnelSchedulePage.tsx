@@ -43,6 +43,8 @@ import {
   requirementsSatisfiedByAssignedPersonnel,
   isPersonnelSchedulerRecordComplete,
   toDateKey,
+  visibleAdditionalRowCount,
+  withNextAdditionalRow,
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
 
@@ -455,7 +457,9 @@ export function PersonnelSchedulePage({
         rowType: "support",
         unitId,
         unitType: "SUPPORT",
-        slotCount: row.numberOfSlots,
+        slotCount: row.maximumRows,
+        rowsVisible: row.rowsVisible,
+        maximumRows: row.maximumRows,
         minimumPersonnel: 0,
         requiredQualifications: [],
         supportValueMode: row.valueMode,
@@ -627,7 +631,7 @@ export function PersonnelSchedulePage({
   );
 
   const getAssignmentsForDay = useCallback(
-    (dateKey: string, unitId: string, slotCount: number, keepExtraSlots = false): string[] => {
+    (dateKey: string, unitId: string, slotCount: number, keepExtraSlots = false, padToSlotCount = true): string[] => {
       const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
       const dayData = scheduleAssignments[storageDateKey];
       const unitSlots = dayData?.[unitId];
@@ -656,6 +660,9 @@ export function PersonnelSchedulePage({
         } else {
           result = result.filter((name) => !kellyNames.includes(name));
         }
+      }
+      if (!padToSlotCount) {
+        return result.slice(0, slotCount);
       }
       while (result.length < slotCount) result.push("");
       return keepExtraSlots ? result : result.slice(0, slotCount);
@@ -1080,6 +1087,15 @@ export function PersonnelSchedulePage({
             return prev;
           }
           dayData[unitId] = fitted;
+        } else if (
+          targetRow?.rowType === "support" &&
+          targetRow.supportValueMode === "personnel"
+        ) {
+          dayData[unitId] = withNextAdditionalRow(
+            unitSlots,
+            targetRow.rowsVisible ?? 1,
+            targetRow.maximumRows ?? targetRow.slotCount,
+          );
         } else {
           dayData[unitId] = unitSlots;
         }
@@ -1302,6 +1318,32 @@ export function PersonnelSchedulePage({
     [effectiveShift, scheduleRows, getAssignmentsForDay],
   );
 
+  const revealNextSupportRow = useCallback(
+    (dateKey: string, unitId: string) => {
+      const row = scheduleRows.find((entry) => entry.unitId === unitId);
+      if (!row || row.rowType !== "support") return;
+      const rowsVisible = row.rowsVisible ?? 1;
+      const maximumRows = row.maximumRows ?? row.slotCount;
+      setScheduleAssignments((prev) => {
+        const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+        const dayData = { ...(prev[storageDateKey] ?? {}) } as Record<string, string[]>;
+        const current = [...(dayData[unitId] ?? [])];
+        const nextSlots = withNextAdditionalRow(current, rowsVisible, maximumRows);
+        if (
+          nextSlots.length === current.length &&
+          nextSlots.every((value, index) => value === current[index])
+        ) {
+          return prev;
+        }
+        dayData[unitId] = nextSlots;
+        const next = { ...prev, [storageDateKey]: dayData };
+        saveScheduleAssignments(next);
+        return next;
+      });
+    },
+    [effectiveShift, scheduleRows],
+  );
+
   const assignedOnDay = useCallback(
     (dateKey: string): Set<string> => {
       const names = new Set<string>();
@@ -1497,13 +1539,14 @@ export function PersonnelSchedulePage({
               row.slotCount,
             );
           }
-          if (row.id === "support-info") {
+          if (row.rowType === "support") {
             dayData[row.unitId] = getAssignmentsForDay(
               dateKey,
               row.unitId,
-              row.slotCount,
+              row.maximumRows ?? row.slotCount,
               true,
-            );
+              false,
+            ).slice(0, row.maximumRows ?? row.slotCount);
             return;
           }
           const current = getAssignmentsForDay(
@@ -1836,19 +1879,23 @@ export function PersonnelSchedulePage({
                     const slots = getAssignmentsForDay(
                       dateKey,
                       row.unitId,
-                      row.slotCount,
+                      row.rowType === "support" ? (row.maximumRows ?? row.slotCount) : row.slotCount,
+                      row.rowType === "support",
+                      row.rowType !== "support",
                     );
                     const assignedNames = slots.filter((name) => name.trim().length > 0);
-                    const infoNotes =
-                      row.id === "support-info"
-                        ? getAssignmentsForDay(dateKey, row.unitId, row.slotCount, true)
-                            .map((value) => value.trim())
-                            .filter((value) => value.length > 0)
-                            .slice(0, row.slotCount)
-                        : [];
                     const displaySlots =
-                      row.id === "support-info"
-                        ? [""]
+                      row.rowType === "support"
+                        ? (() => {
+                            const count = visibleAdditionalRowCount(
+                              slots,
+                              row.rowsVisible ?? 1,
+                              row.maximumRows ?? row.slotCount,
+                            );
+                            const next = slots.slice(0, count);
+                            while (next.length < count) next.push("");
+                            return next;
+                          })()
                         : row.rowType === "apparatus"
                         ? (() => {
                             // Keep explicit slot order so reserved/min slots can remain empty when unmet.
@@ -2080,7 +2127,7 @@ export function PersonnelSchedulePage({
                                   });
                                 }}
                               >
-                                {row.id === "support-info" ? (
+                                {row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
                                   <div className="personnel-schedule-coverage-info">
                                     {coverageLines.map((line) => (
                                       <div
@@ -2090,11 +2137,9 @@ export function PersonnelSchedulePage({
                                         {line.text}
                                       </div>
                                     ))}
-                                    {infoNotes.map((note, noteIndex) => (
-                                      <div key={`${noteIndex}-${note}`}>{note}</div>
-                                    ))}
                                   </div>
-                                ) : isTextRow ? (
+                                ) : null}
+                                {isTextRow ? (
                                   <input
                                     type="text"
                                     maxLength={25}
@@ -2110,7 +2155,13 @@ export function PersonnelSchedulePage({
                                         event.target.value,
                                       )
                                     }
-                                    />
+                                    onBlur={() => revealNextSupportRow(dateKey, row.unitId)}
+                                    onKeyDown={(event) => {
+                                      if (event.key !== "Enter") return;
+                                      event.preventDefault();
+                                      revealNextSupportRow(dateKey, row.unitId);
+                                    }}
+                                  />
                                 ) : isActiveInlineSelect ? (
                                   <select
                                     className="personnel-schedule-inline-select"
@@ -2216,6 +2267,7 @@ export function PersonnelSchedulePage({
           assignPersonToSlot={assignPersonToSlot}
           clearSlotValue={clearSlotValue}
           updateTextSlotValue={updateTextSlotValue}
+          revealNextSupportRow={revealNextSupportRow}
           importAssignmentsForDay={importAssignmentsForDay}
           assignedOnDay={assignedOnDay}
           isOvertimeEnabledForSlot={isOvertimeEnabledForSlot}
