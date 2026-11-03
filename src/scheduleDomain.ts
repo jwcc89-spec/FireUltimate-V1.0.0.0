@@ -20,6 +20,8 @@ export interface PersonnelScheduleRow {
   /** When true (UI: "Apparatus override"), support row removes/conflicts with apparatus coverage for that person. */
   personnelOverride?: boolean;
   supportSegmentedMode?: boolean;
+  /** Where timed pieces from this additional field are copied: none, info, or trades. */
+  segmentDisplayIn?: "none" | "info" | "trades";
 }
 
 export interface PersonnelScheduleData {
@@ -48,6 +50,8 @@ export interface PersonnelScheduleData {
     /** Stored as personnelOverride; admin UI label: Apparatus override. */
     personnelOverride: boolean;
     segmentedModeEnabled: boolean;
+    hidden: boolean;
+    segmentDisplayIn: "none" | "info" | "trades";
   }>;
   standardOvertimeSlot: number;
   personnel: Array<{

@@ -450,6 +450,7 @@ export function PersonnelSchedulePage({
     });
 
     departmentData.additionalFields.forEach((row, index) => {
+      if (row.hidden) return;
       const unitId = String(row.id ?? "").trim() || `support-custom-${index + 1}`;
       rows.push({
         id: unitId,
@@ -466,6 +467,10 @@ export function PersonnelSchedulePage({
         personnelOverride: row.valueMode === "personnel" ? row.personnelOverride : false,
         supportSegmentedMode:
           row.valueMode === "personnel" ? Boolean(row.segmentedModeEnabled) : false,
+        segmentDisplayIn:
+          row.valueMode === "personnel" && row.segmentedModeEnabled
+            ? row.segmentDisplayIn
+            : "none",
       });
     });
 
@@ -863,13 +868,44 @@ export function PersonnelSchedulePage({
 
   const assignPersonToSlot = useCallback(
     (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
-      pushUndoSnapshot("Assign personnel to slot");
-      let blockedAssignmentReason = "";
       const targetRowForMode = scheduleRows.find((row) => row.unitId === unitId);
-      const targetSegmentModeEnabled =
+      const targetAlreadySplit =
         targetRowForMode?.rowType === "apparatus" &&
         slotIndex < (targetRowForMode.minimumPersonnel ?? 0) &&
         isOvertimeEnabledForSlot(dateKey, unitId, slotIndex);
+      if (
+        targetRowForMode?.rowType === "apparatus" &&
+        !targetAlreadySplit &&
+        (targetRowForMode.minimumPersonnel ?? 0) > 0
+      ) {
+        const currentNames = Array.from(
+          new Set(
+            getAssignmentsForDay(dateKey, unitId, targetRowForMode.slotCount)
+              .flatMap((slotValue) => parseAssignedNames(slotValue))
+              .map((name) => name.trim())
+              .filter((name) => name.length > 0),
+          ),
+        );
+        if (
+          !currentNames.includes(personName) &&
+          !personCanJoinApparatus(
+            personName,
+            targetRowForMode.requiredQualifications,
+            targetRowForMode.minimumPersonnel,
+            currentNames,
+            personnelByName,
+            qualificationRankMap,
+          )
+        ) {
+          const message = "You do not meet the minimum qualifications.";
+          window.alert(message);
+          setLastScheduleAction(message);
+          return;
+        }
+      }
+      pushUndoSnapshot("Assign personnel to slot");
+      let blockedAssignmentReason = "";
+      const targetSegmentModeEnabled = targetAlreadySplit;
       setScheduleAssignments((prev) => {
         const next = { ...prev };
         const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
@@ -1153,6 +1189,7 @@ export function PersonnelSchedulePage({
       qualificationRankMap,
       pushUndoSnapshot,
       scheduleSlotSegments,
+      getAssignmentsForDay,
     ],
   );
 
@@ -1684,6 +1721,41 @@ export function PersonnelSchedulePage({
     ],
   );
 
+  const getCoverageLines = useCallback(
+    (dateKey: string, rowId: string) => {
+      const target = rowId === "support-info" ? "info" : rowId === "support-trade" ? "trades" : null;
+      if (!target) return [];
+      const segments: Array<{
+        personnelName?: string;
+        startMinutes?: number;
+        endMinutes?: number;
+        source?: string;
+      }> = [];
+      if (target === "info") {
+        scheduleRows
+          .filter((entry) => entry.rowType === "apparatus")
+          .forEach((entry) => {
+            for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
+              getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
+                segments.push(segment);
+              });
+            }
+          });
+      }
+      scheduleRows
+        .filter((entry) => entry.segmentDisplayIn === target)
+        .forEach((entry) => {
+          for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
+            getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
+              segments.push(segment);
+            });
+          }
+        });
+      return formatSegmentCoverageLines(segments);
+    },
+    [getSegmentsForSlot, scheduleRows],
+  );
+
   if (isLoading && departmentData.personnel.length === 0) {
     return (
       <section className="page-section">
@@ -1943,25 +2015,7 @@ export function PersonnelSchedulePage({
                         personnelByName,
                         qualificationRankMap,
                       );
-                    const coverageLines =
-                      row.id === "support-info"
-                        ? formatSegmentCoverageLines(
-                            scheduleRows
-                              .filter((entry) => entry.rowType === "apparatus")
-                              .flatMap((entry) =>
-                                Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
-                                  getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map(
-                                    (segment) => ({
-                                      personnelName: segment.personnelName,
-                                      startMinutes: segment.startMinutes,
-                                      endMinutes: segment.endMinutes,
-                                      source: segment.source,
-                                    }),
-                                  ),
-                                ).flat(),
-                              ),
-                          )
-                        : [];
+                    const coverageLines = getCoverageLines(dateKey, row.id);
                     return (
                       <td
                         key={date.toISOString()}
@@ -2127,7 +2181,9 @@ export function PersonnelSchedulePage({
                                   });
                                 }}
                               >
-                                {row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
+                                {(row.id === "support-info" || row.id === "support-trade") &&
+                                slotIdx === 0 &&
+                                coverageLines.length > 0 ? (
                                   <div className="personnel-schedule-coverage-info">
                                     {coverageLines.map((line) => (
                                       <div
@@ -2268,6 +2324,7 @@ export function PersonnelSchedulePage({
           clearSlotValue={clearSlotValue}
           updateTextSlotValue={updateTextSlotValue}
           revealNextSupportRow={revealNextSupportRow}
+          getCoverageLines={getCoverageLines}
           importAssignmentsForDay={importAssignmentsForDay}
           assignedOnDay={assignedOnDay}
           isOvertimeEnabledForSlot={isOvertimeEnabledForSlot}

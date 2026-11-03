@@ -411,6 +411,8 @@ interface SchedulerApparatusRecord {
 
 type AdditionalFieldValueMode = "text" | "personnel";
 
+type AdditionalFieldSegmentDisplay = "none" | "info" | "trades";
+
 interface AdditionalFieldRecord {
   id: string;
   fieldName: string;
@@ -420,7 +422,16 @@ interface AdditionalFieldRecord {
   valueMode: AdditionalFieldValueMode;
   personnelOverride: boolean;
   segmentedModeEnabled: boolean;
+  hidden: boolean;
+  segmentDisplayIn: AdditionalFieldSegmentDisplay;
 }
+
+const PROTECTED_ADDITIONAL_FIELD_IDS = new Set([
+  "support-info",
+  "support-kelly-day",
+  "support-trade",
+  "support-injured",
+]);
 
 const DEFAULT_MAXIMUM_ADDITIONAL_ROWS = 12;
 
@@ -697,14 +708,14 @@ const DEFAULT_USER_TABLE_COLUMN_WIDTHS: Record<UserTableColumnId, number> = {
   userType: 180,
 };
 const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
-  { id: "support-info", fieldName: "Info", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false },
-  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-injured", fieldName: "Injured", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-sick", fieldName: "Sick", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-other", fieldName: "Other", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-trade", fieldName: "Trade", numberOfSlots: 12, rowsVisible: 8, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-info", fieldName: "Info", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-injured", fieldName: "Injury", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-trade", fieldName: "Trades", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
 ];
 
 function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
@@ -715,7 +726,9 @@ function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
     .map((entry, index): AdditionalFieldRecord | null => {
       if (!entry || typeof entry !== "object") return null;
       const id = String((entry as { id?: unknown }).id ?? `support-custom-${index + 1}`).trim();
-      const fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
+      let fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
+      if (id === "support-trade" && fieldName.toLowerCase() === "trade") fieldName = "Trades";
+      if (id === "support-injured" && fieldName.toLowerCase() === "injured") fieldName = "Injury";
       const valueModeRaw = String((entry as { valueMode?: unknown }).valueMode ?? "personnel").trim().toLowerCase();
       const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
       const { numberOfSlots, rowsVisible, maximumRows } = readAdditionalRowCounts(
@@ -725,15 +738,31 @@ function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
       const segmentedModeEnabled = Boolean(
         (entry as { segmentedModeEnabled?: unknown }).segmentedModeEnabled,
       );
+      const hidden = Boolean((entry as { hidden?: unknown }).hidden);
+      const displayRaw = String((entry as { segmentDisplayIn?: unknown }).segmentDisplayIn ?? "none");
+      const segmentDisplayIn: AdditionalFieldSegmentDisplay =
+        displayRaw === "info" || displayRaw === "trades" ? displayRaw : "none";
       if (!fieldName) return null;
-      return { id, fieldName, numberOfSlots, rowsVisible, maximumRows, valueMode, personnelOverride, segmentedModeEnabled };
+      return {
+        id,
+        fieldName,
+        numberOfSlots,
+        rowsVisible,
+        maximumRows,
+        valueMode,
+        personnelOverride,
+        segmentedModeEnabled,
+        hidden,
+        segmentDisplayIn,
+      };
     })
     .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
 
-  const hasKelly = parsed.some((entry) => entry.id === "support-kelly-day");
-  if (!hasKelly) {
-    parsed.push(DEFAULT_ADDITIONAL_FIELDS.find((entry) => entry.id === "support-kelly-day")!);
-  }
+  PROTECTED_ADDITIONAL_FIELD_IDS.forEach((requiredId) => {
+    if (parsed.some((entry) => entry.id === requiredId)) return;
+    const fallback = DEFAULT_ADDITIONAL_FIELDS.find((entry) => entry.id === requiredId);
+    if (fallback) parsed.push({ ...fallback });
+  });
   return parsed.length > 0 ? parsed : [...DEFAULT_ADDITIONAL_FIELDS];
 }
 
@@ -7062,6 +7091,8 @@ function DepartmentDetailsPage({
     valueMode: "personnel",
     personnelOverride: true,
     segmentedModeEnabled: false,
+    hidden: false,
+    segmentDisplayIn: "none",
   });
   const [editingAdditionalFieldIndex, setEditingAdditionalFieldIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -8173,6 +8204,8 @@ function DepartmentDetailsPage({
         valueMode: "personnel",
         personnelOverride: true,
         segmentedModeEnabled: false,
+        hidden: false,
+        segmentDisplayIn: "none",
       });
     }
   };
@@ -9102,6 +9135,8 @@ function DepartmentDetailsPage({
       valueMode: "personnel",
       personnelOverride: true,
       segmentedModeEnabled: false,
+      hidden: false,
+      segmentDisplayIn: "none",
     });
   }, []);
 
@@ -9150,6 +9185,11 @@ function DepartmentDetailsPage({
         valueMode: preserveKellyId ? "personnel" : normalizedMode,
         personnelOverride: preserveKellyId ? true : normalizedOverride,
         segmentedModeEnabled: normalizedSegmented,
+        hidden: Boolean(additionalFieldDraft.hidden),
+        segmentDisplayIn:
+          normalizedMode === "personnel" && normalizedSegmented
+            ? additionalFieldDraft.segmentDisplayIn
+            : "none",
       };
       return editingAdditionalFieldIndex === null
         ? [...previous, normalizedRow]
@@ -9167,8 +9207,8 @@ function DepartmentDetailsPage({
   const removeAdditionalField = (index: number) => {
     const record = additionalFieldRecords[index];
     if (!record) return;
-    if (record.id === "support-kelly-day") {
-      setStatusMessage("Kelly Day is required and cannot be removed.");
+    if (PROTECTED_ADDITIONAL_FIELD_IDS.has(record.id)) {
+      setStatusMessage("Info, Kelly Day, Trades, and Injury can be hidden, but not deleted.");
       return;
     }
     setAdditionalFieldRecords((previous) =>
@@ -9775,7 +9815,7 @@ function DepartmentDetailsPage({
       {activeCollectionEditor && activeCollectionDefinition ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
           <article
-            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor ? " department-editor-modal-wide" : ""}`}
+            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor || isAdditionalFieldsEditor ? " department-editor-modal-wide" : ""}`}
           >
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
@@ -10852,78 +10892,81 @@ function DepartmentDetailsPage({
 
             {isAdditionalFieldsEditor ? (
               <>
-                <div className="department-editor-add-row">
-                  <input
-                    type="text"
-                    value={additionalFieldDraft.fieldName}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => ({
-                        ...previous,
-                        fieldName: event.target.value,
-                      }))
-                    }
-                    placeholder="Field Name"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    aria-label="Rows visible"
-                    value={additionalFieldDraft.rowsVisible}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => {
-                        const rowsVisible = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
-                        return {
+                <div className="additional-field-form">
+                  <label>
+                    Field name
+                    <input
+                      type="text"
+                      value={additionalFieldDraft.fieldName}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
                           ...previous,
-                          rowsVisible,
-                          maximumRows: Math.max(rowsVisible, previous.maximumRows),
-                          numberOfSlots: Math.max(rowsVisible, previous.maximumRows),
-                        };
-                      })
-                    }
-                    placeholder="Rows visible"
-                    title="How many rows show before any are filled"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    aria-label="Maximum rows"
-                    value={additionalFieldDraft.maximumRows}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => {
-                        const maximumRows = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
-                        const rowsVisible = Math.min(previous.rowsVisible, maximumRows);
-                        return {
+                          fieldName: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Rows visible
+                    <input
+                      type="number"
+                      min={1}
+                      value={additionalFieldDraft.rowsVisible}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => {
+                          const rowsVisible = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                          return {
+                            ...previous,
+                            rowsVisible,
+                            maximumRows: Math.max(rowsVisible, previous.maximumRows),
+                            numberOfSlots: Math.max(rowsVisible, previous.maximumRows),
+                          };
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Maximum rows
+                    <input
+                      type="number"
+                      min={1}
+                      value={additionalFieldDraft.maximumRows}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => {
+                          const maximumRows = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                          const rowsVisible = Math.min(previous.rowsVisible, maximumRows);
+                          return {
+                            ...previous,
+                            rowsVisible,
+                            maximumRows,
+                            numberOfSlots: maximumRows,
+                          };
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Type
+                    <select
+                      value={additionalFieldDraft.valueMode}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
                           ...previous,
-                          rowsVisible,
-                          maximumRows,
-                          numberOfSlots: maximumRows,
-                        };
-                      })
-                    }
-                    placeholder="Maximum rows"
-                    title="The most rows a day can open"
-                  />
-                  <select
-                    value={additionalFieldDraft.valueMode}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => ({
-                        ...previous,
-                        valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
-                        personnelOverride:
-                          event.target.value === "text" ? false : previous.personnelOverride,
-                        segmentedModeEnabled:
-                          event.target.value === "text" ? false : previous.segmentedModeEnabled,
-                      }))
-                    }
-                  >
-                    <option value="text">Text</option>
-                    <option value="personnel">Personnel</option>
-                  </select>
-                  <label
-                    className="field-hint"
-                    style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}
-                    title="When checked, a person placed here is taken off the apparatus for those hours. The apparatus keeps them only for the hours outside this row."
-                  >
+                          valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
+                          personnelOverride:
+                            event.target.value === "text" ? false : previous.personnelOverride,
+                          segmentedModeEnabled:
+                            event.target.value === "text" ? false : previous.segmentedModeEnabled,
+                          segmentDisplayIn:
+                            event.target.value === "text" ? "none" : previous.segmentDisplayIn,
+                        }))
+                      }
+                    >
+                      <option value="text">Text</option>
+                      <option value="personnel">Personnel</option>
+                    </select>
+                  </label>
+                  <label className="field-hint additional-field-check" title="When checked, a person placed here is taken off the apparatus for those hours. The apparatus keeps them only for the hours outside this row.">
                     <input
                       type="checkbox"
                       checked={
@@ -10940,11 +10983,7 @@ function DepartmentDetailsPage({
                     />
                     Apparatus override
                   </label>
-                  <label
-                    className="field-hint"
-                    style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}
-                    title="Lets this personnel row be split into timed pieces, such as part of a shift, instead of the whole shift."
-                  >
+                  <label className="field-hint additional-field-check" title="Lets this personnel row be split into timed pieces, such as part of a shift, instead of the whole shift.">
                     <input
                       type="checkbox"
                       checked={
@@ -10956,10 +10995,46 @@ function DepartmentDetailsPage({
                         setAdditionalFieldDraft((previous) => ({
                           ...previous,
                           segmentedModeEnabled: event.target.checked,
+                          segmentDisplayIn: event.target.checked ? previous.segmentDisplayIn : "none",
                         }))
                       }
                     />
-                    Segmented Mode
+                    Segmented mode
+                  </label>
+                  {additionalFieldDraft.valueMode === "personnel" &&
+                  additionalFieldDraft.segmentedModeEnabled ? (
+                    <label>
+                      Show times in
+                      <select
+                        value={additionalFieldDraft.segmentDisplayIn}
+                        onChange={(event) =>
+                          setAdditionalFieldDraft((previous) => ({
+                            ...previous,
+                            segmentDisplayIn:
+                              event.target.value === "info" || event.target.value === "trades"
+                                ? event.target.value
+                                : "none",
+                          }))
+                        }
+                      >
+                        <option value="none">Does not</option>
+                        <option value="info">Info</option>
+                        <option value="trades">Trades</option>
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="field-hint additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={additionalFieldDraft.hidden}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          hidden: event.target.checked,
+                        }))
+                      }
+                    />
+                    Hidden on the schedule
                   </label>
                   <button
                     type="button"
@@ -10970,28 +11045,29 @@ function DepartmentDetailsPage({
                   </button>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                  Text rows can be typed on the schedule. Personnel rows are filled by choosing a person.
-                  Rows visible is how many rows start on the schedule and in the day. After a row is filled, press Enter or click away and another row appears, up to Maximum rows.
+                  Rows visible is how many rows start on the schedule. Maximum rows is the most a day can open. Info, Kelly Day, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule.
                 </p>
                 <div className="department-qualifications-list-wrapper">
                   <div className="table-wrapper">
-                    <table>
+                    <table className="additional-fields-table">
                       <thead>
                         <tr>
                           <th style={{ width: "32px" }} aria-label="Drag to reorder" />
-                          <th>Field Name</th>
-                          <th style={{ width: "110px" }}>Rows visible</th>
-                          <th style={{ width: "120px" }}>Maximum rows</th>
-                          <th style={{ width: "120px" }}>Type</th>
-                          <th style={{ width: "160px" }}>Apparatus override</th>
-                          <th style={{ width: "140px" }}>Segmented Mode</th>
-                          <th style={{ width: "90px" }}>Action</th>
+                          <th>Field name</th>
+                          <th>Rows visible</th>
+                          <th>Maximum rows</th>
+                          <th>Type</th>
+                          <th>Apparatus override</th>
+                          <th>Segmented mode</th>
+                          <th>Show times in</th>
+                          <th>On schedule</th>
+                          <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {additionalFieldRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={8} className="department-apparatus-empty">
+                            <td colSpan={10} className="department-apparatus-empty">
                               No additional fields. Add one above.
                             </td>
                           </tr>
@@ -11033,7 +11109,7 @@ function DepartmentDetailsPage({
                               </td>
                               <td>
                                 <strong className="call-number-text">{entry.fieldName || "—"}</strong>
-                                {entry.id === "support-kelly-day" ? (
+                                {PROTECTED_ADDITIONAL_FIELD_IDS.has(entry.id) ? (
                                   <small className="field-hint" style={{ marginLeft: "0.45rem" }}>
                                     Required
                                   </small>
@@ -11045,17 +11121,45 @@ function DepartmentDetailsPage({
                               <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
                               <td>{entry.valueMode === "personnel" && entry.segmentedModeEnabled ? "Yes" : "No"}</td>
                               <td>
-                                <button
-                                  type="button"
-                                  className="secondary-button compact-button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeAdditionalField(index);
-                                  }}
-                                  disabled={entry.id === "support-kelly-day"}
-                                >
-                                  Remove
-                                </button>
+                                {entry.segmentDisplayIn === "info"
+                                  ? "Info"
+                                  : entry.segmentDisplayIn === "trades"
+                                    ? "Trades"
+                                    : "Does not"}
+                              </td>
+                              <td>{entry.hidden ? "Hidden" : "Shown"}</td>
+                              <td>
+                                {PROTECTED_ADDITIONAL_FIELD_IDS.has(entry.id) ? (
+                                  <button
+                                    type="button"
+                                    className="secondary-button compact-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setAdditionalFieldRecords((previous) =>
+                                        previous.map((field, fieldIndex) =>
+                                          fieldIndex === index
+                                            ? { ...field, hidden: !field.hidden }
+                                            : field,
+                                        ),
+                                      );
+                                      setAutoSaveTick((tick) => tick + 1);
+                                      setStatusMessage("Auto-saved.");
+                                    }}
+                                  >
+                                    {entry.hidden ? "Show" : "Hide"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="secondary-button compact-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      removeAdditionalField(index);
+                                    }}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))

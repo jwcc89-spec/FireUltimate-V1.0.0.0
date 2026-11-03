@@ -7,7 +7,7 @@ import {
   parseTimeToMinutes,
   type ScheduleSegment,
 } from "./scheduleStorage";
-import { formatScheduleSegmentToken, formatSegmentCoverageLines, qualificationColorHex, visibleAdditionalRowCount } from "./scheduleUtils";
+import { formatScheduleSegmentToken, qualificationColorHex, visibleAdditionalRowCount } from "./scheduleUtils";
 
 type ModalRowType = "apparatus" | "support";
 type ModalSupportValueMode = "text" | "personnel";
@@ -56,6 +56,10 @@ interface PersonnelScheduleDayBlockModalProps {
   clearSlotValue: (dateKey: string, unitId: string, slotIndex: number) => void;
   updateTextSlotValue: (dateKey: string, unitId: string, slotIndex: number, textValue: string) => void;
   revealNextSupportRow: (dateKey: string, unitId: string) => void;
+  getCoverageLines: (
+    dateKey: string,
+    rowId: string,
+  ) => Array<{ personnelName: string; text: string }>;
   importAssignmentsForDay: (dateKey: string) => void;
   assignedOnDay: (dateKey: string) => Set<string>;
   isOvertimeEnabledForSlot: (dateKey: string, unitId: string, slotIndex: number) => boolean;
@@ -115,6 +119,7 @@ export function PersonnelScheduleDayBlockModal({
   clearSlotValue,
   updateTextSlotValue,
   revealNextSupportRow,
+  getCoverageLines,
   importAssignmentsForDay,
   assignedOnDay,
   isOvertimeEnabledForSlot,
@@ -651,23 +656,7 @@ export function PersonnelScheduleDayBlockModal({
                 row.rowType === "support"
                   ? Array.from({ length: visibleCount }, (_, index) => storedSlots[index] ?? "")
                   : storedSlots;
-              const coverageLines =
-                row.id === "support-info"
-                  ? formatSegmentCoverageLines(
-                      scheduleRows
-                        .filter((entry) => entry.rowType === "apparatus")
-                        .flatMap((entry) =>
-                          Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
-                            getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map((segment) => ({
-                              personnelName: segment.personnelName,
-                              startMinutes: segment.startMinutes,
-                              endMinutes: segment.endMinutes,
-                              source: segment.source,
-                            })),
-                          ).flat(),
-                        ),
-                    )
-                  : [];
+              const coverageLines = getCoverageLines(dateKey, row.id);
               const colorForPersonnelName = (name: string): string | undefined => {
                 const person = allPersonnel.find((entry) => entry.name === name);
                 if (!person) return undefined;
@@ -767,7 +756,9 @@ export function PersonnelScheduleDayBlockModal({
                           >
                             {isTextRow ? (
                               <>
-                                {row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
+                                {(row.id === "support-info" || row.id === "support-trade") &&
+                                slotIdx === 0 &&
+                                coverageLines.length > 0 ? (
                                   <div className="personnel-schedule-coverage-info">
                                     {coverageLines.map((line) => (
                                       <div
