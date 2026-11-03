@@ -7,7 +7,7 @@ import {
   parseTimeToMinutes,
   type ScheduleSegment,
 } from "./scheduleStorage";
-import { formatScheduleSegmentToken } from "./scheduleUtils";
+import { formatScheduleSegmentToken, formatSegmentCoverageSummary } from "./scheduleUtils";
 
 type ModalRowType = "apparatus" | "support";
 type ModalSupportValueMode = "text" | "personnel";
@@ -618,9 +618,30 @@ export function PersonnelScheduleDayBlockModal({
             </p>
             {scheduleRows.map((row) => {
               const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+              const apparatusRows = scheduleRows.filter((entry) => entry.rowType === "apparatus");
+              const coverageSummary =
+                row.id === "support-info"
+                  ? formatSegmentCoverageSummary(
+                      apparatusRows.flatMap((entry) =>
+                        Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
+                          getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map((segment) => ({
+                            personnelName: segment.personnelName,
+                            startMinutes: segment.startMinutes,
+                            endMinutes: segment.endMinutes,
+                            source: segment.source,
+                            unitLabel: entry.label,
+                          })),
+                        ).flat(),
+                      ),
+                      { includeUnitLabel: apparatusRows.length > 1 },
+                    )
+                  : "";
               return (
                 <div key={row.id} className="personnel-schedule-modal-apparatus">
                   <strong>{row.label}</strong>
+                  {coverageSummary ? (
+                    <div className="personnel-schedule-coverage-info">{coverageSummary}</div>
+                  ) : null}
                   <div className="personnel-schedule-modal-slots">
                     {slots.map((name, slotIdx) => {
                       const isRequired = slotIdx < row.minimumPersonnel;

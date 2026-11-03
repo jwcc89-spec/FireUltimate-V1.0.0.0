@@ -1,4 +1,4 @@
-import { parseAssignedNames } from "./scheduleStorage";
+import { minutesToTimeValue, parseAssignedNames } from "./scheduleStorage";
 
 export interface ScheduleShiftEntryLike {
   recurrence?: string;
@@ -109,6 +109,46 @@ export function formatScheduleSegmentToken(name: string): string {
   const firstName = parts[0] ?? "";
   const lastName = parts.length > 1 ? parts[parts.length - 1]! : firstName;
   return `${lastName.slice(0, 3)}${firstName.slice(0, 1)}`.toUpperCase();
+}
+
+/** Info-row text for timed pieces, such as "KELL: 08:00–10:00 / LEDL: 10:00–20:00". */
+export function formatSegmentCoverageSummary(
+  segments: Array<{
+    personnelName?: string;
+    startMinutes?: number;
+    endMinutes?: number;
+    source?: string;
+    unitLabel?: string;
+  }>,
+  options?: { includeUnitLabel?: boolean },
+): string {
+  const includeUnitLabel = Boolean(options?.includeUnitLabel);
+  return segments
+    .filter((segment) => {
+      const name = String(segment.personnelName ?? "").trim();
+      const start = Number(segment.startMinutes);
+      const end = Number(segment.endMinutes);
+      return (
+        name.length > 0 &&
+        name.toUpperCase() !== "HIRE" &&
+        segment.source !== "auto_hire" &&
+        Number.isFinite(start) &&
+        Number.isFinite(end) &&
+        end > start
+      );
+    })
+    .sort((left, right) => {
+      const startDiff = Number(left.startMinutes) - Number(right.startMinutes);
+      if (startDiff !== 0) return startDiff;
+      return String(left.personnelName).localeCompare(String(right.personnelName));
+    })
+    .map((segment) => {
+      const token = formatScheduleSegmentToken(String(segment.personnelName));
+      const range = `${minutesToTimeValue(Number(segment.startMinutes))}–${minutesToTimeValue(Number(segment.endMinutes))}`;
+      const unit = includeUnitLabel ? String(segment.unitLabel ?? "").trim() : "";
+      return unit ? `${unit} ${token}: ${range}` : `${token}: ${range}`;
+    })
+    .join(" / ");
 }
 
 export function buildQualificationRankMap(qualificationOrder: string[]): Map<string, number> {

@@ -5708,6 +5708,14 @@ body.printing-neris .neris-print-root {
   text-overflow: ellipsis;
 }
 
+.personnel-schedule-coverage-info {
+  font-size: clamp(0.5rem, 0.7vw, 0.68rem);
+  line-height: 1.25;
+  color: #0f172a;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
 .personnel-schedule-slot-required-empty {
   background-color: #fef2f2;
   border-color: #fecaca;

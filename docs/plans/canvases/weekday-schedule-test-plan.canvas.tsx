@@ -97,17 +97,14 @@ const decided = [
   ["November 3, 2026", "Test location", "A throwaway database on this Mac (~/fu-local-db). Staging is used only after the local test passes and the code is pushed."],
   ["November 3, 2026", "Plan", "This is a new canvas plan. Its copy lives in docs/plans/canvases/."],
   ["November 3, 2026", "Nights and weekends", "Covered by volunteer or paid-on-call members who are not scheduled in the app. Those hours do not appear on the schedule."],
-  ["November 3, 2026", "Test department", "Named Weekday Test Fire Department. In this throwaway database it uses the internal short name 'demo', so plain localhost opens it. The staging demo department is separate and is not touched."],
+  ["November 3, 2026", "Schedule type", "No Career / Paid-on-call picker. The current scheduler is used. People are assigned to the 8a-8p shift, with apparatus and station left blank so they are not auto-placed. They are picked on the calendar."],
+  ["November 3, 2026", "Times on the schedule", "The Info row shows each timed piece in 24-hour time, using the same short names as the calendar. Example: KELL: 08:00–10:00 / LEDL: 10:00–20:00."],
 ];
 
 const stillOpen = [
-  ["Schedule mode", "Recommended: one picker at the top of Scheduler Settings, Career or Paid-on-call. Career keeps today's 24/48 setup. Paid-on-call posts empty seats and people sign up. Waiting on your yes before any of that is built."],
-  ["Sign-up rules", "If you say yes: can a person sign up only when they have the required qualification? Can they remove their own name? Does an admin have to approve?"],
-  ["Posting window", "How far ahead are empty seats created: one month, six weeks, or a number the admin types?"],
-  ["Weekday choice", "For paid-on-call, Monday–Friday becomes the template that creates the empty seats, not a rotating shift."],
-  ["Crews", "Watseka is one paid-on-call crew. No standing shift, apparatus, or station on each person."],
+  ["Qualification colors", "Each qualification (Paramedic, EMT-B, Firefighter) should be able to have its own color on the schedule. Where the color is chosen is not decided yet."],
+  ["Weekends", "Daily still puts Saturday and Sunday on the calendar. Monday–Friday only is not built."],
   ["Holidays", "Are holidays worked or skipped?"],
-  ["Kelly days", "Kelly days stay on the career schedule only."],
 ];
 
 function StepCard({ s }: { s: Step }) {
@@ -228,7 +225,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Step 2 in progress · NERIS sections start collapsed · Personnel window widened · Paid-on-call schedule mode is proposed and not built · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Current scheduler stays · Info row shows timed pieces in 24-hour time · Qualification colors are next · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">

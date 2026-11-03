@@ -30,6 +30,7 @@ import {
   comparePersonnelByQualifications,
   formatSchedulePersonnelDisplayName,
   formatScheduleSegmentToken,
+  formatSegmentCoverageSummary,
   getBestQualificationRankForPerson,
   getDatesForMonth,
   getHighestQualificationLabel,
@@ -1698,6 +1699,26 @@ export function PersonnelSchedulePage({
                         personnelByName,
                         qualificationRankMap,
                       );
+                    const apparatusRows = scheduleRows.filter((entry) => entry.rowType === "apparatus");
+                    const coverageSummary =
+                      row.id === "support-info"
+                        ? formatSegmentCoverageSummary(
+                            apparatusRows.flatMap((entry) =>
+                              Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
+                                getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map(
+                                  (segment) => ({
+                                    personnelName: segment.personnelName,
+                                    startMinutes: segment.startMinutes,
+                                    endMinutes: segment.endMinutes,
+                                    source: segment.source,
+                                    unitLabel: entry.label,
+                                  }),
+                                ),
+                              ).flat(),
+                            ),
+                            { includeUnitLabel: apparatusRows.length > 1 },
+                          )
+                        : "";
                     return (
                       <td
                         key={date.toISOString()}
@@ -1709,6 +1730,9 @@ export function PersonnelSchedulePage({
                         onDoubleClick={() => setEditDayBlock({ date, dateKey })}
                       >
                         <div className="personnel-schedule-slots">
+                          {coverageSummary ? (
+                            <div className="personnel-schedule-coverage-info">{coverageSummary}</div>
+                          ) : null}
                           {displaySlots.map((name, slotIdx) => {
                             const storedSegments = getSegmentsForSlot(
                               dateKey,
