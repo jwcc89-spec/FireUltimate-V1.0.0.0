@@ -227,7 +227,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Required schedule rows can be hidden · Day columns fit one hours line · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Segment times can show on Info or Trades · Unfilled split time shows HIRE in red · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">

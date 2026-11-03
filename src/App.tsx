@@ -6942,6 +6942,12 @@ function DepartmentDetailsPage({
   const [standardOvertimeSlot, setStandardOvertimeSlot] = useState(
     Math.max(1, Math.floor(Number(initialDepartmentDraft.standardOvertimeSlot ?? 24) || 24)),
   );
+  const [allowScheduledOvertime, setAllowScheduledOvertime] = useState(
+    initialDepartmentDraft.allowScheduledOvertime === false ? false : true,
+  );
+  const [segmentSummaryTarget, setSegmentSummaryTarget] = useState<"info" | "trades">(
+    initialDepartmentDraft.segmentSummaryTarget === "trades" ? "trades" : "info",
+  );
   const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
     normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
   );
@@ -8100,6 +8106,8 @@ function DepartmentDetailsPage({
         setStandardOvertimeSlot(
           Math.max(1, Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24)),
         );
+        setAllowScheduledOvertime(d.allowScheduledOvertime === false ? false : true);
+        setSegmentSummaryTarget(d.segmentSummaryTarget === "trades" ? "trades" : "info");
         setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
@@ -9277,6 +9285,8 @@ function DepartmentDetailsPage({
       schedulerApparatusRecords,
       additionalFields: additionalFieldRecords,
       standardOvertimeSlot,
+      allowScheduledOvertime,
+      segmentSummaryTarget,
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
@@ -9322,6 +9332,8 @@ function DepartmentDetailsPage({
     kellyRotations,
     additionalFieldRecords,
     standardOvertimeSlot,
+    allowScheduledOvertime,
+    segmentSummaryTarget,
     personnelQualifications,
     personnelQualificationColors,
     personnelRecords,
@@ -10945,7 +10957,7 @@ function DepartmentDetailsPage({
                       }
                     />
                   </label>
-                  <label>
+                  <label className="additional-field-type">
                     Type
                     <select
                       value={additionalFieldDraft.valueMode}
@@ -10966,6 +10978,7 @@ function DepartmentDetailsPage({
                       <option value="personnel">Personnel</option>
                     </select>
                   </label>
+                  <div className="additional-field-checks">
                   <label className="field-hint additional-field-check" title="When checked, a person placed here is taken off the apparatus for those hours. The apparatus keeps them only for the hours outside this row.">
                     <input
                       type="checkbox"
@@ -11003,8 +11016,8 @@ function DepartmentDetailsPage({
                   </label>
                   {additionalFieldDraft.valueMode === "personnel" &&
                   additionalFieldDraft.segmentedModeEnabled ? (
-                    <label>
-                      Show times in
+                  <label className="additional-field-type">
+                    Show times in
                       <select
                         value={additionalFieldDraft.segmentDisplayIn}
                         onChange={(event) =>
@@ -11036,6 +11049,7 @@ function DepartmentDetailsPage({
                     />
                     Hidden on the schedule
                   </label>
+                  </div>
                   <button
                     type="button"
                     className="primary-button compact-button"
@@ -11187,10 +11201,30 @@ function DepartmentDetailsPage({
                       }
                     />
                   </label>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={allowScheduledOvertime}
+                      onChange={(event) => setAllowScheduledOvertime(event.target.checked)}
+                    />
+                    Allow Scheduled Overtime
+                  </label>
+                  <label>
+                    Show segment times in
+                    <select
+                      value={segmentSummaryTarget}
+                      onChange={(event) =>
+                        setSegmentSummaryTarget(event.target.value === "trades" ? "trades" : "info")
+                      }
+                    >
+                      <option value="info">Info</option>
+                      <option value="trades">Trades</option>
+                    </select>
+                  </label>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem" }}>
-                  Minimum apparatus slots can be overtime-split in day block view. Example: 12 =&gt; 2 personnel in one
-                  slot, 8 =&gt; 3 personnel in one slot.
+                  Allow Scheduled Overtime keeps the OT checkbox on each split piece. Uncheck it to hide that checkbox.
+                  Show segment times in chooses whether split-shift hours are listed on Info or on Trades.
                 </p>
                 <div className="department-editor-toolbar-actions">
                   <button

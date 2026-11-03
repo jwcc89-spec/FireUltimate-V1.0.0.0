@@ -2281,7 +2281,7 @@ tbody tr:last-of-type td {
 
 .additional-field-form {
   display: grid;
-  grid-template-columns: repeat(2, minmax(12rem, 1fr));
+  grid-template-columns: 2fr 1fr 1fr;
   gap: 0.75rem 1rem;
   align-items: end;
 }
@@ -2292,6 +2292,23 @@ tbody tr:last-of-type td {
   font-size: 0.82rem;
   font-weight: 650;
   color: #334155;
+}
+
+.additional-field-type {
+  grid-column: 1 / 2;
+  max-width: 50%;
+}
+
+.additional-field-checks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  align-items: center;
+}
+
+.additional-field-form > button {
+  justify-self: start;
 }
 
 .additional-field-form input,
@@ -2307,11 +2324,18 @@ tbody tr:last-of-type td {
 }
 
 .additional-field-check {
-  display: flex !important;
+  display: inline-flex !important;
   flex-direction: row;
   align-items: center;
-  gap: 0.4rem;
+  width: auto;
+  gap: 0.35rem;
   font-weight: 600;
+}
+
+.additional-field-check input {
+  width: auto;
+  margin: 0;
+  padding: 0;
 }
 
 .additional-fields-table th,
@@ -5665,7 +5689,7 @@ body.printing-neris .neris-print-root {
 
 .personnel-schedule-header-row-day .personnel-schedule-date-col,
 .personnel-schedule-header-row-date .personnel-schedule-date-col {
-  min-width: 9.5rem;
+  min-width: 7.125rem;
   text-align: center;
   color: #b91c1c;
   font-weight: 700;
@@ -5692,7 +5716,7 @@ body.printing-neris .neris-print-root {
 }
 
 .personnel-schedule-day-block {
-  min-width: 9.5rem;
+  min-width: 7.125rem;
   min-height: 2.2rem;
   cursor: pointer;
   padding: 0.15rem;
@@ -5796,6 +5820,12 @@ body.printing-neris .neris-print-root {
 .personnel-schedule-slot-name-off-shift {
   color: #991b1b;
   font-weight: 700;
+}
+
+.personnel-schedule-hire-token {
+  color: #b91c1c;
+  font-weight: 700;
+  text-transform: uppercase;
 }
 
 .personnel-schedule-modal-backdrop {

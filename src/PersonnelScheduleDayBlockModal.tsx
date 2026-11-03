@@ -70,6 +70,7 @@ interface PersonnelScheduleDayBlockModalProps {
     enabled: boolean,
   ) => void;
   overtimeSplitCount: number;
+  allowScheduledOvertime: boolean;
   lastScheduleAction: string;
   onUndo: () => void;
   canUndo: boolean;
@@ -125,6 +126,7 @@ export function PersonnelScheduleDayBlockModal({
   isOvertimeEnabledForSlot,
   toggleOvertimeForSlot,
   overtimeSplitCount,
+  allowScheduledOvertime,
   lastScheduleAction,
   onUndo,
   canUndo,
@@ -863,7 +865,7 @@ export function PersonnelScheduleDayBlockModal({
                                                   ×
                                                 </span>
                                               </button>
-                                              {row.rowType === "apparatus" ? (
+                                              {row.rowType === "apparatus" && allowScheduledOvertime ? (
                                                 <label className="personnel-schedule-modal-segment-ot field-hint">
                                                   <input
                                                     type="checkbox"

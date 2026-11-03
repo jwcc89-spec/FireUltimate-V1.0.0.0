@@ -284,6 +284,8 @@ export function PersonnelSchedulePage({
               1,
               Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
             );
+            const allowScheduledOvertime = d.allowScheduledOvertime === false ? false : true;
+            const segmentSummaryTarget = d.segmentSummaryTarget === "trades" ? "trades" : "info";
             const personnelQualifications = Array.isArray(d.personnelQualifications)
               ? (d.personnelQualifications as string[])
               : [];
@@ -301,6 +303,8 @@ export function PersonnelSchedulePage({
               apparatus,
               additionalFields,
               standardOvertimeSlot,
+              allowScheduledOvertime,
+              segmentSummaryTarget,
               personnel,
               personnelQualifications,
               personnelQualificationColors,
@@ -1731,7 +1735,7 @@ export function PersonnelSchedulePage({
         endMinutes?: number;
         source?: string;
       }> = [];
-      if (target === "info") {
+      if (target === departmentData.segmentSummaryTarget) {
         scheduleRows
           .filter((entry) => entry.rowType === "apparatus")
           .forEach((entry) => {
@@ -1753,7 +1757,7 @@ export function PersonnelSchedulePage({
         });
       return formatSegmentCoverageLines(segments);
     },
-    [getSegmentsForSlot, scheduleRows],
+    [departmentData.segmentSummaryTarget, getSegmentsForSlot, scheduleRows],
   );
 
   if (isLoading && departmentData.personnel.length === 0) {
@@ -2273,23 +2277,29 @@ export function PersonnelSchedulePage({
                                         !isHireToken &&
                                         person !== undefined &&
                                         !personnelMatchesShift(person, effectiveShift);
+                                      const isUnfilledSegment =
+                                        isHireToken || entry.trim().length === 0;
                                       return (
                                         <span
                                           key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
                                           className={
-                                            isOffShiftInOtSlot
-                                              ? "personnel-schedule-slot-name-off-shift"
-                                              : undefined
+                                            isUnfilledSegment
+                                              ? "personnel-schedule-hire-token"
+                                              : isOffShiftInOtSlot
+                                                ? "personnel-schedule-slot-name-off-shift"
+                                                : undefined
                                           }
                                           style={
-                                            !isHireToken && colorForPersonnelName(entry)
+                                            !isUnfilledSegment && colorForPersonnelName(entry)
                                               ? { color: colorForPersonnelName(entry) }
                                               : undefined
                                           }
                                         >
-                                          {slotNames.length > 1
-                                            ? formatScheduleSegmentToken(entry)
-                                            : formatSchedulePersonnelDisplayName(entry)}
+                                          {isUnfilledSegment
+                                            ? "HIRE"
+                                            : slotNames.length > 1
+                                              ? formatScheduleSegmentToken(entry)
+                                              : formatSchedulePersonnelDisplayName(entry)}
                                           {nameIndex < slotNames.length - 1 ? " / " : ""}
                                         </span>
                                       );
@@ -2330,6 +2340,7 @@ export function PersonnelSchedulePage({
           isOvertimeEnabledForSlot={isOvertimeEnabledForSlot}
           toggleOvertimeForSlot={toggleOvertimeForSlot}
           overtimeSplitCount={overtimeSplitCount}
+          allowScheduledOvertime={departmentData.allowScheduledOvertime}
           lastScheduleAction={lastScheduleAction}
           onUndo={undoLastScheduleChange}
           canUndo={scheduleUndoStack.length > 0}
