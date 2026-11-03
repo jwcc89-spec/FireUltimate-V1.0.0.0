@@ -21,8 +21,9 @@
 - Test department: "Weekday Test Fire Department", slug `demo` in the local DB only (localhost always resolves to slug `demo`). Admin `admin` / `Weekday#2026` (throwaway).
 
 ## Latest known status
-- Step 1 (local database + empty department) done. Step 2 (operator's from-scratch setup in Admin Functions) is next.
-- No app code changed yet.
+- Step 1 done. Step 2 (operator setup) is in progress.
+- Latest commit: `ea878c4` — admin menu order, wider Edit Users window, Neris Reporting collapsible sections, scheduler personnel filled from accounts.
+- Local test department already has shift `8a-8p` (08:00, 12 hours, Daily), qualifications Paramedic / EMT-B / Firefighter, and four named accounts. Roster was empty until the personnel fix. Standard Overtime Slot is still 24.
 
 ## Current blocker / status
 - None. Waiting on the operator's setup findings.
