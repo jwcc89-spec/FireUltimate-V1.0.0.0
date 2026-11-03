@@ -81,24 +81,24 @@ const stages: StageDef[] = [
     id: "D", name: "Stage D — Trades between members",
     summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies, and an accepted trade changes the schedule by itself. Planned November 3, 2026. Nothing is built yet.",
     steps: [
-      { n: "8", title: "Give trades a shared home on the server", status: "Next",
-        problem: "Trades are saved only in the browser of the person who typed them. Landon never sees a request from Josh, and admins see nothing.",
+      { n: "8", title: "Give trades a shared home on the server", status: "Done",
+        problem: "Trades were saved only in the browser of the person who typed them. Landon never saw a request from Josh, and admins saw nothing.",
         why: "A request has to reach the other person's account, and each person may see only their own trades.",
-        fix: "Waiting on your choice: a new trades table in the database (a structure change that needs your OK), or storing trades inside the department settings. Either way, trades stay inside one department.",
-        who: "You decide; I build.",
-        done: "Not started. Done when a trade sent from one account shows up on the other account and on an admin account, and not on anyone else's." },
-      { n: "9", title: "Add a Trades screen to Scheduler Settings", status: "New",
+        fix: "November 3: added a trades table to the database (you approved it), with one row per request inside one department. It is on the local test database only. The Trades page now reads and saves through the server. Members see only their own trades. Sub Admins and above see all trades and can show All trades, My trades, or one shift (for example 8a-8p). Only the person asked can accept or deny. Denying needs a reason.",
+        who: "Me.",
+        done: "Completed: 15 server checks passed on the local database. Josh's request reached Landon and admin, Lance and Kenny could not see it, and only Landon could answer it. The test trades were deleted afterward." },
+      { n: "9", title: "Add a Trades screen to Scheduler Settings", status: "Next",
         problem: "Departments handle trades differently. Career crews pay trades back. On-call crews may just cover hours.",
         why: "Each department needs to set its own rules without code changes.",
         fix: "New Admin Functions → Scheduler Settings → Trades with three checkboxes: Admin approval for trades, Payback required (starts unchecked), and Require approval before cancelling a trade.",
         who: "Me.",
         done: "Not started. Done when the three settings save and the Trades page follows them." },
-      { n: "10", title: "Rebuild the New Trade Request form", status: "New",
-        problem: "Counterpart is free text, the date is any date, and there is no payback choice.",
+      { n: "10", title: "Rebuild the New Trade Request form", status: "Updated",
+        problem: "Counterpart was free text, the date was any date, and there was no payback choice.",
         why: "Requests should only go to real roster members, for days the requester actually works.",
-        fix: "Counterpart is a list from Scheduler Settings → Personnel. Your Assigned Date can be typed or picked from your scheduled days. Start and end use 24-hour time. A Payback required checkbox (starting from the department setting) turns Date You Work Instead on or grays it out.",
+        fix: "Done November 3: Trade With is a list from Scheduler Settings → Personnel (your own name is left out). Start and end are typed in 24-hour time (8 or 0800 becomes 08:00). Payback required turns Date You Work Instead on, or grays it out. Still to do: pick Your Assigned Date from your scheduled days, and start the payback checkbox from the department setting in Step 9.",
         who: "Me.",
-        done: "Not started. Done when only roster members and your own scheduled days can be chosen." },
+        done: "Partly done. Done when Your Assigned Date offers only your scheduled days and the payback checkbox follows the department setting." },
       { n: "11", title: "Check a request before it is sent", status: "New",
         problem: "Nothing stops a trade to someone unqualified or already working.",
         why: "An accepted trade must never leave a seat unqualified.",
@@ -151,11 +151,11 @@ const decided = [
   ["November 3, 2026", "Trade approval", "The other person must always click Accept. A new Scheduler Settings → Trades screen can also require admin approval."],
   ["November 3, 2026", "Trade payback", "Payback required lives in Scheduler Settings → Trades and on the request form, and starts unchecked. When a Date You Work Instead is entered, accepting the trade puts the requester on that day in the other person's place for the same hours."],
   ["November 3, 2026", "Cancelling a trade", "Either person clicks Cancel Requested Trade. The other person accepts the cancellation, then the schedule goes back to how it was. A Trades setting can also require admin approval before cancelling."],
-  ["November 3, 2026", "Who sees trades", "Members see only trades they are part of. Sub Admin, Admin, and Super Admin see every trade."],
+  ["November 3, 2026", "Who sees trades", "Members see only trades they are part of. Sub Admin, Admin, and Super Admin see every trade, and Active Requests lets them show All trades, My trades, or one shift."],
+  ["November 3, 2026", "Where trades are saved", "A new trades table in the database, one row per request. You approved the structure change. It is on the local test database only. Staging and production get it when this branch is released."],
 ];
 
 const stillOpen = [
-  ["Where trades are saved", "A new trades table (needs your OK to change the database structure) or inside the department settings. Explained in chat on November 3."],
   ["Weekends", "Daily still puts Saturday and Sunday on the calendar. Monday–Friday only is not built."],
   ["Holidays", "Are holidays worked or skipped?"],
 ];
@@ -242,7 +242,7 @@ function Safety() {
           ["Never start the server with npm run proxy for this test", "That command reads .env.server, which points at staging. The local server for this test uses ~/fu-local-db/api.env instead."],
           ["No staging keys locally", "The local settings file has no NERIS or Fire Recovery keys, so nothing can be exported or billed from this test."],
           ["Keep 24/48 working", "Every schedule change must leave the existing 24-hours-on, 48-hours-off behavior exactly the same."],
-          ["No database structure changes without approval", "Weekday settings should fit in the existing shift settings. Ask first if a change to the database structure seems needed. A trades table is waiting on your answer."],
+          ["No database structure changes without approval", "Weekday settings should fit in the existing shift settings. Ask first if a change to the database structure seems needed. The trades table was approved on November 3 and is applied only to the local test database."],
           ["Trades change one day at a time", "Accepting or cancelling a trade changes only the days in that trade, never the rest of the schedule."],
           ["Staging after local", "Nothing goes to watsekademo.staging.fireultimate.app until the local test passes and you approve the push, under the repair plan's Data safety rules."],
           ["No secrets in chat", "The local test password is throwaway. Never share staging or production passwords or database addresses."],
@@ -280,11 +280,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Trades planned (Stage D), nothing built yet · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Trades table and Trades page on the server (Step 8 done, local only) · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: choose where trades are saved (Stage D, Step 8)">
-        Trades rules are decided. Building starts once you choose between a new trades table and the department settings.
+      <Callout tone="info" title="Next: Scheduler Settings → Trades (Stage D, Step 9)">
+        First, click-test Step 8: send a trade as one person, then accept or deny it as the other. Then I add the Trades settings screen.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

@@ -421,6 +421,8 @@ Use this section as the high-level backlog pointer. Track detailed deferred/futu
 
 **Schedule product decisions (segmentation, OT, HIRE, additional fields):** See `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. Implementation must preserve tenant isolation on all schedule reads/writes.
 
+**Trades (2026-11-03, branch `cursor/watseka-scheduling-plan`, approved by the user):** New `TradeRequest` table (migration `20261103210000_add_trade_request`), one row per request, always filtered by `tenantId`. Routes: `GET /api/trades` (members see only trades they are in; subadmin and above see all and can filter by shift or "My trades"), `POST /api/trades` (requester and counterpart must be in Scheduler Settings → Personnel and have sign-in accounts), `PATCH /api/trades/:id` (only the counterpart can accept or deny). Trades no longer use browser storage. Applied only to the local test database so far. Staging and production need `prisma migrate deploy` when this branch is released. Plan and later steps (admin approval, payback, schedule changes, cancel): `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx` Stage D.
+
 Primary routes to scope first:
 
 - `/api/department-details`

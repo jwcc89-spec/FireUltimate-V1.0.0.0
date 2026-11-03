@@ -2738,6 +2738,31 @@ tbody tr:last-of-type td {
   opacity: 0.45;
 }
 
+.trades-active-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.trades-active-header label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trades-action-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.trades-action-cell input {
+  width: 10rem;
+}
+
 .department-field-disabled input,
 .department-field-disabled select {
   background-color: #f1f5f9;

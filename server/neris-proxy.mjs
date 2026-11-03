@@ -4958,6 +4958,271 @@ app.post("/api/schedule-assignments", async (request, response) => {
   }
 });
 
+// ----- /api/trades (tenant-scoped; members see their own trades, subadmin and above see all) -----
+
+const TRADE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TRADE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function canSeeAllTrades(auth) {
+  return roleLevel(auth?.role) >= roleLevel("subadmin");
+}
+
+async function loadTradeRoster(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  const records = Array.isArray(payload.schedulerPersonnelRecords)
+    ? payload.schedulerPersonnelRecords
+    : [];
+  const fullNameMap = await getTenantUserFullNameMap(tenantId);
+  const users = await prisma.user.findMany({ where: { tenantId }, select: { username: true } });
+  const usernameByName = new Map();
+  for (const user of users) {
+    const username = user.username.toLowerCase();
+    usernameByName.set(username, username);
+  }
+  for (const [username, fullName] of Object.entries(fullNameMap)) {
+    usernameByName.set(fullName.toLowerCase(), username);
+  }
+  const roster = records
+    .map((record) => {
+      const name = trimValue(String(record?.name ?? ""));
+      return {
+        name,
+        shift: trimValue(String(record?.shift ?? "").split("|")[0]),
+        username: usernameByName.get(name.toLowerCase()) ?? "",
+      };
+    })
+    .filter((entry) => entry.name);
+  return { roster, fullNameMap };
+}
+
+function toTradeResponse(row) {
+  return {
+    id: row.id,
+    shiftType: row.shiftType,
+    requesterUsername: row.requesterUsername,
+    requesterName: row.requesterName,
+    counterpartUsername: row.counterpartUsername,
+    counterpartName: row.counterpartName,
+    tradeDate: row.tradeDate,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    paybackRequired: row.paybackRequired,
+    paybackDate: row.paybackDate,
+    reason: row.reason,
+    status: row.status,
+    denialReason: row.denialReason,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function appendTradeHistory(historyJson, entry) {
+  const history = Array.isArray(historyJson) ? historyJson : [];
+  return [...history, { at: new Date().toISOString(), ...entry }];
+}
+
+app.get("/api/trades", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const username = request.auth.username.toLowerCase();
+    const seeAll = canSeeAllTrades(request.auth);
+    const rows = await prisma.tradeRequest.findMany({
+      where: seeAll
+        ? { tenantId }
+        : {
+            tenantId,
+            OR: [{ requesterUsername: username }, { counterpartUsername: username }],
+          },
+      orderBy: { createdAt: "desc" },
+    });
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    response.json({
+      ok: true,
+      canSeeAll: seeAll,
+      username,
+      name: trimValue(fullNameMap[username] ?? "") || username,
+      trades: rows.map(toTradeResponse),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected trades read error."),
+    });
+  }
+});
+
+app.post("/api/trades", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const requesterUsername = request.auth.username.toLowerCase();
+    const counterpartName = trimValue(String(body.counterpartName ?? ""));
+    const tradeDate = trimValue(String(body.tradeDate ?? ""));
+    const startTime = trimValue(String(body.startTime ?? ""));
+    const endTime = trimValue(String(body.endTime ?? ""));
+    const paybackRequired = body.paybackRequired === true;
+    const paybackDate = paybackRequired ? trimValue(String(body.paybackDate ?? "")) : "";
+    const reason = trimValue(String(body.reason ?? "")).slice(0, 500);
+
+    const { roster, fullNameMap } = await loadTradeRoster(tenantId);
+    const requesterName = trimValue(fullNameMap[requesterUsername] ?? "");
+    const requester = roster.find(
+      (entry) => entry.username === requesterUsername ||
+        (requesterName && entry.name.toLowerCase() === requesterName.toLowerCase()),
+    );
+    if (!requester) {
+      response.status(400).json({
+        ok: false,
+        message: "Only people listed in Scheduler Settings → Personnel can request trades.",
+      });
+      return;
+    }
+    const counterpart = roster.find(
+      (entry) => entry.name.toLowerCase() === counterpartName.toLowerCase(),
+    );
+    if (!counterpart) {
+      response.status(400).json({
+        ok: false,
+        message: "Choose someone from Scheduler Settings → Personnel.",
+      });
+      return;
+    }
+    if (!counterpart.username) {
+      response.status(400).json({
+        ok: false,
+        message: `${counterpart.name} has no sign-in account, so they cannot accept a trade.`,
+      });
+      return;
+    }
+    if (counterpart.username === requesterUsername) {
+      response.status(400).json({ ok: false, message: "You cannot trade with yourself." });
+      return;
+    }
+    if (!TRADE_DATE_PATTERN.test(tradeDate)) {
+      response.status(400).json({ ok: false, message: "Enter your assigned date." });
+      return;
+    }
+    if (!TRADE_TIME_PATTERN.test(startTime) || !TRADE_TIME_PATTERN.test(endTime)) {
+      response.status(400).json({
+        ok: false,
+        message: "Enter start and end times in 24-hour format (HH:MM).",
+      });
+      return;
+    }
+    if (startTime === endTime) {
+      response.status(400).json({ ok: false, message: "Start and end times must differ." });
+      return;
+    }
+    if (paybackRequired && !TRADE_DATE_PATTERN.test(paybackDate)) {
+      response.status(400).json({
+        ok: false,
+        message: "Payback is required, so enter the date you work instead.",
+      });
+      return;
+    }
+
+    const row = await prisma.tradeRequest.create({
+      data: {
+        tenantId,
+        shiftType: requester.shift,
+        requesterUsername,
+        requesterName: requester.name,
+        counterpartUsername: counterpart.username,
+        counterpartName: counterpart.name,
+        tradeDate,
+        startTime,
+        endTime,
+        paybackRequired,
+        paybackDate,
+        reason,
+        historyJson: appendTradeHistory([], { by: requesterUsername, action: "requested" }),
+      },
+    });
+    response.json({ ok: true, trade: toTradeResponse(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected trade request error."),
+    });
+  }
+});
+
+app.patch("/api/trades/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const username = request.auth.username.toLowerCase();
+    const existing = await prisma.tradeRequest.findFirst({
+      where: { id: trimValue(request.params.id), tenantId },
+    });
+    const involved =
+      existing &&
+      (existing.requesterUsername === username || existing.counterpartUsername === username);
+    if (!existing || (!involved && !canSeeAllTrades(request.auth))) {
+      response.status(404).json({ ok: false, message: "Trade not found." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const action = trimValue(String(body.action ?? ""));
+    const note = trimValue(String(body.denialReason ?? "")).slice(0, 500);
+
+    if (action === "accept" || action === "deny") {
+      if (existing.counterpartUsername !== username) {
+        response.status(403).json({
+          ok: false,
+          message: `Only ${existing.counterpartName} can accept or deny this trade.`,
+        });
+        return;
+      }
+      if (existing.status !== "requested") {
+        response.status(409).json({ ok: false, message: "This trade was already answered." });
+        return;
+      }
+      if (action === "deny" && !note) {
+        response.status(400).json({ ok: false, message: "Enter a reason for denying." });
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: action === "accept" ? "accepted" : "denied",
+          denialReason: action === "deny" ? note : "",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: action === "accept" ? "accepted" : "denied",
+            note,
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    response.status(400).json({ ok: false, message: "Unknown trade action." });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected trade update error."),
+    });
+  }
+});
+
 // ----- /api/users (tenant-scoped; auth in User table only, not in payloadJson) -----
 // Non-auth user profile metadata (e.g. full name) is stored separately in DepartmentDetails payload.
 

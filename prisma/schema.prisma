@@ -35,6 +35,38 @@ model Tenant {
   sessions                    Session[]
   rolePermissions             RolePermission[]
   accountAuditLogs            AccountAuditLog[]
+  tradeRequests               TradeRequest[]
+}
+
+/// One row per shift trade request. Names match Scheduler Settings → Personnel; usernames decide who may see and act on it.
+model TradeRequest {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  shiftType           String   @default("")
+  requesterUsername   String
+  requesterName       String
+  counterpartUsername String
+  counterpartName     String
+  tradeDate           String
+  startTime           String
+  endTime             String
+  paybackRequired     Boolean  @default(false)
+  paybackDate         String   @default("")
+  reason              String   @default("")
+  status              String   @default("requested")
+  denialReason        String   @default("")
+  /// What accepting the trade changed on the schedule, so a cancelled trade can be put back.
+  scheduleChangeJson  Json?
+  /// Who did what and when: [{ at, by, action, note }].
+  historyJson         Json     @default("[]")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, requesterUsername])
+  @@index([tenantId, counterpartUsername])
 }
 
 /// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.
