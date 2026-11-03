@@ -646,18 +646,6 @@ export function PersonnelScheduleDayBlockModal({
               return (
                 <div key={row.id} className="personnel-schedule-modal-apparatus">
                   <strong>{row.label}</strong>
-                  {coverageLines.length > 0 ? (
-                    <div className="personnel-schedule-coverage-info">
-                      {coverageLines.map((line) => (
-                        <div
-                          key={`${line.personnelName}-${line.text}`}
-                          style={{ color: colorForPersonnelName(line.personnelName) }}
-                        >
-                          {line.text}
-                        </div>
-                      ))}
-                    </div>
-                  ) : null}
                   <div className="personnel-schedule-modal-slots">
                     {slots.map((name, slotIdx) => {
                       const isRequired = slotIdx < row.minimumPersonnel;
@@ -747,6 +735,18 @@ export function PersonnelScheduleDayBlockModal({
                             }
                           >
                             {isTextRow ? (
+                              row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
+                                <div className="personnel-schedule-coverage-info">
+                                  {coverageLines.map((line) => (
+                                    <div
+                                      key={`${line.personnelName}-${line.text}`}
+                                      style={{ color: colorForPersonnelName(line.personnelName) }}
+                                    >
+                                      {line.text}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
                               <input
                                 type="text"
                                 maxLength={25}
@@ -762,6 +762,7 @@ export function PersonnelScheduleDayBlockModal({
                                   )
                                 }
                               />
+                              )
                             ) : (() => {
                               const names = parseAssignedNames(name);
                               const isSegmentMode = isSegmentModeAtSlot;

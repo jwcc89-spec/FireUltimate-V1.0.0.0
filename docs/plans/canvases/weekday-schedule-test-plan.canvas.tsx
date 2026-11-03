@@ -98,12 +98,12 @@ const decided = [
   ["November 3, 2026", "Plan", "This is a new canvas plan. Its copy lives in docs/plans/canvases/."],
   ["November 3, 2026", "Nights and weekends", "Covered by volunteer or paid-on-call members who are not scheduled in the app. Those hours do not appear on the schedule."],
   ["November 3, 2026", "Schedule type", "No Career / Paid-on-call picker. The current scheduler is used. People are assigned to the 8a-8p shift, with apparatus and station left blank so they are not auto-placed. They are picked on the calendar."],
-  ["November 3, 2026", "Times on the schedule", "The Info row is the one place that uses a short clock: 8A-10A and 10A-8P. Each person is on their own line, with no apparatus name. Lance Keller reads KEL L. Landon LeDuke reads LED L."],
+  ["November 3, 2026", "Times on the schedule", "The Info row is the one place that uses a short clock: 8A-10A and 10A-8P. Each person is on their own line, with no apparatus name. Lance Keller reads KELL. Landon LeDuke reads LEDL. Those lines fill the first Info box, so that day has three note boxes left."],
   ["November 3, 2026", "Qualification colors", "Eight basic colors sit next to each qualification. Nothing is colored until someone picks a color. A person with more than one qualification uses the color of the highest one in the list."],
+  ["November 3, 2026", "Seat order", "When two people together meet an ambulance's qualifications, the person who only has the lower qualification moves to that lower seat. The higher qualification stays on the stricter seat."],
 ];
 
 const stillOpen = [
-  ["Info names", "Keller shows as KEL L and LeDuke as LED L. Confirm whether LeDuke should stay LED L or be LEDL with no space."],
   ["Weekends", "Daily still puts Saturday and Sunday on the calendar. Monday–Friday only is not built."],
   ["Holidays", "Are holidays worked or skipped?"],
 ];
@@ -226,7 +226,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Info lines use 8A-10A style, one person per line · Qualification colors can be picked · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Info lines use KELL and 8A-10A and fill the first Info box · Lower qualifications move to the lower seat · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">

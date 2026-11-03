@@ -111,19 +111,6 @@ export function formatScheduleSegmentToken(name: string): string {
   return `${lastName.slice(0, 3)}${firstName.slice(0, 1)}`.toUpperCase();
 }
 
-/** Info-row label: last name's first 3 letters, then the first initial. "Lance Keller" → "KEL L". */
-export function formatInfoPersonnelLabel(name: string): string {
-  const trimmed = name.trim();
-  if (!trimmed) return "";
-  if (trimmed.toUpperCase() === "HIRE") return "HIRE";
-  const parts = trimmed.split(/\s+/).filter(Boolean);
-  const firstName = parts[0] ?? "";
-  const lastName = parts.length > 1 ? parts[parts.length - 1]! : firstName;
-  const lastPart = lastName.slice(0, 3).toUpperCase();
-  const initial = parts.length > 1 ? firstName.charAt(0).toUpperCase() : "";
-  return initial ? `${lastPart} ${initial}` : lastPart;
-}
-
 /** Info row only. 8:00 a.m. is "8A". 8:30 a.m. is "8:30A". 8:00 p.m. is "8P". */
 export function formatInfoClock(totalMinutes: number): string {
   const clamped = Math.max(0, Math.min(2880, Math.floor(Number(totalMinutes) || 0)));
@@ -140,7 +127,7 @@ export interface SegmentCoverageLine {
   text: string;
 }
 
-/** One line per timed piece, such as "KEL L: 8A-10A". Apparatus names are left off. */
+/** One line per timed piece, such as "KELL: 8A-10A". Apparatus names are left off. */
 export function formatSegmentCoverageLines(
   segments: Array<{
     personnelName?: string;
@@ -173,7 +160,7 @@ export function formatSegmentCoverageLines(
       const range = `${formatInfoClock(Number(segment.startMinutes))}-${formatInfoClock(Number(segment.endMinutes))}`;
       return {
         personnelName,
-        text: `${formatInfoPersonnelLabel(personnelName)}: ${range}`,
+        text: `${formatScheduleSegmentToken(personnelName)}: ${range}`,
       };
     });
 }
@@ -309,16 +296,23 @@ export function reorderAssignedByRequirementCoverage(
 
   const selectedNames: string[] = Array.from({ length: minimumPersonnel }, () => "");
   const selectedSet = new Set<string>();
+  const requirementSlots = required
+    .map((requiredQualification, slotIndex) => {
+      const normalizedRequirement = requiredQualification.trim();
+      return {
+        slotIndex,
+        requiredRank: normalizedRequirement
+          ? (qualificationRankMap.get(normalizedRequirement) ?? Number.POSITIVE_INFINITY)
+          : Number.POSITIVE_INFINITY,
+        hasRequirement: normalizedRequirement.length > 0,
+      };
+    })
+    .filter((slot) => slot.hasRequirement)
+    .sort((left, right) => left.requiredRank - right.requiredRank);
 
-  required.forEach((requiredQualification, slotIndex) => {
-    const normalizedRequirement = requiredQualification.trim();
-    if (!normalizedRequirement) {
-      return;
-    }
-    const requiredRank =
-      qualificationRankMap.get(normalizedRequirement) ?? Number.POSITIVE_INFINITY;
+  requirementSlots.forEach((slot) => {
     let bestCandidate: string | null = null;
-    let bestRank = Number.POSITIVE_INFINITY;
+    let bestRank = -1;
     sanitizedSlots.forEach((slotValue) => {
       if (selectedSet.has(slotValue)) return;
       const representedNames = parseAssignedNames(slotValue).filter(
@@ -327,22 +321,21 @@ export function reorderAssignedByRequirementCoverage(
       if (representedNames.length === 0) return;
       const slotBestRank = representedNames.reduce((lowestRank, representedName) => {
         const person = personnelByName.get(representedName);
-        if (!person) {
-          return lowestRank;
-        }
-        const personBestRank = getBestQualificationRankForPerson(
-          person,
-          qualificationRankMap,
+        if (!person) return lowestRank;
+        return Math.min(
+          lowestRank,
+          getBestQualificationRankForPerson(person, qualificationRankMap),
         );
-        return Math.min(lowestRank, personBestRank);
       }, Number.POSITIVE_INFINITY);
-      if (slotBestRank <= requiredRank && slotBestRank < bestRank) {
+      const meetsRequirement = slotBestRank <= slot.requiredRank;
+      const isLessOverqualified = bestCandidate === null || slotBestRank > bestRank;
+      if (meetsRequirement && isLessOverqualified) {
         bestCandidate = slotValue;
         bestRank = slotBestRank;
       }
     });
     if (bestCandidate) {
-      selectedNames[slotIndex] = bestCandidate;
+      selectedNames[slot.slotIndex] = bestCandidate;
       selectedSet.add(bestCandidate);
     }
   });

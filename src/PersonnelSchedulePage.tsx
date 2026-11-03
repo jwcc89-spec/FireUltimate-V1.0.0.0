@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getSlotCountForApparatus,
   isOverrideSupportPersonnelRow,
@@ -972,7 +972,25 @@ export function PersonnelSchedulePage({
         const withoutDuplicates = existingNames.filter((name) => name !== personName);
         const nextNames = [...withoutDuplicates, personName].slice(0, maxNamesInSlot);
         unitSlots[slotIndex] = serializeAssignedNames(nextNames);
-        dayData[unitId] = unitSlots;
+        if (
+          isTargetApparatusRow &&
+          targetRow &&
+          !targetOvertimeEnabled &&
+          targetRow.minimumPersonnel > 0
+        ) {
+          const ordered = reorderAssignedByRequirementCoverage(
+            targetRow.requiredQualifications.slice(0, targetRow.minimumPersonnel),
+            targetRow.minimumPersonnel,
+            unitSlots.flatMap((slotValue) => parseAssignedNames(slotValue)),
+            personnelByName,
+            qualificationRankMap,
+          );
+          const placed = [...ordered];
+          while (placed.length < targetRow.slotCount) placed.push("");
+          dayData[unitId] = placed.slice(0, targetRow.slotCount);
+        } else {
+          dayData[unitId] = unitSlots;
+        }
         next[storageDateKey] = dayData;
         saveScheduleAssignments(next);
         return next;
@@ -1419,6 +1437,55 @@ export function PersonnelSchedulePage({
     ],
   );
 
+  const didPlaceQualifications = useRef(false);
+  useEffect(() => {
+    if (!hasLoadedRemoteSchedule || didPlaceQualifications.current || scheduleRows.length === 0) {
+      return;
+    }
+    didPlaceQualifications.current = true;
+    setScheduleAssignments((previous) => {
+      let changed = false;
+      const next: ScheduleAssignments = { ...previous };
+      Object.entries(previous).forEach(([storageDateKey, dayRaw]) => {
+        if (!dayRaw || typeof dayRaw !== "object") return;
+        const day = { ...(dayRaw as Record<string, string[]>) };
+        scheduleRows.forEach((row) => {
+          if (row.rowType !== "apparatus" || row.minimumPersonnel <= 0) return;
+          const segmentRows = scheduleSlotSegments[storageDateKey]?.[row.unitId] ?? [];
+          const hasSegments = segmentRows.some(
+            (segments) => Array.isArray(segments) && segments.length > 0,
+          );
+          if (hasSegments) return;
+          const current = Array.isArray(day[row.unitId]) ? day[row.unitId] : [];
+          const ordered = reorderAssignedByRequirementCoverage(
+            row.requiredQualifications.slice(0, row.minimumPersonnel),
+            row.minimumPersonnel,
+            current.flatMap((slotValue) => parseAssignedNames(slotValue)),
+            personnelByName,
+            qualificationRankMap,
+          );
+          const placed = [...ordered];
+          while (placed.length < row.slotCount) placed.push("");
+          const nextSlots = placed.slice(0, row.slotCount);
+          if (JSON.stringify(nextSlots) !== JSON.stringify(current)) {
+            changed = true;
+            day[row.unitId] = nextSlots;
+          }
+        });
+        next[storageDateKey] = day;
+      });
+      if (!changed) return previous;
+      saveScheduleAssignments(next);
+      return next;
+    });
+  }, [
+    hasLoadedRemoteSchedule,
+    scheduleRows,
+    scheduleSlotSegments,
+    personnelByName,
+    qualificationRankMap,
+  ]);
+
   const importAssignmentsForDay = useCallback(
     (dateKey: string) => {
       pushUndoSnapshot("Import assignments for day");
@@ -1744,18 +1811,6 @@ export function PersonnelSchedulePage({
                         onDoubleClick={() => setEditDayBlock({ date, dateKey })}
                       >
                         <div className="personnel-schedule-slots">
-                          {coverageLines.length > 0 ? (
-                            <div className="personnel-schedule-coverage-info">
-                              {coverageLines.map((line) => (
-                                <div
-                                  key={`${line.personnelName}-${line.text}`}
-                                  style={{ color: colorForPersonnelName(line.personnelName) }}
-                                >
-                                  {line.text}
-                                </div>
-                              ))}
-                            </div>
-                          ) : null}
                           {displaySlots.map((name, slotIdx) => {
                             const storedSegments = getSegmentsForSlot(
                               dateKey,
@@ -1911,6 +1966,18 @@ export function PersonnelSchedulePage({
                                 }}
                               >
                                 {isTextRow ? (
+                                  row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
+                                    <div className="personnel-schedule-coverage-info">
+                                      {coverageLines.map((line) => (
+                                        <div
+                                          key={`${line.personnelName}-${line.text}`}
+                                          style={{ color: colorForPersonnelName(line.personnelName) }}
+                                        >
+                                          {line.text}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  ) : (
                                   <input
                                     type="text"
                                     maxLength={25}
@@ -1926,7 +1993,8 @@ export function PersonnelSchedulePage({
                                         event.target.value,
                                       )
                                     }
-                                  />
+                                    />
+                                  )
                                 ) : isActiveInlineSelect ? (
                                   <select
                                     className="personnel-schedule-inline-select"
