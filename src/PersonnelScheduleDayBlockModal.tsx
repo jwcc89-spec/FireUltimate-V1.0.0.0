@@ -7,7 +7,7 @@ import {
   parseTimeToMinutes,
   type ScheduleSegment,
 } from "./scheduleStorage";
-import { formatScheduleSegmentToken, formatSegmentCoverageSummary } from "./scheduleUtils";
+import { formatScheduleSegmentToken, formatSegmentCoverageLines, qualificationColorHex } from "./scheduleUtils";
 
 type ModalRowType = "apparatus" | "support";
 type ModalSupportValueMode = "text" | "personnel";
@@ -41,6 +41,7 @@ interface PersonnelScheduleDayBlockModalProps {
   /** OT segment dropdown: personnel with shift set in Scheduler Settings (excludes incomplete records). */
   overtimeRosterPersonnel: ModalPersonnel[];
   personnelQualificationOrder: string[];
+  personnelQualificationColors: Record<string, string>;
   effectiveShift: string;
   getAssignmentsForDay: (dateKey: string, unitId: string, slotCount: number) => string[];
   assignPersonToSlot: (dateKey: string, unitId: string, slotIndex: number, personName: string) => void;
@@ -98,6 +99,7 @@ export function PersonnelScheduleDayBlockModal({
   allPersonnel,
   overtimeRosterPersonnel,
   personnelQualificationOrder,
+  personnelQualificationColors,
   effectiveShift,
   getAssignmentsForDay,
   assignPersonToSlot,
@@ -618,29 +620,43 @@ export function PersonnelScheduleDayBlockModal({
             </p>
             {scheduleRows.map((row) => {
               const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
-              const apparatusRows = scheduleRows.filter((entry) => entry.rowType === "apparatus");
-              const coverageSummary =
+              const coverageLines =
                 row.id === "support-info"
-                  ? formatSegmentCoverageSummary(
-                      apparatusRows.flatMap((entry) =>
-                        Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
-                          getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map((segment) => ({
-                            personnelName: segment.personnelName,
-                            startMinutes: segment.startMinutes,
-                            endMinutes: segment.endMinutes,
-                            source: segment.source,
-                            unitLabel: entry.label,
-                          })),
-                        ).flat(),
-                      ),
-                      { includeUnitLabel: apparatusRows.length > 1 },
+                  ? formatSegmentCoverageLines(
+                      scheduleRows
+                        .filter((entry) => entry.rowType === "apparatus")
+                        .flatMap((entry) =>
+                          Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
+                            getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map((segment) => ({
+                              personnelName: segment.personnelName,
+                              startMinutes: segment.startMinutes,
+                              endMinutes: segment.endMinutes,
+                              source: segment.source,
+                            })),
+                          ).flat(),
+                        ),
                     )
-                  : "";
+                  : [];
+              const colorForPersonnelName = (name: string): string | undefined => {
+                const person = allPersonnel.find((entry) => entry.name === name);
+                if (!person) return undefined;
+                const qualification = getHighestQualificationLabel(person, personnelQualificationOrder);
+                return qualificationColorHex(personnelQualificationColors[qualification]);
+              };
               return (
                 <div key={row.id} className="personnel-schedule-modal-apparatus">
                   <strong>{row.label}</strong>
-                  {coverageSummary ? (
-                    <div className="personnel-schedule-coverage-info">{coverageSummary}</div>
+                  {coverageLines.length > 0 ? (
+                    <div className="personnel-schedule-coverage-info">
+                      {coverageLines.map((line) => (
+                        <div
+                          key={`${line.personnelName}-${line.text}`}
+                          style={{ color: colorForPersonnelName(line.personnelName) }}
+                        >
+                          {line.text}
+                        </div>
+                      ))}
+                    </div>
                   ) : null}
                   <div className="personnel-schedule-modal-slots">
                     {slots.map((name, slotIdx) => {

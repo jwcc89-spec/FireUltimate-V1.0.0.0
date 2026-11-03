@@ -124,7 +124,7 @@ import {
   NerisFlatSingleOptionSelect,
 } from "./NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
-import { getRecurrenceIntervalDays, toDateKey } from "./scheduleUtils";
+import { getRecurrenceIntervalDays, parseQualificationColorMap, QUALIFICATION_COLOR_OPTIONS, toDateKey } from "./scheduleUtils";
 import { onSessionExpired } from "./api/http";
 import { RolePermissionsPanel } from "./RolePermissionsPanel";
 import { useMyPermissions } from "./useMyPermissions";
@@ -6899,6 +6899,9 @@ function DepartmentDetailsPage({
   const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
   );
+  const [personnelQualificationColors, setPersonnelQualificationColors] = useState<Record<string, string>>(
+    () => parseQualificationColorMap(initialDepartmentDraft.personnelQualificationColors),
+  );
   const [userTypeValues, setUserTypeValues] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.userTypeValues) && initialDepartmentDraft.userTypeValues.length > 0
       ? (initialDepartmentDraft.userTypeValues as string[])
@@ -8048,6 +8051,7 @@ function DepartmentDetailsPage({
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
         );
+        setPersonnelQualificationColors(parseQualificationColorMap(d.personnelQualificationColors));
         setUserTypeValues(
           Array.isArray(d.userTypeValues) && (d.userTypeValues as string[]).length > 0
             ? (d.userTypeValues as string[])
@@ -9047,6 +9051,17 @@ function DepartmentDetailsPage({
             index === editingQualificationIndex ? trimmed : entry,
           ),
     );
+    if (editingQualificationIndex !== null) {
+      const previousName = personnelQualifications[editingQualificationIndex];
+      if (previousName && previousName !== trimmed) {
+        setPersonnelQualificationColors((previous) => {
+          if (!previous[previousName]) return previous;
+          const next = { ...previous, [trimmed]: previous[previousName] };
+          delete next[previousName];
+          return next;
+        });
+      }
+    }
     setQualificationDraft("");
     setEditingQualificationIndex(null);
     setAutoSaveTick((previous) => previous + 1);
@@ -9193,6 +9208,7 @@ function DepartmentDetailsPage({
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
+      personnelQualificationColors,
       userTypeValues,
       selectedMutualAidIds,
       mutualAidDepartmentSelections: mutualAidSelectionsToPayload(mutualAidDepartmentSelections),
@@ -9235,6 +9251,7 @@ function DepartmentDetailsPage({
     additionalFieldRecords,
     standardOvertimeSlot,
     personnelQualifications,
+    personnelQualificationColors,
     personnelRecords,
     schedulerApparatusFieldWidths,
     schedulerApparatusRecords,
@@ -11043,13 +11060,14 @@ function DepartmentDetailsPage({
                         <tr>
                           <th style={{ width: "32px" }} aria-label="Drag to reorder" />
                           <th>Qualification</th>
+                          <th>Color</th>
                           <th style={{ width: "80px" }}>Order</th>
                         </tr>
                       </thead>
                       <tbody>
                         {personnelQualifications.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="department-apparatus-empty">
+                            <td colSpan={4} className="department-apparatus-empty">
                               No qualifications. Add one above.
                             </td>
                           </tr>
@@ -11105,6 +11123,34 @@ function DepartmentDetailsPage({
                               </td>
                               <td>
                                 <strong className="call-number-text">{qualification || "—"}</strong>
+                              </td>
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <div className="qualification-color-choices" role="group" aria-label={`Color for ${qualification}`}>
+                                  {QUALIFICATION_COLOR_OPTIONS.map((choice) => {
+                                    const selected = personnelQualificationColors[qualification] === choice.id;
+                                    return (
+                                      <button
+                                        key={`${qualification}-${choice.id}`}
+                                        type="button"
+                                        className={`qualification-color-swatch${selected ? " qualification-color-swatch-selected" : ""}`}
+                                        style={{ backgroundColor: choice.hex }}
+                                        aria-label={`${choice.label}${selected ? ", selected" : ""}`}
+                                        aria-pressed={selected}
+                                        title={choice.label}
+                                        onClick={() => {
+                                          setPersonnelQualificationColors((previous) => {
+                                            const next = { ...previous };
+                                            if (selected) delete next[qualification];
+                                            else next[qualification] = choice.id;
+                                            return next;
+                                          });
+                                          setAutoSaveTick((previous) => previous + 1);
+                                          setStatusMessage("Auto-saved.");
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </div>
                               </td>
                               <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
                                 {index + 1}

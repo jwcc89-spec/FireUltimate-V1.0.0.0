@@ -30,10 +30,12 @@ import {
   comparePersonnelByQualifications,
   formatSchedulePersonnelDisplayName,
   formatScheduleSegmentToken,
-  formatSegmentCoverageSummary,
+  formatSegmentCoverageLines,
+  getHighestQualificationLabel,
+  parseQualificationColorMap,
+  qualificationColorHex,
   getBestQualificationRankForPerson,
   getDatesForMonth,
-  getHighestQualificationLabel,
   getRecurrenceIntervalDays,
   getShiftStartOffsetDays,
   reorderAssignedByRequirementCoverage,
@@ -254,6 +256,9 @@ export function PersonnelSchedulePage({
             const personnelQualifications = Array.isArray(d.personnelQualifications)
               ? (d.personnelQualifications as string[])
               : [];
+            const personnelQualificationColors = parseQualificationColorMap(
+              d.personnelQualificationColors,
+            );
             const kellyRotations = Array.isArray(d.kellyRotations)
               ? (d.kellyRotations as PersonnelScheduleData["kellyRotations"])
               : [];
@@ -267,6 +272,7 @@ export function PersonnelSchedulePage({
               standardOvertimeSlot,
               personnel,
               personnelQualifications,
+              personnelQualificationColors,
               kellyRotations,
               shiftEntries,
             });
@@ -485,6 +491,15 @@ export function PersonnelSchedulePage({
     () => buildQualificationRankMap(departmentData.personnelQualifications),
     [departmentData.personnelQualifications],
   );
+  const colorForPersonnelName = (name: string): string | undefined => {
+    const person = personnelByName.get(name);
+    if (!person) return undefined;
+    const qualification = getHighestQualificationLabel(
+      person,
+      departmentData.personnelQualifications,
+    );
+    return qualificationColorHex(departmentData.personnelQualificationColors[qualification]);
+  };
   const displayDates = useMemo(
     () => dates.filter((date) => activeDateKeys.has(toDateKey(date))),
     [dates, activeDateKeys],
@@ -1699,26 +1714,25 @@ export function PersonnelSchedulePage({
                         personnelByName,
                         qualificationRankMap,
                       );
-                    const apparatusRows = scheduleRows.filter((entry) => entry.rowType === "apparatus");
-                    const coverageSummary =
+                    const coverageLines =
                       row.id === "support-info"
-                        ? formatSegmentCoverageSummary(
-                            apparatusRows.flatMap((entry) =>
-                              Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
-                                getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map(
-                                  (segment) => ({
-                                    personnelName: segment.personnelName,
-                                    startMinutes: segment.startMinutes,
-                                    endMinutes: segment.endMinutes,
-                                    source: segment.source,
-                                    unitLabel: entry.label,
-                                  }),
-                                ),
-                              ).flat(),
-                            ),
-                            { includeUnitLabel: apparatusRows.length > 1 },
+                        ? formatSegmentCoverageLines(
+                            scheduleRows
+                              .filter((entry) => entry.rowType === "apparatus")
+                              .flatMap((entry) =>
+                                Array.from({ length: entry.slotCount }, (_, apparatusSlotIdx) =>
+                                  getSegmentsForSlot(dateKey, entry.unitId, apparatusSlotIdx).map(
+                                    (segment) => ({
+                                      personnelName: segment.personnelName,
+                                      startMinutes: segment.startMinutes,
+                                      endMinutes: segment.endMinutes,
+                                      source: segment.source,
+                                    }),
+                                  ),
+                                ).flat(),
+                              ),
                           )
-                        : "";
+                        : [];
                     return (
                       <td
                         key={date.toISOString()}
@@ -1730,8 +1744,17 @@ export function PersonnelSchedulePage({
                         onDoubleClick={() => setEditDayBlock({ date, dateKey })}
                       >
                         <div className="personnel-schedule-slots">
-                          {coverageSummary ? (
-                            <div className="personnel-schedule-coverage-info">{coverageSummary}</div>
+                          {coverageLines.length > 0 ? (
+                            <div className="personnel-schedule-coverage-info">
+                              {coverageLines.map((line) => (
+                                <div
+                                  key={`${line.personnelName}-${line.text}`}
+                                  style={{ color: colorForPersonnelName(line.personnelName) }}
+                                >
+                                  {line.text}
+                                </div>
+                              ))}
+                            </div>
                           ) : null}
                           {displaySlots.map((name, slotIdx) => {
                             const storedSegments = getSegmentsForSlot(
@@ -1967,6 +1990,11 @@ export function PersonnelSchedulePage({
                                               ? "personnel-schedule-slot-name-off-shift"
                                               : undefined
                                           }
+                                          style={
+                                            !isHireToken && colorForPersonnelName(entry)
+                                              ? { color: colorForPersonnelName(entry) }
+                                              : undefined
+                                          }
                                         >
                                           {slotNames.length > 1
                                             ? formatScheduleSegmentToken(entry)
@@ -2015,6 +2043,7 @@ export function PersonnelSchedulePage({
           allPersonnel={departmentData.personnel}
           overtimeRosterPersonnel={overtimeRosterPersonnel}
           personnelQualificationOrder={departmentData.personnelQualifications}
+          personnelQualificationColors={departmentData.personnelQualificationColors}
           sortPersonnel={comparePersonnelByQualifications}
           getHighestQualificationLabel={getHighestQualificationLabel}
           shiftWindowStartMinutes={shiftWindowStartMinutes}

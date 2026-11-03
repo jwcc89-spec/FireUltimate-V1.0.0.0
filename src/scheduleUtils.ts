@@ -1,4 +1,4 @@
-import { minutesToTimeValue, parseAssignedNames } from "./scheduleStorage";
+import { parseAssignedNames } from "./scheduleStorage";
 
 export interface ScheduleShiftEntryLike {
   recurrence?: string;
@@ -111,18 +111,44 @@ export function formatScheduleSegmentToken(name: string): string {
   return `${lastName.slice(0, 3)}${firstName.slice(0, 1)}`.toUpperCase();
 }
 
-/** Info-row text for timed pieces, such as "KELL: 08:00–10:00 / LEDL: 10:00–20:00". */
-export function formatSegmentCoverageSummary(
+/** Info-row label: last name's first 3 letters, then the first initial. "Lance Keller" → "KEL L". */
+export function formatInfoPersonnelLabel(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) return "";
+  if (trimmed.toUpperCase() === "HIRE") return "HIRE";
+  const parts = trimmed.split(/\s+/).filter(Boolean);
+  const firstName = parts[0] ?? "";
+  const lastName = parts.length > 1 ? parts[parts.length - 1]! : firstName;
+  const lastPart = lastName.slice(0, 3).toUpperCase();
+  const initial = parts.length > 1 ? firstName.charAt(0).toUpperCase() : "";
+  return initial ? `${lastPart} ${initial}` : lastPart;
+}
+
+/** Info row only. 8:00 a.m. is "8A". 8:30 a.m. is "8:30A". 8:00 p.m. is "8P". */
+export function formatInfoClock(totalMinutes: number): string {
+  const clamped = Math.max(0, Math.min(2880, Math.floor(Number(totalMinutes) || 0)));
+  const hour24 = Math.floor(clamped / 60) % 24;
+  const minutes = clamped % 60;
+  const suffix = hour24 >= 12 ? "P" : "A";
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const minutePart = minutes === 0 ? "" : `:${String(minutes).padStart(2, "0")}`;
+  return `${hour12}${minutePart}${suffix}`;
+}
+
+export interface SegmentCoverageLine {
+  personnelName: string;
+  text: string;
+}
+
+/** One line per timed piece, such as "KEL L: 8A-10A". Apparatus names are left off. */
+export function formatSegmentCoverageLines(
   segments: Array<{
     personnelName?: string;
     startMinutes?: number;
     endMinutes?: number;
     source?: string;
-    unitLabel?: string;
   }>,
-  options?: { includeUnitLabel?: boolean },
-): string {
-  const includeUnitLabel = Boolean(options?.includeUnitLabel);
+): SegmentCoverageLine[] {
   return segments
     .filter((segment) => {
       const name = String(segment.personnelName ?? "").trim();
@@ -143,12 +169,40 @@ export function formatSegmentCoverageSummary(
       return String(left.personnelName).localeCompare(String(right.personnelName));
     })
     .map((segment) => {
-      const token = formatScheduleSegmentToken(String(segment.personnelName));
-      const range = `${minutesToTimeValue(Number(segment.startMinutes))}–${minutesToTimeValue(Number(segment.endMinutes))}`;
-      const unit = includeUnitLabel ? String(segment.unitLabel ?? "").trim() : "";
-      return unit ? `${unit} ${token}: ${range}` : `${token}: ${range}`;
-    })
-    .join(" / ");
+      const personnelName = String(segment.personnelName).trim();
+      const range = `${formatInfoClock(Number(segment.startMinutes))}-${formatInfoClock(Number(segment.endMinutes))}`;
+      return {
+        personnelName,
+        text: `${formatInfoPersonnelLabel(personnelName)}: ${range}`,
+      };
+    });
+}
+
+export const QUALIFICATION_COLOR_OPTIONS = [
+  { id: "red", label: "Red", hex: "#b91c1c" },
+  { id: "orange", label: "Orange", hex: "#c2410c" },
+  { id: "gold", label: "Gold", hex: "#a16207" },
+  { id: "green", label: "Green", hex: "#15803d" },
+  { id: "teal", label: "Teal", hex: "#0f766e" },
+  { id: "blue", label: "Blue", hex: "#1d4ed8" },
+  { id: "purple", label: "Purple", hex: "#7e22ce" },
+  { id: "gray", label: "Gray", hex: "#475569" },
+] as const;
+
+export function parseQualificationColorMap(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const allowed = new Set<string>(QUALIFICATION_COLOR_OPTIONS.map((choice) => choice.id));
+  const next: Record<string, string> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    const key = name.trim();
+    const id = String(value ?? "").trim();
+    if (key && allowed.has(id)) next[key] = id;
+  }
+  return next;
+}
+
+export function qualificationColorHex(colorId: string | undefined): string | undefined {
+  return QUALIFICATION_COLOR_OPTIONS.find((choice) => choice.id === colorId)?.hex;
 }
 
 export function buildQualificationRankMap(qualificationOrder: string[]): Map<string, number> {

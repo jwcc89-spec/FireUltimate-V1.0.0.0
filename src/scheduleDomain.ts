@@ -1,3 +1,5 @@
+import { parseQualificationColorMap } from "./scheduleUtils";
+
 export type ScheduleSupportValueMode = "text" | "personnel";
 
 export interface PersonnelScheduleRow {
@@ -51,6 +53,7 @@ export interface PersonnelScheduleData {
     qualifications: string[];
   }>;
   personnelQualifications: string[];
+  personnelQualificationColors: Record<string, string>;
   kellyRotations: Array<{
     personnel: string;
     repeatsEveryValue: number;
@@ -117,6 +120,7 @@ export function loadPersonnelScheduleData({
     standardOvertimeSlot,
     personnel,
     personnelQualifications,
+    personnelQualificationColors: parseQualificationColorMap(d.personnelQualificationColors),
     kellyRotations,
     shiftEntries,
   };

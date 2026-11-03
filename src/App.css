@@ -5709,11 +5709,31 @@ body.printing-neris .neris-print-root {
 }
 
 .personnel-schedule-coverage-info {
+  display: grid;
+  gap: 0.12rem;
   font-size: clamp(0.5rem, 0.7vw, 0.68rem);
   line-height: 1.25;
   color: #0f172a;
   white-space: normal;
-  overflow-wrap: anywhere;
+}
+
+.qualification-color-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+}
+
+.qualification-color-swatch {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.qualification-color-swatch-selected {
+  border-color: #0f172a;
 }
 
 .personnel-schedule-slot-required-empty {
