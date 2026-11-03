@@ -59,7 +59,7 @@ interface PersonnelScheduleDayBlockModalProps {
   getCoverageLines: (
     dateKey: string,
     rowId: string,
-  ) => Array<{ personnelName: string; text: string }>;
+  ) => Array<{ personnelName: string; text: string; overtime?: boolean }>;
   importAssignmentsForDay: (dateKey: string) => void;
   assignedOnDay: (dateKey: string) => Set<string>;
   isOvertimeEnabledForSlot: (dateKey: string, unitId: string, slotIndex: number) => boolean;
@@ -764,8 +764,15 @@ export function PersonnelScheduleDayBlockModal({
                                   <div className="personnel-schedule-coverage-info">
                                     {coverageLines.map((line) => (
                                       <div
-                                        key={`${line.personnelName}-${line.text}`}
-                                        style={{ color: colorForPersonnelName(line.personnelName) }}
+                                        key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
+                                        className={
+                                          line.overtime ? "personnel-schedule-overtime-name" : undefined
+                                        }
+                                        style={
+                                          line.overtime
+                                            ? undefined
+                                            : { color: colorForPersonnelName(line.personnelName) }
+                                        }
                                       >
                                         {line.text}
                                       </div>

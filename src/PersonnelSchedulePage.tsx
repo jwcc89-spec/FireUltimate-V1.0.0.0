@@ -286,6 +286,7 @@ export function PersonnelSchedulePage({
             );
             const allowScheduledOvertime = d.allowScheduledOvertime === false ? false : true;
             const segmentSummaryTarget = d.segmentSummaryTarget === "trades" ? "trades" : "info";
+            const overtimeSummaryTarget = d.overtimeSummaryTarget === "trades" ? "trades" : "info";
             const personnelQualifications = Array.isArray(d.personnelQualifications)
               ? (d.personnelQualifications as string[])
               : [];
@@ -305,6 +306,7 @@ export function PersonnelSchedulePage({
               standardOvertimeSlot,
               allowScheduledOvertime,
               segmentSummaryTarget,
+              overtimeSummaryTarget,
               personnel,
               personnelQualifications,
               personnelQualificationColors,
@@ -813,24 +815,26 @@ export function PersonnelSchedulePage({
       manualSegments.forEach((segment, index) => {
         if (segment.startMinutes > cursor) {
           all.push({
-            id: `hire-${index}-${cursor}`,
-            assigneeType: "hire",
-            personnelName: "HIRE",
+            id: `open-${index}-${cursor}`,
+            assigneeType: "personnel",
+            personnelName: "",
             startMinutes: cursor,
             endMinutes: segment.startMinutes,
-            source: "auto_hire",
+            source: "manual",
+            overtime: false,
           });
         }
         cursor = Math.max(cursor, segment.endMinutes);
       });
       if (cursor < effectiveEnd) {
         all.push({
-          id: `hire-end-${cursor}`,
-          assigneeType: "hire",
-          personnelName: "HIRE",
+          id: `open-end-${cursor}`,
+          assigneeType: "personnel",
+          personnelName: "",
           startMinutes: cursor,
           endMinutes: effectiveEnd,
-          source: "auto_hire",
+          source: "manual",
+          overtime: false,
         });
       }
       return sortSegments(all);
@@ -1734,18 +1738,20 @@ export function PersonnelSchedulePage({
         startMinutes?: number;
         endMinutes?: number;
         source?: string;
+        overtime?: boolean;
       }> = [];
-      if (target === departmentData.segmentSummaryTarget) {
-        scheduleRows
-          .filter((entry) => entry.rowType === "apparatus")
-          .forEach((entry) => {
-            for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
-              getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
-                segments.push(segment);
-              });
-            }
-          });
-      }
+      scheduleRows
+        .filter((entry) => entry.rowType === "apparatus")
+        .forEach((entry) => {
+          for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
+            getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
+              const destination = segment.overtime
+                ? departmentData.overtimeSummaryTarget
+                : departmentData.segmentSummaryTarget;
+              if (destination === target) segments.push(segment);
+            });
+          }
+        });
       scheduleRows
         .filter((entry) => entry.segmentDisplayIn === target)
         .forEach((entry) => {
@@ -1757,7 +1763,7 @@ export function PersonnelSchedulePage({
         });
       return formatSegmentCoverageLines(segments);
     },
-    [departmentData.segmentSummaryTarget, getSegmentsForSlot, scheduleRows],
+    [departmentData.overtimeSummaryTarget, departmentData.segmentSummaryTarget, getSegmentsForSlot, scheduleRows],
   );
 
   if (isLoading && departmentData.personnel.length === 0) {
@@ -2191,8 +2197,15 @@ export function PersonnelSchedulePage({
                                   <div className="personnel-schedule-coverage-info">
                                     {coverageLines.map((line) => (
                                       <div
-                                        key={`${line.personnelName}-${line.text}`}
-                                        style={{ color: colorForPersonnelName(line.personnelName) }}
+                                        key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
+                                        className={
+                                          line.overtime ? "personnel-schedule-overtime-name" : undefined
+                                        }
+                                        style={
+                                          line.overtime
+                                            ? undefined
+                                            : { color: colorForPersonnelName(line.personnelName) }
+                                        }
                                       >
                                         {line.text}
                                       </div>
@@ -2269,25 +2282,38 @@ export function PersonnelSchedulePage({
                                     ).map((seg, nameIndex) => {
                                       const entry = seg.personnelName;
                                       const person = personnelByName.get(entry);
-                                      const isHireToken =
-                                        entry === "HIRE" || seg.assigneeType === "hire";
+                                      const overtimeChecked = Boolean(seg.overtime);
+                                      const normalizedEntry = entry.trim().toUpperCase();
+                                      const isUnfilledSegment =
+                                        normalizedEntry.length === 0 ||
+                                        normalizedEntry === "HIRE" ||
+                                        normalizedEntry === "OPEN" ||
+                                        seg.assigneeType === "hire" ||
+                                        seg.source === "auto_hire";
                                       const isOffShiftInOtSlot =
                                         row.rowType === "apparatus" &&
-                                        Boolean(seg.overtime) &&
-                                        !isHireToken &&
+                                        overtimeChecked &&
+                                        !isUnfilledSegment &&
                                         person !== undefined &&
                                         !personnelMatchesShift(person, effectiveShift);
-                                      const isUnfilledSegment =
-                                        isHireToken || entry.trim().length === 0;
+                                      const shownName = isUnfilledSegment
+                                        ? overtimeChecked
+                                          ? "HIRE"
+                                          : "OPEN"
+                                        : slotNames.length > 1
+                                          ? formatScheduleSegmentToken(entry)
+                                          : formatSchedulePersonnelDisplayName(entry);
                                       return (
                                         <span
                                           key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
                                           className={
-                                            isUnfilledSegment
+                                            isUnfilledSegment && overtimeChecked
                                               ? "personnel-schedule-hire-token"
-                                              : isOffShiftInOtSlot
-                                                ? "personnel-schedule-slot-name-off-shift"
-                                                : undefined
+                                              : isUnfilledSegment
+                                                ? "personnel-schedule-open-token"
+                                                : isOffShiftInOtSlot
+                                                  ? "personnel-schedule-slot-name-off-shift"
+                                                  : undefined
                                           }
                                           style={
                                             !isUnfilledSegment && colorForPersonnelName(entry)
@@ -2295,11 +2321,7 @@ export function PersonnelSchedulePage({
                                               : undefined
                                           }
                                         >
-                                          {isUnfilledSegment
-                                            ? "HIRE"
-                                            : slotNames.length > 1
-                                              ? formatScheduleSegmentToken(entry)
-                                              : formatSchedulePersonnelDisplayName(entry)}
+                                          {shownName}
                                           {nameIndex < slotNames.length - 1 ? " / " : ""}
                                         </span>
                                       );

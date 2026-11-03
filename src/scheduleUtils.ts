@@ -125,6 +125,7 @@ export function formatInfoClock(totalMinutes: number): string {
 export interface SegmentCoverageLine {
   personnelName: string;
   text: string;
+  overtime: boolean;
 }
 
 /** One line per timed piece, such as "KELL: 8A-10A". Apparatus names are left off. */
@@ -134,6 +135,7 @@ export function formatSegmentCoverageLines(
     startMinutes?: number;
     endMinutes?: number;
     source?: string;
+    overtime?: boolean;
   }>,
 ): SegmentCoverageLine[] {
   return segments
@@ -161,6 +163,7 @@ export function formatSegmentCoverageLines(
       return {
         personnelName,
         text: `${formatScheduleSegmentToken(personnelName)}: ${range}`,
+        overtime: Boolean(segment.overtime),
       };
     });
 }

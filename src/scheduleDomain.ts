@@ -56,8 +56,10 @@ export interface PersonnelScheduleData {
   standardOvertimeSlot: number;
   /** When false, day-block segment cards do not show the OT checkbox. */
   allowScheduledOvertime: boolean;
-  /** Where apparatus segment times are listed on the schedule. */
+  /** Where a segmented shift's hours are listed. Overtime hours use overtimeSummaryTarget. */
   segmentSummaryTarget: "info" | "trades";
+  /** Where overtime hours are listed. A segmented shift does not follow this. */
+  overtimeSummaryTarget: "info" | "trades";
   personnel: Array<{
     name: string;
     shift: string;
@@ -134,6 +136,7 @@ export function loadPersonnelScheduleData({
     standardOvertimeSlot,
     allowScheduledOvertime: d.allowScheduledOvertime === false ? false : true,
     segmentSummaryTarget: d.segmentSummaryTarget === "trades" ? "trades" : "info",
+    overtimeSummaryTarget: d.overtimeSummaryTarget === "trades" ? "trades" : "info",
     personnel,
     personnelQualifications,
     personnelQualificationColors: parseQualificationColorMap(d.personnelQualificationColors),

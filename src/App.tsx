@@ -6948,6 +6948,9 @@ function DepartmentDetailsPage({
   const [segmentSummaryTarget, setSegmentSummaryTarget] = useState<"info" | "trades">(
     initialDepartmentDraft.segmentSummaryTarget === "trades" ? "trades" : "info",
   );
+  const [overtimeSummaryTarget, setOvertimeSummaryTarget] = useState<"info" | "trades">(
+    initialDepartmentDraft.overtimeSummaryTarget === "trades" ? "trades" : "info",
+  );
   const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
     normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
   );
@@ -8108,6 +8111,7 @@ function DepartmentDetailsPage({
         );
         setAllowScheduledOvertime(d.allowScheduledOvertime === false ? false : true);
         setSegmentSummaryTarget(d.segmentSummaryTarget === "trades" ? "trades" : "info");
+        setOvertimeSummaryTarget(d.overtimeSummaryTarget === "trades" ? "trades" : "info");
         setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
@@ -9287,6 +9291,7 @@ function DepartmentDetailsPage({
       standardOvertimeSlot,
       allowScheduledOvertime,
       segmentSummaryTarget,
+      overtimeSummaryTarget,
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
@@ -9334,6 +9339,7 @@ function DepartmentDetailsPage({
     standardOvertimeSlot,
     allowScheduledOvertime,
     segmentSummaryTarget,
+    overtimeSummaryTarget,
     personnelQualifications,
     personnelQualificationColors,
     personnelRecords,
@@ -10957,7 +10963,7 @@ function DepartmentDetailsPage({
                       }
                     />
                   </label>
-                  <label className="additional-field-type">
+                  <label>
                     Type
                     <select
                       value={additionalFieldDraft.valueMode}
@@ -11016,7 +11022,7 @@ function DepartmentDetailsPage({
                   </label>
                   {additionalFieldDraft.valueMode === "personnel" &&
                   additionalFieldDraft.segmentedModeEnabled ? (
-                  <label className="additional-field-type">
+                  <label>
                     Show times in
                       <select
                         value={additionalFieldDraft.segmentDisplayIn}
@@ -11210,7 +11216,7 @@ function DepartmentDetailsPage({
                     Allow Scheduled Overtime
                   </label>
                   <label>
-                    Show segment times in
+                    Show segmented shift times in
                     <select
                       value={segmentSummaryTarget}
                       onChange={(event) =>
@@ -11221,10 +11227,24 @@ function DepartmentDetailsPage({
                       <option value="trades">Trades</option>
                     </select>
                   </label>
+                  <label>
+                    Show overtime times in
+                    <select
+                      value={overtimeSummaryTarget}
+                      onChange={(event) =>
+                        setOvertimeSummaryTarget(event.target.value === "trades" ? "trades" : "info")
+                      }
+                    >
+                      <option value="info">Info</option>
+                      <option value="trades">Trades</option>
+                    </select>
+                  </label>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem" }}>
-                  Allow Scheduled Overtime keeps the OT checkbox on each split piece. Uncheck it to hide that checkbox.
-                  Show segment times in chooses whether split-shift hours are listed on Info or on Trades.
+                  A segmented shift and overtime are separate. Show segmented shift times in only moves the regular
+                  split hours. Show overtime times in only moves the pieces whose OT box is checked. An empty split
+                  piece says OPEN. It says HIRE only when that piece’s OT box is checked, and that person’s name is
+                  red and bold.
                 </p>
                 <div className="department-editor-toolbar-actions">
                   <button
