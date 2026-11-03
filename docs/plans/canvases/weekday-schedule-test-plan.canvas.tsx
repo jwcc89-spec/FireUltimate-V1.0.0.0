@@ -102,7 +102,8 @@ const decided = [
   ["November 3, 2026", "Qualification colors", "Eight basic colors sit next to each qualification. Nothing is colored until someone picks a color. A person with more than one qualification uses the color of the highest one in the list."],
   ["November 3, 2026", "Seat order", "When two people together meet an ambulance's qualifications, the person who only has the lower qualification moves to that lower seat. The higher qualification stays on the stricter seat. A person who does not fill an open qualification is not added, and the people already on that day stay."],
   ["November 3, 2026", "Info on the schedule", "Additional fields use labeled Rows visible and Maximum rows. Info, Kelly Day, Trades, and Injury can be hidden but not deleted. A segmented personnel field can show its times in Info, in Trades, or not at all."],
-  ["November 3, 2026", "Segmented shift vs overtime", "A segmented shift and overtime are separate. Segmented hours and overtime hours each have their own Info or Trades choice. An empty split piece says OPEN. It says HIRE only when that piece's OT box is checked, and that name is red and bold."],
+  ["November 3, 2026", "Segmented shift vs overtime", "A segmented shift and overtime are separate. Segmented hours are chosen in Shift Information. Overtime hours are chosen in Overtime Setup. An empty split piece says OPEN in red. It says HIRE only when that piece's OT box is checked, and that name is red and bold."],
+  ["November 3, 2026", "Scheduler settings layout", "Shift Information and Scheduler Apparatus put the edit form above the list. Qualifications can be removed. Additional fields can use 0 visible rows, and the usual starting value stays 1."],
 ];
 
 const stillOpen = [
@@ -228,7 +229,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Segmented shifts and overtime are listed separately · Empty split time says OPEN · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Segmented hours are chosen in Shift Information · OPEN is red · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: set up Weekday Test Fire Department from scratch">

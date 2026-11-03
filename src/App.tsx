@@ -441,10 +441,15 @@ function readAdditionalRowCounts(entry: {
   maximumRows?: unknown;
 }): { numberOfSlots: number; rowsVisible: number; maximumRows: number } {
   const legacySlots = Math.max(1, Math.floor(Number(entry.numberOfSlots ?? 1) || 1));
-  const rowsVisible = Math.max(1, Math.floor(Number(entry.rowsVisible ?? legacySlots) || legacySlots));
+  const rowsVisible =
+    entry.rowsVisible === undefined || entry.rowsVisible === null || entry.rowsVisible === ""
+      ? legacySlots
+      : Math.max(0, Math.floor(Number(entry.rowsVisible)) || 0);
   const maximumRows = Math.max(
     rowsVisible,
-    Math.floor(Number(entry.maximumRows ?? Math.max(legacySlots, DEFAULT_MAXIMUM_ADDITIONAL_ROWS)) || DEFAULT_MAXIMUM_ADDITIONAL_ROWS),
+    entry.maximumRows === undefined || entry.maximumRows === null || entry.maximumRows === ""
+      ? Math.max(legacySlots, DEFAULT_MAXIMUM_ADDITIONAL_ROWS)
+      : Math.max(0, Math.floor(Number(entry.maximumRows)) || 0),
   );
   return { rowsVisible, maximumRows, numberOfSlots: maximumRows };
 }
@@ -8319,6 +8324,7 @@ function DepartmentDetailsPage({
       }
       if (isSchedulerApparatusEditor && schedulerApparatusRecords[index]) {
         setSchedulerApparatusDraft(schedulerApparatusRecords[index]!);
+        return;
       }
       if (isUsersEditor && userRecords[index]) {
         setUserDraft(userRecords[index]!);
@@ -8478,6 +8484,15 @@ function DepartmentDetailsPage({
           ? [...previous, normalized]
           : previous.map((entry, index) => (index === editingIndex ? normalized : entry));
       return normalizeSchedulerStationGrouping(next);
+    });
+    setEditingIndex(null);
+    setSelectedSingleIndex(null);
+    setSchedulerApparatusDraft({
+      apparatus: "",
+      minimumPersonnel: 0,
+      maximumPersonnel: 2,
+      personnelRequirements: [],
+      station: "",
     });
     setIsEntryFormOpen(false);
     setAutoSaveTick((previous) => previous + 1);
@@ -9137,6 +9152,32 @@ function DepartmentDetailsPage({
     setStatusMessage("Auto-saved.");
   };
 
+  const removeQualification = (index: number) => {
+    const name = personnelQualifications[index];
+    if (!name) return;
+    setPersonnelQualifications((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
+    setPersonnelQualificationColors((previous) => {
+      if (!previous[name]) return previous;
+      const next = { ...previous };
+      delete next[name];
+      return next;
+    });
+    setPersonnelRecords((previous) =>
+      previous.map((person) => ({
+        ...person,
+        qualifications: person.qualifications.filter((qualification) => qualification !== name),
+      })),
+    );
+    if (editingQualificationIndex === index) {
+      setEditingQualificationIndex(null);
+      setQualificationDraft("");
+    } else if (editingQualificationIndex !== null && editingQualificationIndex > index) {
+      setEditingQualificationIndex(editingQualificationIndex - 1);
+    }
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
   const resetAdditionalFieldDraft = useCallback(() => {
     setAdditionalFieldDraft({
       id: "",
@@ -9157,10 +9198,12 @@ function DepartmentDetailsPage({
     if (!normalizedName) {
       return;
     }
-    const rowsVisible = Math.max(1, Math.floor(Number(additionalFieldDraft.rowsVisible) || 1));
+    const parsedVisible = Math.floor(Number(additionalFieldDraft.rowsVisible));
+    const rowsVisible = Number.isFinite(parsedVisible) ? Math.max(0, parsedVisible) : 1;
+    const parsedMaximum = Math.floor(Number(additionalFieldDraft.maximumRows));
     const maximumRows = Math.max(
       rowsVisible,
-      Math.floor(Number(additionalFieldDraft.maximumRows) || rowsVisible),
+      Number.isFinite(parsedMaximum) ? Math.max(0, parsedMaximum) : rowsVisible,
     );
     const normalizedMode: AdditionalFieldValueMode =
       additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
@@ -9833,7 +9876,7 @@ function DepartmentDetailsPage({
       {activeCollectionEditor && activeCollectionDefinition ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
           <article
-            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor || isAdditionalFieldsEditor ? " department-editor-modal-wide" : ""}`}
+            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor || isAdditionalFieldsEditor || isSchedulerApparatusEditor || isShiftEditor ? " department-editor-modal-wide" : ""}`}
           >
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
@@ -10265,7 +10308,96 @@ function DepartmentDetailsPage({
                   </div>
                 ) : isSchedulerApparatusEditor ? (
                   <div className="department-apparatus-list-wrapper">
-                    <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                    <div className="department-edit-grid">
+                      <label>
+                        Apparatus
+                        <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                      </label>
+                      <label>
+                        Min Personnel
+                        <input
+                          type="number"
+                          min={0}
+                          value={schedulerApparatusDraft.minimumPersonnel}
+                          onChange={(event) =>
+                            setSchedulerApparatusDraft((previous) => ({
+                              ...previous,
+                              minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Max Personnel
+                        <input
+                          type="number"
+                          min={1}
+                          value={schedulerApparatusDraft.maximumPersonnel}
+                          onChange={(event) =>
+                            setSchedulerApparatusDraft((previous) => ({
+                              ...previous,
+                              maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                            }))
+                          }
+                        />
+                      </label>
+                      <label>
+                        Minimum Requirements (select all that apply)
+                        <NerisFlatMultiOptionSelect
+                          inputId="scheduler-apparatus-personnel-requirements-inline"
+                          value={schedulerApparatusDraft.personnelRequirements.join(",")}
+                          options={personnelQualifications.map((q) => ({ value: q, label: q }))}
+                          onChange={(nextValue) =>
+                            setSchedulerApparatusDraft((previous) => ({
+                              ...previous,
+                              personnelRequirements: nextValue
+                                .split(",")
+                                .map((s) => s.trim())
+                                .filter(Boolean),
+                            }))
+                          }
+                          placeholder="Select minimum requirement(s)"
+                          searchPlaceholder="Search qualifications..."
+                          maxSelections={
+                            schedulerApparatusDraft.minimumPersonnel > 0
+                              ? schedulerApparatusDraft.minimumPersonnel
+                              : undefined
+                          }
+                          usePortal
+                        />
+                      </label>
+                      <label>
+                        Station
+                        <NerisFlatSingleOptionSelect
+                          inputId="scheduler-apparatus-station-inline"
+                          value={schedulerApparatusDraft.station}
+                          options={stationNames.map((s) => ({ value: s, label: s }))}
+                          onChange={(nextValue) =>
+                            setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                          }
+                          placeholder="Select station"
+                          searchPlaceholder="Search stations..."
+                          allowClear
+                          usePortal
+                        />
+                      </label>
+                    </div>
+                    <p className="field-hint" style={{ marginTop: "0.35rem" }}>
+                      Click an apparatus in the list to edit it here. Use Import Apparatus to add trucks from Department Apparatus.
+                    </p>
+                    <div className="department-editor-toolbar-actions">
+                      <button type="button" className="primary-button compact-button" onClick={saveSchedulerApparatusForm}>
+                        {editingIndex === null ? "Save" : "Update"}
+                      </button>
+                      {editingIndex !== null && editingIndex >= 0 ? (
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={deleteSchedulerApparatusFormEntry}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="secondary-button compact-button"
@@ -10737,104 +10869,25 @@ function DepartmentDetailsPage({
 
             {isShiftEditor ? (
               <>
-                <div className="department-editor-toolbar-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={() => {
-                      setEditingIndex(null);
-                      setSelectedSingleIndex(null);
-                      setShiftDraft({
-                        shiftType: "",
-                        shiftDuration: 0,
-                        recurrence: "Daily",
-                        recurrenceCustomValue: "",
-                        startTime: "",
-                        location: "",
-                      });
-                    }}
-                  >
-                    Add
-                  </button>
+                <div className="department-edit-grid">
+                  <label>
+                    Show segmented shift times in
+                    <select
+                      value={segmentSummaryTarget}
+                      onChange={(event) => {
+                        setSegmentSummaryTarget(event.target.value === "trades" ? "trades" : "info");
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Auto-saved.");
+                      }}
+                    >
+                      <option value="info">Info</option>
+                      <option value="trades">Trades</option>
+                    </select>
+                  </label>
                 </div>
-                <div className="department-apparatus-list-wrapper">
-                  <div className="table-wrapper">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Shift Type</th>
-                          <th>
-                            <div className="department-shift-grid-line department-shift-grid-header">
-                              <span>Start Time</span>
-                              <span>Duration</span>
-                              <span>Recurrence</span>
-                              <span>Location</span>
-                            </div>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {shiftInformationEntries.length === 0 ? (
-                          <tr>
-                            <td colSpan={2} className="department-apparatus-empty">
-                              No shift entries. Click Add to create one.
-                            </td>
-                          </tr>
-                        ) : (
-                          shiftInformationEntries.map((entry, index) => {
-                            const recurrenceLabel =
-                              entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
-                                ? entry.recurrenceCustomValue
-                                : entry.recurrence;
-                            return (
-                              <tr
-                                key={`shift-row-${index}-${entry.shiftType}`}
-                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => {
-                                  setSelectedSingleIndex(index);
-                                  setEditingIndex(index);
-                                  setShiftDraft({
-                                    ...entry,
-                                    startTime: entry.startTime || "",
-                                  });
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    setSelectedSingleIndex(index);
-                                    setEditingIndex(index);
-                                    setShiftDraft({
-                                      ...entry,
-                                      startTime: entry.startTime || "",
-                                    });
-                                  }
-                                }}
-                              >
-                                <td>
-                                  <strong className="call-number-text">{entry.shiftType || "—"}</strong>
-                                </td>
-                                <td>
-                                  <div className="dispatch-info-cell">
-                                    <div className="department-shift-grid-line">
-                                      <span className="department-apparatus-field">
-                                        {entry.startTime || "—"}
-                                      </span>
-                                      <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
-                                      <span className="department-apparatus-field">{recurrenceLabel}</span>
-                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
+                <p className="field-hint">
+                  This is only for a normal split shift, such as one person from 08:00 to 15:00. Overtime hours are chosen in Overtime Setup.
+                </p>
                 <div className="department-edit-grid">
                   <label>
                     Shift Type
@@ -10904,6 +10957,104 @@ function DepartmentDetailsPage({
                   <button type="button" className="primary-button compact-button" onClick={addShiftInformationEntry}>
                     {editingIndex === null ? "Add Shift Information" : "Save Shift Information"}
                   </button>
+                  {editingIndex !== null ? (
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setEditingIndex(null);
+                        setSelectedSingleIndex(null);
+                        setShiftDraft({
+                          shiftType: "",
+                          shiftDuration: 0,
+                          recurrence: "Daily",
+                          recurrenceCustomValue: "",
+                          startTime: "",
+                          location: "",
+                        });
+                      }}
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                <div className="department-apparatus-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Shift Type</th>
+                          <th>
+                            <div className="department-shift-grid-line department-shift-grid-header">
+                              <span>Start Time</span>
+                              <span>Duration</span>
+                              <span>Recurrence</span>
+                              <span>Location</span>
+                            </div>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shiftInformationEntries.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className="department-apparatus-empty">
+                              No shift entries yet. Use the form above to add one.
+                            </td>
+                          </tr>
+                        ) : (
+                          shiftInformationEntries.map((entry, index) => {
+                            const recurrenceLabel =
+                              entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
+                                ? entry.recurrenceCustomValue
+                                : entry.recurrence;
+                            return (
+                              <tr
+                                key={`shift-row-${index}-${entry.shiftType}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  setSelectedSingleIndex(index);
+                                  setEditingIndex(index);
+                                  setShiftDraft({
+                                    ...entry,
+                                    startTime: entry.startTime || "",
+                                  });
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    setSelectedSingleIndex(index);
+                                    setEditingIndex(index);
+                                    setShiftDraft({
+                                      ...entry,
+                                      startTime: entry.startTime || "",
+                                    });
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{entry.shiftType || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div className="department-shift-grid-line">
+                                      <span className="department-apparatus-field">
+                                        {entry.startTime || "—"}
+                                      </span>
+                                      <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
+                                      <span className="department-apparatus-field">{recurrenceLabel}</span>
+                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </>
             ) : null}
@@ -10928,11 +11079,12 @@ function DepartmentDetailsPage({
                     Rows visible
                     <input
                       type="number"
-                      min={1}
+                      min={0}
                       value={additionalFieldDraft.rowsVisible}
                       onChange={(event) =>
                         setAdditionalFieldDraft((previous) => {
-                          const rowsVisible = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                          const parsed = Number.parseInt(event.target.value, 10);
+                          const rowsVisible = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
                           return {
                             ...previous,
                             rowsVisible,
@@ -11065,7 +11217,7 @@ function DepartmentDetailsPage({
                   </button>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                  Rows visible is how many rows start on the schedule. Maximum rows is the most a day can open. Info, Kelly Day, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule.
+                  Rows visible is how many empty rows start on the schedule. The usual value is 1. Use 0 when that field should not offer a blank row to type in. Maximum rows is the most a day can open. Info, Kelly Day, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule.
                 </p>
                 <div className="department-qualifications-list-wrapper">
                   <div className="table-wrapper">
@@ -11216,18 +11368,6 @@ function DepartmentDetailsPage({
                     Allow Scheduled Overtime
                   </label>
                   <label>
-                    Show segmented shift times in
-                    <select
-                      value={segmentSummaryTarget}
-                      onChange={(event) =>
-                        setSegmentSummaryTarget(event.target.value === "trades" ? "trades" : "info")
-                      }
-                    >
-                      <option value="info">Info</option>
-                      <option value="trades">Trades</option>
-                    </select>
-                  </label>
-                  <label>
                     Show overtime times in
                     <select
                       value={overtimeSummaryTarget}
@@ -11241,10 +11381,9 @@ function DepartmentDetailsPage({
                   </label>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem" }}>
-                  A segmented shift and overtime are separate. Show segmented shift times in only moves the regular
-                  split hours. Show overtime times in only moves the pieces whose OT box is checked. An empty split
-                  piece says OPEN. It says HIRE only when that piece’s OT box is checked, and that person’s name is
-                  red and bold.
+                  Allow Scheduled Overtime keeps the OT checkbox on each split piece. Uncheck it to hide that checkbox.
+                  Show overtime times in chooses where a piece marked OT is listed. A normal split shift is chosen in Shift Information.
+                  An empty split piece says OPEN in red. It says HIRE only when that piece’s OT box is checked.
                 </p>
                 <div className="department-editor-toolbar-actions">
                   <button
@@ -11290,12 +11429,13 @@ function DepartmentDetailsPage({
                           <th>Qualification</th>
                           <th>Color</th>
                           <th style={{ width: "80px" }}>Order</th>
+                          <th style={{ width: "90px" }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {personnelQualifications.length === 0 ? (
                           <tr>
-                            <td colSpan={4} className="department-apparatus-empty">
+                            <td colSpan={5} className="department-apparatus-empty">
                               No qualifications. Add one above.
                             </td>
                           </tr>
@@ -11382,6 +11522,18 @@ function DepartmentDetailsPage({
                               </td>
                               <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
                                 {index + 1}
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeQualification(index);
+                                  }}
+                                >
+                                  Remove
+                                </button>
                               </td>
                             </tr>
                           ))

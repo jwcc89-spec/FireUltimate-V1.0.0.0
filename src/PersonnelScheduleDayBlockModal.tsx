@@ -95,6 +95,7 @@ interface PersonnelScheduleDayBlockModalProps {
     proposedStart: number,
     proposedEnd: number,
   ) => string | null;
+  onScheduleNotice: (message: string) => void;
   /** When segment count becomes 1, exit segment mode and store a single 24h assignment. */
   collapseSegmentModeToSingleSlot: (
     dateKey: string,
@@ -137,6 +138,7 @@ export function PersonnelScheduleDayBlockModal({
   getSegmentsForSlot,
   setSegmentsForSlot,
   assertApparatusTimeOverlap,
+  onScheduleNotice,
   collapseSegmentModeToSingleSlot,
   onClose,
 }: PersonnelScheduleDayBlockModalProps) {
@@ -336,7 +338,7 @@ export function PersonnelScheduleDayBlockModal({
           targetSeg.endMinutes,
         );
         if (msg) {
-          window.alert(msg);
+          onScheduleNotice(msg);
           setDraggedPerson(null);
           setDragOverSlot(null);
           return;
@@ -352,7 +354,7 @@ export function PersonnelScheduleDayBlockModal({
             s.personnelName.trim() === trimmedDrag,
         );
       if (!targetSeg.overtime && assignedOnAnotherSegment) {
-        window.alert(
+        onScheduleNotice(
           "That person is already assigned in another segment of this slot. Enable OT on this segment to pick from the full roster, or choose someone else.",
         );
         setDraggedPerson(null);
@@ -391,6 +393,7 @@ export function PersonnelScheduleDayBlockModal({
       dateKey,
       draggedPerson,
       ensureSegmentRows,
+      onScheduleNotice,
       rebalanceApparatusForSupportSegment,
       updateSegmentCollection,
     ],
@@ -411,7 +414,7 @@ export function PersonnelScheduleDayBlockModal({
       .filter((s) => s.endMinutes > s.startMinutes)
       .sort((a, b) => a.startMinutes - b.startMinutes);
     if (sorted.length === 0) {
-      window.alert("Add at least one valid segment (end time after start time).");
+      onScheduleNotice("Add at least one valid segment (end time after start time).");
       return;
     }
     if (sorted.length === 1) {
@@ -432,7 +435,7 @@ export function PersonnelScheduleDayBlockModal({
       "Applied segment layout.",
     );
     setSegmentLayoutEditor(null);
-  }, [collapseSegmentModeToSingleSlot, segmentLayoutEditor, dateKey, setSegmentsForSlot]);
+  }, [collapseSegmentModeToSingleSlot, segmentLayoutEditor, dateKey, setSegmentsForSlot, onScheduleNotice]);
 
   const addSegmentLayoutDraftRow = useCallback(() => {
     setSegmentLayoutEditor((prev) => {
@@ -918,7 +921,7 @@ export function PersonnelScheduleDayBlockModal({
                                                         segment.endMinutes,
                                                       );
                                                       if (msg) {
-                                                        window.alert(msg);
+                                                        onScheduleNotice(msg);
                                                         return;
                                                       }
                                                     }

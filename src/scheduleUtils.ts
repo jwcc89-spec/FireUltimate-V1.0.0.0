@@ -353,13 +353,15 @@ export function visibleAdditionalRowCount(
   rowsVisible: number,
   maximumRows: number,
 ): number {
-  const max = Math.max(1, Math.floor(maximumRows) || 1);
-  const min = Math.min(max, Math.max(1, Math.floor(rowsVisible) || 1));
+  const max = Math.max(0, Math.floor(Number(maximumRows)) || 0);
+  if (max === 0) return 0;
+  const min = Math.min(max, Math.max(0, Math.floor(Number(rowsVisible)) || 0));
   const limited = stored.slice(0, max);
   let lastFilled = -1;
   for (let index = 0; index < limited.length; index += 1) {
     if (String(limited[index] ?? "").trim()) lastFilled = index;
   }
+  if (min === 0) return Math.min(max, Math.max(0, lastFilled + 1));
   let count = Math.max(min, lastFilled + 1);
   const trailingEmpties = limited.length - (lastFilled + 1);
   if (trailingEmpties === 1 && count < max) count += 1;
@@ -372,11 +374,15 @@ export function withNextAdditionalRow(
   rowsVisible: number,
   maximumRows: number,
 ): string[] {
-  const max = Math.max(1, Math.floor(maximumRows) || 1);
+  const max = Math.max(0, Math.floor(Number(maximumRows)) || 0);
+  if (max === 0) return [];
   const limited = stored.slice(0, max).map((value) => String(value ?? ""));
   let lastFilled = -1;
   for (let index = 0; index < limited.length; index += 1) {
     if (limited[index].trim()) lastFilled = index;
+  }
+  if (Math.max(0, Math.floor(Number(rowsVisible)) || 0) === 0) {
+    return limited.slice(0, Math.max(0, lastFilled + 1));
   }
   const visible = visibleAdditionalRowCount(limited, rowsVisible, max);
   if (lastFilled < 0 || visible > lastFilled + 1 || visible >= max) {

@@ -47,6 +47,7 @@ import {
   withNextAdditionalRow,
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
+import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
 
 function assignmentsPreservingNames(
   ordered: string[],
@@ -194,6 +195,7 @@ export function PersonnelSchedulePage({
   const [isDemoTenant, setIsDemoTenant] = useState(() =>
     window.location.hostname.toLowerCase().includes("demo"),
   );
+  const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
   const [scheduleUndoStack, setScheduleUndoStack] = useState<
     Array<{
       assignments: ScheduleAssignments;
@@ -906,7 +908,7 @@ export function PersonnelSchedulePage({
           )
         ) {
           const message = "You do not meet the minimum qualifications.";
-          window.alert(message);
+          setScheduleNotice(message);
           setLastScheduleAction(message);
           return;
         }
@@ -1153,7 +1155,7 @@ export function PersonnelSchedulePage({
           blockedAssignmentReason.includes("no open seat") ||
           blockedAssignmentReason.includes("already assigned to")
         ) {
-          window.alert(blockedAssignmentReason);
+          setScheduleNotice(blockedAssignmentReason);
         }
         setLastScheduleAction(blockedAssignmentReason);
         return;
@@ -2377,6 +2379,7 @@ export function PersonnelSchedulePage({
           getSegmentsForSlot={getSegmentsForSlot}
           setSegmentsForSlot={setSegmentsForSlot}
           assertApparatusTimeOverlap={assertApparatusTimeOverlap}
+          onScheduleNotice={setScheduleNotice}
           collapseSegmentModeToSingleSlot={collapseSegmentModeToSingleSlot}
           onClose={() => {
             normalizeDayAssignmentsForRequirements(editDayBlock.dateKey);
@@ -2384,6 +2387,7 @@ export function PersonnelSchedulePage({
           }}
         />
       ) : null}
+      <ScheduleNoticeDialog message={scheduleNotice} onClose={() => setScheduleNotice(null)} />
     </section>
   );
 }

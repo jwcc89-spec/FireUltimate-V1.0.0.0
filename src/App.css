@@ -5824,8 +5824,37 @@ body.printing-neris .neris-print-root {
 }
 
 .personnel-schedule-open-token {
+  color: #b91c1c;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+.schedule-notice-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background-color: rgba(15, 23, 42, 0.52);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.schedule-notice {
+  width: min(28rem, 92vw);
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 1.1rem 1.15rem 1rem;
+  display: grid;
+  gap: 0.9rem;
+  justify-items: start;
+}
+
+.schedule-notice p {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.95rem;
+  line-height: 1.45;
 }
 
 .personnel-schedule-overtime-name {
