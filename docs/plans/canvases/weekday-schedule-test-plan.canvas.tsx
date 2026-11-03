@@ -87,19 +87,19 @@ const stages: StageDef[] = [
         fix: "November 3: added a trades table to the database (you approved it), with one row per request inside one department. It is on the local test database only. The Trades page now reads and saves through the server. Members see only their own trades. Sub Admins and above see all trades and can show All trades, My trades, or one shift (for example 8a-8p). Only the person asked can accept or deny. Denying needs a reason.",
         who: "Me.",
         done: "Completed: 15 server checks passed on the local database. Josh's request reached Landon and admin, Lance and Kenny could not see it, and only Landon could answer it. The test trades were deleted afterward." },
-      { n: "9", title: "Add a Trades screen to Scheduler Settings", status: "Next",
+      { n: "9", title: "Add a Trades screen to Scheduler Settings", status: "Done",
         problem: "Departments handle trades differently. Career crews pay trades back. On-call crews may just cover hours.",
         why: "Each department needs to set its own rules without code changes.",
-        fix: "New Admin Functions → Scheduler Settings → Trades with three checkboxes: Admin approval for trades, Payback required (starts unchecked), and Require approval before cancelling a trade.",
+        fix: "November 3: Admin Functions → Scheduler Settings → Trades has three checkboxes, all starting off. Admin approval for trades makes an accepted trade wait for a sub admin, admin, or super admin. Payback required is the starting value of the checkbox on a new request, and the sender can still change it. Require approval before cancelling a trade is saved and shown on the Trades page. Cancelling itself is Step 13. Accepting still does not change the schedule. That is Step 12.",
         who: "Me.",
-        done: "Not started. Done when the three settings save and the Trades page follows them." },
-      { n: "10", title: "Rebuild the New Trade Request form", status: "Updated",
+        done: "Completed: an admin can turn the three settings on, another account sees them, an accepted trade waits for admin approval, and turning approval off lets the other person finish it." },
+      { n: "10", title: "Rebuild the New Trade Request form", status: "Done",
         problem: "Counterpart was free text, the date was any date, and there was no payback choice.",
         why: "Requests should only go to real roster members, for days the requester actually works.",
-        fix: "Done November 3: Trade With is a list from Scheduler Settings → Personnel (your own name is left out). Start and end are typed in 24-hour time (8 or 0800 becomes 08:00). Payback required turns Date You Work Instead on, or grays it out. Still to do: pick Your Assigned Date from your scheduled days, and start the payback checkbox from the department setting in Step 9.",
+        fix: "November 3: Trade With is a list from Scheduler Settings → Personnel, with your own name left out. Your Assigned Date can be typed, or picked from days you are already on a truck or a split piece. Start and end are 24-hour times. Payback required starts from the department setting and grays out Date You Work Instead when it is off.",
         who: "Me.",
-        done: "Partly done. Done when Your Assigned Date offers only your scheduled days and the payback checkbox follows the department setting." },
-      { n: "11", title: "Check a request before it is sent", status: "New",
+        done: "Completed: the form offers roster members, scheduled days, 24-hour times, and the department payback setting." },
+      { n: "11", title: "Check a request before it is sent", status: "Next",
         problem: "Nothing stops a trade to someone unqualified or already working.",
         why: "An accepted trade must never leave a seat unqualified.",
         fix: "Block the request if the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. Use the same centered messages as the schedule.",
@@ -153,6 +153,7 @@ const decided = [
   ["November 3, 2026", "Cancelling a trade", "Either person clicks Cancel Requested Trade. The other person accepts the cancellation, then the schedule goes back to how it was. A Trades setting can also require admin approval before cancelling."],
   ["November 3, 2026", "Who sees trades", "Members see only trades they are part of. Sub Admin, Admin, and Super Admin see every trade, and Active Requests lets them show All trades, My trades, or one shift."],
   ["November 3, 2026", "Where trades are saved", "A new trades table in the database, one row per request. You approved the structure change. It is on the local test database only. Staging and production get it when this branch is released."],
+  ["November 3, 2026", "Trade settings", "Scheduler Settings → Trades has Admin approval, Payback required, and Require approval before cancelling. All start off. Payback required is the starting value on a new request, and the sender can change it. Admin approval makes the trade wait for a sub admin or above. The schedule still does not change until Step 12."],
 ];
 
 const stillOpen = [
@@ -280,11 +281,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Trades table and Trades page on the server (Step 8 done, local only) · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–10 done locally (trades table, settings, request form) · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: Scheduler Settings → Trades (Stage D, Step 9)">
-        First, click-test Step 8: send a trade as one person, then accept or deny it as the other. Then I add the Trades settings screen.
+      <Callout tone="info" title="Next: click-test Steps 8, 9, and 10">
+        The click-test is in chat. After it looks right, Step 11 checks a request before it is sent.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

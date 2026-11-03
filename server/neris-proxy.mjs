@@ -4967,6 +4967,20 @@ function canSeeAllTrades(auth) {
   return roleLevel(auth?.role) >= roleLevel("subadmin");
 }
 
+async function readTradeSettings(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  return {
+    adminApproval: payload.tradeAdminApproval === true,
+    paybackRequired: payload.tradePaybackRequired === true,
+    cancelApproval: payload.tradeCancelApproval === true,
+  };
+}
+
 async function loadTradeRoster(tenantId) {
   const details = await prisma.departmentDetails.findUnique({
     where: { tenantId },
@@ -5198,14 +5212,49 @@ app.patch("/api/trades/:id", async (request, response) => {
         response.status(400).json({ ok: false, message: "Enter a reason for denying." });
         return;
       }
+      const settings = action === "accept" ? await readTradeSettings(tenantId) : null;
+      const nextStatus =
+        action === "deny" ? "denied" : settings.adminApproval ? "awaiting_admin" : "accepted";
       const row = await prisma.tradeRequest.update({
         where: { id: existing.id },
         data: {
-          status: action === "accept" ? "accepted" : "denied",
+          status: nextStatus,
           denialReason: action === "deny" ? note : "",
           historyJson: appendTradeHistory(existing.historyJson, {
             by: username,
-            action: action === "accept" ? "accepted" : "denied",
+            action: nextStatus,
+            note,
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    if (action === "approve" || action === "admin_deny") {
+      if (!canSeeAllTrades(request.auth)) {
+        response.status(403).json({
+          ok: false,
+          message: "Only a sub admin or above can approve or deny a trade.",
+        });
+        return;
+      }
+      if (existing.status !== "awaiting_admin") {
+        response.status(409).json({ ok: false, message: "This trade is not waiting for approval." });
+        return;
+      }
+      if (action === "admin_deny" && !note) {
+        response.status(400).json({ ok: false, message: "Enter a reason for denying." });
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: action === "approve" ? "accepted" : "admin_denied",
+          denialReason: action === "admin_deny" ? note : "",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: action === "approve" ? "approved" : "admin_denied",
             note,
           }),
         },

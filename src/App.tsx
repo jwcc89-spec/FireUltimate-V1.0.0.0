@@ -315,6 +315,7 @@ type DepartmentCollectionKey =
   | "shiftInformation"
   | "additionalFields"
   | "overtimeSetup"
+  | "tradesSetup"
   | "personnel"
   | "schedulerPersonnel"
   | "personnelQualifications"
@@ -910,6 +911,12 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
     key: "overtimeSetup",
     label: "Overtime Setup",
     editButtonLabel: "Edit Overtime Setup",
+    helperText: "",
+  },
+  {
+    key: "tradesSetup",
+    label: "Trades",
+    editButtonLabel: "Edit Trades",
     helperText: "",
   },
   {
@@ -6712,6 +6719,15 @@ function DepartmentDetailsPage({
   const [overtimeSummaryTarget, setOvertimeSummaryTarget] = useState<"info" | "trades">(
     initialDepartmentDraft.overtimeSummaryTarget === "trades" ? "trades" : "info",
   );
+  const [tradeAdminApproval, setTradeAdminApproval] = useState(
+    initialDepartmentDraft.tradeAdminApproval === true,
+  );
+  const [tradePaybackRequired, setTradePaybackRequired] = useState(
+    initialDepartmentDraft.tradePaybackRequired === true,
+  );
+  const [tradeCancelApproval, setTradeCancelApproval] = useState(
+    initialDepartmentDraft.tradeCancelApproval === true,
+  );
   const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
     normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
   );
@@ -7457,6 +7473,7 @@ function DepartmentDetailsPage({
     "shiftInformation",
     "additionalFields",
     "overtimeSetup",
+    "tradesSetup",
     "personnelQualifications",
     "schedulerApparatus",
     "schedulerPersonnel",
@@ -7595,6 +7612,7 @@ function DepartmentDetailsPage({
   const isShiftEditor = activeCollectionEditor === "shiftInformation";
   const isAdditionalFieldsEditor = activeCollectionEditor === "additionalFields";
   const isOvertimeSetupEditor = activeCollectionEditor === "overtimeSetup";
+  const isTradesSetupEditor = activeCollectionEditor === "tradesSetup";
   const isQualificationsEditor = activeCollectionEditor === "personnelQualifications";
   const isKellyRotationEditor = activeCollectionEditor === "kellyRotation";
   const isUserTypeEditor = activeCollectionEditor === "userType";
@@ -7873,6 +7891,9 @@ function DepartmentDetailsPage({
         setAllowScheduledOvertime(d.allowScheduledOvertime === false ? false : true);
         setSegmentSummaryTarget(d.segmentSummaryTarget === "trades" ? "trades" : "info");
         setOvertimeSummaryTarget(d.overtimeSummaryTarget === "trades" ? "trades" : "info");
+        setTradeAdminApproval(d.tradeAdminApproval === true);
+        setTradePaybackRequired(d.tradePaybackRequired === true);
+        setTradeCancelApproval(d.tradeCancelApproval === true);
         setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
@@ -9091,6 +9112,9 @@ function DepartmentDetailsPage({
       allowScheduledOvertime,
       segmentSummaryTarget,
       overtimeSummaryTarget,
+      tradeAdminApproval,
+      tradePaybackRequired,
+      tradeCancelApproval,
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
@@ -9139,6 +9163,9 @@ function DepartmentDetailsPage({
     allowScheduledOvertime,
     segmentSummaryTarget,
     overtimeSummaryTarget,
+    tradeAdminApproval,
+    tradePaybackRequired,
+    tradeCancelApproval,
     personnelQualifications,
     personnelQualificationColors,
     personnelRecords,
@@ -9583,6 +9610,8 @@ function DepartmentDetailsPage({
                       ? `Total Additional Fields: ${additionalFieldRecords.length}`
                       : definition.key === "overtimeSetup"
                       ? `Standard Overtime Slot: ${standardOvertimeSlot} hour(s)`
+                      : definition.key === "tradesSetup"
+                      ? `Admin approval: ${tradeAdminApproval ? "On" : "Off"} · Payback starts ${tradePaybackRequired ? "required" : "not required"} · Cancel approval: ${tradeCancelApproval ? "On" : "Off"}`
                       : definition.key === "schedulerApparatus"
                       ? `Total Apparatus: ${schedulerApparatusRecords.length}`
                       : definition.key === "schedulerPersonnel"
@@ -11158,6 +11187,55 @@ function DepartmentDetailsPage({
                   >
                     Save
                   </button>
+                </div>
+              </>
+            ) : null}
+
+            {isTradesSetupEditor ? (
+              <>
+                <div className="trades-settings-fields">
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={tradeAdminApproval}
+                      onChange={(event) => {
+                        setTradeAdminApproval(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Admin approval for trades
+                  </label>
+                  <p className="field-hint">
+                    When this is on, the other person still has to accept. A sub admin, admin, or super admin must approve before the trade is final.
+                  </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={tradePaybackRequired}
+                      onChange={(event) => {
+                        setTradePaybackRequired(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Payback required
+                  </label>
+                  <p className="field-hint">
+                    New trade requests start with Payback required checked. The person sending the request can still turn it off for one request.
+                  </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={tradeCancelApproval}
+                      onChange={(event) => {
+                        setTradeCancelApproval(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Require approval before cancelling a trade
+                  </label>
+                  <p className="field-hint">
+                    When this is on, cancelling an accepted trade needs an administrator's approval before the schedule goes back.
+                  </p>
                 </div>
               </>
             ) : null}

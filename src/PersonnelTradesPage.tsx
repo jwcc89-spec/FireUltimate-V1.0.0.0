@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
 
-type TradeStatus = "requested" | "accepted" | "denied";
+type TradeStatus = "requested" | "awaiting_admin" | "accepted" | "denied" | "admin_denied";
 
 interface TradeRecord {
   id: string;
@@ -51,9 +51,72 @@ function normalizeTime24(value: string): string {
 
 function statusLabel(trade: TradeRecord): string {
   if (trade.status === "requested") return `Waiting on ${trade.counterpartName}`;
+  if (trade.status === "awaiting_admin") return "Waiting for admin approval";
   if (trade.status === "accepted") return "Accepted";
   if (trade.status === "denied") return "Denied";
+  if (trade.status === "admin_denied") return "Denied by admin";
   return trade.status;
+}
+
+function formatScheduledDate(iso: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!match) return iso;
+  const date = new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+  return date.toLocaleDateString("en-US", {
+    weekday: "short",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function namesInSlot(value: unknown): string[] {
+  if (typeof value === "string") {
+    return value
+      .split("||OT||")
+      .map((entry) => entry.trim())
+      .filter(Boolean);
+  }
+  if (Array.isArray(value)) return value.flatMap((entry) => namesInSlot(entry));
+  return [];
+}
+
+function segmentNames(value: unknown): string[] {
+  if (!value || typeof value !== "object") return [];
+  if (Array.isArray(value)) return value.flatMap((entry) => segmentNames(entry));
+  const record = value as Record<string, unknown>;
+  const own = typeof record.personnelName === "string" ? [record.personnelName.trim()] : [];
+  return [...own, ...Object.values(record).flatMap((entry) => segmentNames(entry))];
+}
+
+/** Dates this person is placed on a truck or a split piece. Support rows such as Injury are skipped. */
+function scheduledDatesForPerson(
+  personName: string,
+  assignments: Record<string, unknown>,
+  slotSegments: Record<string, unknown>,
+): string[] {
+  const target = personName.trim().toLowerCase();
+  if (!target) return [];
+  const dates = new Set<string>();
+  const addStorageKey = (storageKey: string) => {
+    const dateKey = storageKey.split("::")[1] ?? "";
+    if (/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) dates.add(dateKey);
+  };
+  for (const [storageKey, day] of Object.entries(assignments)) {
+    if (!day || typeof day !== "object") continue;
+    for (const [unitId, slots] of Object.entries(day as Record<string, unknown>)) {
+      if (unitId.startsWith("support-")) continue;
+      if (namesInSlot(slots).some((name) => name.toLowerCase() === target)) addStorageKey(storageKey);
+    }
+  }
+  for (const [storageKey, day] of Object.entries(slotSegments)) {
+    if (!day || typeof day !== "object") continue;
+    for (const [unitId, rows] of Object.entries(day as Record<string, unknown>)) {
+      if (unitId.startsWith("support-")) continue;
+      if (segmentNames(rows).some((name) => name.toLowerCase() === target)) addStorageKey(storageKey);
+    }
+  }
+  return [...dates].sort();
 }
 
 export function PersonnelTradesPage() {
@@ -62,6 +125,13 @@ export function PersonnelTradesPage() {
   const [username, setUsername] = useState("");
   const [myName, setMyName] = useState("");
   const [roster, setRoster] = useState<RosterEntry[]>([]);
+  const [scheduledDates, setScheduledDates] = useState<string[]>([]);
+  const [tradeSettings, setTradeSettings] = useState({
+    adminApproval: false,
+    paybackRequired: false,
+    cancelApproval: false,
+  });
+  const paybackDefaultApplied = useRef(false);
   const [filter, setFilter] = useState(ALL_TRADES_FILTER);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [denyReasons, setDenyReasons] = useState<Record<string, string>>({});
@@ -80,26 +150,36 @@ export function PersonnelTradesPage() {
     } | null;
     if (!response.ok || !json?.ok) {
       setNotice(json?.message || "Trades could not be loaded.");
-      return;
+      return "";
     }
     setTrades(Array.isArray(json.trades) ? json.trades : []);
     setCanSeeAll(json.canSeeAll === true);
     setUsername(String(json.username ?? ""));
     setMyName(String(json.name ?? ""));
+    return String(json.name ?? "");
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      await loadTrades();
-      const response = await fetch("/api/department-details");
-      const json = (await response.json().catch(() => null)) as {
+      const personName = await loadTrades();
+      const [detailsResponse, scheduleResponse] = await Promise.all([
+        fetch("/api/department-details"),
+        fetch("/api/schedule-assignments"),
+      ]);
+      const json = (await detailsResponse.json().catch(() => null)) as {
         ok?: boolean;
-        data?: { schedulerPersonnelRecords?: unknown };
+        data?: Record<string, unknown>;
       } | null;
-      if (cancelled || !json?.ok) return;
-      const records = Array.isArray(json.data?.schedulerPersonnelRecords)
-        ? (json.data.schedulerPersonnelRecords as Array<Record<string, unknown>>)
+      const scheduleJson = (await scheduleResponse.json().catch(() => null)) as {
+        ok?: boolean;
+        assignments?: Record<string, unknown>;
+        slotSegments?: Record<string, unknown>;
+      } | null;
+      if (cancelled || !json?.ok || !json.data) return;
+      const data = json.data;
+      const records = Array.isArray(data.schedulerPersonnelRecords)
+        ? (data.schedulerPersonnelRecords as Array<Record<string, unknown>>)
         : [];
       setRoster(
         records
@@ -110,6 +190,25 @@ export function PersonnelTradesPage() {
           .filter((entry) => entry.name)
           .sort((a, b) => a.name.localeCompare(b.name)),
       );
+      const nextSettings = {
+        adminApproval: data.tradeAdminApproval === true,
+        paybackRequired: data.tradePaybackRequired === true,
+        cancelApproval: data.tradeCancelApproval === true,
+      };
+      setTradeSettings(nextSettings);
+      if (!paybackDefaultApplied.current) {
+        paybackDefaultApplied.current = true;
+        setDraft((prev) => ({ ...prev, paybackRequired: nextSettings.paybackRequired }));
+      }
+      if (!cancelled && scheduleJson?.ok) {
+        setScheduledDates(
+          scheduledDatesForPerson(
+            personName ?? "",
+            scheduleJson.assignments ?? {},
+            scheduleJson.slotSegments ?? {},
+          ),
+        );
+      }
     })();
     return () => {
       cancelled = true;
@@ -164,7 +263,7 @@ export function PersonnelTradesPage() {
         setNotice(json?.message || "The trade request could not be sent.");
         return;
       }
-      setDraft(EMPTY_DRAFT);
+      setDraft({ ...EMPTY_DRAFT, paybackRequired: tradeSettings.paybackRequired });
       await loadTrades();
       setNotice(`Trade request sent to ${draft.counterpartName}.`);
     } finally {
@@ -172,9 +271,12 @@ export function PersonnelTradesPage() {
     }
   };
 
-  const answerTrade = async (trade: TradeRecord, action: "accept" | "deny") => {
+  const answerTrade = async (
+    trade: TradeRecord,
+    action: "accept" | "deny" | "approve" | "admin_deny",
+  ) => {
     const denialReason = (denyReasons[trade.id] ?? "").trim();
-    if (action === "deny" && !denialReason) {
+    if ((action === "deny" || action === "admin_deny") && !denialReason) {
       setNotice("Enter a reason before denying.");
       return;
     }
@@ -224,6 +326,22 @@ export function PersonnelTradesPage() {
               value={draft.tradeDate}
               onChange={(event) => setDraft((prev) => ({ ...prev, tradeDate: event.target.value }))}
             />
+          </label>
+          <label>
+            Or pick a day you are scheduled
+            <select
+              value={scheduledDates.includes(draft.tradeDate) ? draft.tradeDate : ""}
+              onChange={(event) => setDraft((prev) => ({ ...prev, tradeDate: event.target.value }))}
+            >
+              <option value="">
+                {scheduledDates.length === 0 ? "No scheduled days yet" : "Choose a scheduled day"}
+              </option>
+              {scheduledDates.map((date) => (
+                <option key={date} value={date}>
+                  {formatScheduledDate(date)}
+                </option>
+              ))}
+            </select>
           </label>
           <label>
             Start Time
@@ -285,6 +403,19 @@ export function PersonnelTradesPage() {
             />
           </label>
         </div>
+        <p className="field-hint">
+          Pick a day you are already scheduled, or type any date. Times use 24-hour format, such as 08:00.
+        </p>
+        {tradeSettings.adminApproval ? (
+          <p className="field-hint">
+            This department requires an administrator to approve a trade after the other person accepts.
+          </p>
+        ) : null}
+        {tradeSettings.cancelApproval ? (
+          <p className="field-hint">
+            Cancelling an accepted trade requires an administrator's approval before the schedule is changed back.
+          </p>
+        ) : null}
         <button
           type="button"
           className="primary-button compact-button"
@@ -369,7 +500,32 @@ export function PersonnelTradesPage() {
                               Deny
                             </button>
                           </div>
-                        ) : trade.status === "denied" ? (
+                        ) : trade.status === "awaiting_admin" && canSeeAll ? (
+                          <div className="trades-action-cell">
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void answerTrade(trade, "approve")}
+                            >
+                              Approve
+                            </button>
+                            <input
+                              type="text"
+                              placeholder="Reason to deny"
+                              value={denyReasons[trade.id] ?? ""}
+                              onChange={(event) =>
+                                setDenyReasons((prev) => ({ ...prev, [trade.id]: event.target.value }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() => void answerTrade(trade, "admin_deny")}
+                            >
+                              Deny
+                            </button>
+                          </div>
+                        ) : trade.status === "denied" || trade.status === "admin_denied" ? (
                           trade.denialReason || "—"
                         ) : (
                           "—"

@@ -2763,6 +2763,16 @@ tbody tr:last-of-type td {
   width: 10rem;
 }
 
+.trades-settings-fields {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 40rem;
+}
+
+.trades-settings-fields .field-hint {
+  margin: 0 0 0.65rem 1.5rem;
+}
+
 .department-field-disabled input,
 .department-field-disabled select {
   background-color: #f1f5f9;
