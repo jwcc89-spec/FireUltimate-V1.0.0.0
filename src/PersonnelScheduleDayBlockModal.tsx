@@ -43,7 +43,12 @@ interface PersonnelScheduleDayBlockModalProps {
   personnelQualificationOrder: string[];
   personnelQualificationColors: Record<string, string>;
   effectiveShift: string;
-  getAssignmentsForDay: (dateKey: string, unitId: string, slotCount: number) => string[];
+  getAssignmentsForDay: (
+    dateKey: string,
+    unitId: string,
+    slotCount: number,
+    keepExtraSlots?: boolean,
+  ) => string[];
   assignPersonToSlot: (dateKey: string, unitId: string, slotIndex: number, personName: string) => void;
   clearSlotValue: (dateKey: string, unitId: string, slotIndex: number) => void;
   updateTextSlotValue: (dateKey: string, unitId: string, slotIndex: number, textValue: string) => void;
@@ -619,7 +624,12 @@ export function PersonnelScheduleDayBlockModal({
               Previous action: {lastScheduleAction}
             </p>
             {scheduleRows.map((row) => {
-              const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+              const slots = getAssignmentsForDay(
+                dateKey,
+                row.unitId,
+                row.slotCount,
+                row.id === "support-info",
+              );
               const coverageLines =
                 row.id === "support-info"
                   ? formatSegmentCoverageLines(
@@ -979,6 +989,17 @@ export function PersonnelScheduleDayBlockModal({
                       );
                     })}
                   </div>
+                  {row.id === "support-info" ? (
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() =>
+                        updateTextSlotValue(dateKey, row.unitId, slots.length, "")
+                      }
+                    >
+                      Add info
+                    </button>
+                  ) : null}
                 </div>
               );
             })}

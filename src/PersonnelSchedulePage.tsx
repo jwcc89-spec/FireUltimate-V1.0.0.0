@@ -38,12 +38,41 @@ import {
   getDatesForMonth,
   getRecurrenceIntervalDays,
   getShiftStartOffsetDays,
+  personCanJoinApparatus,
   reorderAssignedByRequirementCoverage,
   requirementsSatisfiedByAssignedPersonnel,
   isPersonnelSchedulerRecordComplete,
   toDateKey,
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
+
+function assignmentsPreservingNames(
+  ordered: string[],
+  previous: string[],
+  slotCount: number,
+): string[] {
+  const placed = [...ordered];
+  while (placed.length < slotCount) placed.push("");
+  const fitted = placed.slice(0, slotCount);
+  const kept = new Set(
+    fitted.flatMap((slotValue) =>
+      parseAssignedNames(slotValue)
+        .map((name) => name.trim())
+        .filter((name) => name.length > 0),
+    ),
+  );
+  const previousNames = previous.flatMap((slotValue) =>
+    parseAssignedNames(slotValue)
+      .map((name) => name.trim())
+      .filter((name) => name.length > 0),
+  );
+  if (previousNames.some((name) => !kept.has(name))) {
+    const restored = [...previous];
+    while (restored.length < slotCount) restored.push("");
+    return restored.slice(0, slotCount);
+  }
+  return fitted;
+}
 
 function schedulesIntervalOverlap(
   aStart: number,
@@ -598,7 +627,7 @@ export function PersonnelSchedulePage({
   );
 
   const getAssignmentsForDay = useCallback(
-    (dateKey: string, unitId: string, slotCount: number): string[] => {
+    (dateKey: string, unitId: string, slotCount: number, keepExtraSlots = false): string[] => {
       const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
       const dayData = scheduleAssignments[storageDateKey];
       const unitSlots = dayData?.[unitId];
@@ -629,7 +658,7 @@ export function PersonnelSchedulePage({
         }
       }
       while (result.length < slotCount) result.push("");
-      return result.slice(0, slotCount);
+      return keepExtraSlots ? result : result.slice(0, slotCount);
     },
     [
       scheduleAssignments,
@@ -970,8 +999,58 @@ export function PersonnelSchedulePage({
           }
         }
         const withoutDuplicates = existingNames.filter((name) => name !== personName);
-        const nextNames = [...withoutDuplicates, personName].slice(0, maxNamesInSlot);
-        unitSlots[slotIndex] = serializeAssignedNames(nextNames);
+        let writeIndex = slotIndex;
+        if (
+          isTargetApparatusRow &&
+          targetRow &&
+          !targetOvertimeEnabled &&
+          targetRow.minimumPersonnel > 0
+        ) {
+          const currentNames = Array.from(
+            new Set(
+              unitSlots
+                .flatMap((slotValue) => parseAssignedNames(slotValue))
+                .map((name) => name.trim())
+                .filter((name) => name.length > 0),
+            ),
+          );
+          if (!currentNames.includes(personName)) {
+            const canJoin = personCanJoinApparatus(
+              personName,
+              targetRow.requiredQualifications,
+              targetRow.minimumPersonnel,
+              currentNames,
+              personnelByName,
+              qualificationRankMap,
+            );
+            if (!canJoin) {
+              blockedAssignmentReason = "You do not meet the minimum qualifications.";
+              return prev;
+            }
+            if (currentNames.length >= targetRow.slotCount) {
+              blockedAssignmentReason = `Cannot assign ${personName}: there is no open seat.`;
+              return prev;
+            }
+          }
+          if (withoutDuplicates.length > 0) {
+            let emptyIndex = unitSlots.findIndex((slotValue) =>
+              parseAssignedNames(slotValue).every((name) => name.trim().length === 0),
+            );
+            if (emptyIndex < 0 && unitSlots.length < targetRow.slotCount) {
+              emptyIndex = unitSlots.length;
+            }
+            if (emptyIndex < 0) {
+              blockedAssignmentReason = `Cannot assign ${personName}: there is no open seat.`;
+              return prev;
+            }
+            writeIndex = emptyIndex;
+          }
+        }
+        const nextNames = targetOvertimeEnabled
+          ? [...withoutDuplicates, personName].slice(0, maxNamesInSlot)
+          : [personName];
+        while (unitSlots.length <= writeIndex) unitSlots.push("");
+        unitSlots[writeIndex] = serializeAssignedNames(nextNames);
         if (
           isTargetApparatusRow &&
           targetRow &&
@@ -987,7 +1066,20 @@ export function PersonnelSchedulePage({
           );
           const placed = [...ordered];
           while (placed.length < targetRow.slotCount) placed.push("");
-          dayData[unitId] = placed.slice(0, targetRow.slotCount);
+          const fitted = placed.slice(0, targetRow.slotCount);
+          const keptNames = new Set(
+            fitted.flatMap((slotValue) => parseAssignedNames(slotValue).map((name) => name.trim())),
+          );
+          const lostSomeone = unitSlots.some((slotValue) =>
+            parseAssignedNames(slotValue).some(
+              (name) => name.trim().length > 0 && !keptNames.has(name.trim()),
+            ),
+          );
+          if (lostSomeone) {
+            blockedAssignmentReason = "You do not meet the minimum qualifications.";
+            return prev;
+          }
+          dayData[unitId] = fitted;
         } else {
           dayData[unitId] = unitSlots;
         }
@@ -996,7 +1088,11 @@ export function PersonnelSchedulePage({
         return next;
       });
       if (blockedAssignmentReason) {
-        if (blockedAssignmentReason.includes("already assigned to")) {
+        if (
+          blockedAssignmentReason === "You do not meet the minimum qualifications." ||
+          blockedAssignmentReason.includes("no open seat") ||
+          blockedAssignmentReason.includes("already assigned to")
+        ) {
           window.alert(blockedAssignmentReason);
         }
         setLastScheduleAction(blockedAssignmentReason);
@@ -1401,6 +1497,15 @@ export function PersonnelSchedulePage({
               row.slotCount,
             );
           }
+          if (row.id === "support-info") {
+            dayData[row.unitId] = getAssignmentsForDay(
+              dateKey,
+              row.unitId,
+              row.slotCount,
+              true,
+            );
+            return;
+          }
           const current = getAssignmentsForDay(
             dateKey,
             row.unitId,
@@ -1419,8 +1524,11 @@ export function PersonnelSchedulePage({
             personnelByName,
             qualificationRankMap,
           );
-          while (ordered.length < row.slotCount) ordered.push("");
-          dayData[row.unitId] = ordered.slice(0, row.slotCount);
+          dayData[row.unitId] = assignmentsPreservingNames(
+            ordered,
+            current,
+            row.slotCount,
+          );
         });
         next[storageDateKey] = dayData;
         saveScheduleAssignments(next);
@@ -1464,9 +1572,7 @@ export function PersonnelSchedulePage({
             personnelByName,
             qualificationRankMap,
           );
-          const placed = [...ordered];
-          while (placed.length < row.slotCount) placed.push("");
-          const nextSlots = placed.slice(0, row.slotCount);
+          const nextSlots = assignmentsPreservingNames(ordered, current, row.slotCount);
           if (JSON.stringify(nextSlots) !== JSON.stringify(current)) {
             changed = true;
             day[row.unitId] = nextSlots;
@@ -1733,8 +1839,17 @@ export function PersonnelSchedulePage({
                       row.slotCount,
                     );
                     const assignedNames = slots.filter((name) => name.trim().length > 0);
+                    const infoNotes =
+                      row.id === "support-info"
+                        ? getAssignmentsForDay(dateKey, row.unitId, row.slotCount, true)
+                            .map((value) => value.trim())
+                            .filter((value) => value.length > 0)
+                            .slice(0, row.slotCount)
+                        : [];
                     const displaySlots =
-                      row.rowType === "apparatus"
+                      row.id === "support-info"
+                        ? [""]
+                        : row.rowType === "apparatus"
                         ? (() => {
                             // Keep explicit slot order so reserved/min slots can remain empty when unmet.
                             const visibleSlotCount = Math.max(
@@ -1965,19 +2080,21 @@ export function PersonnelSchedulePage({
                                   });
                                 }}
                               >
-                                {isTextRow ? (
-                                  row.id === "support-info" && slotIdx === 0 && coverageLines.length > 0 ? (
-                                    <div className="personnel-schedule-coverage-info">
-                                      {coverageLines.map((line) => (
-                                        <div
-                                          key={`${line.personnelName}-${line.text}`}
-                                          style={{ color: colorForPersonnelName(line.personnelName) }}
-                                        >
-                                          {line.text}
-                                        </div>
-                                      ))}
-                                    </div>
-                                  ) : (
+                                {row.id === "support-info" ? (
+                                  <div className="personnel-schedule-coverage-info">
+                                    {coverageLines.map((line) => (
+                                      <div
+                                        key={`${line.personnelName}-${line.text}`}
+                                        style={{ color: colorForPersonnelName(line.personnelName) }}
+                                      >
+                                        {line.text}
+                                      </div>
+                                    ))}
+                                    {infoNotes.map((note, noteIndex) => (
+                                      <div key={`${noteIndex}-${note}`}>{note}</div>
+                                    ))}
+                                  </div>
+                                ) : isTextRow ? (
                                   <input
                                     type="text"
                                     maxLength={25}
@@ -1994,7 +2111,6 @@ export function PersonnelSchedulePage({
                                       )
                                     }
                                     />
-                                  )
                                 ) : isActiveInlineSelect ? (
                                   <select
                                     className="personnel-schedule-inline-select"

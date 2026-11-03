@@ -343,3 +343,45 @@ export function reorderAssignedByRequirementCoverage(
   const remaining = sanitizedSlots.filter((slotValue) => !selectedSet.has(slotValue));
   return [...selectedNames, ...remaining];
 }
+
+/** True when this person fills a required seat that is still open. */
+export function personCanJoinApparatus(
+  personName: string,
+  requiredQualifications: string[],
+  minimumPersonnel: number,
+  assignedNames: string[],
+  personnelByName: Map<string, SchedulePersonLike>,
+  qualificationRankMap: Map<string, number>,
+): boolean {
+  const existing = assignedNames
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0 && name !== personName.trim());
+  const ordered = reorderAssignedByRequirementCoverage(
+    requiredQualifications,
+    minimumPersonnel,
+    existing,
+    personnelByName,
+    qualificationRankMap,
+  );
+  const required = requiredQualifications.slice(0, minimumPersonnel);
+  const unmetRanks: number[] = [];
+  for (let index = 0; index < required.length; index += 1) {
+    const qualification = required[index]?.trim() ?? "";
+    if (!qualification) continue;
+    const occupant = (ordered[index] ?? "").trim();
+    const requiredRank =
+      qualificationRankMap.get(qualification) ?? Number.POSITIVE_INFINITY;
+    const occupantRank = occupant
+      ? getBestQualificationRankForPerson(personnelByName.get(occupant), qualificationRankMap)
+      : Number.POSITIVE_INFINITY;
+    if (!(occupantRank <= requiredRank)) {
+      unmetRanks.push(requiredRank);
+    }
+  }
+  if (unmetRanks.length === 0) return true;
+  const personRank = getBestQualificationRankForPerson(
+    personnelByName.get(personName.trim()),
+    qualificationRankMap,
+  );
+  return unmetRanks.some((requiredRank) => personRank <= requiredRank);
+}

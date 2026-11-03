@@ -10842,7 +10842,7 @@ function DepartmentDetailsPage({
                         numberOfSlots: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
                       }))
                     }
-                    placeholder="Number of Slots"
+                    placeholder={additionalFieldDraft.valueMode === "text" ? "Shown on schedule" : "Number of Slots"}
                   />
                   <select
                     value={additionalFieldDraft.valueMode}
@@ -10903,7 +10903,8 @@ function DepartmentDetailsPage({
                   </button>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                  `Text` behaves like the Info row. `Personnel` allows slot assignments in Personnel Schedule.
+                  Text behaves like the Info row. Personnel allows slot assignments in Personnel Schedule.
+                  For Info, the number is how many notes show on the schedule. Open a day to add more notes than that.
                 </p>
                 <div className="department-qualifications-list-wrapper">
                   <div className="table-wrapper">
