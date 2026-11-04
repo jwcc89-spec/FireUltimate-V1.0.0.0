@@ -79,7 +79,7 @@ const stages: StageDef[] = [
   },
   {
     id: "D", name: "Stage D — Trades between members",
-    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 13 are built. An accepted trade splits the schedule. Cancelling it puts both days back. The click-test is open.",
+    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 13 passed the local click-test. An accepted trade splits the schedule. Cancelling it puts both days back.",
     steps: [
       { n: "8", title: "Give trades a shared home on the server", status: "Done",
         problem: "Trades were saved only in the browser of the person who typed them. Landon never saw a request from Josh, and admins saw nothing.",
@@ -90,7 +90,7 @@ const stages: StageDef[] = [
       { n: "9", title: "Add a Trades screen to Scheduler Settings", status: "Done",
         problem: "Departments handle trades differently. Career crews pay trades back. On-call crews may just cover hours.",
         why: "Each department needs to set its own rules without code changes.",
-        fix: "November 3: Admin Functions → Scheduler Settings → Trades has three checkboxes, all starting off. Admin approval for trades makes an accepted trade wait for a sub admin, admin, or super admin. Payback required is the starting value of the checkbox on a new request, and the sender can still change it. Require approval before cancelling a trade is saved and shown on the Trades page. Cancelling itself is Step 13. Accepting still does not change the schedule. That is Step 12.",
+        fix: "November 3: Admin Functions → Scheduler Settings → Trades has three checkboxes, all starting off. Admin approval for trades makes an accepted trade wait for a sub admin, admin, or super admin. Payback required is the starting value of the checkbox on a new request, and the sender can still change it. Require approval before cancelling a trade makes a cancellation wait for a sub admin or above (Step 13).",
         who: "Me.",
         done: "Completed: an admin can turn the three settings on, another account sees them, an accepted trade waits for admin approval, and turning approval off lets the other person finish it." },
       { n: "10", title: "Rebuild the New Trade Request form", status: "Done",
@@ -104,19 +104,19 @@ const stages: StageDef[] = [
         why: "An accepted trade must never leave a seat unqualified.",
         fix: "November 3: Submit Trade Request is refused, and nothing is saved, when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. A person in a lower seat can move up when their qualification covers the seat being given up, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. The notice is the same centered message used on the schedule. Chief on Call does not block. The payback day is checked when the trade is accepted.",
         who: "Me.",
-        done: "Completed in code. Done for you when a bad request shows the reason and does not appear in Active Requests, and a good request still sends." },
+        done: "Passed: a bad request shows the reason and is not saved, a good request still sends, and a paramedic in the lower seat can move up." },
       { n: "12", title: "Accept, deny, approve, and put the trade on the schedule", status: "Done",
         problem: "The current Accept and Approve buttons only change a label. The schedule never changes.",
         why: "Accepted trades should appear on the schedule with no manual editing.",
         fix: "November 3: Accept puts the trade on the schedule when admin approval is off. When admin approval is on, the schedule changes only after Approve. Deny does not change the schedule. For 11/5 08:00–10:00, the other person covers 08:00–10:00 and the requester keeps 10:00–20:00. If someone already works the whole shift and can fill the higher seat, that person moves there for the entire shift and that seat is not split. Only the hours that still change people are listed on Trades. Payback uses the same rule. The previous day is saved so Step 13 can put it back.",
         who: "Me.",
-        done: "Completed in code. Done for you when Accept splits November 5 and, if payback is on, the payback day shows Josh." },
+        done: "Passed November 4: Accept splits November 5, Lance stays in the top seat all day, and only Kenny then Josh are split in the lower seat." },
       { n: "13", title: "Cancel a trade and put the schedule back", status: "Done",
         problem: "There is no way to undo a trade.",
         why: "Plans change, and the schedule must return to how it was.",
         fix: "November 4: Either person clicks Cancel Requested Trade on an accepted trade. The other person clicks Accept Cancellation. If Require approval before cancelling a trade is on, a sub admin or above must Approve Cancellation before the schedule changes. Then both the trade day and any payback day go back to the saved previous day. Keep Trade, or an admin Deny, leaves the schedule as it is and the trade stays Accepted.",
         who: "Me.",
-        done: "Completed in code. Done for you when cancelling the 11/5 example restores Josh 08:00–20:00 and Lance in the lower seat, and the Trades lines are gone." },
+        done: "Passed November 4: cancelling the 11/5 example restores Josh 08:00–20:00 and Lance in the lower seat, and the Trades lines are gone." },
     ],
   },
 ];
@@ -153,7 +153,7 @@ const decided = [
   ["November 3, 2026", "Cancelling a trade", "Either person clicks Cancel Requested Trade. The other person accepts the cancellation, then the schedule goes back to how it was. A Trades setting can also require admin approval before cancelling."],
   ["November 3, 2026", "Who sees trades", "Members see only trades they are part of. Sub Admin, Admin, and Super Admin see every trade, and Active Requests lets them show All trades, My trades, or one shift."],
   ["November 3, 2026", "Where trades are saved", "A new trades table in the database, one row per request. You approved the structure change. It is on the local test database only. Staging and production get it when this branch is released."],
-  ["November 3, 2026", "Trade settings", "Scheduler Settings → Trades has Admin approval, Payback required, and Require approval before cancelling. All start off. Payback required is the starting value on a new request, and the sender can change it. Admin approval makes the trade wait for a sub admin or above. The schedule still does not change until Step 12."],
+  ["November 3, 2026", "Trade settings", "Scheduler Settings → Trades has Admin approval, Payback required, and Require approval before cancelling. All start off. Payback required is the starting value on a new request, and the sender can change it. Admin approval makes the trade wait for a sub admin or above. Cancel approval does the same for a cancellation."],
   ["November 3, 2026", "Trade send check", "A request is refused before it is saved when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. Someone in a lower seat can move into a higher seat when they hold that qualification, and the new person must meet the seat that opens. A higher qualification can cover a lower seat. The payback day is not checked until Step 12."],
 ];
 
@@ -205,7 +205,7 @@ function StartHere() {
         rows={[
           ["Web address", "http://localhost:5173"],
           ["Username", "admin"],
-          ["Password", "Weekday#2026 (throwaway, this Mac only)"],
+          ["Password", "The one you set. It is not written in this plan."],
         ]}
       />
     </Stack>
@@ -247,7 +247,7 @@ function Safety() {
           ["No database structure changes without approval", "Weekday settings should fit in the existing shift settings. Ask first if a change to the database structure seems needed. The trades table was approved on November 3 and is applied only to the local test database."],
           ["Trades change one day at a time", "Accepting or cancelling a trade changes only the days in that trade, never the rest of the schedule."],
           ["Staging after local", "Nothing goes to watsekademo.staging.fireultimate.app until the local test passes and you approve the push, under the repair plan's Data safety rules."],
-          ["No secrets in chat", "The local test password is throwaway. Never share staging or production passwords or database addresses."],
+          ["No secrets in chat or in this plan", "Never share staging or production passwords or database addresses. The local admin password is not written here."],
         ]}
         striped
       />
@@ -276,7 +276,7 @@ export default function Plan() {
   const theme = useHostTheme();
   const tabs = ["Start here", "Findings", "Stage A", "Stage B", "Stage C", "Stage D", "Decisions", "Data safety", "Parked & future"] as const;
   type T = typeof tabs[number];
-  const [tab, setTab] = useState<T>("Stage D");
+  const [tab, setTab] = useState<T>("Stage B");
   const stageFor: Record<string, string> = { "Stage A": "A", "Stage B": "B", "Stage C": "C", "Stage D": "D" };
   const st = stages.find((s) => s.id === stageFor[tab]);
   return (

@@ -16,6 +16,7 @@
 ## Current focus
 - Weekday 12-hour schedule test for one paid-on-call shift, Monday–Friday, 08:00–20:00. The shift saved in the test department is named `8a-8p` and its recurrence is still Daily, so Saturday and Sunday still appear. Weekday-only recurrence is plan Step 3 and is not built.
 - Personnel → Trades, plan Stage D. Steps 8 through 13 passed the click-test. The next build is plan Step 3, selected weekdays. Do not start it until the user approves the wording and layout.
+- Shared plan link (November 4): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/07bcb2d0-f8d5-448e-9b16-a5473b749ecc (canvas id `07bcb2d0-f8d5-448e-9b16-a5473b749ecc`). When the repo copy changes, republish to that same canvas id. Do not put passwords in it.
 - Plan, live for the user in Cursor: the canvas `weekday-schedule-test-plan`. Repo copy is the source of truth: `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx`. After every plan change, copy that file to the live canvas path and commit both. Live path on this Mac: `/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/weekday-schedule-test-plan.canvas.tsx`.
 - Latest session note: `agent-handoffs/branches/cursor--watseka-scheduling-plan/sessions/2026-11-03-session.md`
 - Earlier the same day: `sessions/2026-11-03-local-test-setup.md` covers creating the throwaway database. Trust this file over that note's "Step 2 is next" status. Its password line is stale.
