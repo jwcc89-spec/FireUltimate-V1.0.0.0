@@ -56,7 +56,9 @@
 - Times are typed in 24-hour form. `8` or `0800` becomes `08:00`.
 
 ## Current blocker / status
-- Step 13 click-test passed on November 4, 2026. The user asked to hear Step 3 before any code. Do not start it until they approve the wording and layout.
+- November 4, 11:45 a.m.: Steps 5 and 6 are closed by the user (overtime length is the Overtime Setup setting; Stage D tests covered the re-test). Step 3 goes under Recurrence → Custom. Stage E, Steps 14–19, was added from the user's notes: Department Apparatus window width, view-only schedule without Edit the schedule (`schedule.edit` already blocks the save on the server; trades use `/api/trades` and must keep working), per-seat qualifications in Scheduler Apparatus, Request Admin Permission override, Trades form cleanup, and Select Scheduled Day listing roster days (today it lists only days saved on the server).
+- Open questions are in the canvas Decisions → Still open. Steps 14, 16, 18, and 19 have no blocking question. Step 17 may need a new table; ask before any Prisma change.
+- Step 13 click-test passed on November 4, 2026.
 
 ## Now vs later
 - **Now:** explain Step 3 and wait for approval. The proposed control is a Selected weekdays choice with Monday–Sunday checkboxes, saved in the existing shift settings. The calendar shows only the checked days. A shift that does not use it keeps today's days, including a 24/48 rotation.
