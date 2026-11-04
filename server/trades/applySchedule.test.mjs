@@ -60,16 +60,15 @@ test("accepting a trade splits the day and lets a paramedic move up", () => {
     },
   });
   assert.equal(result.ok, true);
-  assert.deepEqual(segments(result, "2026-11-05", 0), [
-    { name: "Lance Keller", start: 8 * 60, end: 10 * 60, source: "trade" },
-    { name: "Joshua Wichtner", start: 10 * 60, end: 20 * 60, source: "trade" },
-  ]);
+  const saved = result.rows[0].assignmentsJson;
+  assert.equal(saved.assignments.Ambulance[0], "Lance Keller");
+  assert.deepEqual(saved.slotSegments.Ambulance[0], []);
+  assert.equal(saved.overtimeSplit.Ambulance[0], false);
   assert.deepEqual(segments(result, "2026-11-05", 1), [
     { name: "Kenny Baier", start: 8 * 60, end: 10 * 60, source: "trade" },
-    { name: "Lance Keller", start: 10 * 60, end: 20 * 60, source: "trade" },
+    { name: "Joshua Wichtner", start: 10 * 60, end: 20 * 60, source: "trade" },
   ]);
-  assert.equal(result.rows[0].assignmentsJson.overtimeSplit.Ambulance[0], true);
-  assert.equal(result.rows[0].assignmentsJson.overtimeSplit.Ambulance[1], true);
+  assert.equal(saved.overtimeSplit.Ambulance[1], true);
   assert.deepEqual(result.scheduleChange.rows[0].assignmentsJson.assignments.Ambulance, [
     "Joshua Wichtner",
     "Lance Keller",

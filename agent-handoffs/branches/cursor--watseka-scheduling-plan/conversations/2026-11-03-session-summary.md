@@ -37,7 +37,7 @@ Pull the latest branch, restart the local API, and refresh http://localhost:5173
 
 1. Sign in as wicj. Put Joshua in the top paramedic seat and Lance in the lower seat on November 5. Personnel → Trades. Submit 08:00–10:00 with Kenny, payback off.
 2. Sign in as Kenny's account. Personnel → Trades. Click Accept. The status becomes Accepted.
-3. Open Personnel → Schedule for November 5. From 08:00–10:00 Lance is in the paramedic seat and Kenny is in the lower seat. From 10:00–20:00 Joshua is back in the paramedic seat and Lance is back in the lower seat. The Trades row lists the pieces, such as `KELL: 8A-10A` and `WICJ: 10A-8P`.
+3. Open Personnel → Schedule for November 5. Lance stays in the paramedic seat for the whole shift, with no time split on that seat. The lower seat is Kenny from 08:00–10:00 and Joshua from 10:00–20:00. The Trades row lists those two pieces, such as `BAIK: 8A-10A` and `WICJ: 10A-8P`. Lance does not get a timed line.
 4. Send a second trade with Payback required on, payback date a day Landon is scheduled, same hours. After Accept, that payback day shows Joshua in Landon's seat for 08:00–10:00 and Landon keeps the rest.
 5. Put Joshua on Injury on a payback day and try to accept a trade that uses that date. The centered message starts with `On the payback date,` and the schedule does not change.
 

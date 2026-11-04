@@ -1,7 +1,8 @@
 /**
  * Step 12: when a trade is accepted, split the schedule.
- * The other person covers the requested hours. Someone already on that truck can move
- * into a higher seat when they hold that qualification. The payback day swaps the same hours.
+ * The other person covers the requested hours. Someone who already works the whole shift
+ * and can fill a higher seat moves there for the entire shift, so that seat is not split.
+ * Only the hours that still change people are split. The payback day uses the same rule.
  * scheduleChangeJson keeps the previous day so a later cancel can put it back.
  */
 
@@ -22,14 +23,6 @@ function overlaps(start, end, otherStart, otherEnd) {
 
 function sameName(left, right) {
   return String(left ?? "").trim().toLowerCase() === String(right ?? "").trim().toLowerCase();
-}
-
-function namesInSlot(value) {
-  if (typeof value !== "string") return [];
-  return value
-    .split("||OT||")
-    .map((entry) => entry.trim())
-    .filter(Boolean);
 }
 
 function unwrap(row) {
@@ -75,76 +68,53 @@ function mergeSegments(segments) {
   return merged;
 }
 
-function baseSegments(slotValue, stored, windowStart, windowEnd) {
-  const real = (Array.isArray(stored) ? stored : []).filter(
-    (segment) =>
-      segment &&
-      segment.assigneeType !== "hire" &&
-      segment.source !== "auto_hire" &&
-      String(segment.personnelName ?? "").trim() &&
-      Number(segment.endMinutes) > Number(segment.startMinutes),
-  );
-  if (real.length > 0) {
-    return real.map((segment) => ({
-      ...segment,
-      personnelName: String(segment.personnelName).trim(),
-      startMinutes: Number(segment.startMinutes),
-      endMinutes: Number(segment.endMinutes),
-    }));
+function mergeIntervals(intervals) {
+  const sorted = intervals.filter((interval) => interval.end > interval.start).sort((left, right) => left.start - right.start);
+  const merged = [];
+  for (const interval of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && interval.start <= last.end) last.end = Math.max(last.end, interval.end);
+    else merged.push({ start: interval.start, end: interval.end });
   }
-  const name = namesInSlot(slotValue)[0] ?? "";
-  if (!name) return [];
-  return [
-    {
-      id: `shift-${name}-${windowStart}`,
-      assigneeType: "personnel",
-      personnelName: name,
-      startMinutes: windowStart,
-      endMinutes: windowEnd,
-      source: "manual",
-      overtime: false,
-    },
-  ];
+  return merged;
 }
 
-function replaceRange(segments, start, end, personName, tradeId) {
+function subtractInterval(intervals, start, end) {
   const next = [];
-  for (const segment of segments) {
-    const hits = segment.endMinutes > start && segment.startMinutes < end;
-    if (!hits) {
-      next.push(segment);
+  for (const interval of intervals) {
+    if (interval.end <= start || interval.start >= end) {
+      next.push(interval);
       continue;
     }
-    if (segment.startMinutes < start) {
-      next.push({
-        ...segment,
-        id: `${tradeId}-before-${segment.startMinutes}`,
-        endMinutes: start,
-        source: "trade",
-        tradeRef: tradeId,
-      });
-    }
-    if (segment.endMinutes > end) {
-      next.push({
-        ...segment,
-        id: `${tradeId}-after-${end}`,
-        startMinutes: end,
-        source: "trade",
-        tradeRef: tradeId,
-      });
+    if (interval.start < start) next.push({ start: interval.start, end: start });
+    if (interval.end > end) next.push({ start: end, end: interval.end });
+  }
+  return next;
+}
+
+function coversWindow(intervals, start, end) {
+  return mergeIntervals(intervals).some((interval) => interval.start <= start && interval.end >= end);
+}
+
+function maxConcurrent(people, windowStart, windowEnd) {
+  const events = [];
+  for (const person of people) {
+    for (const interval of person.intervals) {
+      const start = Math.max(windowStart, interval.start);
+      const end = Math.min(windowEnd, interval.end);
+      if (end <= start) continue;
+      events.push({ time: start, delta: 1 });
+      events.push({ time: end, delta: -1 });
     }
   }
-  next.push({
-    id: `${tradeId}-${personName}-${start}`,
-    assigneeType: "personnel",
-    personnelName: personName,
-    startMinutes: start,
-    endMinutes: end,
-    source: "trade",
-    overtime: false,
-    tradeRef: tradeId,
-  });
-  return mergeSegments(next);
+  events.sort((left, right) => left.time - right.time || left.delta - right.delta);
+  let current = 0;
+  let highest = 0;
+  for (const event of events) {
+    current += event.delta;
+    if (current > highest) highest = current;
+  }
+  return highest;
 }
 
 function coverDay(rows, department, originals, cover) {
@@ -185,71 +155,149 @@ function coverDay(rows, department, originals, cover) {
       { [`${shiftType}::${dateKey}`]: parts.slotSegments },
       department.shiftEntries,
     ).filter((seat) => seat.unitId === unitId);
-    const leaverSlots = [
-      ...new Set(
-        onUnit
-          .filter((seat) => sameName(seat.name, leaverName) && overlaps(tradeStart, tradeEnd, seat.start, seat.end))
-          .map((seat) => seat.slotIndex),
-      ),
-    ];
-    const points = new Set([tradeStart, tradeEnd]);
+    const intervals = new Map();
+    const remember = (name) => {
+      const key = String(name ?? "").trim().toLowerCase();
+      if (!key) return null;
+      if (!intervals.has(key)) intervals.set(key, { name: String(name).trim(), intervals: [] });
+      return intervals.get(key);
+    };
     for (const seat of onUnit) {
-      if (seat.start > tradeStart && seat.start < tradeEnd) points.add(seat.start);
-      if (seat.end > tradeStart && seat.end < tradeEnd) points.add(seat.end);
+      const start = Math.max(windowStart, seat.start);
+      const end = Math.min(windowEnd, seat.end);
+      if (end > start) remember(seat.name).intervals.push({ start, end });
     }
-    const cuts = [...points].sort((left, right) => left - right);
-    const slotSegments = parts.slotSegments;
-    if (!Array.isArray(slotSegments[unitId])) slotSegments[unitId] = [];
-    const assignments = parts.assignments;
-    if (!Array.isArray(assignments[unitId])) assignments[unitId] = [];
-    for (let index = 0; index < cuts.length - 1; index += 1) {
-      const sliceStart = cuts[index];
-      const sliceEnd = cuts[index + 1];
-      const present = onUnit.filter((seat) => overlaps(sliceStart, sliceEnd, seat.start, seat.end));
-      const seatIndexes = new Set(leaverSlots);
-      const people = [];
-      const seen = new Set();
-      const addPerson = (name) => {
-        const key = String(name ?? "").trim().toLowerCase();
-        if (!key || seen.has(key) || sameName(name, leaverName)) return;
-        seen.add(key);
-        people.push(String(name).trim());
+    for (const person of intervals.values()) person.intervals = mergeIntervals(person.intervals);
+    const leaver = [...intervals.values()].find((person) => sameName(person.name, leaverName));
+    if (leaver) {
+      leaver.intervals = subtractInterval(leaver.intervals, tradeStart, tradeEnd);
+      if (leaver.intervals.length === 0) intervals.delete(leaver.name.toLowerCase());
+    }
+    const arriveStart = Math.max(windowStart, tradeStart);
+    const arriveEnd = Math.min(windowEnd, tradeEnd);
+    if (arriveEnd > arriveStart) {
+      const arriver = remember(arriverName);
+      arriver.intervals = mergeIntervals([...arriver.intervals, { start: arriveStart, end: arriveEnd }]);
+    }
+
+    const apparatus = apparatusByLabel.get(unitId);
+    const rankedSeats = [...new Set(onUnit.map((seat) => seat.slotIndex))]
+      .map((slotIndex) => ({
+        slotIndex,
+        rank: seatRank(apparatus, slotIndex, department.rankMap),
+      }))
+      .sort((left, right) => {
+        const leftRank = left.rank === null ? Number.POSITIVE_INFINITY : left.rank;
+        const rightRank = right.rank === null ? Number.POSITIVE_INFINITY : right.rank;
+        return leftRank - rightRank || left.slotIndex - right.slotIndex;
+      });
+    const workers = [...intervals.values()];
+    const fullShift = workers.filter((person) => coversWindow(person.intervals, windowStart, windowEnd));
+    const partial = workers.filter((person) => !coversWindow(person.intervals, windowStart, windowEnd));
+    const originalSeat = (name) => {
+      const found = onUnit.filter((seat) => sameName(seat.name, name));
+      if (found.length === 0) return 999;
+      return Math.min(...found.map((seat) => seat.slotIndex));
+    };
+    fullShift.sort(
+      (left, right) => originalSeat(left.name) - originalSeat(right.name) || left.name.localeCompare(right.name),
+    );
+    const stableCount = Math.min(
+      fullShift.length,
+      Math.max(0, rankedSeats.length - maxConcurrent(partial, windowStart, windowEnd)),
+    );
+    const stableSeats = rankedSeats.slice(0, stableCount);
+    const flexSeats = rankedSeats.slice(stableCount);
+    const stableAssigned =
+      stableSeats.length === 0
+        ? new Map()
+        : assignPeopleToSeats(
+            fullShift.map((person) => person.name),
+            stableSeats,
+            department.personnel,
+            department.rankMap,
+          );
+    if (stableSeats.length > 0 && !stableAssigned) {
+      return {
+        ok: false,
+        message: `Cannot assign ${arriverName}: does not meet required qualification for that segmented slot.`,
       };
-      for (const seat of present) {
-        if (!sameName(seat.name, leaverName)) seatIndexes.add(seat.slotIndex);
-        addPerson(seat.name);
+    }
+
+    const pieces = new Map();
+    for (const [slotIndex, personName] of stableAssigned) {
+      pieces.set(slotIndex, [{ name: personName, start: windowStart, end: windowEnd }]);
+    }
+    if (flexSeats.length > 0) {
+      const points = new Set([windowStart, windowEnd]);
+      for (const person of partial) {
+        for (const interval of person.intervals) {
+          if (interval.start > windowStart && interval.start < windowEnd) points.add(interval.start);
+          if (interval.end > windowStart && interval.end < windowEnd) points.add(interval.end);
+        }
       }
-      addPerson(arriverName);
-      const seats = [...seatIndexes]
-        .sort((left, right) => left - right)
-        .map((slotIndex) => ({
-          slotIndex,
-          rank: seatRank(apparatusByLabel.get(unitId), slotIndex, department.rankMap),
-        }));
-      const assigned = assignPeopleToSeats(people, seats, department.personnel, department.rankMap);
-      if (!assigned) {
-        return {
-          ok: false,
-          message: `Cannot assign ${arriverName}: does not meet required qualification for that segmented slot.`,
-        };
-      }
-      for (const [slotIndex, personName] of assigned) {
-        while (slotSegments[unitId].length <= slotIndex) slotSegments[unitId].push([]);
-        while (assignments[unitId].length <= slotIndex) assignments[unitId].push("");
-        const current = baseSegments(
-          assignments[unitId][slotIndex],
-          slotSegments[unitId][slotIndex],
-          windowStart,
-          windowEnd,
+      const cuts = [...points].sort((left, right) => left - right);
+      for (let index = 0; index < cuts.length - 1; index += 1) {
+        const sliceStart = cuts[index];
+        const sliceEnd = cuts[index + 1];
+        const present = partial.filter((person) =>
+          person.intervals.some((interval) => overlaps(sliceStart, sliceEnd, interval.start, interval.end)),
         );
-        slotSegments[unitId][slotIndex] = replaceRange(current, sliceStart, sliceEnd, personName, tradeId);
-        assignments[unitId][slotIndex] = slotSegments[unitId][slotIndex][0]?.personnelName ?? personName;
-        const flags = Array.isArray(parts.overtimeSplit[unitId]) ? [...parts.overtimeSplit[unitId]] : [];
-        while (flags.length <= slotIndex) flags.push(false);
-        flags[slotIndex] = true;
-        parts.overtimeSplit[unitId] = flags;
+        if (present.length === 0) continue;
+        const assigned = assignPeopleToSeats(
+          present.map((person) => person.name),
+          flexSeats,
+          department.personnel,
+          department.rankMap,
+        );
+        if (!assigned) {
+          return {
+            ok: false,
+            message: `Cannot assign ${arriverName}: does not meet required qualification for that segmented slot.`,
+          };
+        }
+        for (const [slotIndex, personName] of assigned) {
+          const list = pieces.get(slotIndex) ?? [];
+          list.push({ name: personName, start: sliceStart, end: sliceEnd });
+          pieces.set(slotIndex, list);
+        }
       }
     }
+
+    const slotSegments = parts.slotSegments;
+    const assignments = parts.assignments;
+    if (!Array.isArray(slotSegments[unitId])) slotSegments[unitId] = [];
+    if (!Array.isArray(assignments[unitId])) assignments[unitId] = [];
+    const flags = Array.isArray(parts.overtimeSplit[unitId]) ? [...parts.overtimeSplit[unitId]] : [];
+    for (const seat of rankedSeats) {
+      while (slotSegments[unitId].length <= seat.slotIndex) slotSegments[unitId].push([]);
+      while (assignments[unitId].length <= seat.slotIndex) assignments[unitId].push("");
+      while (flags.length <= seat.slotIndex) flags.push(false);
+      const merged = mergeSegments(
+        (pieces.get(seat.slotIndex) ?? []).map((piece) => ({
+          id: `${tradeId}-${seat.slotIndex}-${piece.start}`,
+          assigneeType: "personnel",
+          personnelName: piece.name,
+          startMinutes: piece.start,
+          endMinutes: piece.end,
+          source: "trade",
+          overtime: false,
+          tradeRef: tradeId,
+        })),
+      );
+      const wholeShift =
+        merged.length === 1 && merged[0].startMinutes <= windowStart && merged[0].endMinutes >= windowEnd;
+      if (wholeShift) {
+        assignments[unitId][seat.slotIndex] = merged[0].personnelName;
+        slotSegments[unitId][seat.slotIndex] = [];
+        flags[seat.slotIndex] = false;
+      } else if (merged.length > 0) {
+        assignments[unitId][seat.slotIndex] = merged[0].personnelName;
+        slotSegments[unitId][seat.slotIndex] = merged;
+        flags[seat.slotIndex] = true;
+      }
+    }
+    parts.overtimeSplit[unitId] = flags;
     row.assignmentsJson = parts;
   }
   return { ok: true };
