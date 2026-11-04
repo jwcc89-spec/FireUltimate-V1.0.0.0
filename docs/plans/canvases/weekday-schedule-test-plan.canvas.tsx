@@ -74,7 +74,7 @@ const stages: StageDef[] = [
         why: "Every change passes on staging before production.",
         fix: "Commit, push, and release to staging under the repair plan's release rules, then repeat the key checks on the Watseka trial department.",
         who: "You, with guidance.",
-        done: "Not started. Done when the weekday schedule works on staging and Crescent's schedule is unchanged." },
+        done: "Started November 4. Backup branch backup-2026-11-04-before-weekday-schedule. The two new tables were added to the staging database and are empty. Code version b52c3a4 is being released to the staging site. Production is not updated. Done when the weekday schedule works on watsekademo.staging.fireultimate.app and Crescent's schedule is unchanged." },
     ],
   },
   {
@@ -350,11 +350,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 4, 2026, afternoon Chicago · Branch cursor/watseka-scheduling-plan · Step 4 passed · Step 7 staging trial is next · Production is not updated</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, afternoon Chicago · Staging backup backup-2026-11-04-before-weekday-schedule · Tables added · Production is not updated</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: Step 7 on Watseka staging">
-        The local click-tests passed, including the rotation start date. Step 7 puts this branch on watsekademo.staging.fireultimate.app after a staging backup and the two new tables. Production stays as it is.
+      <Callout tone="info" title="Next: click-test Watseka staging">
+        The staging backup is backup-2026-11-04-before-weekday-schedule. The trades table and the permission-request table are on the staging database and empty. Sign in at watsekademo.staging.fireultimate.app after the site finishes updating. Then open Crescent on staging and confirm the schedule still opens.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

@@ -60,7 +60,7 @@
 - The local database, API (port 8787), and web screen (port 5173) stay on `~/fu-local-db`. Never `npm run proxy` for local testing.
 
 ## Now vs later
-- **Now:** save this branch, back up the staging database, apply the two new tables there, then fast-forward `submenu/neris-golive-cifpd` so Render updates staging. Click-test watsekademo.staging.fireultimate.app. Confirm Crescent's schedule is unchanged.
+- **Now:** staging backup `backup-2026-11-04-before-weekday-schedule` exists. The two new tables are on the staging database and empty. Incident count before the migration was 27. Push `b52c3a4` onto `submenu/neris-golive-cifpd` so Render updates staging. Click-test watsekademo.staging.fireultimate.app and confirm Crescent's staging schedule still opens.
 - **Later:** production. Do not merge to `main` and do not migrate `fireultimate-prod` until the staging trial passes and the user asks.
 
 ## Next agent should do this first
