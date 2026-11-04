@@ -15,7 +15,7 @@
 
 ## Current focus
 - Weekday 12-hour schedule test for one paid-on-call shift, Monday–Friday, 08:00–20:00. The shift saved in the test department is named `8a-8p` and its recurrence is still Daily, so Saturday and Sunday still appear. Weekday-only recurrence is plan Step 3 and is not built.
-- Personnel → Trades, plan Stage D. Steps 8 through 12 passed the click-test, including the whole-shift seat. Step 13 is built. The user has the Step 13 click-test and has not reported the result yet.
+- Personnel → Trades, plan Stage D. Steps 8 through 13 passed the click-test. The next build is plan Step 3, selected weekdays. Do not start it until the user approves the wording and layout.
 - Plan, live for the user in Cursor: the canvas `weekday-schedule-test-plan`. Repo copy is the source of truth: `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx`. After every plan change, copy that file to the live canvas path and commit both. Live path on this Mac: `/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/weekday-schedule-test-plan.canvas.tsx`.
 - Latest session note: `agent-handoffs/branches/cursor--watseka-scheduling-plan/sessions/2026-11-03-session.md`
 - Earlier the same day: `sessions/2026-11-03-local-test-setup.md` covers creating the throwaway database. Trust this file over that note's "Step 2 is next" status. Its password line is stale.
@@ -54,15 +54,15 @@
 - Times are typed in 24-hour form. `8` or `0800` becomes `08:00`.
 
 ## Current blocker / status
-- Waiting on the user to finish the Step 13 click-test in the November 3 session summary. Do not start Monday–Friday recurrence until they say what matched and what did not.
+- Step 13 click-test passed on November 4, 2026. The user asked to hear Step 3 before any code. Do not start it until they approve the wording and layout.
 
 ## Now vs later
-- **Now:** wait for the Step 13 click-test. Fix only what failed.
-- **Later:** Step 3 is Monday–Friday recurrence. Staging comes only after the user asks, under the canvas Data safety rules.
+- **Now:** explain Step 3 and wait for approval. The proposed control is a Selected weekdays choice with Monday–Sunday checkboxes, saved in the existing shift settings. The calendar shows only the checked days. A shift that does not use it keeps today's days, including a 24/48 rotation.
+- **Later:** Steps 4 and 5 (rotation start date, then hour and overtime rules). Staging is Step 7 and comes only after the user asks.
 
 ## Next agent should do this first
 1. Stay on `cursor/watseka-scheduling-plan`. Read this file, the November 3 session note, and the session summary.
-2. Read `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx` Stage D before editing.
-3. Ask the user how the Step 13 click-test went. Fix only what failed. Do not rebuild Steps 8–13.
-4. After they accept it, stop. Do not start Monday–Friday recurrence until they ask.
-5. Update this file, the session note, and the canvas together. Copy the canvas to the live path on this Mac. Commit and push only when the user asks, or when they say the session is ending.
+2. Read `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx` Stage B Step 3 before editing.
+3. Do not rebuild Steps 8–13. Do not write Step 3 code until the user approves the wording and layout.
+4. After they approve it, implement Step 3 only. The calendar for this test shift shows Monday–Friday. A 24/48 shift still shows the same days as before. No Prisma schema change.
+5. Update this file, the session note, and the canvas together. Copy the canvas to the live path on this Mac.

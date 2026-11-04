@@ -282,11 +282,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 4, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–13 done locally (cancel puts the schedule back) · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–13 passed locally · Next is Step 3 after layout approval · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: click-test Step 13">
-        Step 12 passed. Cancel Requested Trade is on an accepted trade. The other person accepts the cancellation, and an admin too when that Trades box is on. The click-test is in chat. Do not start the next step until that looks right.
+      <Callout tone="info" title="Next: Step 3, after you approve the layout">
+        Step 13 passed. The next build is Selected weekdays, so a shift can run Monday–Friday only. The wording and checkbox layout need your approval before any code. A 24/48 shift must keep showing the same days it shows today.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

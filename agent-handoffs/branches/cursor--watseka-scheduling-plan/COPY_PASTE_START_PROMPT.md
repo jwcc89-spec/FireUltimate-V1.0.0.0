@@ -28,15 +28,15 @@ Before doing any feature work, understand the Branch Rules:
 5) This test uses the throwaway database on this Mac only (~/fu-local-db, port 5433, database fu_local). Never run npm run proxy for it. Never touch staging, production, or Crescent. Do not reset the admin password.
 6) Before coding, summarize:
    - current branch and latest commit
-   - Steps 8–12 passed the click-test; Step 13 is built; the Step 13 click-test result is the blocker
-   - exact next step (fix Step 13 only if the click-test failed; do not start weekday recurrence)
-   - Now vs Later: wait for the Step 13 click-test now; weekday recurrence later
+   - Steps 8–13 passed the click-test; Step 3 is next and is not approved yet
+   - exact next step (Step 3 only after the user approves the Selected weekdays wording and layout)
+   - Now vs Later: wait for that approval now; rotation start date and staging later
 7) Follow beginner-friendly communication with numbered click steps.
 8) After meaningful changes, update ACTIVE_CONTEXT.md, this session note, and the canvas. Copy the canvas to the live canvas path on this Mac.
 9) Before stopping, commit and push on cursor/watseka-scheduling-plan when asked, and report the branch, commit hash, and next step.
 
 After acknowledging the rules above:
-1) Continue from the Step 13 click-test. Do not rebuild solved schedule or trades work.
+1) Continue from Step 3 only after the user approves the layout. Do not rebuild solved schedule or trades work.
 2) Pull latest cursor/watseka-scheduling-plan.
 3) Lint and build after app or server edits.
 ```

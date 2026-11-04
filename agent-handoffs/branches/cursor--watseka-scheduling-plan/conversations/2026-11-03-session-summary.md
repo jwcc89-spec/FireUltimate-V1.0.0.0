@@ -30,18 +30,10 @@ The schedule changes made earlier in the day were accepted. Then Personnel → T
 - Monday–Friday only. Daily still includes Saturday and Sunday.
 
 ## Click-test that passed
-Steps 8 through 12. The seat move works. After Joshua trades 08:00–10:00 with Kenny, Lance stays in the top seat for the whole shift. The lower seat is Kenny, then Joshua. The Trades row lists those two pieces.
+Steps 8 through 13. The seat move works. After Joshua trades 08:00–10:00 with Kenny, Lance stays in the top seat for the whole shift. Cancelling that trade, after the other person accepts, puts Joshua back on the top seat for the whole shift and Lance back on the lower seat. The Trades lines for that split are gone.
 
-## Click-test still open
-Pull the latest branch, restart the local API (not `npm run proxy`), and refresh http://localhost:5173. Leave the three Trades checkboxes off for the first pass. Use the accepted November 5 trade from Step 12: Lance in the top seat all day, Kenny then Joshua in the lower seat. Close the Schedule page before you cancel, so an open schedule does not save the old split back over the restore.
-
-1. Sign in as wicj. Personnel → Trades. On that accepted trade, click Cancel Requested Trade. The status becomes Waiting on Kenny Baier to accept the cancellation. Open Schedule and confirm November 5 is still the split day.
-2. Sign in as baik. Personnel → Trades. Click Accept Cancellation. The status becomes Cancelled, and a message says to open Schedule and refresh it.
-3. Open Personnel → Schedule for November 5 and refresh the page. Joshua is in the top seat for 08:00–20:00. Lance is in the lower seat for the whole shift. The Trades row for that trade is gone.
-4. If a payback day was changed by a trade you cancel the same way, that day also returns to the names from before the trade.
-5. Turn on only Require approval before cancelling a trade. Accept a new short trade, then Cancel Requested Trade, and have the other person click Accept Cancellation. The status becomes Waiting for admin approval to cancel, and the schedule stays split. Sign in as admin and click Approve Cancellation. Then refresh Schedule. Both days are back. Turn that checkbox off when you are done.
-
-Tell the next agent what matched and what did not. The next build step waits on that.
+## Decision still open
+Step 3, Selected weekdays. No code until the user approves the wording and the checkbox layout. A shift that does not use it, including a 24/48 shift, must keep the days it shows today.
 
 ## Safety
 - Do not run `npm run proxy` for this test. That command uses the staging database.
