@@ -1817,8 +1817,12 @@ export function PersonnelSchedulePage({
         .filter((entry) => entry.rowType === "apparatus")
         .forEach((entry) => {
           for (let slotIndex = 0; slotIndex < entry.slotCount; slotIndex += 1) {
-            if (!isOvertimeEnabledForSlot(dateKey, entry.unitId, slotIndex)) continue;
             getSegmentsForSlot(dateKey, entry.unitId, slotIndex).forEach((segment) => {
+              if (segment.source === "trade") {
+                if (target === "trades") segments.push(segment);
+                return;
+              }
+              if (!isOvertimeEnabledForSlot(dateKey, entry.unitId, slotIndex)) return;
               const destination = segment.overtime
                 ? departmentData.overtimeSummaryTarget
                 : departmentData.segmentSummaryTarget;

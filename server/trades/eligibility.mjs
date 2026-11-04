@@ -49,14 +49,14 @@ function intervalsOverlap(aStart, aEnd, bStart, bEnd) {
   return Math.max(aStart, bStart) < Math.min(aEnd, bEnd);
 }
 
-function tradeInterval(startTime, endTime) {
+export function tradeInterval(startTime, endTime) {
   const start = parseTimeToMinutes(startTime);
   let end = parseTimeToMinutes(endTime);
   if (end <= start) end += 1440;
   return [start, end];
 }
 
-function shiftWindow(shiftType, shiftEntries) {
+export function shiftWindow(shiftType, shiftEntries) {
   const entry = shiftEntries.find((item) => item.shiftType === shiftType);
   const start = parseTimeToMinutes(entry?.startTime ?? "");
   const hours = Math.floor(Number(entry?.shiftDuration) || 24);
@@ -106,7 +106,7 @@ function personListed(personName, slots, segmentRows) {
 }
 
 /** Apparatus time on one date. Support rows are not work seats. */
-function allApparatusPlacements(dateKey, assignments, slotSegments, shiftEntries) {
+export function allApparatusPlacements(dateKey, assignments, slotSegments, shiftEntries) {
   const placements = [];
   for (const [storageKey, day] of Object.entries(assignments ?? {})) {
     const parsed = storageDate(storageKey);
@@ -142,6 +142,7 @@ function allApparatusPlacements(dateKey, assignments, slotSegments, shiftEntries
             name,
             start: Number(segment.startMinutes),
             end: Number(segment.endMinutes),
+            shiftType: parsed.shiftType,
           });
         }
         for (const name of namesInSlot(slots[slotIndex])) {
@@ -152,6 +153,7 @@ function allApparatusPlacements(dateKey, assignments, slotSegments, shiftEntries
             name,
             start: windowStart,
             end: windowEnd,
+            shiftType: parsed.shiftType,
           });
         }
       }
@@ -172,36 +174,57 @@ function apparatusPlacements(personName, dateKey, assignments, slotSegments, shi
   );
 }
 
-function seatRank(apparatus, slotIndex, rankMap) {
+export function seatRank(apparatus, slotIndex, rankMap) {
   if (!apparatus || slotIndex >= apparatus.minimumPersonnel) return null;
   const required = String(apparatus.personnelRequirements[slotIndex] ?? "").trim();
   if (!required) return null;
   return rankMap.has(required) ? rankMap.get(required) : Number.POSITIVE_INFINITY;
 }
 
-/** True when the people can fill these seats, strictest seat first. A null rank is any person. */
-function crewCanFillSeats(people, seatRanks, personnel, rankMap) {
-  const ranks = people.map((name) => bestRank(personnel.find((entry) => sameName(entry.name, name)), rankMap));
-  const strict = seatRanks
-    .map((rank, index) => ({ rank, index }))
-    .filter((seat) => seat.rank !== null)
-    .sort((left, right) => left.rank - right.rank);
+/**
+ * Puts people on seats, strictest seat first. A null rank is a seat anyone can take.
+ * @returns {Map<number, string> | null}
+ */
+export function assignPeopleToSeats(people, seats, personnel, rankMap) {
+  const ranked = people.map((name) => ({
+    name,
+    rank: bestRank(
+      personnel.find((entry) => sameName(entry.name, name)),
+      rankMap,
+    ),
+  }));
   const used = new Set();
+  const bySlot = new Map();
+  const strict = seats
+    .filter((seat) => seat.rank !== null)
+    .sort((left, right) => left.rank - right.rank || left.slotIndex - right.slotIndex);
   for (const seat of strict) {
     let selected = null;
     let selectedRank = Number.POSITIVE_INFINITY;
-    ranks.forEach((rank, index) => {
+    ranked.forEach((person, index) => {
       if (used.has(index)) return;
-      if (Number.isFinite(rank) && rank <= seat.rank && rank < selectedRank) {
+      if (Number.isFinite(person.rank) && person.rank <= seat.rank && person.rank < selectedRank) {
         selected = index;
-        selectedRank = rank;
+        selectedRank = person.rank;
       }
     });
-    if (selected === null) return false;
+    if (selected === null) return null;
     used.add(selected);
+    bySlot.set(seat.slotIndex, ranked[selected].name);
   }
-  const openSeats = seatRanks.filter((rank) => rank === null).length;
-  return ranks.length - used.size >= openSeats;
+  const open = seats
+    .filter((seat) => seat.rank === null)
+    .sort((left, right) => left.slotIndex - right.slotIndex);
+  const remaining = ranked.filter((_, index) => !used.has(index));
+  if (remaining.length < open.length) return null;
+  open.forEach((seat, index) => bySlot.set(seat.slotIndex, remaining[index].name));
+  return bySlot;
+}
+
+/** True when the people can fill these seats, strictest seat first. A null rank is any person. */
+function crewCanFillSeats(people, seatRanks, personnel, rankMap) {
+  const seats = seatRanks.map((rank, slotIndex) => ({ slotIndex, rank }));
+  return assignPeopleToSeats(people, seats, personnel, rankMap) !== null;
 }
 
 function qualificationMessage({
@@ -390,6 +413,43 @@ function apparatusFromPayload(payload) {
     .filter((entry) => entry.label);
 }
 
+export function readTradeDepartment(payload) {
+  const source = payload && typeof payload === "object" ? payload : {};
+  const qualificationOrder = Array.isArray(source.personnelQualifications)
+    ? source.personnelQualifications.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+    : [];
+  const rankMap = new Map();
+  qualificationOrder.forEach((qualification, index) => {
+    if (!rankMap.has(qualification)) rankMap.set(qualification, index);
+  });
+  return {
+    personnel: (Array.isArray(source.schedulerPersonnelRecords) ? source.schedulerPersonnelRecords : [])
+      .map((record) => ({
+        name: String(record?.name ?? "").trim(),
+        qualifications: Array.isArray(record?.qualifications)
+          ? record.qualifications.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+          : [],
+      }))
+      .filter((entry) => entry.name),
+    additionalFields: (Array.isArray(source.additionalFields) ? source.additionalFields : [])
+      .map((record) => ({
+        id: String(record?.id ?? "").trim(),
+        fieldName: String(record?.fieldName ?? "").trim(),
+      }))
+      .filter((entry) => entry.id || entry.fieldName),
+    shiftEntries: (Array.isArray(source.shiftInformationEntries) ? source.shiftInformationEntries : [])
+      .map((record) => ({
+        shiftType: String(record?.shiftType ?? "").trim(),
+        startTime: String(record?.startTime ?? "").trim(),
+        shiftDuration: Number(record?.shiftDuration) || 0,
+      }))
+      .filter((entry) => entry.shiftType),
+    qualificationOrder,
+    apparatus: apparatusFromPayload(source),
+    rankMap,
+  };
+}
+
 export function tradeRequestBlockReasonFromStored({
   payload,
   rows,
@@ -399,42 +459,18 @@ export function tradeRequestBlockReasonFromStored({
   startTime,
   endTime,
 }) {
-  const source = payload && typeof payload === "object" ? payload : {};
-  const personnel = (Array.isArray(source.schedulerPersonnelRecords) ? source.schedulerPersonnelRecords : [])
-    .map((record) => ({
-      name: String(record?.name ?? "").trim(),
-      qualifications: Array.isArray(record?.qualifications)
-        ? record.qualifications.map((entry) => String(entry ?? "").trim()).filter(Boolean)
-        : [],
-    }))
-    .filter((entry) => entry.name);
-  const additionalFields = (Array.isArray(source.additionalFields) ? source.additionalFields : [])
-    .map((record) => ({
-      id: String(record?.id ?? "").trim(),
-      fieldName: String(record?.fieldName ?? "").trim(),
-    }))
-    .filter((entry) => entry.id || entry.fieldName);
-  const shiftEntries = (Array.isArray(source.shiftInformationEntries) ? source.shiftInformationEntries : [])
-    .map((record) => ({
-      shiftType: String(record?.shiftType ?? "").trim(),
-      startTime: String(record?.startTime ?? "").trim(),
-      shiftDuration: Number(record?.shiftDuration) || 0,
-    }))
-    .filter((entry) => entry.shiftType);
-  const qualificationOrder = Array.isArray(source.personnelQualifications)
-    ? source.personnelQualifications.map((entry) => String(entry ?? "").trim()).filter(Boolean)
-    : [];
+  const department = readTradeDepartment(payload);
   return tradeRequestBlockReason({
     requesterName,
     counterpartName,
     tradeDate,
     startTime,
     endTime,
-    personnel,
-    qualificationOrder,
-    apparatus: apparatusFromPayload(source),
-    additionalFields,
-    shiftEntries,
+    personnel: department.personnel,
+    qualificationOrder: department.qualificationOrder,
+    apparatus: department.apparatus,
+    additionalFields: department.additionalFields,
+    shiftEntries: department.shiftEntries,
     ...scheduleSnapshotFromRows(rows),
   });
 }

@@ -71,6 +71,7 @@ import {
   writeAccountAudit,
 } from "./auth/permissions.mjs";
 import { tradeRequestBlockReasonFromStored } from "./trades/eligibility.mjs";
+import { applyAcceptedTrade } from "./trades/applySchedule.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -5203,6 +5204,58 @@ app.post("/api/trades", async (request, response) => {
   }
 });
 
+async function saveAcceptedTrade(tenantId, existing, username, historyAction) {
+  const dates = [existing.tradeDate];
+  if (existing.paybackRequired && existing.paybackDate) dates.push(existing.paybackDate);
+  const [details, scheduleRows] = await Promise.all([
+    prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    }),
+    prisma.scheduleAssignments.findMany({
+      where: { tenantId, dateKey: { in: dates } },
+      select: { shiftType: true, dateKey: true, assignmentsJson: true },
+    }),
+  ]);
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  const applied = applyAcceptedTrade({ payload, rows: scheduleRows, trade: existing });
+  if (!applied.ok) return applied;
+  const saved = await prisma.$transaction([
+    ...applied.rows.map((row) =>
+      prisma.scheduleAssignments.upsert({
+        where: {
+          tenantId_shiftType_dateKey: {
+            tenantId,
+            shiftType: row.shiftType,
+            dateKey: row.dateKey,
+          },
+        },
+        update: { assignmentsJson: row.assignmentsJson },
+        create: {
+          tenantId,
+          shiftType: row.shiftType,
+          dateKey: row.dateKey,
+          assignmentsJson: row.assignmentsJson,
+        },
+      }),
+    ),
+    prisma.tradeRequest.update({
+      where: { id: existing.id },
+      data: {
+        status: "accepted",
+        denialReason: "",
+        scheduleChangeJson: applied.scheduleChange,
+        historyJson: appendTradeHistory(existing.historyJson, {
+          by: username,
+          action: historyAction,
+        }),
+      },
+    }),
+  ]);
+  return { ok: true, trade: toTradeResponse(saved[saved.length - 1]) };
+}
+
 app.patch("/api/trades/:id", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;
@@ -5244,6 +5297,15 @@ app.patch("/api/trades/:id", async (request, response) => {
       const settings = action === "accept" ? await readTradeSettings(tenantId) : null;
       const nextStatus =
         action === "deny" ? "denied" : settings.adminApproval ? "awaiting_admin" : "accepted";
+      if (nextStatus === "accepted") {
+        const saved = await saveAcceptedTrade(tenantId, existing, username, "accepted");
+        if (!saved.ok) {
+          response.status(400).json({ ok: false, message: saved.message });
+          return;
+        }
+        response.json(saved);
+        return;
+      }
       const row = await prisma.tradeRequest.update({
         where: { id: existing.id },
         data: {
@@ -5274,6 +5336,15 @@ app.patch("/api/trades/:id", async (request, response) => {
       }
       if (action === "admin_deny" && !note) {
         response.status(400).json({ ok: false, message: "Enter a reason for denying." });
+        return;
+      }
+      if (action === "approve") {
+        const saved = await saveAcceptedTrade(tenantId, existing, username, "approved");
+        if (!saved.ok) {
+          response.status(400).json({ ok: false, message: saved.message });
+          return;
+        }
+        response.json(saved);
         return;
       }
       const row = await prisma.tradeRequest.update({

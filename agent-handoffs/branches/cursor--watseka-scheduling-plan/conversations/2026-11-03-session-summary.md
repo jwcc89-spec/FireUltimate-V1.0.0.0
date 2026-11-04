@@ -23,23 +23,23 @@ The schedule changes made earlier in the day were accepted. Then Personnel → T
 - The request form uses the roster, scheduled days, 24-hour times, and the payback setting.
 - If admin approval is on, Accept waits for a Sub Admin or above. Approve and Deny show for those roles. The calendar does not change yet.
 - A request is stopped before it is saved when the truck cannot be covered for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. The reason pops up in the center of the screen. Someone already on the truck can move into a higher seat when they hold that qualification. The new person must meet the seat that opens. A person with a higher qualification can cover a lower seat.
+- Accept, or Approve when admin approval is on, splits the schedule. Deny does not. The Trades row on the schedule lists the hours. Payback puts the requester on the other person's seat for the same hours.
 
 ## Not built yet
-- Putting an accepted trade onto the schedule. The payback day is checked then, not now.
-- Cancelling a trade and putting the days back.
+- Cancelling a trade and putting the days back. The previous day is already saved on the trade for that step.
 - Monday–Friday only. Daily still includes Saturday and Sunday.
 
 ## Click-test that passed
-Steps 8, 9, and 10. The department was put back with all three Trades boxes off.
+Steps 8, 9, 10, and 11. The seat move works: Joshua in the paramedic seat can trade with Kenny when Lance, also a paramedic, is in the lower seat.
 
 ## Click-test still open
-Refresh http://localhost:5173 once. Sign in as wicj (Joshua). Open Personnel → Trades.
+Pull the latest branch, restart the local API, and refresh http://localhost:5173. Admin approval for trades should be off.
 
-1. Pick a day Joshua is on a seat, and a person who is free that day and meets that seat. November 5, 08:00 to 10:00, Landon LeDuke, payback off, is the example if Landon is not already working those hours and not on Injury, Vacation, Sick, or Kelly Day. Click Submit Trade Request. The request appears in Active Requests.
-2. Put Landon on Injury for that same day (open that day on the schedule and add him on the Injury row). Submit the same request again. The centered message is: `Landon LeDuke is on Injury. Remove them from Injury before scheduling them on apparatus.` The new request is not added. Vacation, Sick, and Kelly Day use the same sentence with that row's name.
-3. Remove Landon from Injury. Place Landon on a truck for 08:00–20:00 that day, or for any hours that include 08:00–10:00. Submit again. The message is: `Landon LeDuke already assigned to [truck name]. Remove or segment assignments so times do not overlap.` Remove him, or pick hours he is not working, and the request can send.
-4. Joshua must be on the seat that day or this check is skipped. If that seat requires a qualification nobody staying on the truck can cover, the message is: `Cannot assign Landon LeDuke: does not meet required qualification for that segmented slot.` If that seat has no required qualification, this message will not appear. That is expected.
-5. Put Joshua in the top paramedic seat and Lance, also a paramedic, in the lower seat. Submit 08:00–10:00 with Kenny (EMT-B). The request is saved. Kenny is allowed because Lance can move to the paramedic seat. If Lance is not a paramedic, the same request is refused.
+1. Sign in as wicj. Put Joshua in the top paramedic seat and Lance in the lower seat on November 5. Personnel → Trades. Submit 08:00–10:00 with Kenny, payback off.
+2. Sign in as Kenny's account. Personnel → Trades. Click Accept. The status becomes Accepted.
+3. Open Personnel → Schedule for November 5. From 08:00–10:00 Lance is in the paramedic seat and Kenny is in the lower seat. From 10:00–20:00 Joshua is back in the paramedic seat and Lance is back in the lower seat. The Trades row lists the pieces, such as `KELL: 8A-10A` and `WICJ: 10A-8P`.
+4. Send a second trade with Payback required on, payback date a day Landon is scheduled, same hours. After Accept, that payback day shows Joshua in Landon's seat for 08:00–10:00 and Landon keeps the rest.
+5. Put Joshua on Injury on a payback day and try to accept a trade that uses that date. The centered message starts with `On the payback date,` and the schedule does not change.
 
 Tell the next agent what matched and what did not. The next build step waits on that.
 

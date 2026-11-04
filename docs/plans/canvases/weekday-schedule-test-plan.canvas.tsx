@@ -79,7 +79,7 @@ const stages: StageDef[] = [
   },
   {
     id: "D", name: "Stage D — Trades between members",
-    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 11 are built. An accepted trade still does not change the schedule until Step 12.",
+    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 12 are built. An accepted trade splits the schedule. Cancelling it is Step 13.",
     steps: [
       { n: "8", title: "Give trades a shared home on the server", status: "Done",
         problem: "Trades were saved only in the browser of the person who typed them. Landon never saw a request from Josh, and admins saw nothing.",
@@ -102,15 +102,15 @@ const stages: StageDef[] = [
       { n: "11", title: "Check a request before it is sent", status: "Done",
         problem: "Nothing stops a trade to someone unqualified or already working.",
         why: "An accepted trade must never leave a seat unqualified.",
-        fix: "November 3: Submit Trade Request is refused, and nothing is saved, when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. A person in a lower seat can move up when their qualification covers the seat being given up, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. The notice is the same centered message used on the schedule. Chief on Call does not block. Payback day checks wait for Step 12.",
+        fix: "November 3: Submit Trade Request is refused, and nothing is saved, when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. A person in a lower seat can move up when their qualification covers the seat being given up, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. The notice is the same centered message used on the schedule. Chief on Call does not block. The payback day is checked when the trade is accepted.",
         who: "Me.",
         done: "Completed in code. Done for you when a bad request shows the reason and does not appear in Active Requests, and a good request still sends." },
-      { n: "12", title: "Accept, deny, approve, and put the trade on the schedule", status: "New",
+      { n: "12", title: "Accept, deny, approve, and put the trade on the schedule", status: "Done",
         problem: "The current Accept and Approve buttons only change a label. The schedule never changes.",
         why: "Accepted trades should appear on the schedule with no manual editing.",
-        fix: "The other person sees the request in Active Requests and clicks Accept or Deny (deny needs a reason). If the department requires admin approval, a Sub Admin, Admin, or Super Admin must approve next. Then the day splits by itself: for 11/5 08:00–10:00, Landon covers 08:00–10:00 and Josh keeps 10:00–20:00, listed on Trades. With payback, Josh is put on the Date You Work Instead in Landon's place for the same hours.",
+        fix: "November 3: Accept puts the trade on the schedule when admin approval is off. When admin approval is on, the schedule changes only after Approve. Deny does not change the schedule. For 11/5 08:00–10:00, the other person covers 08:00–10:00 and the requester keeps 10:00–20:00. If a paramedic is in a lower seat, that person moves to the paramedic seat for those hours and the new person takes the seat that opens. The Trades row lists each piece, such as LEDL: 8A-10A. Payback puts the requester on the other person's seat for the same hours, after the same checks. The previous day is saved so Step 13 can put it back.",
         who: "Me.",
-        done: "Not started. Done when accepting the 11/5 example splits that day correctly and the payback day, if any, shows Josh." },
+        done: "Completed in code. Done for you when Accept splits November 5 and, if payback is on, the payback day shows Josh." },
       { n: "13", title: "Cancel a trade and put the schedule back", status: "New",
         problem: "There is no way to undo a trade.",
         why: "Plans change, and the schedule must return to how it was.",
@@ -282,11 +282,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–11 done locally (trades table, settings, request form, send check) · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–12 done locally (an accepted trade splits the schedule) · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: click-test Step 11">
-        Steps 8, 9, and 10 passed. Step 11 refuses a request before it is saved. The click-test is in chat. Step 12 waits until that looks right.
+      <Callout tone="info" title="Next: click-test Step 12">
+        Step 11 passed, including the seat move. Accept now splits the schedule. The click-test is in chat. Step 13 waits until that looks right.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />
