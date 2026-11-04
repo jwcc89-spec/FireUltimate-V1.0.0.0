@@ -22,25 +22,23 @@ The schedule changes made earlier in the day were accepted. Then Personnel → T
 - The three Trades settings save with the department.
 - The request form uses the roster, scheduled days, 24-hour times, and the payback setting.
 - If admin approval is on, Accept waits for a Sub Admin or above. Approve and Deny show for those roles. The calendar does not change yet.
+- A request is stopped before it is saved when the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. The reason pops up in the center of the screen. A person with a higher qualification can cover a lower seat.
 
 ## Not built yet
-- Stopping a request when the other person is not qualified, already working, or on Injury, Vacation, Sick, or Kelly Day.
-- Putting an accepted trade onto the schedule.
+- Putting an accepted trade onto the schedule. The payback day is checked then, not now.
 - Cancelling a trade and putting the days back.
 - Monday–Friday only. Daily still includes Saturday and Sunday.
 
-## Click-test still open
-Refresh http://localhost:5173 once.
+## Click-test that passed
+Steps 8, 9, and 10. The department was put back with all three Trades boxes off.
 
-1. Sign in as admin. Admin Functions → Scheduler Settings. The Trades card should read approval Off, payback not required, cancel approval Off.
-2. Sign in as wicj. Personnel → Trades. Trade With should list Landon, Lance, and Kenny, not Joshua. Scheduled days should include November 1, 3, 5, 6, 7, and 9. Type November 4 as well, then set the date back to November 5.
-3. Send Landon 08:00–10:00 on November 5 with Payback required off. Date You Work Instead stays gray.
-4. Lance sees no trades. Landon can Accept. The status becomes Accepted. November 5 on the calendar stays unchanged.
-5. As admin, the Show list switches among All trades, My trades, and 8a-8p.
-6. Turn on all three Trades checkboxes. As Joshua, Payback required starts checked and two notes explain admin approval and cancellation. Send Landon November 6, 08:00–12:00, payback November 12.
-7. Landon Accepts. Status becomes Waiting for admin approval. Landon has no Approve button.
-8. Admin Deny with an empty reason asks for a reason. Deny with `Coverage already set`. Status becomes Denied by admin.
-9. Turn all three Trades checkboxes off again.
+## Click-test still open
+Refresh http://localhost:5173 once. Sign in as wicj (Joshua). Open Personnel → Trades.
+
+1. Pick a day Joshua is on a seat, and a person who is free that day and meets that seat. November 5, 08:00 to 10:00, Landon LeDuke, payback off, is the example if Landon is not already working those hours and not on Injury, Vacation, Sick, or Kelly Day. Click Submit Trade Request. The request appears in Active Requests.
+2. Put Landon on Injury for that same day (open that day on the schedule and add him on the Injury row). Submit the same request again. The centered message is: `Landon LeDuke is on Injury. Remove them from Injury before scheduling them on apparatus.` The new request is not added. Vacation, Sick, and Kelly Day use the same sentence with that row's name.
+3. Remove Landon from Injury. Place Landon on a truck for 08:00–20:00 that day, or for any hours that include 08:00–10:00. Submit again. The message is: `Landon LeDuke already assigned to [truck name]. Remove or segment assignments so times do not overlap.` Remove him, or pick hours he is not working, and the request can send.
+4. Joshua must be on the seat that day or this check is skipped. If that seat requires a qualification Landon does not have, the message is: `Cannot assign Landon LeDuke: does not meet required qualification for that segmented slot.` Give Landon that qualification, or a higher one, and the request can send. If that seat has no required qualification, this message will not appear. That is expected.
 
 Tell the next agent what matched and what did not. The next build step waits on that.
 

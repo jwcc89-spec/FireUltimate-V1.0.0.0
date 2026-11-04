@@ -79,7 +79,7 @@ const stages: StageDef[] = [
   },
   {
     id: "D", name: "Stage D — Trades between members",
-    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies, and an accepted trade changes the schedule by itself. Planned November 3, 2026. Nothing is built yet.",
+    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 11 are built. An accepted trade still does not change the schedule until Step 12.",
     steps: [
       { n: "8", title: "Give trades a shared home on the server", status: "Done",
         problem: "Trades were saved only in the browser of the person who typed them. Landon never saw a request from Josh, and admins saw nothing.",
@@ -99,12 +99,12 @@ const stages: StageDef[] = [
         fix: "November 3: Trade With is a list from Scheduler Settings → Personnel, with your own name left out. Your Assigned Date can be typed, or picked from days you are already on a truck or a split piece. Start and end are 24-hour times. Payback required starts from the department setting and grays out Date You Work Instead when it is off.",
         who: "Me.",
         done: "Completed: the form offers roster members, scheduled days, 24-hour times, and the department payback setting." },
-      { n: "11", title: "Check a request before it is sent", status: "Next",
+      { n: "11", title: "Check a request before it is sent", status: "Done",
         problem: "Nothing stops a trade to someone unqualified or already working.",
         why: "An accepted trade must never leave a seat unqualified.",
-        fix: "Block the request if the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. Use the same centered messages as the schedule.",
+        fix: "November 3: Submit Trade Request is refused, and nothing is saved, when the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. The notice is the same centered message used on the schedule. A higher qualification can cover a lower seat. Chief on Call does not block. Payback day checks wait for Step 12.",
         who: "Me.",
-        done: "Not started. Done when each bad request shows a clear reason and is not sent." },
+        done: "Completed in code. Done for you when a bad request shows the reason and does not appear in Active Requests, and a good request still sends." },
       { n: "12", title: "Accept, deny, approve, and put the trade on the schedule", status: "New",
         problem: "The current Accept and Approve buttons only change a label. The schedule never changes.",
         why: "Accepted trades should appear on the schedule with no manual editing.",
@@ -154,6 +154,7 @@ const decided = [
   ["November 3, 2026", "Who sees trades", "Members see only trades they are part of. Sub Admin, Admin, and Super Admin see every trade, and Active Requests lets them show All trades, My trades, or one shift."],
   ["November 3, 2026", "Where trades are saved", "A new trades table in the database, one row per request. You approved the structure change. It is on the local test database only. Staging and production get it when this branch is released."],
   ["November 3, 2026", "Trade settings", "Scheduler Settings → Trades has Admin approval, Payback required, and Require approval before cancelling. All start off. Payback required is the starting value on a new request, and the sender can change it. Admin approval makes the trade wait for a sub admin or above. The schedule still does not change until Step 12."],
+  ["November 3, 2026", "Trade send check", "A request is refused before it is saved when the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. A higher qualification can cover a lower seat. The payback day is not checked until Step 12."],
 ];
 
 const stillOpen = [
@@ -281,11 +282,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–10 done locally (trades table, settings, request form) · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–11 done locally (trades table, settings, request form, send check) · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: click-test Steps 8, 9, and 10">
-        The click-test is in chat. After it looks right, Step 11 checks a request before it is sent.
+      <Callout tone="info" title="Next: click-test Step 11">
+        Steps 8, 9, and 10 passed. Step 11 refuses a request before it is saved. The click-test is in chat. Step 12 waits until that looks right.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

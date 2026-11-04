@@ -70,6 +70,7 @@ import {
   roleLevel,
   writeAccountAudit,
 } from "./auth/permissions.mjs";
+import { tradeRequestBlockReasonFromStored } from "./trades/eligibility.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -5145,6 +5146,34 @@ app.post("/api/trades", async (request, response) => {
         ok: false,
         message: "Payback is required, so enter the date you work instead.",
       });
+      return;
+    }
+
+    const [tradeDetails, scheduleRows] = await Promise.all([
+      prisma.departmentDetails.findUnique({
+        where: { tenantId },
+        select: { payloadJson: true },
+      }),
+      prisma.scheduleAssignments.findMany({
+        where: { tenantId, dateKey: tradeDate },
+        select: { shiftType: true, dateKey: true, assignmentsJson: true },
+      }),
+    ]);
+    const tradePayload =
+      tradeDetails?.payloadJson && typeof tradeDetails.payloadJson === "object"
+        ? tradeDetails.payloadJson
+        : {};
+    const blockReason = tradeRequestBlockReasonFromStored({
+      payload: tradePayload,
+      rows: scheduleRows,
+      requesterName: requester.name,
+      counterpartName: counterpart.name,
+      tradeDate,
+      startTime,
+      endTime,
+    });
+    if (blockReason) {
+      response.status(400).json({ ok: false, message: blockReason });
       return;
     }
 
