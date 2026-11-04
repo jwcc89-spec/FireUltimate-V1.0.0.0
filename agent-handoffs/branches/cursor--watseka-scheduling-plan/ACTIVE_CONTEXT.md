@@ -15,7 +15,7 @@
 
 ## Current focus
 - Weekday 12-hour schedule test for one paid-on-call shift, Monday–Friday, 08:00–20:00. The shift saved in the test department is named `8a-8p` and its recurrence is still Daily, so Saturday and Sunday still appear. Weekday-only recurrence is plan Step 3 and is not built.
-- Personnel → Trades, plan Stage D. Steps 8 through 11 passed the click-test, including a paramedic in a lower seat moving up. Step 12 is built. The user has the Step 12 click-test and has not reported the result yet.
+- Personnel → Trades, plan Stage D. Steps 8 through 12 passed the click-test, including the whole-shift seat. Step 13 is built. The user has the Step 13 click-test and has not reported the result yet.
 - Plan, live for the user in Cursor: the canvas `weekday-schedule-test-plan`. Repo copy is the source of truth: `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx`. After every plan change, copy that file to the live canvas path and commit both. Live path on this Mac: `/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/weekday-schedule-test-plan.canvas.tsx`.
 - Latest session note: `agent-handoffs/branches/cursor--watseka-scheduling-plan/sessions/2026-11-03-session.md`
 - Earlier the same day: `sessions/2026-11-03-local-test-setup.md` covers creating the throwaway database. Trust this file over that note's "Step 2 is next" status. Its password line is stale.
@@ -25,8 +25,9 @@
 ## Latest known status
 - Steps 8–10 click-test passed on November 3, 2026.
 - Step 11: `POST /api/trades` refuses the request before saving it. The reason shows in the centered notice on Personnel → Trades.
-- Step 12: Accept, or Approve when admin approval is on, splits the schedule. Deny does not. The previous day is stored on the trade as `scheduleChangeJson`.
-- `npm run lint` and `npm run build` passed after Step 12. `node --test server/trades/eligibility.test.mjs server/trades/applySchedule.test.mjs` passed (18 tests). This cloud agent has no `~/fu-local-db`, so the on-screen check is the user's.
+- Step 12 passed the click-test on November 4. Accept, or Approve when admin approval is on, splits the schedule. A person who already works the whole shift and can fill a higher seat stays there all day. The previous day is stored on the trade as `scheduleChangeJson`.
+- Step 13: either person clicks Cancel Requested Trade. The other person accepts. When `tradeCancelApproval` is on, a sub admin or above must approve before the schedule changes. `rowsFromScheduleChange` writes the saved days back and the status becomes `cancelled`. Keep Trade, or an admin Deny, leaves the schedule alone and returns the trade to `accepted`.
+- `npm run lint` and `npm run build` were run after Step 13. `node --test server/trades/eligibility.test.mjs server/trades/applySchedule.test.mjs` is the trade check (20 tests after the restore cases). This cloud agent has no `~/fu-local-db`, so the on-screen check is the user's.
 
 ## This Mac's test runtime (do not point at staging)
 - Repo: `/Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0`
@@ -47,21 +48,21 @@
 - With admin approval on, Accept sets status `awaiting_admin`. A sub admin or above then Approves (`accepted`) or Denies (`admin_denied`, reason required). With it off, Accept sets `accepted`.
 - Before a request is saved, the other person is checked against the truck for those hours. Someone already on that truck can move into the seat being given up when they hold that qualification, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. Injury / Vacation / Sick / Kelly Day and overlapping hours are reported before the qualification message. Chief on Call does not block. If the requester is not on a seat for those hours, only leave and overlap are checked.
 - When the trade becomes accepted, the split is written on the schedule. Someone who already works the whole shift and can fill a higher seat moves there for the entire shift, and that seat is not split. Only the hours that still change people are listed on Trades. Payback runs the same checks and uses the same rule. The previous schedule day is kept in `scheduleChangeJson`.
-- Cancel approval is saved and shown as a note. The Cancel button is Step 13. Either person requests the cancel, the other accepts, and an admin too when that box is on. Then both days go back to how they were.
+- Cancel approval is the Trades checkbox Require approval before cancelling a trade. Either person requests the cancel on an accepted trade. The other person accepts. An admin approves too when that box is on. Then both days go back to the saved previous schedule. The person who asked to cancel cannot accept their own request. Keep Trade needs a reason and does not change the schedule.
 - Your Assigned Date can be typed or picked from days the person is already on a truck or a split piece. Support rows such as Injury are not scheduled-work days. On November 3, Joshua was on `8a-8p` for 2026-11-01, 03, 05, 06, 07, and 09.
 - Trade With lists Scheduler Settings → Personnel except the signed-in person. Both people need a sign-in account. You cannot trade with yourself.
 - Times are typed in 24-hour form. `8` or `0800` becomes `08:00`.
 
 ## Current blocker / status
-- Waiting on the user to finish the Step 12 click-test in the November 3 session summary. Do not start Step 13 until they say what matched and what did not.
+- Waiting on the user to finish the Step 13 click-test in the November 3 session summary. Do not start Monday–Friday recurrence until they say what matched and what did not.
 
 ## Now vs later
-- **Now:** wait for the Step 12 click-test. Fix only what failed.
-- **Later:** Step 13 cancels a trade and writes `scheduleChangeJson` back onto both days. Step 3 is Monday–Friday recurrence. Staging comes only after the user asks, under the canvas Data safety rules.
+- **Now:** wait for the Step 13 click-test. Fix only what failed.
+- **Later:** Step 3 is Monday–Friday recurrence. Staging comes only after the user asks, under the canvas Data safety rules.
 
 ## Next agent should do this first
 1. Stay on `cursor/watseka-scheduling-plan`. Read this file, the November 3 session note, and the session summary.
 2. Read `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx` Stage D before editing.
-3. Ask the user how the Step 12 click-test went. Fix only what failed. Do not rebuild Steps 8–12.
-4. After they accept it, implement Step 13 only, then lint, build, and give a click-test.
+3. Ask the user how the Step 13 click-test went. Fix only what failed. Do not rebuild Steps 8–13.
+4. After they accept it, stop. Do not start Monday–Friday recurrence until they ask.
 5. Update this file, the session note, and the canvas together. Copy the canvas to the live path on this Mac. Commit and push only when the user asks, or when they say the session is ending.

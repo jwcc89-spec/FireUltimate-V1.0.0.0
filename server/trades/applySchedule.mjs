@@ -360,3 +360,32 @@ export function applyAcceptedTrade({ payload, rows, trade }) {
   }
   return { ok: true, rows: changed, scheduleChange: { rows: previous } };
 }
+
+/** Puts the saved pre-trade days back. Used when a cancellation is finally approved. */
+export function rowsFromScheduleChange(scheduleChange) {
+  const saved = Array.isArray(scheduleChange?.rows) ? scheduleChange.rows : [];
+  const rows = [];
+  for (const entry of saved) {
+    const shiftType = String(entry?.shiftType ?? "").trim();
+    const dateKey = String(entry?.dateKey ?? "").trim();
+    const assignmentsJson = entry?.assignmentsJson;
+    if (!shiftType || !/^\d{4}-\d{2}-\d{2}$/.test(dateKey) || !assignmentsJson || typeof assignmentsJson !== "object") {
+      return {
+        ok: false,
+        message: "This trade was accepted before the previous schedule was saved, so it cannot be cancelled.",
+      };
+    }
+    rows.push({
+      shiftType,
+      dateKey,
+      assignmentsJson: structuredClone(assignmentsJson),
+    });
+  }
+  if (rows.length === 0) {
+    return {
+      ok: false,
+      message: "This trade was accepted before the previous schedule was saved, so it cannot be cancelled.",
+    };
+  }
+  return { ok: true, rows };
+}

@@ -1,7 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
 
-type TradeStatus = "requested" | "awaiting_admin" | "accepted" | "denied" | "admin_denied";
+type TradeStatus =
+  | "requested"
+  | "awaiting_admin"
+  | "accepted"
+  | "denied"
+  | "admin_denied"
+  | "cancel_requested"
+  | "cancel_awaiting_admin"
+  | "cancelled";
 
 interface TradeRecord {
   id: string;
@@ -18,6 +26,8 @@ interface TradeRecord {
   reason: string;
   status: TradeStatus;
   denialReason: string;
+  cancelRequestedBy?: string;
+  statusNote?: string;
 }
 
 interface RosterEntry {
@@ -55,6 +65,13 @@ function statusLabel(trade: TradeRecord): string {
   if (trade.status === "accepted") return "Accepted";
   if (trade.status === "denied") return "Denied";
   if (trade.status === "admin_denied") return "Denied by admin";
+  if (trade.status === "cancel_requested") {
+    const waitingOn =
+      trade.cancelRequestedBy === trade.requesterUsername ? trade.counterpartName : trade.requesterName;
+    return `Waiting on ${waitingOn} to accept the cancellation`;
+  }
+  if (trade.status === "cancel_awaiting_admin") return "Waiting for admin approval to cancel";
+  if (trade.status === "cancelled") return "Cancelled";
   return trade.status;
 }
 
@@ -273,11 +290,24 @@ export function PersonnelTradesPage() {
 
   const answerTrade = async (
     trade: TradeRecord,
-    action: "accept" | "deny" | "approve" | "admin_deny",
+    action:
+      | "accept"
+      | "deny"
+      | "approve"
+      | "admin_deny"
+      | "cancel_request"
+      | "cancel_accept"
+      | "cancel_decline"
+      | "cancel_approve"
+      | "cancel_admin_deny",
   ) => {
     const denialReason = (denyReasons[trade.id] ?? "").trim();
-    if ((action === "deny" || action === "admin_deny") && !denialReason) {
+    if ((action === "deny" || action === "admin_deny" || action === "cancel_admin_deny") && !denialReason) {
       setNotice("Enter a reason before denying.");
+      return;
+    }
+    if (action === "cancel_decline" && !denialReason) {
+      setNotice("Enter a reason for keeping the trade.");
       return;
     }
     const response = await fetch(`/api/trades/${encodeURIComponent(trade.id)}`, {
@@ -285,12 +315,19 @@ export function PersonnelTradesPage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ action, denialReason }),
     });
-    const json = (await response.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+    const json = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      message?: string;
+      trade?: TradeRecord;
+    } | null;
     if (!response.ok || !json?.ok) {
       setNotice(json?.message || "The trade could not be updated.");
       return;
     }
     await loadTrades();
+    if (json.trade?.status === "cancelled") {
+      setNotice("The trade is cancelled. Open Schedule and refresh it. Both days are back to how they were before the trade.");
+    }
   };
 
   return (
@@ -463,6 +500,11 @@ export function PersonnelTradesPage() {
               <tbody>
                 {visibleTrades.map((trade) => {
                   const isCounterpart = trade.counterpartUsername === username;
+                  const isParty = isCounterpart || trade.requesterUsername === username;
+                  const canAnswerCancel =
+                    trade.status === "cancel_requested" &&
+                    isParty &&
+                    username !== (trade.cancelRequestedBy ?? "");
                   return (
                     <tr key={trade.id}>
                       <td>{trade.shiftType || "—"}</td>
@@ -473,7 +515,10 @@ export function PersonnelTradesPage() {
                       </td>
                       <td>{trade.paybackRequired ? trade.paybackDate : "Not required"}</td>
                       <td>{trade.reason || "—"}</td>
-                      <td>{statusLabel(trade)}</td>
+                      <td>
+                        {statusLabel(trade)}
+                        {trade.statusNote ? <div className="field-hint">{trade.statusNote}</div> : null}
+                      </td>
                       <td>
                         {trade.status === "requested" && isCounterpart ? (
                           <div className="trades-action-cell">
@@ -521,6 +566,64 @@ export function PersonnelTradesPage() {
                               type="button"
                               className="secondary-button compact-button"
                               onClick={() => void answerTrade(trade, "admin_deny")}
+                            >
+                              Deny
+                            </button>
+                          </div>
+                        ) : trade.status === "accepted" && isParty ? (
+                          <button
+                            type="button"
+                            className="secondary-button compact-button"
+                            onClick={() => void answerTrade(trade, "cancel_request")}
+                          >
+                            Cancel Requested Trade
+                          </button>
+                        ) : canAnswerCancel ? (
+                          <div className="trades-action-cell">
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void answerTrade(trade, "cancel_accept")}
+                            >
+                              Accept Cancellation
+                            </button>
+                            <input
+                              type="text"
+                              placeholder="Reason to keep the trade"
+                              value={denyReasons[trade.id] ?? ""}
+                              onChange={(event) =>
+                                setDenyReasons((prev) => ({ ...prev, [trade.id]: event.target.value }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() => void answerTrade(trade, "cancel_decline")}
+                            >
+                              Keep Trade
+                            </button>
+                          </div>
+                        ) : trade.status === "cancel_awaiting_admin" && canSeeAll ? (
+                          <div className="trades-action-cell">
+                            <button
+                              type="button"
+                              className="primary-button compact-button"
+                              onClick={() => void answerTrade(trade, "cancel_approve")}
+                            >
+                              Approve Cancellation
+                            </button>
+                            <input
+                              type="text"
+                              placeholder="Reason to deny"
+                              value={denyReasons[trade.id] ?? ""}
+                              onChange={(event) =>
+                                setDenyReasons((prev) => ({ ...prev, [trade.id]: event.target.value }))
+                              }
+                            />
+                            <button
+                              type="button"
+                              className="secondary-button compact-button"
+                              onClick={() => void answerTrade(trade, "cancel_admin_deny")}
                             >
                               Deny
                             </button>

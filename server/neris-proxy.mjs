@@ -71,7 +71,7 @@ import {
   writeAccountAudit,
 } from "./auth/permissions.mjs";
 import { tradeRequestBlockReasonFromStored } from "./trades/eligibility.mjs";
-import { applyAcceptedTrade } from "./trades/applySchedule.mjs";
+import { applyAcceptedTrade, rowsFromScheduleChange } from "./trades/applySchedule.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -5032,9 +5032,29 @@ function toTradeResponse(row) {
     reason: row.reason,
     status: row.status,
     denialReason: row.denialReason,
+    cancelRequestedBy: cancelRequesterUsername(row.historyJson),
+    statusNote: tradeStatusNote(row.historyJson),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
   };
+}
+
+function cancelRequesterUsername(historyJson) {
+  const history = Array.isArray(historyJson) ? historyJson : [];
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index]?.action === "cancel_requested") {
+      return String(history[index].by ?? "").trim().toLowerCase();
+    }
+  }
+  return "";
+}
+
+function tradeStatusNote(historyJson) {
+  const history = Array.isArray(historyJson) ? historyJson : [];
+  const latest = history[history.length - 1];
+  if (!latest) return "";
+  if (latest.action !== "cancel_declined" && latest.action !== "cancel_admin_denied") return "";
+  return trimValue(String(latest.note ?? ""));
 }
 
 function appendTradeHistory(historyJson, entry) {
@@ -5256,6 +5276,42 @@ async function saveAcceptedTrade(tenantId, existing, username, historyAction) {
   return { ok: true, trade: toTradeResponse(saved[saved.length - 1]) };
 }
 
+async function saveCancelledTrade(tenantId, existing, username, historyAction) {
+  const restored = rowsFromScheduleChange(existing.scheduleChangeJson);
+  if (!restored.ok) return restored;
+  const saved = await prisma.$transaction([
+    ...restored.rows.map((row) =>
+      prisma.scheduleAssignments.upsert({
+        where: {
+          tenantId_shiftType_dateKey: {
+            tenantId,
+            shiftType: row.shiftType,
+            dateKey: row.dateKey,
+          },
+        },
+        update: { assignmentsJson: row.assignmentsJson },
+        create: {
+          tenantId,
+          shiftType: row.shiftType,
+          dateKey: row.dateKey,
+          assignmentsJson: row.assignmentsJson,
+        },
+      }),
+    ),
+    prisma.tradeRequest.update({
+      where: { id: existing.id },
+      data: {
+        status: "cancelled",
+        historyJson: appendTradeHistory(existing.historyJson, {
+          by: username,
+          action: historyAction,
+        }),
+      },
+    }),
+  ]);
+  return { ok: true, trade: toTradeResponse(saved[saved.length - 1]) };
+}
+
 app.patch("/api/trades/:id", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;
@@ -5355,6 +5411,139 @@ app.patch("/api/trades/:id", async (request, response) => {
           historyJson: appendTradeHistory(existing.historyJson, {
             by: username,
             action: action === "approve" ? "approved" : "admin_denied",
+            note,
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    if (action === "cancel_request") {
+      const party =
+        existing.requesterUsername === username || existing.counterpartUsername === username;
+      if (!party) {
+        response.status(403).json({
+          ok: false,
+          message: "Only the two people in this trade can cancel it.",
+        });
+        return;
+      }
+      if (existing.status !== "accepted") {
+        response.status(409).json({ ok: false, message: "Only an accepted trade can be cancelled." });
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: "cancel_requested",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: "cancel_requested",
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    if (action === "cancel_accept" || action === "cancel_decline") {
+      if (existing.status !== "cancel_requested") {
+        response.status(409).json({
+          ok: false,
+          message: "This trade is not waiting for the cancellation to be accepted.",
+        });
+        return;
+      }
+      const requestedBy = cancelRequesterUsername(existing.historyJson);
+      const otherParty =
+        (existing.requesterUsername === username || existing.counterpartUsername === username) &&
+        username !== requestedBy;
+      if (!otherParty) {
+        response.status(403).json({
+          ok: false,
+          message: "Only the other person in this trade can accept the cancellation.",
+        });
+        return;
+      }
+      if (action === "cancel_decline") {
+        if (!note) {
+          response.status(400).json({ ok: false, message: "Enter a reason for keeping the trade." });
+          return;
+        }
+        const row = await prisma.tradeRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: "accepted",
+            historyJson: appendTradeHistory(existing.historyJson, {
+              by: username,
+              action: "cancel_declined",
+              note,
+            }),
+          },
+        });
+        response.json({ ok: true, trade: toTradeResponse(row) });
+        return;
+      }
+      const settings = await readTradeSettings(tenantId);
+      if (settings.cancelApproval) {
+        const row = await prisma.tradeRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: "cancel_awaiting_admin",
+            historyJson: appendTradeHistory(existing.historyJson, {
+              by: username,
+              action: "cancel_accepted",
+            }),
+          },
+        });
+        response.json({ ok: true, trade: toTradeResponse(row) });
+        return;
+      }
+      const saved = await saveCancelledTrade(tenantId, existing, username, "cancelled");
+      if (!saved.ok) {
+        response.status(400).json({ ok: false, message: saved.message });
+        return;
+      }
+      response.json(saved);
+      return;
+    }
+
+    if (action === "cancel_approve" || action === "cancel_admin_deny") {
+      if (!canSeeAllTrades(request.auth)) {
+        response.status(403).json({
+          ok: false,
+          message: "Only a sub admin or above can approve or deny a cancellation.",
+        });
+        return;
+      }
+      if (existing.status !== "cancel_awaiting_admin") {
+        response.status(409).json({
+          ok: false,
+          message: "This cancellation is not waiting for approval.",
+        });
+        return;
+      }
+      if (action === "cancel_admin_deny" && !note) {
+        response.status(400).json({ ok: false, message: "Enter a reason for denying the cancellation." });
+        return;
+      }
+      if (action === "cancel_approve") {
+        const saved = await saveCancelledTrade(tenantId, existing, username, "cancel_approved");
+        if (!saved.ok) {
+          response.status(400).json({ ok: false, message: saved.message });
+          return;
+        }
+        response.json(saved);
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: "accepted",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: "cancel_admin_denied",
             note,
           }),
         },

@@ -79,7 +79,7 @@ const stages: StageDef[] = [
   },
   {
     id: "D", name: "Stage D — Trades between members",
-    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 12 are built. An accepted trade splits the schedule. Cancelling it is Step 13.",
+    summary: "A member asks another member to cover part or all of a scheduled shift. The other member accepts or denies. Steps 8 through 13 are built. An accepted trade splits the schedule. Cancelling it puts both days back. The click-test is open.",
     steps: [
       { n: "8", title: "Give trades a shared home on the server", status: "Done",
         problem: "Trades were saved only in the browser of the person who typed them. Landon never saw a request from Josh, and admins saw nothing.",
@@ -111,12 +111,12 @@ const stages: StageDef[] = [
         fix: "November 3: Accept puts the trade on the schedule when admin approval is off. When admin approval is on, the schedule changes only after Approve. Deny does not change the schedule. For 11/5 08:00–10:00, the other person covers 08:00–10:00 and the requester keeps 10:00–20:00. If someone already works the whole shift and can fill the higher seat, that person moves there for the entire shift and that seat is not split. Only the hours that still change people are listed on Trades. Payback uses the same rule. The previous day is saved so Step 13 can put it back.",
         who: "Me.",
         done: "Completed in code. Done for you when Accept splits November 5 and, if payback is on, the payback day shows Josh." },
-      { n: "13", title: "Cancel a trade and put the schedule back", status: "New",
+      { n: "13", title: "Cancel a trade and put the schedule back", status: "Done",
         problem: "There is no way to undo a trade.",
         why: "Plans change, and the schedule must return to how it was.",
-        fix: "Either person clicks Cancel Requested Trade. The other person must accept the cancellation, plus an admin if the department requires approval before cancelling. Then both the trade day and any payback day go back to how they were before the trade.",
+        fix: "November 4: Either person clicks Cancel Requested Trade on an accepted trade. The other person clicks Accept Cancellation. If Require approval before cancelling a trade is on, a sub admin or above must Approve Cancellation before the schedule changes. Then both the trade day and any payback day go back to the saved previous day. Keep Trade, or an admin Deny, leaves the schedule as it is and the trade stays Accepted.",
         who: "Me.",
-        done: "Not started. Done when cancelling the 11/5 example restores Josh 08:00–20:00 and removes the payback change." },
+        done: "Completed in code. Done for you when cancelling the 11/5 example restores Josh 08:00–20:00 and Lance in the lower seat, and the Trades lines are gone." },
     ],
   },
 ];
@@ -282,11 +282,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 3, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–12 done locally (an accepted trade splits the schedule) · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–13 done locally (cancel puts the schedule back) · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: click-test Step 12">
-        Step 11 passed, including the seat move. Accept now splits the schedule. The click-test is in chat. Step 13 waits until that looks right.
+      <Callout tone="info" title="Next: click-test Step 13">
+        Step 12 passed. Cancel Requested Trade is on an accepted trade. The other person accepts the cancellation, and an admin too when that Trades box is on. The click-test is in chat. Do not start the next step until that looks right.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

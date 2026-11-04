@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { applyAcceptedTrade } from "./applySchedule.mjs";
+import { applyAcceptedTrade, rowsFromScheduleChange } from "./applySchedule.mjs";
 
 const payload = {
   personnelQualifications: ["Paramedic", "EMT"],
@@ -144,4 +144,41 @@ test("a payback day that cannot be covered is refused and the schedule stays unc
   assert.equal(result.ok, false);
   assert.match(result.message, /On the payback date, Joshua Wichtner is on Injury/);
   assert.equal(rows[0].assignmentsJson.slotSegments.Ambulance, undefined);
+});
+
+test("cancelling restores the trade day and the payback day", () => {
+  const before = [
+    row("2026-11-05", { Ambulance: ["Joshua Wichtner", "Lance Keller"] }),
+    row("2026-11-12", { Ambulance: ["Landon LeDuke", ""] }),
+  ];
+  const applied = applyAcceptedTrade({
+    payload,
+    rows: before,
+    trade: {
+      id: "trade-cancel",
+      requesterName: "Joshua Wichtner",
+      counterpartName: "Landon LeDuke",
+      tradeDate: "2026-11-05",
+      startTime: "08:00",
+      endTime: "10:00",
+      paybackRequired: true,
+      paybackDate: "2026-11-12",
+    },
+  });
+  assert.equal(applied.ok, true);
+  assert.notEqual(applied.rows[0].assignmentsJson.assignments.Ambulance[0], "Joshua Wichtner");
+  const restored = rowsFromScheduleChange(applied.scheduleChange);
+  assert.equal(restored.ok, true);
+  const november5 = restored.rows.find((entry) => entry.dateKey === "2026-11-05");
+  const november12 = restored.rows.find((entry) => entry.dateKey === "2026-11-12");
+  assert.deepEqual(november5.assignmentsJson.assignments.Ambulance, ["Joshua Wichtner", "Lance Keller"]);
+  assert.deepEqual(november5.assignmentsJson.slotSegments.Ambulance ?? [], []);
+  assert.deepEqual(november12.assignmentsJson.assignments.Ambulance, ["Landon LeDuke", ""]);
+  assert.deepEqual(before[0].assignmentsJson.assignments.Ambulance, ["Joshua Wichtner", "Lance Keller"]);
+});
+
+test("a trade with no saved previous day cannot be cancelled", () => {
+  const restored = rowsFromScheduleChange(null);
+  assert.equal(restored.ok, false);
+  assert.match(restored.message, /previous schedule was saved/);
 });
