@@ -27,12 +27,12 @@ const stages: StageDef[] = [
         fix: "November 3, 2026: installed a private database program in ~/fu-local-db (outside the project, no admin rights needed), created the app's tables in it, and created 'Weekday Test Fire Department' with one admin account. The local server runs from its own settings file with only the local database address. It has no NERIS or Fire Recovery keys.",
         who: "Me.",
         done: "Completed: http://localhost:5173 shows Weekday Test Fire Department and admin sign-in works. Staging was not touched." },
-      { n: "2", title: "Set up the department from scratch in Admin Functions", status: "Next",
+      { n: "2", title: "Set up the department from scratch in Admin Functions", status: "Done",
         problem: "We have never timed or written down what a new department must fill in before the schedule works.",
         why: "Ease of setup decides whether departments can onboard themselves.",
-        fix: "You enter department details, stations, apparatus, qualifications, personnel, Shift Information (one 12-hour shift starting 08:00) and Scheduler Settings, in whatever order feels natural. Tell me every confusing label, missing hint, error, or dead end as you go, and I add it to the Findings tab.",
+        fix: "November 4: the Weekday Test Fire Department is set up. The shift is 8a-8p, 08:00, 12 hours, Daily. Personnel, qualifications, and apparatus are in place, and the Personnel Schedule has been used for the trades tests. Setup findings are on the Findings tab.",
         who: "You; I record findings.",
-        done: "The Personnel Schedule page opens for the new department, and the Findings tab lists every setup problem you hit." },
+        done: "Passed. The user confirmed Step 2 is complete. The schedule opens and has been used." },
     ],
   },
   {
@@ -282,11 +282,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 4, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Steps 8–13 passed locally · Next is Step 3 after layout approval · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, Chicago · Branch cursor/watseka-scheduling-plan · Stage A done · Steps 8–13 passed · Next is Step 3 after layout approval · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: Step 3, after you approve the layout">
-        Step 13 passed. The next build is Selected weekdays, so a shift can run Monday–Friday only. The wording and checkbox layout need your approval before any code. A 24/48 shift must keep showing the same days it shows today.
+        Stage A is done, and Step 13 passed. The next build is Selected weekdays, so a shift can run Monday–Friday only. The wording and checkbox layout need your approval before any code. A 24/48 shift must keep showing the same days it shows today.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

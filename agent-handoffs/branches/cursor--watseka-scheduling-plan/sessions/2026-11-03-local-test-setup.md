@@ -25,7 +25,7 @@
 - None.
 
 ## Next steps for next agent
-1. Collect the operator's Step 2 setup findings and add them to the plan's Findings tab.
+1. Step 2 is done. The user confirmed that on November 4. Do not restart the department setup.
 2. Get approval on the weekday recurrence design (plan Step 3) before coding.
 
 ## Notes for user communication
