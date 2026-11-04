@@ -4864,6 +4864,23 @@ app.get("/api/schedule-assignments", async (request, response) => {
   }
 });
 
+function collectScheduleNames(assignments) {
+  const names = new Set();
+  if (!assignments || typeof assignments !== "object" || Array.isArray(assignments)) return names;
+  for (const slots of Object.values(assignments)) {
+    if (!Array.isArray(slots)) continue;
+    for (const slot of slots) {
+      String(slot ?? "")
+        .split("||OT||")
+        .forEach((part) => {
+          const name = part.trim().toLowerCase();
+          if (name) names.add(name);
+        });
+    }
+  }
+  return names;
+}
+
 app.post("/api/schedule-assignments", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;
@@ -4920,8 +4937,60 @@ app.post("/api/schedule-assignments", async (request, response) => {
     );
     const existingRows = await prisma.scheduleAssignments.findMany({
       where: { tenantId },
-      select: { id: true, shiftType: true, dateKey: true },
+      select: { id: true, shiftType: true, dateKey: true, assignmentsJson: true },
     });
+
+    if (!canSeeAllTrades(request.auth)) {
+      const details = await prisma.departmentDetails.findUnique({
+        where: { tenantId },
+        select: { payloadJson: true },
+      });
+      const payloadRoot =
+        details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+      const roster = new Set(
+        (Array.isArray(payloadRoot.schedulerPersonnelRecords) ? payloadRoot.schedulerPersonnelRecords : [])
+          .map((record) => trimValue(String(record?.name ?? "")).toLowerCase())
+          .filter(Boolean),
+      );
+      const existingByKey = new Map(
+        existingRows.map((row) => [`${row.shiftType}::${row.dateKey}`, row]),
+      );
+      for (const existing of existingRows) {
+        const key = `${existing.shiftType}::${existing.dateKey}`;
+        if (!validCompositeKeys.has(key)) {
+          response.status(403).json({
+            ok: false,
+            message: "You can fill an open seat. Taking someone off the schedule needs a sub admin to approve.",
+          });
+          return;
+        }
+      }
+      for (const row of parsedRows) {
+        const key = `${row.shiftType}::${row.dateKey}`;
+        const existing = existingByKey.get(key);
+        const payload =
+          existing?.assignmentsJson && typeof existing.assignmentsJson === "object"
+            ? existing.assignmentsJson
+            : {};
+        const previousAssignments =
+          payload.assignments && typeof payload.assignments === "object" ? payload.assignments : payload;
+        const nextAssignments = row.assignmentsJson.assignments;
+        const previousNames = collectScheduleNames(previousAssignments);
+        const nextNames = collectScheduleNames(nextAssignments);
+        for (const name of previousNames) {
+          if (!roster.has(name) || nextNames.has(name)) continue;
+          response.status(403).json({
+            ok: false,
+            message: "You can fill an open seat. Taking someone off the schedule needs a sub admin to approve.",
+          });
+          return;
+        }
+        row.assignmentsJson.overtimeSplit =
+          payload.overtimeSplit && typeof payload.overtimeSplit === "object" ? payload.overtimeSplit : {};
+        row.assignmentsJson.slotSegments =
+          payload.slotSegments && typeof payload.slotSegments === "object" ? payload.slotSegments : {};
+      }
+    }
 
     const deletions = existingRows
       .filter((row) => !validCompositeKeys.has(`${row.shiftType}::${row.dateKey}`))
@@ -4979,7 +5048,7 @@ async function readTradeSettings(tenantId) {
   return {
     adminApproval: payload.tradeAdminApproval === true,
     paybackRequired: payload.tradePaybackRequired === true,
-    cancelApproval: payload.tradeCancelApproval === true,
+    cancelApproval: payload.tradeCancelApproval !== false,
   };
 }
 
@@ -5557,6 +5626,425 @@ app.patch("/api/trades/:id", async (request, response) => {
     response.status(500).json({
       ok: false,
       message: publicErrorMessage(error, "Unexpected trade update error."),
+    });
+  }
+});
+
+// ----- /api/qualification-overrides (tenant-scoped; sub admin and above review) -----
+
+function clockToMinutes(value) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value ?? ""));
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function isScheduleLeaveRequest(requiredQualification) {
+  const value = String(requiredQualification ?? "");
+  return value === "Remove from seat" || value.startsWith("Partial shift ");
+}
+
+async function applyPartialShift(tenantId, requestRow) {
+  const match = /^Partial shift (\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(requestRow.requiredQualification);
+  if (!match) return;
+  const startMinutes = clockToMinutes(match[1]);
+  const endMinutes = clockToMinutes(match[2]);
+  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return;
+  const existing = await prisma.scheduleAssignments.findUnique({
+    where: {
+      tenantId_shiftType_dateKey: {
+        tenantId,
+        shiftType: requestRow.shiftType,
+        dateKey: requestRow.dateKey,
+      },
+    },
+  });
+  const payload =
+    existing?.assignmentsJson && typeof existing.assignmentsJson === "object"
+      ? JSON.parse(JSON.stringify(existing.assignmentsJson))
+      : {};
+  if (!payload.assignments || typeof payload.assignments !== "object") payload.assignments = {};
+  if (!payload.overtimeSplit || typeof payload.overtimeSplit !== "object") payload.overtimeSplit = {};
+  if (!payload.slotSegments || typeof payload.slotSegments !== "object") payload.slotSegments = {};
+  const flags = Array.isArray(payload.overtimeSplit[requestRow.unitId])
+    ? [...payload.overtimeSplit[requestRow.unitId]]
+    : [];
+  while (flags.length <= requestRow.slotIndex) flags.push(false);
+  flags[requestRow.slotIndex] = true;
+  payload.overtimeSplit[requestRow.unitId] = flags;
+  const unitSegments = Array.isArray(payload.slotSegments[requestRow.unitId])
+    ? [...payload.slotSegments[requestRow.unitId]]
+    : [];
+  while (unitSegments.length <= requestRow.slotIndex) unitSegments.push([]);
+  const current = Array.isArray(unitSegments[requestRow.slotIndex]) ? unitSegments[requestRow.slotIndex] : [];
+  const segmentId = `partial-${requestRow.id}`;
+  const assignedNames = String(
+    Array.isArray(payload.assignments[requestRow.unitId])
+      ? payload.assignments[requestRow.unitId][requestRow.slotIndex] ?? ""
+      : "",
+  )
+    .split("||OT||")
+    .map((name) => name.trim())
+    .filter((name) => name && name.toLowerCase() !== requestRow.personName.trim().toLowerCase());
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const departmentPayload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  const shifts = Array.isArray(departmentPayload.shiftInformationEntries)
+    ? departmentPayload.shiftInformationEntries
+    : [];
+  const shift = shifts.find((entry) => String(entry?.shiftType ?? "") === requestRow.shiftType);
+  const shiftStart = clockToMinutes(String(shift?.startTime ?? "")) ?? 8 * 60;
+  const shiftHours = Math.max(1, Number(shift?.shiftDuration) || 12);
+  const shiftEnd = shiftStart + shiftHours * 60;
+  const keptOthers = assignedNames.map((name) => ({
+    id: `kept-${requestRow.id}-${name.toLowerCase().replace(/\s+/g, "-")}`,
+    assigneeType: "personnel",
+    personnelName: name,
+    startMinutes: shiftStart,
+    endMinutes: shiftEnd,
+    source: "manual",
+    overtime: false,
+  }));
+  const keptNames = new Set(assignedNames.map((name) => name.toLowerCase()));
+  unitSegments[requestRow.slotIndex] = [
+    ...current.filter(
+      (item) =>
+        item &&
+        item.id !== segmentId &&
+        !keptNames.has(String(item.personnelName ?? "").trim().toLowerCase()) &&
+        String(item.personnelName ?? "").trim().toLowerCase() !== requestRow.personName.trim().toLowerCase(),
+    ),
+    ...keptOthers,
+    {
+      id: segmentId,
+      assigneeType: "personnel",
+      personnelName: requestRow.personName,
+      startMinutes,
+      endMinutes,
+      source: "manual",
+      overtime: false,
+    },
+  ];
+  payload.slotSegments[requestRow.unitId] = unitSegments;
+  if (existing) {
+    await prisma.scheduleAssignments.update({
+      where: { id: existing.id },
+      data: { assignmentsJson: payload },
+    });
+    return;
+  }
+  await prisma.scheduleAssignments.create({
+    data: {
+      tenantId,
+      shiftType: requestRow.shiftType,
+      dateKey: requestRow.dateKey,
+      assignmentsJson: payload,
+    },
+  });
+}
+
+function toOverrideResponse(row) {
+  return {
+    id: row.id,
+    requesterUsername: row.requesterUsername,
+    requesterName: row.requesterName,
+    personName: row.personName,
+    apparatus: row.apparatus,
+    unitId: row.unitId,
+    slotIndex: row.slotIndex,
+    dateKey: row.dateKey,
+    requiredQualification: row.requiredQualification,
+    shiftType: row.shiftType,
+    status: row.status,
+    denialReason: row.denialReason,
+  };
+}
+
+function slotNamesWithout(slotValue, personName) {
+  const target = personName.trim().toLowerCase();
+  return String(slotValue ?? "")
+    .split("||OT||")
+    .map((name) => name.trim())
+    .filter((name) => name && name.toLowerCase() !== target)
+    .join("||OT||");
+}
+
+async function removeOverrideFromSchedule(tenantId, requestRow) {
+  const row = await prisma.scheduleAssignments.findUnique({
+    where: {
+      tenantId_shiftType_dateKey: {
+        tenantId,
+        shiftType: requestRow.shiftType,
+        dateKey: requestRow.dateKey,
+      },
+    },
+  });
+  if (!row?.assignmentsJson || typeof row.assignmentsJson !== "object") return;
+  const payload = JSON.parse(JSON.stringify(row.assignmentsJson));
+  const assignments =
+    payload.assignments && typeof payload.assignments === "object" ? payload.assignments : payload;
+  const slots = assignments[requestRow.unitId];
+  if (Array.isArray(slots) && requestRow.slotIndex >= 0 && requestRow.slotIndex < slots.length) {
+    slots[requestRow.slotIndex] = slotNamesWithout(slots[requestRow.slotIndex], requestRow.personName);
+  }
+  const segmentDay = payload.slotSegments?.[requestRow.unitId];
+  if (Array.isArray(segmentDay) && Array.isArray(segmentDay[requestRow.slotIndex])) {
+    segmentDay[requestRow.slotIndex] = segmentDay[requestRow.slotIndex].map((segment) => {
+      if (!segment || typeof segment !== "object") return segment;
+      if (String(segment.personnelName ?? "").trim().toLowerCase() !== requestRow.personName.trim().toLowerCase()) {
+        return segment;
+      }
+      return { ...segment, personnelName: "", assigneeType: "hire" };
+    });
+  }
+  await prisma.scheduleAssignments.update({
+    where: { id: row.id },
+    data: { assignmentsJson: payload },
+  });
+}
+
+app.get("/api/qualification-overrides", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const canReview = canSeeAllTrades(request.auth);
+    const rows = await prisma.qualificationOverrideRequest.findMany({
+      where: {
+        tenantId,
+        status: { in: ["pending", "approved"] },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    response.json({ ok: true, canReview, requests: rows.map(toOverrideResponse) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected permission request read error."),
+    });
+  }
+});
+
+app.post("/api/qualification-overrides", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const personName = trimValue(String(body.personName ?? ""));
+    const dateKey = trimValue(String(body.dateKey ?? ""));
+    const unitId = trimValue(String(body.unitId ?? ""));
+    const apparatus = trimValue(String(body.apparatus ?? ""));
+    const shiftType = trimValue(String(body.shiftType ?? ""));
+    const requiredQualification = trimValue(String(body.requiredQualification ?? ""));
+    const slotIndex = Math.floor(Number(body.slotIndex));
+    if (!personName || !TRADE_DATE_PATTERN.test(dateKey) || !unitId || !requiredQualification || slotIndex < 0) {
+      response.status(400).json({ ok: false, message: "The permission request is missing a seat or a date." });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const payload =
+      details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+    const rules =
+      payload.personnelQualificationOverrides && typeof payload.personnelQualificationOverrides === "object"
+        ? payload.personnelQualificationOverrides
+        : {};
+    const rule = rules[requiredQualification];
+    const placeNow = body.placeNow === true && canSeeAllTrades(request.auth);
+    const removalRequest = requiredQualification === "Remove from seat";
+    if (removalRequest) {
+      const fullNameMap = await getTenantUserFullNameMap(tenantId);
+      const requesterUsername = request.auth.username.toLowerCase();
+      const requesterName = trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername;
+      if (personName.toLowerCase() !== requesterName.toLowerCase()) {
+        response.status(403).json({ ok: false, message: "You can only request to be removed from your own seat." });
+        return;
+      }
+      const existing = await prisma.qualificationOverrideRequest.findFirst({
+        where: { tenantId, personName, dateKey, unitId, slotIndex, status: "pending", requiredQualification: "Remove from seat" },
+      });
+      if (existing) {
+        response.json({ ok: true, request: toOverrideResponse(existing) });
+        return;
+      }
+      const row = await prisma.qualificationOverrideRequest.create({
+        data: {
+          tenantId,
+          requesterUsername,
+          requesterName,
+          personName,
+          apparatus,
+          unitId,
+          slotIndex,
+          dateKey,
+          requiredQualification: "Remove from seat",
+          shiftType,
+          status: "pending",
+        },
+      });
+      response.json({ ok: true, request: toOverrideResponse(row) });
+      return;
+    }
+    const partialMatch = /^Partial shift (\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(requiredQualification);
+    if (partialMatch) {
+      const startMinutes = clockToMinutes(partialMatch[1]);
+      const endMinutes = clockToMinutes(partialMatch[2]);
+      if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
+        response.status(400).json({
+          ok: false,
+          message: "Enter a start and end in 24-hour time, with the end later than the start.",
+        });
+        return;
+      }
+      const fullNameMap = await getTenantUserFullNameMap(tenantId);
+      const requesterUsername = request.auth.username.toLowerCase();
+      const requesterName = trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername;
+      if (personName.toLowerCase() !== requesterName.toLowerCase()) {
+        response.status(403).json({ ok: false, message: "You can only request a partial shift for yourself." });
+        return;
+      }
+      const existing = await prisma.qualificationOverrideRequest.findFirst({
+        where: { tenantId, personName, dateKey, unitId, slotIndex, status: "pending", requiredQualification },
+      });
+      if (existing) {
+        response.json({ ok: true, request: toOverrideResponse(existing) });
+        return;
+      }
+      const partialRow = await prisma.qualificationOverrideRequest.create({
+        data: {
+          tenantId,
+          requesterUsername,
+          requesterName,
+          personName,
+          apparatus,
+          unitId,
+          slotIndex,
+          dateKey,
+          requiredQualification,
+          shiftType,
+          status: "pending",
+        },
+      });
+      response.json({ ok: true, request: toOverrideResponse(partialRow) });
+      return;
+    }
+    const lower = trimValue(String(rule?.lowerQualification ?? ""));
+    if (!rule || rule.enabled !== true || !lower) {
+      response.status(400).json({
+        ok: false,
+        message: "This qualification does not allow an admin override.",
+      });
+      return;
+    }
+    const records = Array.isArray(payload.schedulerPersonnelRecords) ? payload.schedulerPersonnelRecords : [];
+    const person = records.find(
+      (entry) => trimValue(String(entry?.name ?? "")).toLowerCase() === personName.toLowerCase(),
+    );
+    const qualifications = Array.isArray(person?.qualifications)
+      ? person.qualifications.map((item) => trimValue(String(item ?? ""))).filter(Boolean)
+      : [];
+    if (!qualifications.includes(lower)) {
+      response.status(400).json({
+        ok: false,
+        message: `${personName} does not have ${lower}, so this seat cannot be requested.`,
+      });
+      return;
+    }
+    const existing = await prisma.qualificationOverrideRequest.findFirst({
+      where: { tenantId, personName, dateKey, unitId, slotIndex, status: "pending", requiredQualification },
+    });
+    if (existing) {
+      response.json({ ok: true, request: toOverrideResponse(existing) });
+      return;
+    }
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const requesterUsername = request.auth.username.toLowerCase();
+    const row = await prisma.qualificationOverrideRequest.create({
+      data: {
+        tenantId,
+        requesterUsername,
+        requesterName: trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername,
+        personName,
+        apparatus,
+        unitId,
+        slotIndex,
+        dateKey,
+        requiredQualification,
+        shiftType,
+        status: placeNow ? "approved" : "pending",
+      },
+    });
+    response.json({ ok: true, request: toOverrideResponse(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected permission request error."),
+    });
+  }
+});
+
+app.patch("/api/qualification-overrides/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    if (!canSeeAllTrades(request.auth)) {
+      response.status(403).json({ ok: false, message: "Only a sub admin or above can approve this request." });
+      return;
+    }
+    const existing = await prisma.qualificationOverrideRequest.findFirst({
+      where: { id: request.params.id, tenantId },
+    });
+    if (!existing || existing.status !== "pending") {
+      response.status(404).json({ ok: false, message: "That permission request is no longer waiting." });
+      return;
+    }
+    const action = trimValue(String(request.body?.action ?? ""));
+    if (action === "deny") {
+      const denialReason = trimValue(String(request.body?.denialReason ?? ""));
+      if (!denialReason) {
+        response.status(400).json({ ok: false, message: "Enter a reason before denying." });
+        return;
+      }
+      if (!isScheduleLeaveRequest(existing.requiredQualification)) {
+        await removeOverrideFromSchedule(tenantId, existing);
+      }
+      const row = await prisma.qualificationOverrideRequest.update({
+        where: { id: existing.id },
+        data: { status: "denied", denialReason },
+      });
+      response.json({ ok: true, request: toOverrideResponse(row) });
+      return;
+    }
+    if (action !== "approve") {
+      response.status(400).json({ ok: false, message: "Unknown permission action." });
+      return;
+    }
+    if (existing.requiredQualification.startsWith("Partial shift ")) {
+      await applyPartialShift(tenantId, existing);
+    } else if (existing.requiredQualification === "Remove from seat") {
+      await removeOverrideFromSchedule(tenantId, existing);
+    }
+    const row = await prisma.qualificationOverrideRequest.update({
+      where: { id: existing.id },
+      data: { status: "approved", denialReason: "" },
+    });
+    response.json({ ok: true, request: toOverrideResponse(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected permission update error."),
     });
   }
 });

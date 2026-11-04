@@ -37,7 +37,9 @@ import {
   getBestQualificationRankForPerson,
   getDatesForMonth,
   getRecurrenceIntervalDays,
-  getShiftStartOffsetDays,
+  parseQualificationOverrides,
+  parseRecurrenceWeekdays,
+  shiftOccursOnDate,
   personCanJoinApparatus,
   reorderAssignedByRequirementCoverage,
   requirementsSatisfiedByAssignedPersonnel,
@@ -48,6 +50,88 @@ import {
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
+
+type QualificationOverrideRow = {
+  id: string;
+  personName: string;
+  unitId: string;
+  slotIndex: number;
+  dateKey: string;
+  status: string;
+  apparatus: string;
+  requiredQualification: string;
+  shiftType: string;
+};
+
+function pinOverrideSeats(
+  rows: QualificationOverrideRow[],
+  dateKey: string,
+  unitId: string,
+  slots: string[],
+  slotCount: number,
+  preserveNames: string[] = [],
+): string[] {
+  const next = slots.slice(0, slotCount).map((slot) => String(slot ?? ""));
+  while (next.length < slotCount) next.push("");
+  const keep = new Set(preserveNames.map((name) => name.trim()).filter((name) => name.length > 0));
+  const pins = rows.filter(
+    (item) =>
+      (item.status === "pending" || item.status === "approved") &&
+      isHeldQualification(item.requiredQualification) &&
+      item.dateKey === dateKey &&
+      item.unitId === unitId &&
+      item.slotIndex >= 0 &&
+      item.slotIndex < slotCount,
+  );
+  const pinnedIndexes = new Set(pins.map((item) => item.slotIndex));
+  for (const pin of pins) {
+    const alreadySeated = next.some((slot) =>
+      parseAssignedNames(slot).some((name) => name.trim() === pin.personName),
+    );
+    if (!alreadySeated && !keep.has(pin.personName)) continue;
+    const displaced = parseAssignedNames(next[pin.slotIndex] ?? "").filter(
+      (name) => name.trim() && name.trim() !== pin.personName,
+    );
+    for (let index = 0; index < next.length; index += 1) {
+      const names = parseAssignedNames(next[index] ?? "").filter((name) => name.trim() !== pin.personName);
+      next[index] = serializeAssignedNames(names);
+    }
+    next[pin.slotIndex] = pin.personName;
+    for (const name of displaced) {
+      const empty = next.findIndex(
+        (value, index) =>
+          !pinnedIndexes.has(index) && parseAssignedNames(value).every((entry) => !entry.trim()),
+      );
+      if (empty >= 0) next[empty] = name.trim();
+    }
+  }
+  return next;
+}
+import { hasAtLeastRole } from "./roleHierarchy";
+import { useMyPermissions } from "./useMyPermissions";
+
+const SEAT_REMOVAL = "Remove from seat";
+const PARTIAL_SHIFT = "Partial shift ";
+
+function isHeldQualification(value: string): boolean {
+  return value !== SEAT_REMOVAL && !value.startsWith(PARTIAL_SHIFT);
+}
+
+function militaryToClock(raw: string): string | null {
+  const digits = raw.replace(/\D/g, "");
+  const padded = digits.length === 3 ? `0${digits}` : digits;
+  if (!/^\d{4}$/.test(padded)) return null;
+  const hours = Number(padded.slice(0, 2));
+  const minutes = Number(padded.slice(2));
+  if (hours > 23 || minutes > 59) return null;
+  return `${padded.slice(0, 2)}:${padded.slice(2)}`;
+}
+
+function militaryRangeReady(start: string, end: string): boolean {
+  const startClock = militaryToClock(start);
+  const endClock = militaryToClock(end);
+  return Boolean(startClock && endClock && endClock > startClock);
+}
 
 function assignmentsPreservingNames(
   ordered: string[],
@@ -196,6 +280,37 @@ export function PersonnelSchedulePage({
     window.location.hostname.toLowerCase().includes("demo"),
   );
   const [scheduleNotice, setScheduleNotice] = useState<string | null>(null);
+  const [noticeAction, setNoticeAction] = useState<{ label: string; run: () => void } | null>(null);
+  const [selfFill, setSelfFill] = useState<{
+    dateKey: string;
+    unitId: string;
+    slotIndex: number;
+    apparatus: string;
+  } | null>(null);
+  const [selfFillMode, setSelfFillMode] = useState<"" | "full" | "partial">("");
+  const [selfFillStart, setSelfFillStart] = useState("");
+  const [selfFillEnd, setSelfFillEnd] = useState("");
+  const permissionGrants = useMyPermissions();
+  const canEditSchedule = permissionGrants?.["schedule.edit"] === true;
+  const [viewerName, setViewerName] = useState("");
+  const [viewerIsReviewer, setViewerIsReviewer] = useState(false);
+  const limitedScheduleEditor = canEditSchedule && !viewerIsReviewer;
+  const limitedEditorRef = useRef(false);
+  limitedEditorRef.current = limitedScheduleEditor;
+  const scheduleNoticeRef = useRef<(message: string) => void>(() => undefined);
+  const pendingOverrideRef = useRef<QualificationOverrideRow[]>([]);
+  const assignPersonToSlotRef = useRef<
+    | ((
+        dateKey: string,
+        unitId: string,
+        slotIndex: number,
+        personName: string,
+        bypassQualification?: boolean,
+      ) => void)
+    | null
+  >(null);
+  const [pendingOverrides, setPendingOverrides] = useState<QualificationOverrideRow[]>([]);
+  const [overridesReady, setOverridesReady] = useState(false);
   const [scheduleUndoStack, setScheduleUndoStack] = useState<
     Array<{
       assignments: ScheduleAssignments;
@@ -289,11 +404,15 @@ export function PersonnelSchedulePage({
             const allowScheduledOvertime = d.allowScheduledOvertime === false ? false : true;
             const segmentSummaryTarget = d.segmentSummaryTarget === "trades" ? "trades" : "info";
             const overtimeSummaryTarget = d.overtimeSummaryTarget === "trades" ? "trades" : "info";
+            const allowPartialShift = d.allowPartialShift === true;
             const personnelQualifications = Array.isArray(d.personnelQualifications)
               ? (d.personnelQualifications as string[])
               : [];
             const personnelQualificationColors = parseQualificationColorMap(
               d.personnelQualificationColors,
+            );
+            const personnelQualificationOverrides = parseQualificationOverrides(
+              d.personnelQualificationOverrides,
             );
             const kellyRotations = Array.isArray(d.kellyRotations)
               ? (d.kellyRotations as PersonnelScheduleData["kellyRotations"])
@@ -309,9 +428,11 @@ export function PersonnelSchedulePage({
               allowScheduledOvertime,
               segmentSummaryTarget,
               overtimeSummaryTarget,
+              allowPartialShift,
               personnel,
               personnelQualifications,
               personnelQualificationColors,
+              personnelQualificationOverrides,
               kellyRotations,
               shiftEntries,
             });
@@ -363,11 +484,11 @@ export function PersonnelSchedulePage({
   }, [normalizeAdditionalFields, normalizeDepartmentDraft]);
 
   useEffect(() => {
-    if (!hasLoadedRemoteSchedule) {
+    if (!hasLoadedRemoteSchedule || !canEditSchedule) {
       return;
     }
     const timeout = window.setTimeout(() => {
-      fetch("/api/schedule-assignments", {
+      void fetch("/api/schedule-assignments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -375,12 +496,18 @@ export function PersonnelSchedulePage({
           overtimeSplit: scheduleOvertimeSplit,
           slotSegments: scheduleSlotSegments,
         }),
-      }).catch(() => {
-        // Keep local fallback persistence if network sync fails.
-      });
+      })
+        .then(async (response) => {
+          if (response.ok) return;
+          const json = (await response.json().catch(() => null)) as { message?: string } | null;
+          setScheduleNotice(json?.message || "That schedule change was not saved.");
+        })
+        .catch(() => {
+          // Keep local fallback persistence if network sync fails.
+        });
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [scheduleAssignments, scheduleOvertimeSplit, scheduleSlotSegments, hasLoadedRemoteSchedule]);
+  }, [scheduleAssignments, scheduleOvertimeSplit, scheduleSlotSegments, hasLoadedRemoteSchedule, canEditSchedule]);
 
   const shiftOptions = useMemo(() => {
     const ordered = [...departmentData.shiftEntries].sort((a, b) => {
@@ -492,17 +619,8 @@ export function PersonnelSchedulePage({
 
   const activeDateKeys = useMemo(() => {
     const set = new Set<string>();
-    const intervalDays = getRecurrenceIntervalDays(effectiveShiftEntry);
-    const shiftOffset = getShiftStartOffsetDays(effectiveShift);
-    const anchorUtc = Date.UTC(2026, 0, 1 + shiftOffset);
     dates.forEach((date) => {
-      if (intervalDays <= 1) {
-        set.add(toDateKey(date));
-        return;
-      }
-      const dateUtc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
-      const dayDiff = Math.floor((dateUtc - anchorUtc) / (24 * 60 * 60 * 1000));
-      if (dayDiff >= 0 && dayDiff % intervalDays === 0) {
+      if (shiftOccursOnDate(effectiveShiftEntry, date, effectiveShift)) {
         set.add(toDateKey(date));
       }
     });
@@ -594,14 +712,28 @@ export function PersonnelSchedulePage({
         );
         if (dayDiff < 0) return;
         const interval = Math.max(1, rotation.repeatsEveryValue);
-        const recurrenceDays = Math.max(
-          1,
-          getRecurrenceIntervalDays(effectiveShiftEntry),
-        );
-        const isRotationDay =
-          rotation.repeatsEveryUnit === "Days"
-            ? dayDiff % interval === 0
-            : dayDiff % (interval * recurrenceDays) === 0;
+        const weekdays = parseRecurrenceWeekdays(effectiveShiftEntry);
+        let isRotationDay = false;
+        if (weekdays) {
+          if (!weekdays.includes(dayDate.getDay())) return;
+          if (rotation.repeatsEveryUnit === "Days") {
+            isRotationDay = dayDiff % interval === 0;
+          } else {
+            let workingDays = 0;
+            const cursor = new Date(startsOnDate);
+            while (cursor <= dayDate) {
+              if (weekdays.includes(cursor.getDay())) workingDays += 1;
+              cursor.setDate(cursor.getDate() + 1);
+            }
+            isRotationDay = workingDays > 0 && (workingDays - 1) % interval === 0;
+          }
+        } else {
+          const recurrenceDays = Math.max(1, getRecurrenceIntervalDays(effectiveShiftEntry));
+          isRotationDay =
+            rotation.repeatsEveryUnit === "Days"
+              ? dayDiff % interval === 0
+              : dayDiff % (interval * recurrenceDays) === 0;
+        }
         if (!isRotationDay) return;
         const person = personnelByName.get(rotation.personnel);
         if (!person || !personnelMatchesShift(person, effectiveShift)) return;
@@ -703,6 +835,9 @@ export function PersonnelSchedulePage({
   );
   const toggleOvertimeForSlot = useCallback(
     (dateKey: string, unitId: string, slotIndex: number, enabled: boolean) => {
+      if (limitedEditorRef.current) {
+        return;
+      }
       pushUndoSnapshot("Toggle segment mode");
       const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
       const nextSplit: ScheduleOvertimeSplit = {
@@ -861,6 +996,9 @@ export function PersonnelSchedulePage({
       segments: ScheduleSegment[],
       actionLabel: string,
     ) => {
+      if (limitedEditorRef.current) {
+        return;
+      }
       pushUndoSnapshot(actionLabel);
       const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
       const nextRows = scheduleSlotSegments[storageDateKey]
@@ -885,9 +1023,275 @@ export function PersonnelSchedulePage({
     [effectiveShift, pushUndoSnapshot, scheduleSlotSegments, sortSegments],
   );
 
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/auth/session")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((json: { ok?: boolean; user?: { name?: string; role?: string } } | null) => {
+        if (!active || !json?.ok || !json.user) return;
+        setViewerName(String(json.user.name ?? "").trim());
+        setViewerIsReviewer(hasAtLeastRole(json.user.role, "subadmin"));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const load = () => {
+      void fetch("/api/qualification-overrides")
+        .then(async (response) => (response.ok ? response.json() : null))
+        .then((json: { ok?: boolean; requests?: QualificationOverrideRow[] } | null) => {
+          if (!active || !json?.ok || !Array.isArray(json.requests)) return;
+          const kept = json.requests.filter(
+          (row) => row.status === "pending" || row.status === "approved",
+        );
+          pendingOverrideRef.current = kept;
+          setPendingOverrides(kept);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          if (active) setOverridesReady(true);
+        });
+    };
+    load();
+    window.addEventListener("focus", load);
+    return () => {
+      active = false;
+      window.removeEventListener("focus", load);
+    };
+  }, []);
+
+  const rememberPending = useCallback((row: QualificationOverrideRow) => {
+    const next = [...pendingOverrideRef.current.filter((item) => item.id !== row.id), row];
+    pendingOverrideRef.current = next;
+    setPendingOverrides(next);
+  }, []);
+
+  const overrideDraftFor = useCallback(
+    (personName: string, unitId: string, slotIndex: number) => {
+      const row = scheduleRows.find((entry) => entry.unitId === unitId && entry.rowType === "apparatus");
+      const requiredQualification = row?.requiredQualifications[slotIndex]?.trim() ?? "";
+      const rule = departmentData.personnelQualificationOverrides[requiredQualification];
+      const person = personnelByName.get(personName.trim());
+      const hasLower = Boolean(
+        rule?.enabled &&
+          rule.lowerQualification &&
+          person?.qualifications?.includes(rule.lowerQualification),
+      );
+      if (!requiredQualification || !hasLower) return null;
+      return {
+        personName: personName.trim(),
+        unitId,
+        slotIndex,
+        apparatus: row?.label ?? unitId,
+        requiredQualification,
+        lowerQualification: rule?.lowerQualification ?? "",
+        shiftType: effectiveShift,
+      };
+    },
+    [departmentData.personnelQualificationOverrides, effectiveShift, personnelByName, scheduleRows],
+  );
+
+  const requestQualificationOverride = useCallback(
+    async (
+      dateKey: string,
+      personName: string,
+      unitId: string,
+      slotIndex: number,
+      placeNow = false,
+    ) => {
+      const draft = overrideDraftFor(personName, unitId, slotIndex);
+      if (!draft) return;
+      const response = await fetch("/api/qualification-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft, dateKey, placeNow }),
+      });
+      const json = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        request?: QualificationOverrideRow;
+      } | null;
+      if (!response.ok || !json?.ok || !json.request) {
+        setNoticeAction(null);
+        setScheduleNotice(json?.message || "The permission request could not be sent.");
+        return;
+      }
+      const approvedNow = placeNow && json.request.status === "approved";
+      rememberPending({ ...json.request, status: approvedNow ? "approved" : "pending" });
+      assignPersonToSlotRef.current?.(dateKey, unitId, slotIndex, draft.personName, true);
+      setNoticeAction(null);
+      setScheduleNotice(
+        approvedNow
+          ? `${draft.personName} is placed in that seat.`
+          : `${draft.personName} is in the seat as Pending until a sub admin approves.`,
+      );
+    },
+    [overrideDraftFor, rememberPending],
+  );
+
+  const requestSeatRemoval = useCallback(
+    async (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
+      const row = scheduleRows.find((entry) => entry.unitId === unitId);
+      const response = await fetch("/api/qualification-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personName,
+          dateKey,
+          unitId,
+          slotIndex,
+          apparatus: row?.label ?? unitId,
+          shiftType: effectiveShift,
+          requiredQualification: SEAT_REMOVAL,
+        }),
+      });
+      const json = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        request?: QualificationOverrideRow;
+      } | null;
+      if (response.ok && json?.ok && json.request) {
+        rememberPending({ ...json.request, status: "pending" });
+      }
+      setNoticeAction(null);
+      setScheduleNotice(
+        response.ok && json?.ok
+          ? `${personName} stays in the seat until a sub admin approves the cancellation.`
+          : json?.message || "The cancellation request could not be sent.",
+      );
+    },
+    [effectiveShift, rememberPending, scheduleRows],
+  );
+
+  const openSelfFill = useCallback((dateKey: string, unitId: string, slotIndex: number, apparatus: string) => {
+    setSelfFill({ dateKey, unitId, slotIndex, apparatus });
+    setSelfFillMode(departmentData.allowPartialShift ? "" : "full");
+    setSelfFillStart("");
+    setSelfFillEnd("");
+  }, [departmentData.allowPartialShift]);
+
+  const requestPartialShift = useCallback(
+    async (dateKey: string, unitId: string, slotIndex: number, start: string, end: string) => {
+      const personName = viewerName.trim();
+      if (!personName) return;
+      const row = scheduleRows.find((entry) => entry.unitId === unitId);
+      const response = await fetch("/api/qualification-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          personName,
+          dateKey,
+          unitId,
+          slotIndex,
+          apparatus: row?.label ?? unitId,
+          shiftType: effectiveShift,
+          requiredQualification: `${PARTIAL_SHIFT}${start}-${end}`,
+        }),
+      });
+      const json = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        request?: QualificationOverrideRow;
+      } | null;
+      if (response.ok && json?.ok && json.request) rememberPending(json.request);
+      setSelfFill(null);
+      setScheduleNotice(
+        response.ok && json?.ok
+          ? `${personName} asked to work ${start} to ${end}. A sub admin must approve it before those hours are on the schedule.`
+          : json?.message || "The partial shift could not be sent.",
+      );
+    },
+    [effectiveShift, rememberPending, scheduleRows, viewerName],
+  );
+
+  const openScheduleNotice = useCallback(
+    (
+      message: string,
+      blocked?: { dateKey: string; personName: string; unitId: string; slotIndex: number } | null,
+    ) => {
+      const draft = blocked
+        ? overrideDraftFor(blocked.personName, blocked.unitId, blocked.slotIndex)
+        : null;
+      if (draft && blocked && message === "You do not meet the minimum qualifications.") {
+        if (viewerIsReviewer) {
+          const qualification = draft.lowerQualification.trim() || "that qualification";
+          const article = /^[aeiou]/i.test(qualification) ? "an" : "a";
+          setNoticeAction({
+            label: "Place in seat",
+            run: () => {
+              void requestQualificationOverride(
+                blocked.dateKey,
+                blocked.personName,
+                blocked.unitId,
+                blocked.slotIndex,
+                true,
+              );
+            },
+          });
+          setScheduleNotice(
+            `${draft.personName} does not meet the minimum qualifications. Are you sure you want to place ${article} ${qualification} in this seat?`,
+          );
+          return;
+        }
+        setNoticeAction({
+          label: "Request Admin Permission",
+          run: () => {
+            void requestQualificationOverride(
+              blocked.dateKey,
+              blocked.personName,
+              blocked.unitId,
+              blocked.slotIndex,
+            );
+          },
+        });
+      } else {
+        setNoticeAction(null);
+      }
+      setScheduleNotice(message);
+    },
+    [overrideDraftFor, requestQualificationOverride, viewerIsReviewer],
+  );
+  scheduleNoticeRef.current = (message) => openScheduleNotice(message);
+
   const assignPersonToSlot = useCallback(
-    (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
+    (dateKey: string, unitId: string, slotIndex: number, personName: string, bypassQualification = false) => {
       const targetRowForMode = scheduleRows.find((row) => row.unitId === unitId);
+      if (
+        limitedScheduleEditor &&
+        !bypassQualification &&
+        personName.trim().toLowerCase() !== viewerName.trim().toLowerCase()
+      ) {
+        openScheduleNotice("You can only add yourself to an open seat.");
+        return;
+      }
+      const partialHold = pendingOverrides.find(
+        (item) =>
+          item.status === "pending" &&
+          item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+          item.dateKey === dateKey &&
+          item.unitId === unitId &&
+          item.slotIndex === slotIndex &&
+          item.personName.trim().toLowerCase() !== personName.trim().toLowerCase(),
+      );
+      if (partialHold) {
+        openScheduleNotice(`${partialHold.personName} has a partial shift waiting for approval on this seat.`);
+        return;
+      }
+      if (limitedScheduleEditor && !bypassQualification && targetRowForMode) {
+        const occupants = parseAssignedNames(
+          getAssignmentsForDay(dateKey, unitId, targetRowForMode.slotCount)[slotIndex] ?? "",
+        ).filter((name) => name.trim() && name.trim() !== personName.trim());
+        if (occupants.length > 0) {
+          openScheduleNotice(
+            "That seat is filled. You can fill an open seat, but you cannot remove someone who is already there.",
+          );
+          return;
+        }
+      }
       const targetAlreadySplit =
         targetRowForMode?.rowType === "apparatus" &&
         slotIndex < (targetRowForMode.minimumPersonnel ?? 0) &&
@@ -906,6 +1310,7 @@ export function PersonnelSchedulePage({
           ),
         );
         if (
+          !bypassQualification &&
           !currentNames.includes(personName) &&
           !personCanJoinApparatus(
             personName,
@@ -917,7 +1322,7 @@ export function PersonnelSchedulePage({
           )
         ) {
           const message = "You do not meet the minimum qualifications.";
-          setScheduleNotice(message);
+          openScheduleNotice(message, { dateKey, personName, unitId, slotIndex });
           setLastScheduleAction(message);
           return;
         }
@@ -1076,6 +1481,21 @@ export function PersonnelSchedulePage({
             return prev;
           }
         }
+        if (bypassQualification && isTargetApparatusRow && !targetOvertimeEnabled && targetRow) {
+          const occupant = parseAssignedNames(unitSlots[slotIndex] ?? "").filter(
+            (name) => name.trim() && name.trim() !== personName,
+          );
+          if (occupant.length > 0) {
+            blockedAssignmentReason = "That seat is already filled.";
+            return prev;
+          }
+          unitSlots[slotIndex] = personName;
+          while (unitSlots.length < targetRow.slotCount) unitSlots.push("");
+          dayData[unitId] = unitSlots.slice(0, targetRow.slotCount);
+          next[storageDateKey] = dayData;
+          saveScheduleAssignments(next);
+          return next;
+        }
         const withoutDuplicates = existingNames.filter((name) => name !== personName);
         let writeIndex = slotIndex;
         if (
@@ -1101,7 +1521,7 @@ export function PersonnelSchedulePage({
               personnelByName,
               qualificationRankMap,
             );
-            if (!canJoin) {
+            if (!canJoin && !bypassQualification) {
               blockedAssignmentReason = "You do not meet the minimum qualifications.";
               return prev;
             }
@@ -1145,19 +1565,28 @@ export function PersonnelSchedulePage({
           const placed = [...ordered];
           while (placed.length < targetRow.slotCount) placed.push("");
           const fitted = placed.slice(0, targetRow.slotCount);
+          const namesBefore = unitSlots.flatMap((slotValue) =>
+            parseAssignedNames(slotValue)
+              .map((name) => name.trim())
+              .filter((name) => name.length > 0),
+          );
+          const pinned = pinOverrideSeats(
+            pendingOverrideRef.current,
+            dateKey,
+            unitId,
+            fitted,
+            targetRow.slotCount,
+            namesBefore,
+          );
           const keptNames = new Set(
-            fitted.flatMap((slotValue) => parseAssignedNames(slotValue).map((name) => name.trim())),
+            pinned.flatMap((slotValue) => parseAssignedNames(slotValue).map((name) => name.trim())),
           );
-          const lostSomeone = unitSlots.some((slotValue) =>
-            parseAssignedNames(slotValue).some(
-              (name) => name.trim().length > 0 && !keptNames.has(name.trim()),
-            ),
-          );
-          if (lostSomeone) {
+          const lostSomeone = namesBefore.some((name) => !keptNames.has(name));
+          if (lostSomeone && !bypassQualification) {
             blockedAssignmentReason = "You do not meet the minimum qualifications.";
             return prev;
           }
-          dayData[unitId] = fitted;
+          dayData[unitId] = pinned;
         } else if (
           targetRow?.rowType === "support" &&
           targetRow.supportValueMode === "personnel"
@@ -1180,7 +1609,12 @@ export function PersonnelSchedulePage({
           blockedAssignmentReason.includes("no open seat") ||
           blockedAssignmentReason.includes("already assigned to")
         ) {
-          setScheduleNotice(blockedAssignmentReason);
+          openScheduleNotice(
+            blockedAssignmentReason,
+            blockedAssignmentReason === "You do not meet the minimum qualifications."
+              ? { dateKey, personName, unitId, slotIndex }
+              : null,
+          );
         }
         setLastScheduleAction(blockedAssignmentReason);
         return;
@@ -1225,8 +1659,13 @@ export function PersonnelSchedulePage({
       pushUndoSnapshot,
       scheduleSlotSegments,
       getAssignmentsForDay,
+      openScheduleNotice,
+      limitedScheduleEditor,
+      viewerName,
+      pendingOverrides,
     ],
   );
+  assignPersonToSlotRef.current = assignPersonToSlot;
 
   const apparatusOverrideBlockMessage = useCallback(
     (dateKey: string, personName: string): string | null => {
@@ -1373,6 +1812,28 @@ export function PersonnelSchedulePage({
 
   const clearSlotValue = useCallback(
     (dateKey: string, unitId: string, slotIndex: number) => {
+      if (limitedScheduleEditor) {
+        const row = scheduleRows.find((entry) => entry.unitId === unitId);
+        const names = parseAssignedNames(
+          getAssignmentsForDay(dateKey, unitId, row?.slotCount ?? slotIndex + 1)[slotIndex] ?? "",
+        ).filter((name) => name.trim());
+        if (names.length === 0) return;
+        const self = viewerName.trim().toLowerCase();
+        if (!self || names.some((name) => name.trim().toLowerCase() !== self)) {
+          openScheduleNotice("You cannot remove someone else from the schedule.");
+          return;
+        }
+        setNoticeAction({
+          label: "Request cancellation",
+          run: () => {
+            void requestSeatRemoval(dateKey, unitId, slotIndex, names[0] ?? viewerName);
+          },
+        });
+        setScheduleNotice(
+          "Taking yourself off this seat needs a sub admin to approve. You stay on the schedule until then.",
+        );
+        return;
+      }
       pushUndoSnapshot("Clear slot");
       setScheduleAssignments((prev) => {
         const next = { ...prev };
@@ -1407,6 +1868,11 @@ export function PersonnelSchedulePage({
       effectiveShift,
       pushUndoSnapshot,
       setSegmentsForSlot,
+      limitedScheduleEditor,
+      viewerName,
+      getAssignmentsForDay,
+      openScheduleNotice,
+      requestSeatRemoval,
     ],
   );
 
@@ -1685,10 +2151,14 @@ export function PersonnelSchedulePage({
             personnelByName,
             qualificationRankMap,
           );
-          dayData[row.unitId] = assignmentsPreservingNames(
-            ordered,
-            current,
+          const preserved = assignmentsPreservingNames(ordered, current, row.slotCount);
+          dayData[row.unitId] = pinOverrideSeats(
+            pendingOverrideRef.current,
+            dateKey,
+            row.unitId,
+            preserved,
             row.slotCount,
+            current,
           );
         });
         next[storageDateKey] = dayData;
@@ -1708,7 +2178,7 @@ export function PersonnelSchedulePage({
 
   const didPlaceQualifications = useRef(false);
   useEffect(() => {
-    if (!hasLoadedRemoteSchedule || didPlaceQualifications.current || scheduleRows.length === 0) {
+    if (!hasLoadedRemoteSchedule || !overridesReady || didPlaceQualifications.current || scheduleRows.length === 0) {
       return;
     }
     didPlaceQualifications.current = true;
@@ -1733,7 +2203,20 @@ export function PersonnelSchedulePage({
             personnelByName,
             qualificationRankMap,
           );
-          const nextSlots = assignmentsPreservingNames(ordered, current, row.slotCount);
+          const calendarDate = storageDateKey.split("::")[1] ?? storageDateKey;
+          const namesBefore = current.flatMap((slotValue) =>
+            parseAssignedNames(slotValue)
+              .map((name) => name.trim())
+              .filter((name) => name.length > 0),
+          );
+          const nextSlots = pinOverrideSeats(
+            pendingOverrideRef.current,
+            calendarDate,
+            row.unitId,
+            assignmentsPreservingNames(ordered, current, row.slotCount),
+            row.slotCount,
+            namesBefore,
+          );
           if (JSON.stringify(nextSlots) !== JSON.stringify(current)) {
             changed = true;
             day[row.unitId] = nextSlots;
@@ -1747,6 +2230,7 @@ export function PersonnelSchedulePage({
     });
   }, [
     hasLoadedRemoteSchedule,
+    overridesReady,
     scheduleRows,
     scheduleSlotSegments,
     personnelByName,
@@ -1755,6 +2239,10 @@ export function PersonnelSchedulePage({
 
   const importAssignmentsForDay = useCallback(
     (dateKey: string) => {
+      if (limitedEditorRef.current) {
+        scheduleNoticeRef.current("You can fill an open seat. You cannot replace the day's assignments.");
+        return;
+      }
       pushUndoSnapshot("Import assignments for day");
       setScheduleAssignments((previous) => {
         const next = { ...previous };
@@ -1977,8 +2465,12 @@ export function PersonnelSchedulePage({
                   className="personnel-schedule-date-col"
                   role="button"
                   tabIndex={0}
-                  onClick={() => setEditDayBlock({ date: d, dateKey: toDateKey(d) })}
+                  onClick={() => {
+                    if (!canEditSchedule) return;
+                    setEditDayBlock({ date: d, dateKey: toDateKey(d) });
+                  }}
                   onKeyDown={(e) => {
+                    if (!canEditSchedule) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       setEditDayBlock({ date: d, dateKey: toDateKey(d) });
@@ -1997,8 +2489,12 @@ export function PersonnelSchedulePage({
                   className="personnel-schedule-date-col"
                   role="button"
                   tabIndex={0}
-                  onClick={() => setEditDayBlock({ date: d, dateKey: toDateKey(d) })}
+                  onClick={() => {
+                    if (!canEditSchedule) return;
+                    setEditDayBlock({ date: d, dateKey: toDateKey(d) });
+                  }}
                   onKeyDown={(e) => {
+                    if (!canEditSchedule) return;
                     if (e.key === "Enter" || e.key === " ") {
                       e.preventDefault();
                       setEditDayBlock({ date: d, dateKey: toDateKey(d) });
@@ -2113,7 +2609,10 @@ export function PersonnelSchedulePage({
                             ? "personnel-schedule-day-block-invalid"
                             : ""
                         }`}
-                        onDoubleClick={() => setEditDayBlock({ date, dateKey })}
+                        onDoubleClick={() => {
+                          if (!canEditSchedule) return;
+                          setEditDayBlock({ date, dateKey });
+                        }}
                       >
                         {(row.id === "support-info" || row.id === "support-trade") &&
                         coverageLines.length > 0 ? (
@@ -2180,6 +2679,22 @@ export function PersonnelSchedulePage({
                                         () => "HIRE",
                                       )
                                   : parseAssignedNames(name);
+                            const pendingPartialNames = pendingOverrides
+                              .filter(
+                                (item) =>
+                                  item.status === "pending" &&
+                                  item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                                  item.dateKey === dateKey &&
+                                  item.unitId === row.unitId &&
+                                  item.slotIndex === slotIdx,
+                              )
+                              .map((item) => item.personName.trim())
+                              .filter(
+                                (personName) =>
+                                  personName &&
+                                  !slotNames.some((entry) => entry.trim().toLowerCase() === personName.toLowerCase()),
+                              );
+                            const shownSlotNames = [...slotNames, ...pendingPartialNames];
                             const isRequired = slotIdx < row.minimumPersonnel;
                             const hasSegmentPersonnel =
                               segmentModeEnabled &&
@@ -2190,7 +2705,10 @@ export function PersonnelSchedulePage({
                                   s.personnelName !== "HIRE",
                               );
                             const isEmpty =
-                              isRequired && !name.trim() && (!segmentModeEnabled || !hasSegmentPersonnel);
+                              isRequired &&
+                              !name.trim() &&
+                              pendingPartialNames.length === 0 &&
+                              (!segmentModeEnabled || !hasSegmentPersonnel);
                             const isRed = isRequired && isEmpty;
                             const requiredQualification = isRequired
                               ? row.requiredQualifications[slotIdx]?.trim() ?? ""
@@ -2199,17 +2717,6 @@ export function PersonnelSchedulePage({
                               ? (qualificationRankMap.get(requiredQualification) ??
                                 Number.POSITIVE_INFINITY)
                               : Number.POSITIVE_INFINITY;
-                            const slotBestRank = slotNames.reduce((bestRank, slotName) => {
-                              const person = personnelByName.get(slotName);
-                              if (!person) {
-                                return bestRank;
-                              }
-                              const personRank = getBestQualificationRankForPerson(
-                                person,
-                                qualificationRankMap,
-                              );
-                              return Math.min(bestRank, personRank);
-                            }, Number.POSITIVE_INFINITY);
                             const targetSlotOvertimeEnabled =
                               row.rowType === "apparatus" &&
                               slotIdx < row.minimumPersonnel &&
@@ -2220,23 +2727,27 @@ export function PersonnelSchedulePage({
                               requiredQualification.length > 0 &&
                               (() => {
                                 if (row.rowType !== "apparatus" || !segmentModeEnabled) {
-                                  const fails =
-                                    slotNames.length > 0 &&
-                                    !targetSlotOvertimeEnabled &&
-                                    !(slotBestRank <= requiredRank);
-                                  if (fails) {
-                                    slotNames.forEach((slotName) => {
-                                      const person = personnelByName.get(slotName);
-                                      const pr = getBestQualificationRankForPerson(
-                                        person,
-                                        qualificationRankMap,
-                                      );
-                                      if (!(Number.isFinite(pr) && pr <= requiredRank)) {
-                                        unqualifiedNames.add(slotName.trim());
-                                      }
-                                    });
-                                  }
-                                  return fails;
+                                  const fails = slotNames.some((slotName) => {
+                                    if (pendingOverrides.some(
+                                      (item) =>
+                                        item.status === "approved" &&
+                                        isHeldQualification(item.requiredQualification) &&
+                                        item.dateKey === dateKey &&
+                                        item.unitId === row.unitId &&
+                                        item.slotIndex === slotIdx &&
+                                        item.personName.trim() === slotName.trim(),
+                                    )) {
+                                      return false;
+                                    }
+                                    const person = personnelByName.get(slotName);
+                                    const pr = getBestQualificationRankForPerson(person, qualificationRankMap);
+                                    if (!(Number.isFinite(pr) && pr <= requiredRank)) {
+                                      unqualifiedNames.add(slotName.trim());
+                                      return true;
+                                    }
+                                    return false;
+                                  });
+                                  return fails && !targetSlotOvertimeEnabled;
                                 }
                                 const segs = storedSegments.filter((s) => s.source !== "auto_hire");
                                 if (segs.length === 0) return false;
@@ -2246,6 +2757,19 @@ export function PersonnelSchedulePage({
                                     continue;
                                   }
                                   if (seg.overtime) continue;
+                                  if (
+                                    pendingOverrides.some(
+                                      (item) =>
+                                        item.status === "approved" &&
+                                        isHeldQualification(item.requiredQualification) &&
+                                        item.dateKey === dateKey &&
+                                        item.unitId === row.unitId &&
+                                        item.slotIndex === slotIdx &&
+                                        item.personName.trim() === seg.personnelName.trim(),
+                                    )
+                                  ) {
+                                    continue;
+                                  }
                                   const person = personnelByName.get(seg.personnelName);
                                   const pr = getBestQualificationRankForPerson(
                                     person,
@@ -2289,8 +2813,52 @@ export function PersonnelSchedulePage({
                                     : ""
                                 }`}
                                 onClick={(event) => {
-                                  if (isTextRow) return;
+                                  if (!canEditSchedule || isTextRow) return;
                                   event.stopPropagation();
+                                  const heldPartial = pendingOverrides.find(
+                                    (item) =>
+                                      item.status === "pending" &&
+                                      item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                                      item.dateKey === dateKey &&
+                                      item.unitId === row.unitId &&
+                                      item.slotIndex === slotIdx,
+                                  );
+                                  if (heldPartial) {
+                                    openScheduleNotice(
+                                      `${heldPartial.personName} has a partial shift waiting for approval on this seat.`,
+                                    );
+                                    return;
+                                  }
+                                  if (limitedScheduleEditor) {
+                                    const occupied = slotNames
+                                      .map((entry) => entry.trim())
+                                      .filter((entry) => entry && entry.toUpperCase() !== "HIRE" && entry.toUpperCase() !== "OPEN");
+                                    if (row.rowType === "apparatus" && occupied.length === 0) {
+                                      const held = pendingOverrides.find(
+                                        (item) =>
+                                          item.status === "pending" &&
+                                          item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                                          item.dateKey === dateKey &&
+                                          item.unitId === row.unitId &&
+                                          item.slotIndex === slotIdx,
+                                      );
+                                      if (held) {
+                                        openScheduleNotice(
+                                          `${held.personName} has a partial shift waiting for approval on this seat.`,
+                                        );
+                                        return;
+                                      }
+                                      openSelfFill(dateKey, row.unitId, slotIdx, row.label);
+                                      return;
+                                    }
+                                    const self = viewerName.trim().toLowerCase();
+                                    if (occupied.length === 1 && occupied[0]?.toLowerCase() === self) {
+                                      clearSlotValue(dateKey, row.unitId, slotIdx);
+                                      return;
+                                    }
+                                    openScheduleNotice("You can only add yourself to an open seat.");
+                                    return;
+                                  }
                                   setActiveInlineSlot({
                                     dateKey,
                                     unitId: row.unitId,
@@ -2305,6 +2873,7 @@ export function PersonnelSchedulePage({
                                     value={name}
                                     className="personnel-schedule-info-input"
                                     placeholder="Type info..."
+                                    readOnly={!canEditSchedule}
                                     onClick={(event) => event.stopPropagation()}
                                     onChange={(event) =>
                                       updateTextSlotValue(
@@ -2352,11 +2921,11 @@ export function PersonnelSchedulePage({
                                       </option>
                                     ))}
                                   </select>
-                                ) : slotNames.length > 0 ? (
+                                ) : shownSlotNames.length > 0 ? (
                                   <span className="personnel-schedule-slot-name-list">
                                     {(displaySegmentsForUi.length > 0
                                       ? displaySegmentsForUi
-                                      : slotNames.map((n) => ({
+                                      : shownSlotNames.map((n) => ({
                                           id: `legacy-${n}`,
                                           assigneeType: "personnel" as const,
                                           personnelName: n,
@@ -2382,6 +2951,33 @@ export function PersonnelSchedulePage({
                                         !isUnfilledSegment &&
                                         person !== undefined &&
                                         !personnelMatchesShift(person, effectiveShift);
+                                      const isPendingSeat = pendingOverrides.some(
+                                        (item) =>
+                                          item.status === "pending" &&
+                                          isHeldQualification(item.requiredQualification) &&
+                                          item.dateKey === dateKey &&
+                                          item.unitId === row.unitId &&
+                                          item.slotIndex === slotIdx &&
+                                          item.personName.trim() === entry.trim(),
+                                      );
+                                      const isCancelPending = pendingOverrides.some(
+                                        (item) =>
+                                          item.status === "pending" &&
+                                          item.requiredQualification === SEAT_REMOVAL &&
+                                          item.dateKey === dateKey &&
+                                          item.unitId === row.unitId &&
+                                          item.slotIndex === slotIdx &&
+                                          item.personName.trim() === entry.trim(),
+                                      );
+                                      const isPartialPending = pendingOverrides.some(
+                                        (item) =>
+                                          item.status === "pending" &&
+                                          item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                                          item.dateKey === dateKey &&
+                                          item.unitId === row.unitId &&
+                                          item.slotIndex === slotIdx &&
+                                          item.personName.trim() === entry.trim(),
+                                      );
                                       const shownName = isUnfilledSegment
                                         ? overtimeChecked
                                           ? "HIRE"
@@ -2412,7 +3008,11 @@ export function PersonnelSchedulePage({
                                               : undefined
                                           }
                                         >
-                                          {shownName}
+                                          {isPendingSeat || isPartialPending
+                                            ? `${shownName} (Pending)`
+                                            : isCancelPending
+                                              ? `${shownName} (Cancel pending)`
+                                              : shownName}
                                           {nameIndex < slotNames.length - 1 ? " / " : ""}
                                         </span>
                                       );
@@ -2445,6 +3045,36 @@ export function PersonnelSchedulePage({
           getAssignmentsForDay={getAssignmentsForDay}
           assignPersonToSlot={assignPersonToSlot}
           clearSlotValue={clearSlotValue}
+          canChangeSegments={!limitedScheduleEditor}
+          selfFillOnly={limitedScheduleEditor}
+          pendingHolds={pendingOverrides
+            .filter(
+              (item) =>
+                item.status === "pending" &&
+                item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                item.dateKey === editDayBlock.dateKey,
+            )
+            .map((item) => ({
+              unitId: item.unitId,
+              slotIndex: item.slotIndex,
+              personName: item.personName,
+            }))}
+          onOpenSelfFill={(unitId, slotIndex) => {
+            const held = pendingOverrides.find(
+              (item) =>
+                item.status === "pending" &&
+                item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                item.dateKey === editDayBlock.dateKey &&
+                item.unitId === unitId &&
+                item.slotIndex === slotIndex,
+            );
+            if (held) {
+              openScheduleNotice(`${held.personName} has a partial shift waiting for approval on this seat.`);
+              return;
+            }
+            const row = scheduleRows.find((entry) => entry.unitId === unitId);
+            openSelfFill(editDayBlock.dateKey, unitId, slotIndex, row?.label ?? unitId);
+          }}
           updateTextSlotValue={updateTextSlotValue}
           revealNextSupportRow={revealNextSupportRow}
           getCoverageLines={getCoverageLines}
@@ -2470,7 +3100,12 @@ export function PersonnelSchedulePage({
           assertApparatusTimeOverlap={assertApparatusTimeOverlap}
           apparatusOverrideBlockMessage={apparatusOverrideBlockMessage}
           apparatusSeatQualificationMessage={apparatusSeatQualificationMessage}
-          onScheduleNotice={setScheduleNotice}
+          onScheduleNotice={(message, blocked) =>
+            openScheduleNotice(
+              message,
+              blocked ? { ...blocked, dateKey: editDayBlock.dateKey } : null,
+            )
+          }
           collapseSegmentModeToSingleSlot={collapseSegmentModeToSingleSlot}
           onClose={() => {
             normalizeDayAssignmentsForRequirements(editDayBlock.dateKey);
@@ -2478,7 +3113,106 @@ export function PersonnelSchedulePage({
           }}
         />
       ) : null}
-      <ScheduleNoticeDialog message={scheduleNotice} onClose={() => setScheduleNotice(null)} />
+      {selfFill ? (
+        <div className="schedule-notice-backdrop" role="dialog" aria-modal="true" aria-labelledby="self-fill-title">
+          <div className="schedule-notice">
+            <p id="self-fill-title">
+              {`Add yourself to ${selfFill.apparatus} on ${selfFill.dateKey}.`}
+            </p>
+            <label className="additional-field-check">
+              <input
+                type="checkbox"
+                checked={selfFillMode === "full"}
+                onChange={() => setSelfFillMode((current) => (current === "full" ? "" : "full"))}
+              />
+              Fill entire shift
+            </label>
+            {departmentData.allowPartialShift ? (
+              <label className="additional-field-check">
+                <input
+                  type="checkbox"
+                  checked={selfFillMode === "partial"}
+                  onChange={() => setSelfFillMode((current) => (current === "partial" ? "" : "partial"))}
+                />
+                Take partial shift
+              </label>
+            ) : null}
+            {selfFillMode === "partial" ? (
+              <div className="self-fill-times">
+                <label>
+                  Start
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="0900"
+                    maxLength={4}
+                    value={selfFillStart}
+                    onChange={(event) => setSelfFillStart(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                  />
+                </label>
+                <label>
+                  End
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    placeholder="2000"
+                    maxLength={4}
+                    value={selfFillEnd}
+                    onChange={(event) => setSelfFillEnd(event.target.value.replace(/\D/g, "").slice(0, 4))}
+                  />
+                </label>
+              </div>
+            ) : null}
+            <div className="schedule-notice-actions">
+              {selfFillMode === "partial" ? (
+                <button
+                  type="button"
+                  className="primary-button compact-button"
+                  disabled={!militaryRangeReady(selfFillStart, selfFillEnd)}
+                  onClick={() =>
+                    void requestPartialShift(
+                      selfFill.dateKey,
+                      selfFill.unitId,
+                      selfFill.slotIndex,
+                      militaryToClock(selfFillStart) ?? "",
+                      militaryToClock(selfFillEnd) ?? "",
+                    )
+                  }
+                >
+                  Send to admin for approval
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="primary-button compact-button"
+                  disabled={selfFillMode !== "full"}
+                  onClick={() => {
+                    const personName = viewerName.trim();
+                    const target = selfFill;
+                    setSelfFill(null);
+                    if (!personName) return;
+                    assignPersonToSlot(target.dateKey, target.unitId, target.slotIndex, personName);
+                  }}
+                >
+                  Save
+                </button>
+              )}
+              <button type="button" className="secondary-button compact-button" onClick={() => setSelfFill(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
+      <ScheduleNoticeDialog
+        message={scheduleNotice}
+        actionLabel={noticeAction?.label ?? null}
+        onAction={noticeAction?.run}
+        onClose={() => {
+          setNoticeAction(null);
+          setScheduleNotice(null);
+        }}
+      />
     </section>
   );
 }

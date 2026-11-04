@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
+import { shiftOccursOnDate, toDateKey, type ScheduleShiftEntryLike } from "./scheduleUtils";
 
 type TradeStatus =
   | "requested"
@@ -75,6 +76,11 @@ function statusLabel(trade: TradeRecord): string {
   return trade.status;
 }
 
+function formatMonthDayYear(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  return match ? `${match[2]}-${match[3]}-${match[1].slice(2)}` : value;
+}
+
 function formatScheduledDate(iso: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
   if (!match) return iso;
@@ -136,6 +142,20 @@ function scheduledDatesForPerson(
   return [...dates].sort();
 }
 
+function datesFromToday(entry: ScheduleShiftEntryLike & { shiftType: string }, monthsAhead: number): string[] {
+  const dates: string[] = [];
+  const start = new Date();
+  start.setHours(0, 0, 0, 0);
+  const end = new Date(start);
+  end.setMonth(end.getMonth() + monthsAhead);
+  const cursor = new Date(start);
+  while (cursor <= end) {
+    if (shiftOccursOnDate(entry, cursor, entry.shiftType)) dates.push(toDateKey(cursor));
+    cursor.setDate(cursor.getDate() + 1);
+  }
+  return dates;
+}
+
 export function PersonnelTradesPage() {
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [canSeeAll, setCanSeeAll] = useState(false);
@@ -152,7 +172,22 @@ export function PersonnelTradesPage() {
   const [filter, setFilter] = useState(ALL_TRADES_FILTER);
   const [draft, setDraft] = useState(EMPTY_DRAFT);
   const [denyReasons, setDenyReasons] = useState<Record<string, string>>({});
+  const [denyPromptId, setDenyPromptId] = useState<string | null>(null);
+  const [denyPromptReason, setDenyPromptReason] = useState("");
+  const [denyPromptError, setDenyPromptError] = useState("");
   const [notice, setNotice] = useState<string | null>(null);
+  const [overrideRequests, setOverrideRequests] = useState<
+    Array<{
+      id: string;
+      personName: string;
+      apparatus: string;
+      dateKey: string;
+      requiredQualification: string;
+      shiftType: string;
+      status: string;
+      slotIndex: number;
+    }>
+  >([]);
   const [isSaving, setIsSaving] = useState(false);
 
   const loadTrades = useCallback(async () => {
@@ -176,10 +211,34 @@ export function PersonnelTradesPage() {
     return String(json.name ?? "");
   }, []);
 
+  const loadOverrideRequests = useCallback(async () => {
+    const response = await fetch("/api/qualification-overrides");
+    const json = (await response.json().catch(() => null)) as {
+      ok?: boolean;
+      canReview?: boolean;
+      requests?: Array<{
+        id: string;
+        personName: string;
+        apparatus: string;
+        dateKey: string;
+        requiredQualification: string;
+        shiftType: string;
+        status: string;
+        slotIndex: number;
+      }>;
+    } | null;
+    if (!response.ok || !json?.ok || json.canReview !== true) {
+      setOverrideRequests([]);
+      return;
+    }
+    setOverrideRequests((json.requests ?? []).filter((row) => row.status === "pending"));
+  }, []);
+
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       const personName = await loadTrades();
+      await loadOverrideRequests();
       const [detailsResponse, scheduleResponse] = await Promise.all([
         fetch("/api/department-details"),
         fetch("/api/schedule-assignments"),
@@ -210,27 +269,55 @@ export function PersonnelTradesPage() {
       const nextSettings = {
         adminApproval: data.tradeAdminApproval === true,
         paybackRequired: data.tradePaybackRequired === true,
-        cancelApproval: data.tradeCancelApproval === true,
+        cancelApproval: data.tradeCancelApproval !== false,
       };
       setTradeSettings(nextSettings);
       if (!paybackDefaultApplied.current) {
         paybackDefaultApplied.current = true;
         setDraft((prev) => ({ ...prev, paybackRequired: nextSettings.paybackRequired }));
       }
-      if (!cancelled && scheduleJson?.ok) {
-        setScheduledDates(
-          scheduledDatesForPerson(
-            personName ?? "",
-            scheduleJson.assignments ?? {},
-            scheduleJson.slotSegments ?? {},
-          ),
+      if (!cancelled) {
+        const saved = scheduleJson?.ok
+          ? scheduledDatesForPerson(
+              personName ?? "",
+              scheduleJson.assignments ?? {},
+              scheduleJson.slotSegments ?? {},
+            )
+          : [];
+        const shiftName = String(
+          records.find((record) => String(record?.name ?? "").trim().toLowerCase() === (personName ?? "").trim().toLowerCase())
+            ?.shift ?? "",
+        )
+          .split("|")[0]
+          .trim();
+        const shiftEntries = Array.isArray(data.shiftInformationEntries)
+          ? (data.shiftInformationEntries as Array<Record<string, unknown>>)
+          : [];
+        const shiftEntry = shiftEntries.find(
+          (entry) => String(entry.shiftType ?? "").trim().toLowerCase() === shiftName.toLowerCase(),
         );
+        const generated = shiftEntry
+          ? datesFromToday(
+              {
+                shiftType: String(shiftEntry.shiftType ?? shiftName),
+                recurrence: String(shiftEntry.recurrence ?? ""),
+                recurrenceCustomValue: String(shiftEntry.recurrenceCustomValue ?? ""),
+                recurrenceCustomMode: String(shiftEntry.recurrenceCustomMode ?? ""),
+                recurrenceWeekdays: Array.isArray(shiftEntry.recurrenceWeekdays)
+                  ? shiftEntry.recurrenceWeekdays.map((day) => Math.floor(Number(day)))
+                  : [],
+                rotationStartsOn: String(shiftEntry.rotationStartsOn ?? ""),
+              },
+              3,
+            )
+          : [];
+        setScheduledDates([...new Set([...saved, ...generated])].sort());
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [loadTrades]);
+  }, [loadOverrideRequests, loadTrades]);
 
   const shiftOptions = useMemo(() => {
     const names = new Set<string>();
@@ -257,14 +344,14 @@ export function PersonnelTradesPage() {
       return;
     }
     if (!draft.tradeDate) {
-      setNotice("Enter your assigned date.");
+      setNotice("Enter the date.");
       return;
     }
     if (!startTime || !endTime) {
       setNotice("Enter start and end times in 24-hour format, for example 08:00 and 10:00.");
       return;
     }
-    if (draft.paybackRequired && !draft.paybackDate) {
+    if (tradeSettings.paybackRequired && !draft.paybackDate) {
       setNotice("Payback is required, so enter the date you work instead.");
       return;
     }
@@ -273,7 +360,13 @@ export function PersonnelTradesPage() {
       const response = await fetch("/api/trades", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...draft, startTime, endTime }),
+        body: JSON.stringify({
+          ...draft,
+          startTime,
+          endTime,
+          paybackRequired: tradeSettings.paybackRequired,
+          paybackDate: tradeSettings.paybackRequired ? draft.paybackDate : "",
+        }),
       });
       const json = (await response.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
       if (!response.ok || !json?.ok) {
@@ -330,6 +423,49 @@ export function PersonnelTradesPage() {
     }
   };
 
+  const answerOverride = async (id: string, action: "approve" | "deny", denialReason = "") => {
+    const reason = denialReason.trim();
+    if (action === "deny" && !reason) {
+      setDenyPromptError("Enter a reason before denying.");
+      return;
+    }
+    const response = await fetch(`/api/qualification-overrides/${encodeURIComponent(id)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action, denialReason: reason }),
+    });
+    const json = (await response.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
+    if (!response.ok || !json?.ok) {
+      const message = json?.message || "The permission request could not be updated.";
+      if (action === "deny") setDenyPromptError(message);
+      else setNotice(message);
+      return;
+    }
+    const removal = overrideRequests.some(
+      (request) => request.id === id && request.requiredQualification === "Remove from seat",
+    );
+    const partial = overrideRequests.some(
+      (request) => request.id === id && request.requiredQualification.startsWith("Partial shift "),
+    );
+    setDenyPromptId(null);
+    setDenyPromptReason("");
+    setDenyPromptError("");
+    await loadOverrideRequests();
+    setNotice(
+      action === "approve"
+        ? partial
+          ? "Those hours are on the schedule."
+          : removal
+            ? "They are removed from that seat."
+            : "The seat is approved."
+        : partial
+          ? "The partial shift was denied."
+          : removal
+            ? "The cancellation stays denied and the person remains on the schedule."
+            : "The request is denied and the person is removed from that seat.",
+    );
+  };
+
   return (
     <section className="page-section">
       <header className="page-header">
@@ -338,7 +474,7 @@ export function PersonnelTradesPage() {
       </header>
       <article className="panel">
         <h3>New Trade Request</h3>
-        <div className="department-edit-grid">
+        <div className="trade-request-top-row">
           <label>
             Trade With
             <select
@@ -357,7 +493,7 @@ export function PersonnelTradesPage() {
             </select>
           </label>
           <label>
-            Your Assigned Date
+            Date
             <input
               type="date"
               value={draft.tradeDate}
@@ -365,7 +501,7 @@ export function PersonnelTradesPage() {
             />
           </label>
           <label>
-            Or pick a day you are scheduled
+            Select Scheduled Day
             <select
               value={scheduledDates.includes(draft.tradeDate) ? draft.tradeDate : ""}
               onChange={(event) => setDraft((prev) => ({ ...prev, tradeDate: event.target.value }))}
@@ -380,6 +516,8 @@ export function PersonnelTradesPage() {
               ))}
             </select>
           </label>
+        </div>
+        <div className="department-edit-grid">
           <label>
             Start Time
             <input
@@ -408,25 +546,11 @@ export function PersonnelTradesPage() {
               }}
             />
           </label>
-          <label className="additional-field-check">
-            <input
-              type="checkbox"
-              checked={draft.paybackRequired}
-              onChange={(event) =>
-                setDraft((prev) => ({
-                  ...prev,
-                  paybackRequired: event.target.checked,
-                  paybackDate: event.target.checked ? prev.paybackDate : "",
-                }))
-              }
-            />
-            Payback required
-          </label>
-          <label className={draft.paybackRequired ? undefined : "department-field-disabled"}>
+          <label className={tradeSettings.paybackRequired ? undefined : "department-field-disabled"}>
             Date You Work Instead
             <input
               type="date"
-              disabled={!draft.paybackRequired}
+              disabled={!tradeSettings.paybackRequired}
               value={draft.paybackDate}
               onChange={(event) => setDraft((prev) => ({ ...prev, paybackDate: event.target.value }))}
             />
@@ -441,7 +565,7 @@ export function PersonnelTradesPage() {
           </label>
         </div>
         <p className="field-hint">
-          Pick a day you are already scheduled, or type any date. Times use 24-hour format, such as 08:00.
+          Type a date or choose one from Select Scheduled Day. Times use 24-hour format, such as 08:00.
         </p>
         {tradeSettings.adminApproval ? (
           <p className="field-hint">
@@ -480,7 +604,7 @@ export function PersonnelTradesPage() {
             </label>
           ) : null}
         </div>
-        {visibleTrades.length === 0 ? (
+        {visibleTrades.length === 0 && overrideRequests.length === 0 ? (
           <p className="field-hint">No trades yet.</p>
         ) : (
           <div className="table-wrapper">
@@ -498,6 +622,47 @@ export function PersonnelTradesPage() {
                 </tr>
               </thead>
               <tbody>
+                {overrideRequests.map((request, index) => (
+                  <tr key={`override-${request.id}`} className="trades-override-row" style={{ top: `${index * 2.6}rem` }}>
+                    <td>{`* ${request.shiftType || "—"}`}</td>
+                    <td>{request.personName}</td>
+                    <td>{request.apparatus || "—"}</td>
+                    <td>
+                      {request.requiredQualification.startsWith("Partial shift ")
+                        ? `${formatMonthDayYear(request.dateKey)} ${request.requiredQualification
+                            .replace("Partial shift ", "")
+                            .replace("-", "–")}`
+                        : formatMonthDayYear(request.dateKey)}
+                    </td>
+                    <td>—</td>
+                    <td>
+                      {request.requiredQualification === "Remove from seat"
+                        ? "Request to cancel shift"
+                        : request.requiredQualification.startsWith("Partial shift ")
+                          ? `Asked to work ${request.requiredQualification.replace("Partial shift ", "").replace("-", " to ")}`
+                          : `Needs approval for ${request.requiredQualification}`}
+                    </td>
+                    <td>Pending</td>
+                    <td>
+                      <div className="trades-override-actions">
+                        <button type="button" className="primary-button compact-button" onClick={() => void answerOverride(request.id, "approve")}>
+                          Approve
+                        </button>
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={() => {
+                            setDenyPromptId(request.id);
+                            setDenyPromptReason("");
+                            setDenyPromptError("");
+                          }}
+                        >
+                          Deny
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
                 {visibleTrades.map((trade) => {
                   const isCounterpart = trade.counterpartUsername === username;
                   const isParty = isCounterpart || trade.requesterUsername === username;
@@ -511,9 +676,9 @@ export function PersonnelTradesPage() {
                       <td>{trade.requesterName}</td>
                       <td>{trade.counterpartName}</td>
                       <td>
-                        {trade.tradeDate} {trade.startTime}–{trade.endTime}
+                        {formatMonthDayYear(trade.tradeDate)} {trade.startTime}–{trade.endTime}
                       </td>
-                      <td>{trade.paybackRequired ? trade.paybackDate : "Not required"}</td>
+                      <td>{trade.paybackRequired ? formatMonthDayYear(trade.paybackDate) : "Not required"}</td>
                       <td>{trade.reason || "—"}</td>
                       <td>
                         {statusLabel(trade)}
@@ -642,6 +807,44 @@ export function PersonnelTradesPage() {
           </div>
         )}
       </article>
+      {denyPromptId ? (
+        <div className="schedule-notice-backdrop" role="dialog" aria-modal="true" aria-labelledby="deny-override-title">
+          <div className="schedule-notice">
+            <p id="deny-override-title">Enter a reason to deny this request.</p>
+            <input
+              className="qualification-override-deny-input"
+              type="text"
+              value={denyPromptReason}
+              autoFocus
+              onChange={(event) => {
+                setDenyPromptReason(event.target.value);
+                setDenyPromptError("");
+              }}
+            />
+            {denyPromptError ? <p className="field-error">{denyPromptError}</p> : null}
+            <div className="schedule-notice-actions">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => void answerOverride(denyPromptId, "deny", denyPromptReason)}
+              >
+                Deny
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => {
+                  setDenyPromptId(null);
+                  setDenyPromptReason("");
+                  setDenyPromptError("");
+                }}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <ScheduleNoticeDialog message={notice} onClose={() => setNotice(null)} />
     </section>
   );

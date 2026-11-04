@@ -3,7 +3,22 @@ import { parseAssignedNames } from "./scheduleStorage";
 export interface ScheduleShiftEntryLike {
   recurrence?: string;
   recurrenceCustomValue?: string;
+  recurrenceCustomMode?: string;
+  recurrenceWeekdays?: number[];
+  /** YYYY-MM-DD. Blank keeps the January 2026 A/B/C start. */
+  rotationStartsOn?: string;
 }
+
+/** Monday-first labels. Day numbers match JavaScript: 0 is Sunday. */
+export const WEEKDAY_CHOICES: Array<{ day: number; label: string }> = [
+  { day: 1, label: "Mon" },
+  { day: 2, label: "Tue" },
+  { day: 3, label: "Wed" },
+  { day: 4, label: "Thu" },
+  { day: 5, label: "Fri" },
+  { day: 6, label: "Sat" },
+  { day: 0, label: "Sun" },
+];
 
 export interface SchedulePersonLike {
   name: string;
@@ -41,6 +56,79 @@ export function getShiftStartOffsetDays(shiftType: string): number {
   if (normalized.startsWith("A SHIFT")) return 1;
   if (normalized.startsWith("B SHIFT")) return 2;
   return 0;
+}
+
+/** A real calendar date, or null when the shift should keep the A/B/C start. */
+export function parseRotationStartDate(
+  value: string | undefined,
+): { year: number; month: number; day: number } | null {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value ?? "").trim());
+  if (!match) return null;
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const check = new Date(Date.UTC(year, month - 1, day));
+  if (check.getUTCFullYear() !== year || check.getUTCMonth() !== month - 1 || check.getUTCDate() !== day) {
+    return null;
+  }
+  return { year, month, day };
+}
+
+export function formatMonthDayYear(value: string | undefined): string {
+  const parsed = parseRotationStartDate(value);
+  if (!parsed) return "";
+  return `${String(parsed.month).padStart(2, "0")}-${String(parsed.day).padStart(2, "0")}-${String(parsed.year).slice(2)}`;
+}
+
+function rotationAnchorUtc(entry: ScheduleShiftEntryLike | undefined, shiftType: string): number {
+  const explicit = parseRotationStartDate(entry?.rotationStartsOn);
+  if (explicit) return Date.UTC(explicit.year, explicit.month - 1, explicit.day);
+  return Date.UTC(2026, 0, 1 + getShiftStartOffsetDays(shiftType));
+}
+
+/** Selected weekdays for a Custom shift, or null when the shift uses an every-N-days rule. */
+export function parseRecurrenceWeekdays(entry: ScheduleShiftEntryLike | undefined): number[] | null {
+  const recurrence = (entry?.recurrence ?? "").trim().toLowerCase();
+  if (!recurrence.includes("custom")) return null;
+  if ((entry?.recurrenceCustomMode ?? "").trim().toLowerCase() !== "weekdays") return null;
+  const days = [
+    ...new Set(
+      (Array.isArray(entry?.recurrenceWeekdays) ? entry.recurrenceWeekdays : [])
+        .map((day) => Math.floor(Number(day)))
+        .filter((day) => day >= 0 && day <= 6),
+    ),
+  ].sort((left, right) => left - right);
+  return days.length > 0 ? days : null;
+}
+
+export function formatWeekdayList(days: number[]): string {
+  return WEEKDAY_CHOICES.filter((choice) => days.includes(choice.day))
+    .map((choice) => choice.label)
+    .join(", ");
+}
+
+export function recurrenceDisplayLabel(entry: ScheduleShiftEntryLike | undefined): string {
+  const weekdays = parseRecurrenceWeekdays(entry);
+  if (weekdays) return formatWeekdayList(weekdays);
+  const custom = (entry?.recurrenceCustomValue ?? "").trim();
+  if ((entry?.recurrence ?? "").trim() === "Custom" && custom) return custom;
+  return (entry?.recurrence ?? "").trim() || "Daily";
+}
+
+/** True when this shift works on that calendar day. Shifts without weekday mode keep today's every-N-days rule. */
+export function shiftOccursOnDate(
+  entry: ScheduleShiftEntryLike | undefined,
+  date: Date,
+  shiftType: string,
+): boolean {
+  const weekdays = parseRecurrenceWeekdays(entry);
+  if (weekdays) return weekdays.includes(date.getDay());
+  const intervalDays = getRecurrenceIntervalDays(entry);
+  if (intervalDays <= 1) return true;
+  const anchorUtc = rotationAnchorUtc(entry, shiftType);
+  const dateUtc = Date.UTC(date.getFullYear(), date.getMonth(), date.getDate());
+  const dayDiff = Math.floor((dateUtc - anchorUtc) / (24 * 60 * 60 * 1000));
+  return dayDiff >= 0 && dayDiff % intervalDays === 0;
 }
 
 export function getRecurrenceIntervalDays(entry: ScheduleShiftEntryLike | undefined): number {
@@ -178,6 +266,26 @@ export const QUALIFICATION_COLOR_OPTIONS = [
   { id: "purple", label: "Purple", hex: "#7e22ce" },
   { id: "gray", label: "Gray", hex: "#475569" },
 ] as const;
+
+export interface QualificationOverrideRule {
+  enabled: boolean;
+  lowerQualification: string;
+}
+
+export function parseQualificationOverrides(raw: unknown): Record<string, QualificationOverrideRule> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const next: Record<string, QualificationOverrideRule> = {};
+  for (const [name, value] of Object.entries(raw as Record<string, unknown>)) {
+    const key = name.trim();
+    if (!key || !value || typeof value !== "object" || Array.isArray(value)) continue;
+    const record = value as Record<string, unknown>;
+    const lower = String(record.lowerQualification ?? "").trim();
+    if (record.enabled === true) {
+      next[key] = { enabled: true, lowerQualification: lower };
+    }
+  }
+  return next;
+}
 
 export function parseQualificationColorMap(raw: unknown): Record<string, string> {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};

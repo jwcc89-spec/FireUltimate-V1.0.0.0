@@ -39,18 +39,18 @@ const stages: StageDef[] = [
     id: "B", name: "Stage B — Make the schedule fit a weekday 12-hour department",
     summary: "The scheduler was built around 24-hours-on, 48-hours-off rotations. These steps add weekday shifts without changing how the 24/48 department works.",
     steps: [
-      { n: "3", title: "Let a shift run on chosen weekdays (Monday–Friday)", status: "Next",
+      { n: "3", title: "Let a shift run on chosen weekdays (Monday–Friday)", status: "Done",
         problem: "Shift Information → Recurrence only offers Daily, Every other Day, Every 2 days, Every 3 days, or Custom (a number of days). Daily also schedules Saturday and Sunday.",
         why: "This department works 08:00–20:00 Monday through Friday only. Weekend days would show empty seats and false HIRE openings.",
         fix: "November 4: you chose to put this under Recurrence → Custom. Custom will let an admin pick weekdays (Monday–Friday for this department), saved with the existing shift settings (no database structure change). The calendar shows only the chosen days. Custom offers two choices: 'every N days' as today, or pick weekdays with Monday–Sunday checkboxes.",
         who: "Me.",
-        done: "Not started. Done when the weekday department's calendar shows only Monday–Friday and a 24/48 shift still shows exactly the same days as before." },
-      { n: "4", title: "Stop tying the rotation to the letters A, B and C", status: "New",
+        done: "Passed November 4. Custom → Selected weekdays hides Saturday and Sunday for that shift. A Daily or 24/48 shift is unchanged." },
+      { n: "4", title: "Stop tying the rotation to the letters A, B and C", status: "Done",
         problem: "The calendar counts shift days from January 1, 2026 and shifts the start by one day for 'A Shift' and two days for 'B Shift'. Shift names other than A, B or C start on day zero. The list is also sorted A, B, C, D by name.",
         why: "Departments name shifts differently (Day Shift, Red, Platoon 1). A hidden rule based on the name is hard to discover during setup.",
-        fix: "Proposed: an optional 'Rotation starts on' date per shift in Shift Information. Shifts without one keep today's A/B/C behavior, so the 24/48 department is unchanged.",
+        fix: "November 4: Shift Information has an optional Rotation starts on date, saved with the shift (no database structure change). A date is day one for Every other day, Every 2 days, Every 3 days, and Every N days. Selected weekdays ignore it. Daily still shows every day. A blank date keeps the January 2026 A/B/C start.",
         who: "Me, after your approval.",
-        done: "Not started. Done when a shift with any name can be placed on the right days by setting its start date." },
+        done: "Passed November 4. A weekday shift stays Monday–Friday. Red, Every 2 days, starting 11-04-26, shows the 4th, 6th, and 8th. A blank date keeps the January 2026 start, and a date overrides the letter A." },
       { n: "5", title: "Make hour and overtime rules follow the real shift length", status: "Done",
         problem: "Several rules looked like they assumed 24 hours, such as a Standard Overtime Slot that starts at 24 hours.",
         why: "With a 12-hour shift, a 24-hour overtime piece would be longer than the whole shift.",
@@ -69,7 +69,7 @@ const stages: StageDef[] = [
     id: "C", name: "Stage C — Take it to the Watseka staging trial",
     summary: "Only after the local test passes.",
     steps: [
-      { n: "7", title: "Push to GitHub and test on watsekademo.staging.fireultimate.app", status: "New",
+      { n: "7", title: "Push to GitHub and test on watsekademo.staging.fireultimate.app", status: "Next",
         problem: "Local testing cannot prove the change works on the real staging site.",
         why: "Every change passes on staging before production.",
         fix: "Commit, push, and release to staging under the repair plan's release rules, then repeat the key checks on the Watseka trial department.",
@@ -123,48 +123,48 @@ const stages: StageDef[] = [
     id: "E", name: "Stage E — Fixes found during testing",
     summary: "Added November 4, 2026 from your notes after the Stage D tests. Each is a separate small change. Step 20 (Dashboard Alerts) was added the same day and is built with Step 17.",
     steps: [
-      { n: "14", title: "Widen the Department Apparatus window", status: "New",
+      { n: "14", title: "Widen the Department Apparatus window", status: "Done",
         problem: "Admin Functions → Setup/Configuration → Operational Details → Department Apparatus opens a window that is too narrow. You must scroll sideways to see the whole table and to reach Close and Edit.",
         why: "Admins should see every column and the buttons without scrolling sideways.",
         fix: "Make that window as wide as the Edit Users and Edit Personnel windows were made on November 3, so the table and its buttons fit on a normal desktop screen.",
         who: "Me.",
-        done: "Not started. Done when the whole Department Apparatus table, Close, and Edit are visible without scrolling sideways." },
-      { n: "15", title: "Lock the schedule for people who may not edit it", status: "New",
+        done: "Passed November 4. The Department Apparatus window shows Close and Edit without sideways scrolling." },
+      { n: "15", title: "Lock the schedule for people who may not edit it", status: "Done",
         problem: "Admin Functions → Setup/Configuration → Access/Restrictions → Edit the schedule can be set to Sub Admin. A regular user can still open a day block, remove people, and make changes. The server already refuses to save those changes, so they disappear on refresh, but the screen gives no sign of that.",
         why: "A user should not be able to make changes that look saved but are thrown away.",
         fix: "When the signed-in person lacks Edit the schedule, clicking a day block does nothing (decided November 4), so nothing can be removed, added, moved, split, or typed. Trades are not affected. Requesting, accepting, and cancelling a trade go through the Trades page and the server's trades route, which is separate from schedule saving.",
         who: "Me.",
-        done: "Not started. Done when a user without the permission cannot change a day block, an admin still can, and a user can still send and accept trades that change the schedule." },
-      { n: "16", title: "Pick a qualification for each seat in Scheduler Apparatus", status: "New",
+        done: "Passed November 4. Without Edit the schedule, a day click does nothing. Trades still work. Follow-up the same day: a user who may edit the schedule can fill an open seat or request to be taken off. They cannot remove someone else or change segments. A sub admin approves the cancellation." },
+      { n: "16", title: "Pick a qualification for each seat in Scheduler Apparatus", status: "Done",
         problem: "Admin Functions → Setup/Configuration → Scheduler Settings → Scheduler Apparatus lets each qualification be chosen only once. With a minimum of 2, an apparatus can require Paramedic and EMT-B but not two Paramedics or two EMT-Bs.",
         why: "Many apparatus require two people with the same qualification.",
         fix: "Show one qualification choice per seat (Seat 1, Seat 2, and so on, up to the minimum), and allow the same qualification on more than one seat. If only one qualification is chosen, every seat uses it. Saved in the existing scheduler settings (no database structure change). Apparatus saved before this change keep working.",
         who: "Me.",
-        done: "Not started. Done when an apparatus can require two Paramedics, the schedule enforces both seats, and the existing Paramedic + EMT-B apparatus is unchanged." },
-      { n: "17", title: "Request Admin Permission when a person misses a seat's qualification", status: "New",
+        done: "Passed November 4. Apparatus, Min Personnel, Max Personnel, and Station are on the first line. Seat qualifications are on the second line. The same qualification can be chosen on more than one seat." },
+      { n: "17", title: "Request Admin Permission when a person misses a seat's qualification", status: "Done",
         problem: "Personnel → Schedule → day block: when an EMT-B is already in the lower seat and another EMT-B tries the top (Paramedic) seat, the qualification message blocks it. Some departments allow two EMT-Bs to ride with an administrator's approval.",
         why: "Those departments need a way to staff the apparatus legally without turning the qualification check off for everyone.",
         fix: "Add a setting in Admin Functions → Scheduler Settings → Personnel Qualifications: Allow admin override for each qualification. Each overridable qualification names the one lower qualification allowed (for example EMT-B for Paramedic). When a person with that lower qualification is blocked, the message gets a Request Admin Permission button. The person sits in the seat marked Pending until a Sub Admin or above approves or denies. Requests are saved in a new database table (approved November 4), one row per request in one department. Admins see them on Personnel → Trades in the same table as trades: bold, marked with an asterisk, and always pinned to the top. They also appear in the new Dashboard Alerts section (Step 20).",
         who: "Me.",
-        done: "Not started. Done when an overridable seat offers Request Admin Permission, the request is bold and pinned at the top of Personnel → Trades for admins, the placement takes effect only after an approval, and a seat without the setting still blocks as it does today." },
-      { n: "18", title: "Clean up the New Trade Request form", status: "New",
+        done: "Passed November 4. The person stays in the requested seat. After approval the name looks like a normal assignment. A sub admin confirms and places someone immediately. A regular user still requests permission. A pending cancellation or partial shift shows for every signed-in person, and that seat stays closed until a sub admin answers." },
+      { n: "18", title: "Clean up the New Trade Request form", status: "Done",
         problem: "Personnel → Trades has a Payback required checkbox on each request, but payback is a department rule. Some labels are long, and the date fields sit on their own row.",
         why: "Members should not be able to change a department rule, and the form should be shorter to read.",
         fix: "Remove the Payback required checkbox from the form. The department setting in Scheduler Settings → Trades decides it, and Date You Work Instead follows it. Rename Your Assigned Date to Date. Rename Or pick a day you are scheduled to Select Scheduled Day. Put Trade With, Date, and Select Scheduled Day on one line. Date and Select Scheduled Day are the same width, and Trade With is slightly narrower than today.",
         who: "Me.",
-        done: "Not started. Done when the form has no payback checkbox, shows the new labels, and the three fields sit on one line." },
-      { n: "19", title: "Show every scheduled day in Select Scheduled Day", status: "New",
+        done: "Passed November 4. No payback checkbox, Date and Select Scheduled Day labels, and those three fields sit on one line." },
+      { n: "19", title: "Show every scheduled day in Select Scheduled Day", status: "Done",
         problem: "Personnel → Trades → the scheduled-day list shows only about 7 days and cannot reach later dates.",
         why: "Members trade shifts weeks ahead.",
         fix: "The list is built only from days already saved on the server with the person on a truck. Days the person works by roster, but that nobody has opened and saved, are missing. Build the list from the shift's own working days as well, from today forward for 3 months (decided November 4), and keep it scrollable.",
         who: "Me.",
-        done: "Not started. Done when Josh's list shows his working days for the next 3 months, not only saved days." },
-      { n: "20", title: "Add an Alerts section to the Dashboard", status: "New",
+        done: "Passed November 4. Select Scheduled Day lists working days from today through 3 months and scrolls." },
+      { n: "20", title: "Add an Alerts section to the Dashboard", status: "Done",
         problem: "Nothing on the Dashboard shows items that need attention right away.",
         why: "Admins must see critical items, such as a seat waiting for permission, as soon as they sign in.",
         fix: "Add an Alerts section above the submenu cards on the Dashboard. It lists critical messages and items that need action now. The first alert type is Request Admin Permission from Step 17, shown to Sub Admin and above, and clicking it opens Personnel → Trades. The section is hidden when there are no alerts. More alert types can be added later.",
         who: "Me, built together with Step 17.",
-        done: "Not started. Done when a pending permission request appears in Dashboard Alerts for a sub admin, does not appear for a regular user, and leaves the list once approved or denied." },
+        done: "Passed November 4. Alerts sit above the Dashboard cards, show a pending request, and open Trades. The section is hidden when there is nothing to approve." },
     ],
   },
 ];
@@ -211,6 +211,7 @@ const decided = [
   ["November 4, 2026", "Overtime length (Step 5)", "Closed. Standard Overtime Slot is a department setting in Overtime Setup. 24 hours is only the starting value."],
   ["November 4, 2026", "Re-test (Step 6)", "Closed. The Stage D tests covered segmenting, month and day views, trades, and overtime with no problems found."],
   ["November 4, 2026", "Weekday recurrence (Step 3)", "Weekday selection goes under Recurrence → Custom, so Monday–Friday can be chosen."],
+  ["November 4, 2026", "Rotation start (Step 4)", "Each shift can save an optional Rotation starts on date in the existing shift settings. That date is day one for every-other-day and every-N-days shifts. A blank date keeps the January 2026 A/B/C start. Selected weekdays ignore the date. Daily still shows every day."],
   ["November 4, 2026", "Custom recurrence layout (Step 3)", "Custom offers two choices: 'every N days' as today, or pick weekdays with Monday–Sunday checkboxes."],
   ["November 4, 2026", "Locked day block (Step 15)", "For a person without Edit the schedule, clicking a day block does nothing."],
   ["November 4, 2026", "Admin override approval (Step 17)", "Sub Admin and above approve. While waiting, the person is in the seat marked Pending. Each overridable qualification names the one lower qualification allowed, such as EMT-B for Paramedic."],
@@ -349,11 +350,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 4, 2026, 11:45 a.m. Chicago · Branch cursor/watseka-scheduling-plan · Stages A and D done · Steps 5 and 6 closed · Stage E added (Steps 14–20) · No open questions · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, afternoon Chicago · Branch cursor/watseka-scheduling-plan · Step 4 passed · Step 7 staging trial is next · Production is not updated</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: Step 3 and Stage E, after your answers">
-        Steps 5 and 6 are closed. Step 3 puts weekdays under Recurrence → Custom. Stage E lists six fixes from your November 4 notes. Your November 4 answers are in Decisions, and no questions are open. Steps 3 and 14–20 can all start. Steps 17 and 20 are built together. A 24/48 shift must keep showing the same days it shows today.
+      <Callout tone="info" title="Next: Step 7 on Watseka staging">
+        The local click-tests passed, including the rotation start date. Step 7 puts this branch on watsekademo.staging.fireultimate.app after a staging backup and the two new tables. Production stays as it is.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

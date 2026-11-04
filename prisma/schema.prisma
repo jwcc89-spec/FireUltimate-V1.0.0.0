@@ -36,6 +36,7 @@ model Tenant {
   rolePermissions             RolePermission[]
   accountAuditLogs            AccountAuditLog[]
   tradeRequests               TradeRequest[]
+  qualificationOverrideRequests QualificationOverrideRequest[]
 }
 
 /// One row per shift trade request. Names match Scheduler Settings → Personnel; usernames decide who may see and act on it.
@@ -67,6 +68,29 @@ model TradeRequest {
   @@index([tenantId, createdAt])
   @@index([tenantId, requesterUsername])
   @@index([tenantId, counterpartUsername])
+}
+
+/// One request to let a lower qualification fill a seat until a sub admin approves it.
+model QualificationOverrideRequest {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  requesterUsername     String
+  requesterName         String
+  personName            String
+  shiftType             String   @default("")
+  apparatus             String   @default("")
+  unitId                String   @default("")
+  slotIndex             Int      @default(0)
+  dateKey               String
+  requiredQualification String   @default("")
+  status                String   @default("pending")
+  denialReason          String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
 }
 
 /// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.

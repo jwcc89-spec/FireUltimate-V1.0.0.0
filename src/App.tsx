@@ -125,7 +125,18 @@ import {
   NerisFlatSingleOptionSelect,
 } from "./NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
-import { getRecurrenceIntervalDays, parseQualificationColorMap, QUALIFICATION_COLOR_OPTIONS, toDateKey } from "./scheduleUtils";
+import {
+  getRecurrenceIntervalDays,
+  parseQualificationColorMap,
+  parseQualificationOverrides,
+  parseRecurrenceWeekdays,
+  QUALIFICATION_COLOR_OPTIONS,
+  recurrenceDisplayLabel,
+  formatMonthDayYear,
+  WEEKDAY_CHOICES,
+  type QualificationOverrideRule,
+  toDateKey,
+} from "./scheduleUtils";
 import { onSessionExpired } from "./api/http";
 import { RolePermissionsPanel } from "./RolePermissionsPanel";
 import { useMyPermissions } from "./useMyPermissions";
@@ -335,8 +346,96 @@ interface ShiftInformationEntry {
   shiftDuration: number;
   recurrence: ShiftRecurrencePreset;
   recurrenceCustomValue: string;
+  recurrenceCustomMode: "interval" | "weekdays";
+  recurrenceWeekdays: number[];
+  rotationStartsOn: string;
   startTime: string;
   location: string;
+}
+
+const EMPTY_SHIFT_DRAFT: ShiftInformationEntry = {
+  shiftType: "",
+  shiftDuration: 0,
+  recurrence: "Daily",
+  recurrenceCustomValue: "",
+  recurrenceCustomMode: "interval",
+  recurrenceWeekdays: [],
+  rotationStartsOn: "",
+  startTime: "",
+  location: "",
+};
+
+function seatRequirementsForMinimum(requirements: string[], minimum: number): string[] {
+  const next = requirements.slice(0, Math.max(0, minimum));
+  while (next.length < minimum) next.push("");
+  return next;
+}
+
+function filledSeatRequirements(requirements: string[], minimum: number): string[] | null {
+  let next = seatRequirementsForMinimum(requirements, minimum).map((value) => value.trim());
+  const filled = next.filter(Boolean);
+  const unique = [...new Set(filled)];
+  if (unique.length === 1 && filled.length < minimum) {
+    next = Array.from({ length: minimum }, () => unique[0]!);
+  }
+  if (minimum > 0 && next.some((value) => !value)) return null;
+  return next;
+}
+
+function SeatRequirementFields({
+  idPrefix,
+  minimumPersonnel,
+  requirements,
+  qualifications,
+  onChange,
+}: {
+  idPrefix: string;
+  minimumPersonnel: number;
+  requirements: string[];
+  qualifications: string[];
+  onChange: (next: string[]) => void;
+}) {
+  if (minimumPersonnel <= 0) return null;
+  const seats = seatRequirementsForMinimum(requirements, minimumPersonnel);
+  return (
+    <div className="scheduler-apparatus-seats">
+      {seats.map((value, index) => (
+        <label key={`seat-requirement-${index}`}>
+          {`Seat ${index + 1} qualification`}
+          <NerisFlatSingleOptionSelect
+            inputId={`${idPrefix}-seat-${index}`}
+            value={value}
+            options={qualifications.map((qualification) => ({ value: qualification, label: qualification }))}
+            onChange={(nextValue) => {
+              const next = [...seats];
+              next[index] = nextValue;
+              onChange(next);
+            }}
+            placeholder="Choose a qualification"
+            searchPlaceholder="Search qualifications..."
+            allowClear
+            usePortal
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function normalizeShiftDraft(entry: ShiftInformationEntry): ShiftInformationEntry {
+  const weekdays = Array.isArray(entry.recurrenceWeekdays)
+    ? entry.recurrenceWeekdays.filter((day) => day >= 0 && day <= 6)
+    : [];
+  return {
+    ...EMPTY_SHIFT_DRAFT,
+    ...entry,
+    startTime: entry.startTime || "",
+    recurrenceCustomMode: entry.recurrenceCustomMode === "weekdays" ? "weekdays" : "interval",
+    recurrenceWeekdays: weekdays,
+    rotationStartsOn: /^\d{4}-\d{2}-\d{2}$/.test(String(entry.rotationStartsOn ?? "").trim())
+      ? String(entry.rotationStartsOn).trim()
+      : "",
+  };
 }
 
 type KellyRotationUnit = "Days" | "Shifts";
@@ -3806,6 +3905,53 @@ function writeHiddenDashboardWidgets(hidden: DashboardWidgetId[]): void {
   window.localStorage.setItem(DASHBOARD_HIDDEN_WIDGETS_KEY, JSON.stringify(hidden));
 }
 
+function formatAlertDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  return match ? `${match[2]}-${match[3]}-${match[1].slice(2)}` : value;
+}
+
+function DashboardAttentionAlerts() {
+  const [alerts, setAlerts] = useState<
+    Array<{ id: string; personName: string; apparatus: string; dateKey: string; requiredQualification: string }>
+  >([]);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/qualification-overrides")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((json: { ok?: boolean; canReview?: boolean; requests?: Array<{ id: string; personName: string; apparatus: string; dateKey: string; requiredQualification: string; status: string }> } | null) => {
+        if (!active || !json?.ok || json.canReview !== true || !Array.isArray(json.requests)) return;
+        setAlerts(json.requests.filter((row) => row.status === "pending"));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (alerts.length === 0) return null;
+  return (
+    <article className="panel dashboard-attention-alerts">
+      <h2>Alerts</h2>
+      <ul>
+        {alerts.map((alert) => (
+          <li key={alert.id}>
+            <NavLink to="/personnel/trades">
+              <strong>
+                {`* ${alert.personName} ${
+                  alert.requiredQualification === "Remove from seat"
+                    ? `request to cancel shift on ${alert.apparatus || "an apparatus"} for ${formatAlertDate(alert.dateKey)}.`
+                    : alert.requiredQualification.startsWith("Partial shift ")
+                      ? `asked to work ${alert.requiredQualification.replace("Partial shift ", "").replace("-", " to ")} on ${alert.apparatus || "an apparatus"} for ${formatAlertDate(alert.dateKey)}.`
+                      : `needs approval to fill the ${alert.requiredQualification} seat on ${alert.apparatus || "an apparatus"} for ${formatAlertDate(alert.dateKey)}.`
+                }`}
+              </strong>
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
   const [widgetEditorOpen, setWidgetEditorOpen] = useState(false);
@@ -3945,6 +4091,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
       </section>
       ) : null}
 
+      <DashboardAttentionAlerts />
       {dashboardMenu ? (
         <MenuDisplayCards
           menu={dashboardMenu}
@@ -6726,7 +6873,10 @@ function DepartmentDetailsPage({
     initialDepartmentDraft.tradePaybackRequired === true,
   );
   const [tradeCancelApproval, setTradeCancelApproval] = useState(
-    initialDepartmentDraft.tradeCancelApproval === true,
+    initialDepartmentDraft.tradeCancelApproval !== false,
+  );
+  const [allowPartialShift, setAllowPartialShift] = useState(
+    initialDepartmentDraft.allowPartialShift === true,
   );
   const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
     normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
@@ -6737,6 +6887,9 @@ function DepartmentDetailsPage({
   const [personnelQualificationColors, setPersonnelQualificationColors] = useState<Record<string, string>>(
     () => parseQualificationColorMap(initialDepartmentDraft.personnelQualificationColors),
   );
+  const [personnelQualificationOverrides, setPersonnelQualificationOverrides] = useState<
+    Record<string, QualificationOverrideRule>
+  >(() => parseQualificationOverrides(initialDepartmentDraft.personnelQualificationOverrides));
   const [userTypeValues, setUserTypeValues] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.userTypeValues) && initialDepartmentDraft.userTypeValues.length > 0
       ? (initialDepartmentDraft.userTypeValues as string[])
@@ -6837,14 +6990,7 @@ function DepartmentDetailsPage({
     personnelRequirements: [],
     station: "",
   });
-  const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>({
-    shiftType: "",
-    shiftDuration: 0,
-    recurrence: "Daily",
-    recurrenceCustomValue: "",
-    startTime: "",
-    location: "",
-  });
+  const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>(EMPTY_SHIFT_DRAFT);
   const [personnelDraft, setPersonnelDraft] = useState<DepartmentPersonnelRecord>({
     name: "",
     shift: "",
@@ -7266,10 +7412,7 @@ function DepartmentDetailsPage({
   const shiftOptionValues = useMemo(
     () =>
       shiftInformationEntries.map((entry) => {
-        const recurrenceLabel =
-          entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
-            ? entry.recurrenceCustomValue
-            : entry.recurrence;
+        const recurrenceLabel = recurrenceDisplayLabel(entry);
         return `${entry.shiftType} | ${entry.startTime || "--:--"} | ${entry.shiftDuration} | ${recurrenceLabel}${
           entry.location.trim().length > 0 ? ` | ${entry.location}` : ""
         }`;
@@ -7341,9 +7484,19 @@ function DepartmentDetailsPage({
       (entry) =>
         entry.shiftType.trim() === kellyMultiAddDraft.shift.trim(),
     );
+    const weekdays = parseRecurrenceWeekdays(shiftEntry);
+    const previewCount = Math.max(1, Math.floor(kellyMultiAddDraft.repeatsEveryValue || 1));
+    if (weekdays) {
+      const found: string[] = [];
+      const cursor = new Date(startDate);
+      for (let guard = 0; found.length < previewCount && guard < 400; guard += 1) {
+        if (weekdays.includes(cursor.getDay())) found.push(toDateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return found;
+    }
     const recurrenceDays = Math.max(1, getRecurrenceIntervalDays(shiftEntry));
     const stepDays = recurrenceDays;
-    const previewCount = Math.max(1, Math.floor(kellyMultiAddDraft.repeatsEveryValue || 1));
     return Array.from({ length: previewCount }, (_, index) => {
       const nextDate = new Date(startDate);
       nextDate.setDate(startDate.getDate() + index * stepDays);
@@ -7893,12 +8046,14 @@ function DepartmentDetailsPage({
         setOvertimeSummaryTarget(d.overtimeSummaryTarget === "trades" ? "trades" : "info");
         setTradeAdminApproval(d.tradeAdminApproval === true);
         setTradePaybackRequired(d.tradePaybackRequired === true);
-        setTradeCancelApproval(d.tradeCancelApproval === true);
+        setTradeCancelApproval(d.tradeCancelApproval !== false);
+        setAllowPartialShift(d.allowPartialShift === true);
         setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
         );
         setPersonnelQualificationColors(parseQualificationColorMap(d.personnelQualificationColors));
+        setPersonnelQualificationOverrides(parseQualificationOverrides(d.personnelQualificationOverrides));
         setUserTypeValues(
           Array.isArray(d.userTypeValues) && (d.userTypeValues as string[]).length > 0
             ? (d.userTypeValues as string[])
@@ -8244,15 +8399,19 @@ function DepartmentDetailsPage({
       setStatusMessage("Max Personnel must be greater than or equal to Min Personnel.");
       return;
     }
-    if (schedulerApparatusDraft.personnelRequirements.length !== minimumPersonnel) {
-      setStatusMessage("Minimum Requirements selection count must match Minimum Personnel.");
+    const personnelRequirements = filledSeatRequirements(
+      schedulerApparatusDraft.personnelRequirements,
+      minimumPersonnel,
+    );
+    if (!personnelRequirements) {
+      setStatusMessage("Choose a qualification for each seat. One qualification is used for every seat.");
       return;
     }
     const normalized: SchedulerApparatusRecord = {
       apparatus: schedulerApparatusDraft.apparatus.trim(),
       minimumPersonnel,
       maximumPersonnel,
-      personnelRequirements: schedulerApparatusDraft.personnelRequirements.filter(Boolean),
+      personnelRequirements,
       station: schedulerApparatusDraft.station.trim(),
     };
     setSchedulerApparatusRecords((previous) => {
@@ -8855,8 +9014,12 @@ function DepartmentDetailsPage({
     if (!/^\d{2}:\d{2}$/.test(shiftDraft.startTime.trim())) {
       return;
     }
-    if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
-      return;
+    if (shiftDraft.recurrence === "Custom") {
+      if (shiftDraft.recurrenceCustomMode === "weekdays") {
+        if (shiftDraft.recurrenceWeekdays.length === 0) return;
+      } else if (!(Number(shiftDraft.recurrenceCustomValue) > 0)) {
+        return;
+      }
     }
     const normalized = {
       ...shiftDraft,
@@ -8865,20 +9028,19 @@ function DepartmentDetailsPage({
       recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
       startTime: shiftDraft.startTime.trim(),
       location: shiftDraft.location.trim(),
+      rotationStartsOn:
+        shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode === "weekdays"
+          ? ""
+          : /^\d{4}-\d{2}-\d{2}$/.test(shiftDraft.rotationStartsOn.trim())
+            ? shiftDraft.rotationStartsOn.trim()
+            : "",
     };
     setShiftInformationEntries((previous) =>
       editingIndex === null
         ? [...previous, normalized]
         : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
     );
-    setShiftDraft({
-      shiftType: "",
-      shiftDuration: 0,
-      recurrence: "Daily",
-      recurrenceCustomValue: "",
-      startTime: "",
-      location: "",
-    });
+    setShiftDraft(EMPTY_SHIFT_DRAFT);
     setEditingIndex(null);
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
@@ -9115,10 +9277,12 @@ function DepartmentDetailsPage({
       tradeAdminApproval,
       tradePaybackRequired,
       tradeCancelApproval,
+      allowPartialShift,
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
       personnelQualificationColors,
+      personnelQualificationOverrides,
       userTypeValues,
       selectedMutualAidIds,
       mutualAidDepartmentSelections: mutualAidSelectionsToPayload(mutualAidDepartmentSelections),
@@ -9166,8 +9330,10 @@ function DepartmentDetailsPage({
     tradeAdminApproval,
     tradePaybackRequired,
     tradeCancelApproval,
+    allowPartialShift,
     personnelQualifications,
     personnelQualificationColors,
+    personnelQualificationOverrides,
     personnelRecords,
     schedulerApparatusFieldWidths,
     schedulerApparatusRecords,
@@ -9611,7 +9777,7 @@ function DepartmentDetailsPage({
                       : definition.key === "overtimeSetup"
                       ? `Standard Overtime Slot: ${standardOvertimeSlot} hour(s)`
                       : definition.key === "tradesSetup"
-                      ? `Admin approval: ${tradeAdminApproval ? "On" : "Off"} · Payback starts ${tradePaybackRequired ? "required" : "not required"} · Cancel approval: ${tradeCancelApproval ? "On" : "Off"}`
+                      ? `Admin approval: ${tradeAdminApproval ? "On" : "Off"} · Payback starts ${tradePaybackRequired ? "required" : "not required"} · Cancel approval: ${tradeCancelApproval ? "On" : "Off"} · Partial shift: ${allowPartialShift ? "On" : "Off"}`
                       : definition.key === "schedulerApparatus"
                       ? `Total Apparatus: ${schedulerApparatusRecords.length}`
                       : definition.key === "schedulerPersonnel"
@@ -9661,13 +9827,30 @@ function DepartmentDetailsPage({
       {activeCollectionEditor && activeCollectionDefinition ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
           <article
-            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor || isAdditionalFieldsEditor || isSchedulerApparatusEditor || isShiftEditor ? " department-editor-modal-wide" : ""}`}
+            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor || isAdditionalFieldsEditor || isSchedulerApparatusEditor || isShiftEditor || isApparatusEditor || isQualificationsEditor ? " department-editor-modal-wide" : ""}`}
           >
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
-              <button type="button" className="secondary-button compact-button" onClick={closeCollectionEditor}>
-                Close
-              </button>
+              <div className="department-editor-toolbar-actions">
+                {isQualificationsEditor ? (
+                  <>
+                    {statusMessage ? <span className="save-message">{statusMessage}</span> : null}
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={() => {
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Saved.");
+                      }}
+                    >
+                      Save
+                    </button>
+                  </>
+                ) : null}
+                <button type="button" className="secondary-button compact-button" onClick={closeCollectionEditor}>
+                  Close
+                </button>
+              </div>
             </div>
 
             {(isStationsEditor || isApparatusEditor || isUsersEditor || isSchedulerPersonnelEditor || isSchedulerApparatusEditor || isAdditionalFieldsEditor) ? (
@@ -10093,79 +10276,68 @@ function DepartmentDetailsPage({
                   </div>
                 ) : isSchedulerApparatusEditor ? (
                   <div className="department-apparatus-list-wrapper">
-                    <div className="department-edit-grid">
-                      <label>
-                        Apparatus
-                        <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
-                      </label>
-                      <label>
-                        Min Personnel
-                        <input
-                          type="number"
-                          min={0}
-                          value={schedulerApparatusDraft.minimumPersonnel}
-                          onChange={(event) =>
-                            setSchedulerApparatusDraft((previous) => ({
-                              ...previous,
-                              minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Max Personnel
-                        <input
-                          type="number"
-                          min={1}
-                          value={schedulerApparatusDraft.maximumPersonnel}
-                          onChange={(event) =>
-                            setSchedulerApparatusDraft((previous) => ({
-                              ...previous,
-                              maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
-                            }))
-                          }
-                        />
-                      </label>
-                      <label>
-                        Minimum Requirements (select all that apply)
-                        <NerisFlatMultiOptionSelect
-                          inputId="scheduler-apparatus-personnel-requirements-inline"
-                          value={schedulerApparatusDraft.personnelRequirements.join(",")}
-                          options={personnelQualifications.map((q) => ({ value: q, label: q }))}
-                          onChange={(nextValue) =>
-                            setSchedulerApparatusDraft((previous) => ({
-                              ...previous,
-                              personnelRequirements: nextValue
-                                .split(",")
-                                .map((s) => s.trim())
-                                .filter(Boolean),
-                            }))
-                          }
-                          placeholder="Select minimum requirement(s)"
-                          searchPlaceholder="Search qualifications..."
-                          maxSelections={
-                            schedulerApparatusDraft.minimumPersonnel > 0
-                              ? schedulerApparatusDraft.minimumPersonnel
-                              : undefined
-                          }
-                          usePortal
-                        />
-                      </label>
-                      <label>
-                        Station
-                        <NerisFlatSingleOptionSelect
-                          inputId="scheduler-apparatus-station-inline"
-                          value={schedulerApparatusDraft.station}
-                          options={stationNames.map((s) => ({ value: s, label: s }))}
-                          onChange={(nextValue) =>
-                            setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
-                          }
-                          placeholder="Select station"
-                          searchPlaceholder="Search stations..."
-                          allowClear
-                          usePortal
-                        />
-                      </label>
+                    <div className="scheduler-apparatus-form">
+                      <div className="scheduler-apparatus-main-row">
+                        <label>
+                          Apparatus
+                          <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                        </label>
+                        <label>
+                          Min Personnel
+                          <input
+                            type="number"
+                            min={0}
+                            value={schedulerApparatusDraft.minimumPersonnel}
+                            onChange={(event) =>
+                              setSchedulerApparatusDraft((previous) => ({
+                                ...previous,
+                                minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Max Personnel
+                          <input
+                            type="number"
+                            min={1}
+                            value={schedulerApparatusDraft.maximumPersonnel}
+                            onChange={(event) =>
+                              setSchedulerApparatusDraft((previous) => ({
+                                ...previous,
+                                maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Station
+                          <NerisFlatSingleOptionSelect
+                            inputId="scheduler-apparatus-station-inline"
+                            value={schedulerApparatusDraft.station}
+                            options={stationNames.map((s) => ({ value: s, label: s }))}
+                            onChange={(nextValue) =>
+                              setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                            }
+                            placeholder="Select station"
+                            searchPlaceholder="Search stations..."
+                            allowClear
+                            usePortal
+                          />
+                        </label>
+                      </div>
+                      <SeatRequirementFields
+                        idPrefix="scheduler-apparatus-inline"
+                        minimumPersonnel={schedulerApparatusDraft.minimumPersonnel}
+                        requirements={schedulerApparatusDraft.personnelRequirements}
+                        qualifications={personnelQualifications}
+                        onChange={(next) =>
+                          setSchedulerApparatusDraft((previous) => ({
+                            ...previous,
+                            personnelRequirements: next,
+                          }))
+                        }
+                      />
                     </div>
                     <p className="field-hint" style={{ marginTop: "0.35rem" }}>
                       Click an apparatus in the list to edit it here. Use Import Apparatus to add trucks from Department Apparatus.
@@ -10720,10 +10892,74 @@ function DepartmentDetailsPage({
                 <div className="department-edit-grid">
                   {shiftDraft.recurrence === "Custom" ? (
                     <label>
-                      Custom Recurrence
-                      <input type="text" value={shiftDraft.recurrenceCustomValue} onChange={(event) => setShiftDraft((previous) => ({ ...previous, recurrenceCustomValue: event.target.value }))} />
+                      Custom type
+                      <select
+                        value={shiftDraft.recurrenceCustomMode}
+                        onChange={(event) =>
+                          setShiftDraft((previous) => ({
+                            ...previous,
+                            recurrenceCustomMode: event.target.value === "weekdays" ? "weekdays" : "interval",
+                          }))
+                        }
+                      >
+                        <option value="interval">Every N days</option>
+                        <option value="weekdays">Selected weekdays</option>
+                      </select>
                     </label>
                   ) : null}
+                  {shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode !== "weekdays" ? (
+                    <label>
+                      Every N days
+                      <input
+                        type="number"
+                        min={1}
+                        value={shiftDraft.recurrenceCustomValue}
+                        onChange={(event) => setShiftDraft((previous) => ({ ...previous, recurrenceCustomValue: event.target.value }))}
+                      />
+                    </label>
+                  ) : null}
+                  {shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode === "weekdays" ? (
+                    <div className="weekday-choice-row">
+                      {WEEKDAY_CHOICES.map((choice) => {
+                        const checked = shiftDraft.recurrenceWeekdays.includes(choice.day);
+                        return (
+                          <label key={`weekday-${choice.day}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setShiftDraft((previous) => ({
+                                  ...previous,
+                                  recurrenceWeekdays: checked
+                                    ? previous.recurrenceWeekdays.filter((day) => day !== choice.day)
+                                    : [...previous.recurrenceWeekdays, choice.day],
+                                }))
+                              }
+                            />
+                            {choice.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {shiftDraft.recurrence !== "Custom" || shiftDraft.recurrenceCustomMode !== "weekdays" ? (
+                    <label>
+                      Rotation starts on
+                      <input
+                        type="date"
+                        value={shiftDraft.rotationStartsOn}
+                        onChange={(event) =>
+                          setShiftDraft((previous) => ({
+                            ...previous,
+                            rotationStartsOn: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ) : null}
+                  <p className="field-hint">
+                    Leave Rotation starts on blank to keep the current start. A shift named A, B, or C still starts from January 2026. A date here is day one for Every other day, Every 2 days, Every 3 days, and Every N days. Selected weekdays do not use it. Daily still shows every day.
+                  </p>
                   <label>
                     Location
                     <NerisFlatSingleOptionSelect
@@ -10749,16 +10985,27 @@ function DepartmentDetailsPage({
                       type="button"
                       className="secondary-button compact-button"
                       onClick={() => {
+                        setShiftInformationEntries((previous) =>
+                          previous.filter((_, index) => index !== editingIndex),
+                        );
                         setEditingIndex(null);
                         setSelectedSingleIndex(null);
-                        setShiftDraft({
-                          shiftType: "",
-                          shiftDuration: 0,
-                          recurrence: "Daily",
-                          recurrenceCustomValue: "",
-                          startTime: "",
-                          location: "",
-                        });
+                        setShiftDraft(EMPTY_SHIFT_DRAFT);
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Auto-saved.");
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                  {editingIndex !== null ? (
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setEditingIndex(null);
+                        setSelectedSingleIndex(null);
+                        setShiftDraft(EMPTY_SHIFT_DRAFT);
                       }}
                     >
                       Clear
@@ -10790,10 +11037,9 @@ function DepartmentDetailsPage({
                           </tr>
                         ) : (
                           shiftInformationEntries.map((entry, index) => {
-                            const recurrenceLabel =
-                              entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
-                                ? entry.recurrenceCustomValue
-                                : entry.recurrence;
+                            const recurrenceLabel = recurrenceDisplayLabel(entry);
+                            const rotationLabel = formatMonthDayYear(entry.rotationStartsOn);
+                            const recurrenceText = rotationLabel ? `${recurrenceLabel} · ${rotationLabel}` : recurrenceLabel;
                             return (
                               <tr
                                 key={`shift-row-${index}-${entry.shiftType}`}
@@ -10803,20 +11049,14 @@ function DepartmentDetailsPage({
                                 onClick={() => {
                                   setSelectedSingleIndex(index);
                                   setEditingIndex(index);
-                                  setShiftDraft({
-                                    ...entry,
-                                    startTime: entry.startTime || "",
-                                  });
+                                  setShiftDraft(normalizeShiftDraft(entry));
                                 }}
                                 onKeyDown={(event) => {
                                   if (event.key === "Enter" || event.key === " ") {
                                     event.preventDefault();
                                     setSelectedSingleIndex(index);
                                     setEditingIndex(index);
-                                    setShiftDraft({
-                                      ...entry,
-                                      startTime: entry.startTime || "",
-                                    });
+                                    setShiftDraft(normalizeShiftDraft(entry));
                                   }
                                 }}
                               >
@@ -10830,7 +11070,7 @@ function DepartmentDetailsPage({
                                         {entry.startTime || "—"}
                                       </span>
                                       <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
-                                      <span className="department-apparatus-field">{recurrenceLabel}</span>
+                                      <span className="department-apparatus-field">{recurrenceText}</span>
                                       <span className="department-apparatus-field">{entry.location || "—"}</span>
                                     </div>
                                   </div>
@@ -11236,6 +11476,20 @@ function DepartmentDetailsPage({
                   <p className="field-hint">
                     When this is on, cancelling an accepted trade needs an administrator's approval before the schedule goes back.
                   </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={allowPartialShift}
+                      onChange={(event) => {
+                        setAllowPartialShift(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Allow for partial shift
+                  </label>
+                  <p className="field-hint">
+                    When this is on, a user filling an open seat can ask to work part of the shift. A sub admin must approve those hours before they are added.
+                  </p>
                 </div>
               </>
             ) : null}
@@ -11267,6 +11521,7 @@ function DepartmentDetailsPage({
                         <tr>
                           <th style={{ width: "32px" }} aria-label="Drag to reorder" />
                           <th>Qualification</th>
+                          <th>Admin override</th>
                           <th>Color</th>
                           <th style={{ width: "80px" }}>Order</th>
                           <th style={{ width: "90px" }}>Action</th>
@@ -11275,7 +11530,7 @@ function DepartmentDetailsPage({
                       <tbody>
                         {personnelQualifications.length === 0 ? (
                           <tr>
-                            <td colSpan={5} className="department-apparatus-empty">
+                            <td colSpan={6} className="department-apparatus-empty">
                               No qualifications. Add one above.
                             </td>
                           </tr>
@@ -11331,6 +11586,56 @@ function DepartmentDetailsPage({
                               </td>
                               <td>
                                 <strong className="call-number-text">{qualification || "—"}</strong>
+                              </td>
+                              <td className="qualification-override-cell" onClick={(event) => event.stopPropagation()}>
+                                <label className="additional-field-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={personnelQualificationOverrides[qualification]?.enabled === true}
+                                    onChange={(event) => {
+                                      const enabled = event.target.checked;
+                                      setPersonnelQualificationOverrides((previous) => {
+                                        const next = { ...previous };
+                                        if (!enabled) {
+                                          delete next[qualification];
+                                          return next;
+                                        }
+                                        next[qualification] = {
+                                          enabled: true,
+                                          lowerQualification: previous[qualification]?.lowerQualification ?? "",
+                                        };
+                                        return next;
+                                      });
+                                      setAutoSaveTick((previous) => previous + 1);
+                                      setStatusMessage("Saved.");
+                                    }}
+                                  />
+                                  Allow
+                                </label>
+                                {personnelQualificationOverrides[qualification]?.enabled ? (
+                                  <select
+                                    className="qualification-override-select"
+                                    value={personnelQualificationOverrides[qualification]?.lowerQualification ?? ""}
+                                    onChange={(event) => {
+                                      const lowerQualification = event.target.value;
+                                      setPersonnelQualificationOverrides((previous) => ({
+                                        ...previous,
+                                        [qualification]: { enabled: true, lowerQualification },
+                                      }));
+                                      setAutoSaveTick((previous) => previous + 1);
+                                      setStatusMessage("Saved.");
+                                    }}
+                                  >
+                                    <option value="">Lower qualification</option>
+                                    {personnelQualifications
+                                      .filter((candidate, candidateIndex) => candidateIndex > index && candidate !== qualification)
+                                      .map((candidate) => (
+                                        <option key={`${qualification}-lower-${candidate}`} value={candidate}>
+                                          {candidate}
+                                        </option>
+                                      ))}
+                                  </select>
+                                ) : null}
                               </td>
                               <td onClick={(event) => event.stopPropagation()}>
                                 <div className="qualification-color-choices" role="group" aria-label={`Color for ${qualification}`}>
@@ -12159,79 +12464,68 @@ function DepartmentDetailsPage({
             ) : null}
 
             {isSchedulerApparatusEditor ? (
-              <div className="department-edit-grid">
-                <label>
-                  Apparatus
-                  <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
-                </label>
-                <label>
-                  Min Personnel
-                  <input
-                    type="number"
-                    min={0}
-                    value={schedulerApparatusDraft.minimumPersonnel}
-                    onChange={(event) =>
-                      setSchedulerApparatusDraft((previous) => ({
-                        ...previous,
-                        minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Max Personnel
-                  <input
-                    type="number"
-                    min={1}
-                    value={schedulerApparatusDraft.maximumPersonnel}
-                    onChange={(event) =>
-                      setSchedulerApparatusDraft((previous) => ({
-                        ...previous,
-                        maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Minimum Requirements (select all that apply)
-                  <NerisFlatMultiOptionSelect
-                    inputId="scheduler-apparatus-personnel-requirements"
-                    value={schedulerApparatusDraft.personnelRequirements.join(",")}
-                    options={personnelQualifications.map((q) => ({ value: q, label: q }))}
-                    onChange={(nextValue) =>
-                      setSchedulerApparatusDraft((previous) => ({
-                        ...previous,
-                        personnelRequirements: nextValue
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      }))
-                    }
-                    placeholder="Select minimum requirement(s)"
-                    searchPlaceholder="Search qualifications..."
-                    maxSelections={
-                      schedulerApparatusDraft.minimumPersonnel > 0
-                        ? schedulerApparatusDraft.minimumPersonnel
-                        : undefined
-                    }
-                    usePortal
-                  />
-                </label>
-                <label>
-                  Station
-                  <NerisFlatSingleOptionSelect
-                    inputId="scheduler-apparatus-station"
-                    value={schedulerApparatusDraft.station}
-                    options={stationNames.map((s) => ({ value: s, label: s }))}
-                    onChange={(nextValue) =>
-                      setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
-                    }
-                    placeholder="Select station"
-                    searchPlaceholder="Search stations..."
-                    allowClear
-                    usePortal
-                  />
-                </label>
+              <div className="scheduler-apparatus-form">
+                <div className="scheduler-apparatus-main-row">
+                  <label>
+                    Apparatus
+                    <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                  </label>
+                  <label>
+                    Min Personnel
+                    <input
+                      type="number"
+                      min={0}
+                      value={schedulerApparatusDraft.minimumPersonnel}
+                      onChange={(event) =>
+                        setSchedulerApparatusDraft((previous) => ({
+                          ...previous,
+                          minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Max Personnel
+                    <input
+                      type="number"
+                      min={1}
+                      value={schedulerApparatusDraft.maximumPersonnel}
+                      onChange={(event) =>
+                        setSchedulerApparatusDraft((previous) => ({
+                          ...previous,
+                          maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Station
+                    <NerisFlatSingleOptionSelect
+                      inputId="scheduler-apparatus-station"
+                      value={schedulerApparatusDraft.station}
+                      options={stationNames.map((s) => ({ value: s, label: s }))}
+                      onChange={(nextValue) =>
+                        setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                      }
+                      placeholder="Select station"
+                      searchPlaceholder="Search stations..."
+                      allowClear
+                      usePortal
+                    />
+                  </label>
+                </div>
+                <SeatRequirementFields
+                  idPrefix="scheduler-apparatus"
+                  minimumPersonnel={schedulerApparatusDraft.minimumPersonnel}
+                  requirements={schedulerApparatusDraft.personnelRequirements}
+                  qualifications={personnelQualifications}
+                  onChange={(next) =>
+                    setSchedulerApparatusDraft((previous) => ({
+                      ...previous,
+                      personnelRequirements: next,
+                    }))
+                  }
+                />
               </div>
             ) : null}
 

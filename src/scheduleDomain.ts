@@ -1,4 +1,4 @@
-import { parseQualificationColorMap } from "./scheduleUtils";
+import { parseQualificationColorMap, parseQualificationOverrides } from "./scheduleUtils";
 
 export type ScheduleSupportValueMode = "text" | "personnel";
 
@@ -60,6 +60,8 @@ export interface PersonnelScheduleData {
   segmentSummaryTarget: "info" | "trades";
   /** Where overtime hours are listed. A segmented shift does not follow this. */
   overtimeSummaryTarget: "info" | "trades";
+  /** When true, a regular user can ask to work part of an open seat. */
+  allowPartialShift: boolean;
   personnel: Array<{
     name: string;
     shift: string;
@@ -76,11 +78,15 @@ export interface PersonnelScheduleData {
     repeatsEveryUnit: "Days" | "Shifts";
     startsOn: string;
   }>;
+  personnelQualificationOverrides: Record<string, { enabled: boolean; lowerQualification: string }>;
   shiftEntries: Array<{
     shiftType: string;
     shiftDuration: number;
     recurrence: string;
     recurrenceCustomValue?: string;
+    recurrenceCustomMode?: string;
+    recurrenceWeekdays?: number[];
+    rotationStartsOn?: string;
     startTime?: string;
   }>;
 }
@@ -126,6 +132,13 @@ export function loadPersonnelScheduleData({
         shiftDuration: Number(entry.shiftDuration ?? 0) || 0,
         recurrence: String(entry.recurrence ?? "Daily"),
         recurrenceCustomValue: String(entry.recurrenceCustomValue ?? ""),
+        recurrenceCustomMode: String(entry.recurrenceCustomMode ?? ""),
+        recurrenceWeekdays: Array.isArray(entry.recurrenceWeekdays)
+          ? (entry.recurrenceWeekdays as unknown[]).map((day) => Math.floor(Number(day))).filter((day) => day >= 0 && day <= 6)
+          : [],
+        rotationStartsOn: /^\d{4}-\d{2}-\d{2}$/.test(String(entry.rotationStartsOn ?? "").trim())
+          ? String(entry.rotationStartsOn).trim()
+          : "",
         startTime: String(entry.startTime ?? ""),
       }))
     : [];
@@ -137,9 +150,11 @@ export function loadPersonnelScheduleData({
     allowScheduledOvertime: d.allowScheduledOvertime === false ? false : true,
     segmentSummaryTarget: d.segmentSummaryTarget === "trades" ? "trades" : "info",
     overtimeSummaryTarget: d.overtimeSummaryTarget === "trades" ? "trades" : "info",
+    allowPartialShift: d.allowPartialShift === true,
     personnel,
     personnelQualifications,
     personnelQualificationColors: parseQualificationColorMap(d.personnelQualificationColors),
+    personnelQualificationOverrides: parseQualificationOverrides(d.personnelQualificationOverrides),
     kellyRotations,
     shiftEntries,
   };

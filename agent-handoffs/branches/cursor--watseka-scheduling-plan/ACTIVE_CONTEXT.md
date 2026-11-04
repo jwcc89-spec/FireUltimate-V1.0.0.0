@@ -10,15 +10,14 @@
 ## Current branch
 - `cursor/watseka-scheduling-plan`. Folder slug: `cursor--watseka-scheduling-plan`. Created from the merged practice branch, PR #34, `4c80de8`.
 - Session ended November 4, 2026, about 1:00 a.m. America/Chicago. Confirm the latest commit with `git log -1` after pull. The end-of-session handoff comes after `fc8c953`.
-- This is a practice branch on the user's Mac. Do not merge to `main`. Do not push `submenu/neris-golive-cifpd`. Do not touch staging, production, Crescent, or Watseka.
+- This is a practice branch. Do not merge to `main`. Do not touch production or Crescent's live site. The user approved Step 7 on November 4: staging (`submenu/neris-golive-cifpd` and watsekademo.staging.fireultimate.app) is the next release. A push to `submenu/neris-golive-cifpd` redeploys `fireultimate-api-staging`. Take the staging backup and apply the new tables before that push.
 - The user is driving this Mac with Cursor Remote Control. Keep editing here. A cloud agent is only a backup if this chat is lost.
 
 ## Current focus
-- Weekday 12-hour schedule test for one paid-on-call shift, Monday–Friday, 08:00–20:00. The shift saved in the test department is named `8a-8p` and its recurrence is still Daily, so Saturday and Sunday still appear. Weekday-only recurrence is plan Step 3 and is not built.
-- Personnel → Trades, plan Stage D. Steps 8 through 13 passed the click-test. The next build is plan Step 3, selected weekdays. Do not start it until the user approves the wording and layout.
+- Weekday 12-hour schedule test. Local click-tests passed on November 4, including Step 4 (Rotation starts on). Step 7 is the Watseka staging trial.
 - Shared plan link (November 4): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/07bcb2d0-f8d5-448e-9b16-a5473b749ecc (canvas id `07bcb2d0-f8d5-448e-9b16-a5473b749ecc`). When the repo copy changes, republish to that same canvas id. Do not put passwords in it.
 - The user reads the shared plan link above, not the raw `.tsx` file. The repo copy is the source of truth. After every plan change, commit that file and republish it to the same canvas id. The old Mac canvas path can be ignored: `/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/weekday-schedule-test-plan.canvas.tsx`.
-- Latest session note: `agent-handoffs/branches/cursor--watseka-scheduling-plan/sessions/2026-11-03-session.md`
+- Latest session note: `agent-handoffs/branches/cursor--watseka-scheduling-plan/sessions/2026-11-04-step-4-and-staging.md`
 - Earlier the same day: `sessions/2026-11-03-local-test-setup.md` covers creating the throwaway database. Stage A Step 2 is done; the user confirmed that on November 4. That note's password line is stale.
 - User summary: `agent-handoffs/branches/cursor--watseka-scheduling-plan/conversations/2026-11-03-session-summary.md`
 - Start prompt: `agent-handoffs/branches/cursor--watseka-scheduling-plan/COPY_PASTE_START_PROMPT.md`
@@ -42,10 +41,10 @@
 - Accounts on the test department: `admin` (admin), `wicj` Joshua Wichtner (user), `baik` Kenny Baier (user), `kell` Lance Keller (user), `ledl` Landon LeDuke (user). Full names are in the department payload `userFullNames`. The roster is `schedulerPersonnelRecords`. Each person's shift value looks like `8a-8p | 08:00 | 12 | Daily | Station 1`. The Trades screen shows only the part before the first `|`.
 
 ## What is already decided
-- Trades are one row each in the `TradeRequest` table. Migration `prisma/migrations/20261103210000_add_trade_request`. Applied only to `fu_local`. Staging and production need `prisma migrate deploy` when this branch is released. Do not run that now.
+- Trades are one row each in the `TradeRequest` table. Migration `prisma/migrations/20261103210000_add_trade_request`. Qualification requests are one row each in `QualificationOverrideRequest`. Migration `prisma/migrations/20261104180000_add_qualification_override_request`. Both are additive. Apply them to the staging database with `prisma migrate deploy` only after the November 4 staging backup, and only from `.env.server` after confirming that file is the staging database. Do not run them against production.
 - Members see only trades they are in. Sub Admin, Admin, and Super Admin see every trade and can filter Active Requests by All trades, My trades, or one shift.
 - The other person must click Accept. Deny needs a reason. Only that person can accept or deny.
-- Scheduler Settings → Trades has three checkboxes, all starting off: Admin approval for trades, Payback required, Require approval before cancelling a trade. They are department payload flags `tradeAdminApproval`, `tradePaybackRequired`, and `tradeCancelApproval`.
+- Require approval before canceling a trade starts on (`tradeCancelApproval !== false`). Payback required and admin approval for a new trade still start off. Allow for partial shift starts off.
 - Payback required on a new request starts from that department setting. The sender can change it for one request. When it is off, Date You Work Instead is gray. When a payback date is entered, Step 12 puts the requester on that day in the other person's place for the same hours.
 - With admin approval on, Accept sets status `awaiting_admin`. A sub admin or above then Approves (`accepted`) or Denies (`admin_denied`, reason required). With it off, Accept sets `accepted`.
 - Before a request is saved, the other person is checked against the truck for those hours. Someone already on that truck can move into the seat being given up when they hold that qualification, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. Injury / Vacation / Sick / Kelly Day and overlapping hours are reported before the qualification message. Chief on Call does not block. If the requester is not on a seat for those hours, only leave and overlap are checked.
@@ -56,18 +55,16 @@
 - Times are typed in 24-hour form. `8` or `0800` becomes `08:00`.
 
 ## Current blocker / status
-- November 4, 11:45 a.m.: Steps 5 and 6 are closed by the user (overtime length is the Overtime Setup setting; Stage D tests covered the re-test). Step 3 goes under Recurrence → Custom. Stage E, Steps 14–19, was added from the user's notes: Department Apparatus window width, view-only schedule without Edit the schedule (`schedule.edit` already blocks the save on the server; trades use `/api/trades` and must keep working), per-seat qualifications in Scheduler Apparatus, Request Admin Permission override, Trades form cleanup, and Select Scheduled Day listing roster days (today it lists only days saved on the server).
-- User answers (November 4): Step 3 Custom offers 'every N days' or weekday checkboxes. Step 15: without `schedule.edit`, clicking a day block does nothing. Step 17: Sub Admin and above approve; the person sits in the seat marked Pending; each overridable qualification names one allowed lower qualification; a new request table is approved (local `fu_local` first). November 4, noon: admins see override requests on Personnel → Trades in the trades table, bold, with an asterisk, always pinned to the top. New Step 20: a Dashboard Alerts section above the submenu cards for critical items; permission requests are its first alert type (Sub Admin and above). Step 19 lists 3 months ahead. Holidays are normal worked days. No open questions.
-- Step 13 click-test passed on November 4, 2026.
+- November 4, afternoon: the user passed the local click-tests, including Step 4. Steps 3 through 6 and 8 through 20 are done on this Mac. Step 7 (Watseka staging) is the open step.
+- Rotation starts on is an optional date on each shift in the department payload. A blank date keeps the January 2026 A/B/C start. Selected weekdays ignore it.
+- The local database, API (port 8787), and web screen (port 5173) stay on `~/fu-local-db`. Never `npm run proxy` for local testing.
 
 ## Now vs later
-- **Now:** explain Step 3 and wait for approval. The proposed control is a Selected weekdays choice with Monday–Sunday checkboxes, saved in the existing shift settings. The calendar shows only the checked days. A shift that does not use it keeps today's days, including a 24/48 rotation.
-- **Later:** Steps 4 and 5 (rotation start date, then hour and overtime rules). Staging is Step 7 and comes only after the user asks.
+- **Now:** save this branch, back up the staging database, apply the two new tables there, then fast-forward `submenu/neris-golive-cifpd` so Render updates staging. Click-test watsekademo.staging.fireultimate.app. Confirm Crescent's schedule is unchanged.
+- **Later:** production. Do not merge to `main` and do not migrate `fireultimate-prod` until the staging trial passes and the user asks.
 
 ## Next agent should do this first
-1. Stay on `cursor/watseka-scheduling-plan`. Read this file, the November 3 session note, and the session summary.
-2. Read `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx` Stage B Step 3 before editing.
-3. Do not rebuild Steps 8–13. Do not write Step 3 code until the user approves the wording and layout.
-4. After they approve it, implement Step 3 only. The calendar for this test shift shows Monday–Friday. A 24/48 shift still shows the same days as before. No Prisma schema change.
-5. Update this file, the session note, the conversation summary, and the repo canvas together. Republish the canvas to id `07bcb2d0-f8d5-448e-9b16-a5473b749ecc`. Do not put a password in it.
-6. Pull request #36 is the trades work. Do not merge it until the user asks.
+1. Stay on `cursor/watseka-scheduling-plan` until the staging promote is finished. Do not rebuild the local steps. Those passed.
+2. If staging is not updated yet, follow the release checklist: staging backup, then `prisma migrate deploy` against the staging database only, then push this branch onto `submenu/neris-golive-cifpd`. That push redeploys staging. Do not push `main`.
+3. Update this file and the repo canvas together. Republish the canvas to id `07bcb2d0-f8d5-448e-9b16-a5473b749ecc`. Do not put a password in it.
+4. Pull request #36 was the earlier trades draft. The staging promote is this branch fast-forwarded onto `submenu/neris-golive-cifpd`, not a merge to `main`.
