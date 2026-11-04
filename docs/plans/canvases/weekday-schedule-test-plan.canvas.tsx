@@ -121,7 +121,7 @@ const stages: StageDef[] = [
   },
   {
     id: "E", name: "Stage E — Fixes found during testing",
-    summary: "Added November 4, 2026 from your notes after the Stage D tests. Each is a separate small change. Steps 17 and 19 each have one small open question in Decisions.",
+    summary: "Added November 4, 2026 from your notes after the Stage D tests. Each is a separate small change. Step 20 (Dashboard Alerts) was added the same day and is built with Step 17.",
     steps: [
       { n: "14", title: "Widen the Department Apparatus window", status: "New",
         problem: "Admin Functions → Setup/Configuration → Operational Details → Department Apparatus opens a window that is too narrow. You must scroll sideways to see the whole table and to reach Close and Edit.",
@@ -144,9 +144,9 @@ const stages: StageDef[] = [
       { n: "17", title: "Request Admin Permission when a person misses a seat's qualification", status: "New",
         problem: "Personnel → Schedule → day block: when an EMT-B is already in the lower seat and another EMT-B tries the top (Paramedic) seat, the qualification message blocks it. Some departments allow two EMT-Bs to ride with an administrator's approval.",
         why: "Those departments need a way to staff the apparatus legally without turning the qualification check off for everyone.",
-        fix: "Add a setting in Admin Functions → Scheduler Settings → Personnel Qualifications: Allow admin override for each qualification. Each overridable qualification names the one lower qualification allowed (for example EMT-B for Paramedic). When a person with that lower qualification is blocked, the message gets a Request Admin Permission button. The person sits in the seat marked Pending until a Sub Admin or above approves or denies. Requests are saved in a new database table (approved November 4), one row per request in one department. Where admins see the list is still open.",
-        who: "Me, after you choose where admins see requests.",
-        done: "Not started. Done when an overridable seat offers Request Admin Permission, the placement takes effect only after an approval, and a seat without the setting still blocks as it does today." },
+        fix: "Add a setting in Admin Functions → Scheduler Settings → Personnel Qualifications: Allow admin override for each qualification. Each overridable qualification names the one lower qualification allowed (for example EMT-B for Paramedic). When a person with that lower qualification is blocked, the message gets a Request Admin Permission button. The person sits in the seat marked Pending until a Sub Admin or above approves or denies. Requests are saved in a new database table (approved November 4), one row per request in one department. Admins see them on Personnel → Trades in the same table as trades: bold, marked with an asterisk, and always pinned to the top. They also appear in the new Dashboard Alerts section (Step 20).",
+        who: "Me.",
+        done: "Not started. Done when an overridable seat offers Request Admin Permission, the request is bold and pinned at the top of Personnel → Trades for admins, the placement takes effect only after an approval, and a seat without the setting still blocks as it does today." },
       { n: "18", title: "Clean up the New Trade Request form", status: "New",
         problem: "Personnel → Trades has a Payback required checkbox on each request, but payback is a department rule. Some labels are long, and the date fields sit on their own row.",
         why: "Members should not be able to change a department rule, and the form should be shorter to read.",
@@ -156,9 +156,15 @@ const stages: StageDef[] = [
       { n: "19", title: "Show every scheduled day in Select Scheduled Day", status: "New",
         problem: "Personnel → Trades → the scheduled-day list shows only about 7 days and cannot reach later dates.",
         why: "Members trade shifts weeks ahead.",
-        fix: "The list is built only from days already saved on the server with the person on a truck. Days the person works by roster, but that nobody has opened and saved, are missing. Build the list from the shift's own working days as well, from today forward for a set number of months, and keep it scrollable.",
+        fix: "The list is built only from days already saved on the server with the person on a truck. Days the person works by roster, but that nobody has opened and saved, are missing. Build the list from the shift's own working days as well, from today forward for 3 months (decided November 4), and keep it scrollable.",
         who: "Me.",
-        done: "Not started. Done when Josh's list shows his working days for the coming months, not only saved days." },
+        done: "Not started. Done when Josh's list shows his working days for the next 3 months, not only saved days." },
+      { n: "20", title: "Add an Alerts section to the Dashboard", status: "New",
+        problem: "Nothing on the Dashboard shows items that need attention right away.",
+        why: "Admins must see critical items, such as a seat waiting for permission, as soon as they sign in.",
+        fix: "Add an Alerts section above the submenu cards on the Dashboard. It lists critical messages and items that need action now. The first alert type is Request Admin Permission from Step 17, shown to Sub Admin and above, and clicking it opens Personnel → Trades. The section is hidden when there are no alerts. More alert types can be added later.",
+        who: "Me, built together with Step 17.",
+        done: "Not started. Done when a pending permission request appears in Dashboard Alerts for a sub admin, does not appear for a regular user, and leaves the list once approved or denied." },
     ],
   },
 ];
@@ -209,16 +215,16 @@ const decided = [
   ["November 4, 2026", "Locked day block (Step 15)", "For a person without Edit the schedule, clicking a day block does nothing."],
   ["November 4, 2026", "Admin override approval (Step 17)", "Sub Admin and above approve. While waiting, the person is in the seat marked Pending. Each overridable qualification names the one lower qualification allowed, such as EMT-B for Paramedic."],
   ["November 4, 2026", "Override requests storage (Step 17)", "You approved a new database table for permission requests, one row per request in one department, like the trades table. Local test database first."],
+  ["November 4, 2026", "Where admins see override requests (Step 17)", "Personnel → Trades, in the same table as trades. Permission requests are bold, start with an asterisk, and always stay at the top."],
+  ["November 4, 2026", "Dashboard Alerts (Step 20)", "A new Alerts section above the Dashboard submenu cards for critical items that need attention right away. Permission requests are the first alert type."],
+  ["November 4, 2026", "Scheduled-day list (Step 19)", "Select Scheduled Day lists working days from today through the next 3 months."],
+  ["November 4, 2026", "Holidays", "Holidays are normal working days. No holiday handling is needed."],
   ["November 4, 2026", "Payback on the request (Step 18)", "Payback required is set only by the department in Scheduler Settings → Trades. The checkbox comes off the request form."],
   ["November 4, 2026", "Locked schedule and trades (Step 15)", "Locking the schedule must not stop members from sending, accepting, or cancelling trades."],
   ["November 3, 2026", "Trade send check", "A request is refused before it is saved when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. Someone in a lower seat can move into a higher seat when they hold that qualification, and the new person must meet the seat that opens. A higher qualification can cover a lower seat. The payback day is not checked until Step 12."],
 ];
 
-const stillOpen = [
-  ["Step 17 — Where admins see requests", "A list on the schedule, or a new page under Personnel? To be proposed before building."],
-  ["Step 19 — How far ahead", "How many months ahead should Select Scheduled Day list? Suggested: 3 months."],
-  ["Holidays", "Are holidays worked or skipped?"],
-];
+const stillOpen: string[][] = [];
 
 function StepCard({ s }: { s: Step }) {
   return (
@@ -255,7 +261,7 @@ function StartHere() {
           ["B — Fit the weekday schedule", "Weekday shifts, rotation start dates, 12-hour rules, re-test", "3–6", "Me, after your approval"],
           ["C — Watseka staging trial", "Repeat the checks on staging", "7", "You, with guidance"],
           ["D — Trades between members", "Requests, accept/deny, approval, payback, cancel, schedule changes", "8–13", "Me, after your decisions"],
-          ["E — Fixes found during testing", "Window width, schedule lock, seat qualifications, admin override, Trades form, scheduled-day list", "14–19", "Me, after your answers"],
+          ["E — Fixes found during testing", "Window width, schedule lock, seat qualifications, admin override, Trades form, scheduled-day list, Dashboard Alerts", "14–20", "Me"],
         ]}
       />
       <H2>How to open the test department</H2>
@@ -286,8 +292,12 @@ function DecisionsTab() {
     <Stack gap={14}>
       <H2>Decided</H2>
       <Table headers={["Date", "Topic", "Decision"]} rows={decided} striped />
-      <H2>Still open</H2>
-      <Table headers={["Question", "Detail"]} rows={stillOpen} striped />
+      {stillOpen.length > 0 && (
+        <>
+          <H2>Still open</H2>
+          <Table headers={["Question", "Detail"]} rows={stillOpen} striped />
+        </>
+      )}
     </Stack>
   );
 }
@@ -322,9 +332,7 @@ function Parked() {
         headers={["Item", "Why it is parked"]}
         rows={[
           ["A screen to create a new department", "Today only the program owner can create one, with a script. A self-service or owner screen is a larger change that touches sign-in setup."],
-          ["Scheduling nights and weekends for volunteer or paid-on-call members", "This department does not schedule them in the app."],
-          ["Holiday handling", "Waits on the Holidays answer in Decisions."],
-        ]}
+          ["Scheduling nights and weekends for volunteer or paid-on-call members", "This department does not schedule them in the app."],        ]}
         striped
       />
     </Stack>
@@ -341,11 +349,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 4, 2026, 11:45 a.m. Chicago · Branch cursor/watseka-scheduling-plan · Stages A and D done · Steps 5 and 6 closed · Stage E added (Steps 14–19) · Nothing on staging</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, 11:45 a.m. Chicago · Branch cursor/watseka-scheduling-plan · Stages A and D done · Steps 5 and 6 closed · Stage E added (Steps 14–20) · No open questions · Nothing on staging</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: Step 3 and Stage E, after your answers">
-        Steps 5 and 6 are closed. Step 3 puts weekdays under Recurrence → Custom. Stage E lists six fixes from your November 4 notes. Your November 4 answers are in Decisions. Steps 3 and 14–16, 18, and 19 can start now. Step 17 waits on where admins see requests. A 24/48 shift must keep showing the same days it shows today.
+        Steps 5 and 6 are closed. Step 3 puts weekdays under Recurrence → Custom. Stage E lists six fixes from your November 4 notes. Your November 4 answers are in Decisions, and no questions are open. Steps 3 and 14–20 can all start. Steps 17 and 20 are built together. A 24/48 shift must keep showing the same days it shows today.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />
