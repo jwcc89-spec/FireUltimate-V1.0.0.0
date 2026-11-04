@@ -29,4 +29,4 @@
 2. Get approval on the weekday recurrence design (plan Step 3) before coding.
 
 ## Notes for user communication
-- Test at `http://localhost:5173`, username `admin`, password `Weekday#2026`.
+- Test at `http://localhost:5173`, username `admin`. The password was changed later. Do not reset it, and do not use any password written in an older note.

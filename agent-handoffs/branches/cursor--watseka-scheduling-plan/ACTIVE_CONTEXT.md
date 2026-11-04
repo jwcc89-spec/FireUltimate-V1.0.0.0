@@ -9,7 +9,7 @@
 
 ## Current branch
 - `cursor/watseka-scheduling-plan`. Folder slug: `cursor--watseka-scheduling-plan`. Created from the merged practice branch, PR #34, `4c80de8`.
-- Confirm the latest commit with `git log -1` after pull. The Step 11 commit comes after the handoff `19b2f5b`.
+- Session ended November 4, 2026, about 1:00 a.m. America/Chicago. Confirm the latest commit with `git log -1` after pull. The end-of-session handoff comes after `fc8c953`.
 - This is a practice branch on the user's Mac. Do not merge to `main`. Do not push `submenu/neris-golive-cifpd`. Do not touch staging, production, Crescent, or Watseka.
 - The user is driving this Mac with Cursor Remote Control. Keep editing here. A cloud agent is only a backup if this chat is lost.
 
@@ -17,7 +17,7 @@
 - Weekday 12-hour schedule test for one paid-on-call shift, Monday–Friday, 08:00–20:00. The shift saved in the test department is named `8a-8p` and its recurrence is still Daily, so Saturday and Sunday still appear. Weekday-only recurrence is plan Step 3 and is not built.
 - Personnel → Trades, plan Stage D. Steps 8 through 13 passed the click-test. The next build is plan Step 3, selected weekdays. Do not start it until the user approves the wording and layout.
 - Shared plan link (November 4): https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/07bcb2d0-f8d5-448e-9b16-a5473b749ecc (canvas id `07bcb2d0-f8d5-448e-9b16-a5473b749ecc`). When the repo copy changes, republish to that same canvas id. Do not put passwords in it.
-- Plan, live for the user in Cursor: the canvas `weekday-schedule-test-plan`. Repo copy is the source of truth: `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx`. After every plan change, copy that file to the live canvas path and commit both. Live path on this Mac: `/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/weekday-schedule-test-plan.canvas.tsx`.
+- The user reads the shared plan link above, not the raw `.tsx` file. The repo copy is the source of truth. After every plan change, commit that file and republish it to the same canvas id. The old Mac canvas path can be ignored: `/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/weekday-schedule-test-plan.canvas.tsx`.
 - Latest session note: `agent-handoffs/branches/cursor--watseka-scheduling-plan/sessions/2026-11-03-session.md`
 - Earlier the same day: `sessions/2026-11-03-local-test-setup.md` covers creating the throwaway database. Stage A Step 2 is done; the user confirmed that on November 4. That note's password line is stale.
 - User summary: `agent-handoffs/branches/cursor--watseka-scheduling-plan/conversations/2026-11-03-session-summary.md`
@@ -27,7 +27,8 @@
 - Steps 8–10 click-test passed on November 3, 2026.
 - Step 11: `POST /api/trades` refuses the request before saving it. The reason shows in the centered notice on Personnel → Trades.
 - Step 12 passed the click-test on November 4. Accept, or Approve when admin approval is on, splits the schedule. A person who already works the whole shift and can fill a higher seat stays there all day. The previous day is stored on the trade as `scheduleChangeJson`.
-- Step 13: either person clicks Cancel Requested Trade. The other person accepts. When `tradeCancelApproval` is on, a sub admin or above must approve before the schedule changes. `rowsFromScheduleChange` writes the saved days back and the status becomes `cancelled`. Keep Trade, or an admin Deny, leaves the schedule alone and returns the trade to `accepted`.
+- Step 13 passed the click-test on November 4. Either person clicks Cancel Requested Trade. The other person accepts. When `tradeCancelApproval` is on, a sub admin or above must approve before the schedule changes. `rowsFromScheduleChange` writes the saved days back and the status becomes `cancelled`. Keep Trade, or an admin Deny, leaves the schedule alone and returns the trade to `accepted`.
+- Stage A Steps 1 and 2 are done. The user confirmed Step 2 on November 4. Do not restart the department setup.
 - `npm run lint` and `npm run build` were run after Step 13. `node --test server/trades/eligibility.test.mjs server/trades/applySchedule.test.mjs` is the trade check (20 tests after the restore cases). This cloud agent has no `~/fu-local-db`, so the on-screen check is the user's.
 
 ## This Mac's test runtime (do not point at staging)
@@ -37,7 +38,7 @@
 - Screens: `npm run dev` then `http://localhost:5173`. Reload once after a client change.
 - **Never run `npm run proxy` for this test.** `.env.server` points at the staging database.
 - A cloud agent does not have `~/fu-local-db`. Do not invent a staging connection to replace it. Say so and keep working from the repo copy.
-- The admin password was changed by the user. Do not reset it and do not guess it. The canvas still shows the original throwaway password. Treat that line as stale.
+- The admin password was changed by the user. Do not reset it and do not guess it. It is not written in the plan. An older session note still has the original throwaway password. Ignore that line.
 - Accounts on the test department: `admin` (admin), `wicj` Joshua Wichtner (user), `baik` Kenny Baier (user), `kell` Lance Keller (user), `ledl` Landon LeDuke (user). Full names are in the department payload `userFullNames`. The roster is `schedulerPersonnelRecords`. Each person's shift value looks like `8a-8p | 08:00 | 12 | Daily | Station 1`. The Trades screen shows only the part before the first `|`.
 
 ## What is already decided
@@ -66,4 +67,5 @@
 2. Read `docs/plans/canvases/weekday-schedule-test-plan.canvas.tsx` Stage B Step 3 before editing.
 3. Do not rebuild Steps 8–13. Do not write Step 3 code until the user approves the wording and layout.
 4. After they approve it, implement Step 3 only. The calendar for this test shift shows Monday–Friday. A 24/48 shift still shows the same days as before. No Prisma schema change.
-5. Update this file, the session note, and the canvas together. Copy the canvas to the live path on this Mac.
+5. Update this file, the session note, the conversation summary, and the repo canvas together. Republish the canvas to id `07bcb2d0-f8d5-448e-9b16-a5473b749ecc`. Do not put a password in it.
+6. Pull request #36 is the trades work. Do not merge it until the user asks.

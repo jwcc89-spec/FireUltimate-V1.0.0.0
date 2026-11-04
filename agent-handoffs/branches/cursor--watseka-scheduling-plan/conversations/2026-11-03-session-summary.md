@@ -1,6 +1,6 @@
 # November 3, 2026 — weekday schedule and trades
 
-Branch `cursor/watseka-scheduling-plan`. The backup on GitHub before this note was commit `5696329`. America/Chicago.
+Branch `cursor/watseka-scheduling-plan`. America/Chicago. The session ran November 3 and ended about 1:00 a.m. on November 4. The readable plan is [Scheduling — weekday 12-hour department test](https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/07bcb2d0-f8d5-448e-9b16-a5473b749ecc).
 
 ## What this day was
 The scheduler is being tested for a paid-on-call department that works 08:00–20:00 on weekdays. Testing stays on a throwaway database on this Mac. Staging, production, and Crescent stay untouched.
@@ -21,7 +21,7 @@ The schedule changes made earlier in the day were accepted. Then Personnel → T
 - The Trades page talks to the server. A request reaches the other account.
 - The three Trades settings save with the department.
 - The request form uses the roster, scheduled days, 24-hour times, and the payback setting.
-- If admin approval is on, Accept waits for a Sub Admin or above. Approve and Deny show for those roles. The calendar does not change yet.
+- If admin approval is on, Accept waits for a Sub Admin or above. The schedule changes when the trade becomes accepted.
 - A request is stopped before it is saved when the truck cannot be covered for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. The reason pops up in the center of the screen. Someone already on the truck can move into a higher seat when they hold that qualification. The new person must meet the seat that opens. A person with a higher qualification can cover a lower seat.
 - Accept, or Approve when admin approval is on, splits the schedule. Deny does not. The Trades row on the schedule lists the hours that still change people. A person who already works the whole shift and can fill a higher seat stays there all day. Payback puts the requester on the other person's seat for the same hours.
 - Cancel Requested Trade is on an accepted trade for either person. The other person accepts the cancellation. If the department requires approval before cancelling, an administrator approves before the days go back.
@@ -33,7 +33,9 @@ The schedule changes made earlier in the day were accepted. Then Personnel → T
 Steps 8 through 13. The seat move works. After Joshua trades 08:00–10:00 with Kenny, Lance stays in the top seat for the whole shift. Cancelling that trade, after the other person accepts, puts Joshua back on the top seat for the whole shift and Lance back on the lower seat. The Trades lines for that split are gone.
 
 ## Decision still open
-Step 3, Selected weekdays. No code until the user approves the wording and the checkbox layout. A shift that does not use it, including a 24/48 shift, must keep the days it shows today.
+Step 3, Selected weekdays. The session ended before any of that code was written. No code until you approve the wording and the checkbox layout. A shift that does not use it, including a 24/48 shift, must keep the days it shows today.
+
+Stage A is done, including the from-scratch department setup.
 
 ## Safety
 - Do not run `npm run proxy` for this test. That command uses the staging database.
