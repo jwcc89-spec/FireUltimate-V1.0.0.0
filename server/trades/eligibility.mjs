@@ -1,8 +1,9 @@
 /**
  * Step 11: refuse a trade before it is saved.
- * The other person must be free for those hours, off Injury / Vacation / Sick / Kelly Day,
- * and qualified for the seat the requester is giving up.
- * Messages match the schedule screen.
+ * The other person must be free for those hours and off Injury / Vacation / Sick / Kelly Day.
+ * Qualification looks at the whole truck for those hours. A person in a lower seat can move
+ * up when their qualification covers the seat being given up, and the new person must meet
+ * the seat that move opens. Messages match the schedule screen.
  */
 
 const LEAVE_IDS = new Set([
@@ -104,8 +105,8 @@ function personListed(personName, slots, segmentRows) {
   );
 }
 
-/** Apparatus time this person already has on one date. Support rows are not work seats. */
-function apparatusPlacements(personName, dateKey, assignments, slotSegments, shiftEntries) {
+/** Apparatus time on one date. Support rows are not work seats. */
+function allApparatusPlacements(dateKey, assignments, slotSegments, shiftEntries) {
   const placements = [];
   for (const [storageKey, day] of Object.entries(assignments ?? {})) {
     const parsed = storageDate(storageKey);
@@ -123,28 +124,32 @@ function apparatusPlacements(personName, dateKey, assignments, slotSegments, shi
       const count = Math.max(slots.length, segRows.length);
       for (let slotIndex = 0; slotIndex < count; slotIndex += 1) {
         const segments = Array.isArray(segRows[slotIndex]) ? segRows[slotIndex] : [];
-        const ownSegments = segments.filter(
-          (segment) =>
-            sameName(segment?.personnelName, personName) &&
-            segment?.assigneeType !== "hire" &&
-            segment?.source !== "auto_hire" &&
-            Number(segment?.endMinutes) > Number(segment?.startMinutes),
-        );
-        if (ownSegments.length > 0) {
-          for (const segment of ownSegments) {
-            placements.push({
-              unitId,
-              slotIndex,
-              start: Number(segment.startMinutes),
-              end: Number(segment.endMinutes),
-            });
+        const namesWithSegments = new Set();
+        for (const segment of segments) {
+          const name = String(segment?.personnelName ?? "").trim();
+          if (
+            !name ||
+            segment?.assigneeType === "hire" ||
+            segment?.source === "auto_hire" ||
+            !(Number(segment?.endMinutes) > Number(segment?.startMinutes))
+          ) {
+            continue;
           }
-          continue;
-        }
-        if (namesInSlot(slots[slotIndex]).some((name) => sameName(name, personName))) {
+          namesWithSegments.add(name.toLowerCase());
           placements.push({
             unitId,
             slotIndex,
+            name,
+            start: Number(segment.startMinutes),
+            end: Number(segment.endMinutes),
+          });
+        }
+        for (const name of namesInSlot(slots[slotIndex])) {
+          if (namesWithSegments.has(name.toLowerCase())) continue;
+          placements.push({
+            unitId,
+            slotIndex,
+            name,
             start: windowStart,
             end: windowEnd,
           });
@@ -152,18 +157,125 @@ function apparatusPlacements(personName, dateKey, assignments, slotSegments, shi
       }
     }
   }
-  placements.sort((left, right) => left.unitId.localeCompare(right.unitId) || left.slotIndex - right.slotIndex);
+  placements.sort(
+    (left, right) =>
+      left.unitId.localeCompare(right.unitId) ||
+      left.slotIndex - right.slotIndex ||
+      left.name.localeCompare(right.name),
+  );
   return placements;
 }
 
-function qualificationMessage(counterpartName, apparatus, slotIndex, person, rankMap) {
-  if (!apparatus || slotIndex >= apparatus.minimumPersonnel) return "";
+function apparatusPlacements(personName, dateKey, assignments, slotSegments, shiftEntries) {
+  return allApparatusPlacements(dateKey, assignments, slotSegments, shiftEntries).filter((seat) =>
+    sameName(seat.name, personName),
+  );
+}
+
+function seatRank(apparatus, slotIndex, rankMap) {
+  if (!apparatus || slotIndex >= apparatus.minimumPersonnel) return null;
   const required = String(apparatus.personnelRequirements[slotIndex] ?? "").trim();
-  if (!required) return "";
-  const requiredRank = rankMap.has(required) ? rankMap.get(required) : Number.POSITIVE_INFINITY;
-  const personBest = bestRank(person, rankMap);
-  if (Number.isFinite(personBest) && personBest <= requiredRank) return "";
-  return `Cannot assign ${counterpartName}: does not meet required qualification for that segmented slot.`;
+  if (!required) return null;
+  return rankMap.has(required) ? rankMap.get(required) : Number.POSITIVE_INFINITY;
+}
+
+/** True when the people can fill these seats, strictest seat first. A null rank is any person. */
+function crewCanFillSeats(people, seatRanks, personnel, rankMap) {
+  const ranks = people.map((name) => bestRank(personnel.find((entry) => sameName(entry.name, name)), rankMap));
+  const strict = seatRanks
+    .map((rank, index) => ({ rank, index }))
+    .filter((seat) => seat.rank !== null)
+    .sort((left, right) => left.rank - right.rank);
+  const used = new Set();
+  for (const seat of strict) {
+    let selected = null;
+    let selectedRank = Number.POSITIVE_INFINITY;
+    ranks.forEach((rank, index) => {
+      if (used.has(index)) return;
+      if (Number.isFinite(rank) && rank <= seat.rank && rank < selectedRank) {
+        selected = index;
+        selectedRank = rank;
+      }
+    });
+    if (selected === null) return false;
+    used.add(selected);
+  }
+  const openSeats = seatRanks.filter((rank) => rank === null).length;
+  return ranks.length - used.size >= openSeats;
+}
+
+function qualificationMessage({
+  requester,
+  counterpart,
+  tradeDate,
+  tradeStart,
+  tradeEnd,
+  personnel,
+  rankMap,
+  apparatusByLabel,
+  assignments,
+  slotSegments,
+  shiftEntries,
+}) {
+  const placements = allApparatusPlacements(tradeDate, assignments, slotSegments, shiftEntries);
+  const requesterUnits = [
+    ...new Set(
+      placements
+        .filter(
+          (seat) =>
+            sameName(seat.name, requester) &&
+            intervalsOverlap(tradeStart, tradeEnd, seat.start, seat.end),
+        )
+        .map((seat) => seat.unitId),
+    ),
+  ].sort((left, right) => left.localeCompare(right));
+
+  for (const unitId of requesterUnits) {
+    const onUnit = placements.filter((seat) => seat.unitId === unitId);
+    const requesterSeats = [
+      ...new Set(
+        onUnit
+          .filter(
+            (seat) =>
+              sameName(seat.name, requester) &&
+              intervalsOverlap(tradeStart, tradeEnd, seat.start, seat.end),
+          )
+          .map((seat) => seat.slotIndex),
+      ),
+    ];
+    const points = new Set([tradeStart, tradeEnd]);
+    for (const seat of onUnit) {
+      if (seat.start > tradeStart && seat.start < tradeEnd) points.add(seat.start);
+      if (seat.end > tradeStart && seat.end < tradeEnd) points.add(seat.end);
+    }
+    const cuts = [...points].sort((left, right) => left - right);
+    for (let index = 0; index < cuts.length - 1; index += 1) {
+      const sliceStart = cuts[index];
+      const sliceEnd = cuts[index + 1];
+      const present = onUnit.filter((seat) => intervalsOverlap(sliceStart, sliceEnd, seat.start, seat.end));
+      const seats = new Set(requesterSeats);
+      const people = [];
+      const seen = new Set();
+      const addPerson = (name) => {
+        const key = String(name ?? "").trim().toLowerCase();
+        if (!key || seen.has(key) || sameName(name, requester)) return;
+        seen.add(key);
+        people.push(String(name).trim());
+      };
+      for (const seat of present) {
+        if (!sameName(seat.name, requester)) seats.add(seat.slotIndex);
+        addPerson(seat.name);
+      }
+      addPerson(counterpart);
+      const seatRanks = [...seats]
+        .sort((left, right) => left - right)
+        .map((slotIndex) => seatRank(apparatusByLabel.get(unitId), slotIndex, rankMap));
+      if (!crewCanFillSeats(people, seatRanks, personnel, rankMap)) {
+        return `Cannot assign ${counterpart}: does not meet required qualification for that segmented slot.`;
+      }
+    }
+  }
+  return "";
 }
 
 /**
@@ -192,26 +304,7 @@ export function tradeRequestBlockReason({
     const label = String(qualification ?? "").trim();
     if (label && !rankMap.has(label)) rankMap.set(label, index);
   });
-  const person = personnel.find((entry) => sameName(entry.name, counterpart));
   const apparatusByLabel = new Map(apparatus.map((entry) => [entry.label, entry]));
-
-  const requesterSeats = apparatusPlacements(
-    requester,
-    tradeDate,
-    assignments,
-    slotSegments,
-    shiftEntries,
-  ).filter((seat) => intervalsOverlap(tradeStart, tradeEnd, seat.start, seat.end));
-  for (const seat of requesterSeats) {
-    const message = qualificationMessage(
-      counterpart,
-      apparatusByLabel.get(seat.unitId),
-      seat.slotIndex,
-      person,
-      rankMap,
-    );
-    if (message) return message;
-  }
 
   for (const [storageKey, day] of Object.entries(assignments ?? {})) {
     if (storageDate(storageKey).dateKey !== tradeDate) continue;
@@ -241,7 +334,19 @@ export function tradeRequestBlockReason({
   if (overlap) {
     return `${counterpart} already assigned to ${overlap.unitId}. Remove or segment assignments so times do not overlap.`;
   }
-  return "";
+  return qualificationMessage({
+    requester,
+    counterpart,
+    tradeDate,
+    tradeStart,
+    tradeEnd,
+    personnel,
+    rankMap,
+    apparatusByLabel,
+    assignments,
+    slotSegments,
+    shiftEntries,
+  });
 }
 
 export function scheduleSnapshotFromRows(rows) {

@@ -102,7 +102,7 @@ const stages: StageDef[] = [
       { n: "11", title: "Check a request before it is sent", status: "Done",
         problem: "Nothing stops a trade to someone unqualified or already working.",
         why: "An accepted trade must never leave a seat unqualified.",
-        fix: "November 3: Submit Trade Request is refused, and nothing is saved, when the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. The notice is the same centered message used on the schedule. A higher qualification can cover a lower seat. Chief on Call does not block. Payback day checks wait for Step 12.",
+        fix: "November 3: Submit Trade Request is refused, and nothing is saved, when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. A person in a lower seat can move up when their qualification covers the seat being given up, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. The notice is the same centered message used on the schedule. Chief on Call does not block. Payback day checks wait for Step 12.",
         who: "Me.",
         done: "Completed in code. Done for you when a bad request shows the reason and does not appear in Active Requests, and a good request still sends." },
       { n: "12", title: "Accept, deny, approve, and put the trade on the schedule", status: "New",
@@ -154,7 +154,7 @@ const decided = [
   ["November 3, 2026", "Who sees trades", "Members see only trades they are part of. Sub Admin, Admin, and Super Admin see every trade, and Active Requests lets them show All trades, My trades, or one shift."],
   ["November 3, 2026", "Where trades are saved", "A new trades table in the database, one row per request. You approved the structure change. It is on the local test database only. Staging and production get it when this branch is released."],
   ["November 3, 2026", "Trade settings", "Scheduler Settings → Trades has Admin approval, Payback required, and Require approval before cancelling. All start off. Payback required is the starting value on a new request, and the sender can change it. Admin approval makes the trade wait for a sub admin or above. The schedule still does not change until Step 12."],
-  ["November 3, 2026", "Trade send check", "A request is refused before it is saved when the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. A higher qualification can cover a lower seat. The payback day is not checked until Step 12."],
+  ["November 3, 2026", "Trade send check", "A request is refused before it is saved when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. Someone in a lower seat can move into a higher seat when they hold that qualification, and the new person must meet the seat that opens. A higher qualification can cover a lower seat. The payback day is not checked until Step 12."],
 ];
 
 const stillOpen = [

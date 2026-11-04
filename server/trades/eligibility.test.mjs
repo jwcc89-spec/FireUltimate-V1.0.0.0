@@ -128,6 +128,73 @@ test("a lower qualification cannot take a higher seat", () => {
   );
 });
 
+test("a paramedic in the lower seat can move up so an EMT can cover the trade", () => {
+  const schedule = day({ Ambulance: ["Joshua Wichtner", "Lance Keller"] });
+  assert.equal(
+    check({
+      ...schedule,
+      counterpartName: "Kenny Baier",
+      personnel: [
+        { name: "Joshua Wichtner", qualifications: ["Paramedic"] },
+        { name: "Lance Keller", qualifications: ["Paramedic"] },
+        { name: "Kenny Baier", qualifications: ["EMT"] },
+      ],
+    }),
+    "",
+  );
+});
+
+test("an EMT cannot take the paramedic seat when the lower seat is also an EMT", () => {
+  const schedule = day({ Ambulance: ["Joshua Wichtner", "Lance Keller"] });
+  assert.equal(
+    check({
+      ...schedule,
+      counterpartName: "Kenny Baier",
+      personnel: [
+        { name: "Joshua Wichtner", qualifications: ["Paramedic"] },
+        { name: "Lance Keller", qualifications: ["EMT"] },
+        { name: "Kenny Baier", qualifications: ["EMT"] },
+      ],
+    }),
+    "Cannot assign Kenny Baier: does not meet required qualification for that segmented slot.",
+  );
+});
+
+test("the person moving up must cover the whole traded time", () => {
+  const schedule = day(
+    { Ambulance: ["Joshua Wichtner", ""] },
+    {
+      Ambulance: [
+        [],
+        [
+          {
+            personnelName: "Lance Keller",
+            assigneeType: "personnel",
+            source: "manual",
+            startMinutes: 8 * 60,
+            endMinutes: 9 * 60,
+          },
+        ],
+      ],
+    },
+  );
+  const crew = {
+    ...schedule,
+    counterpartName: "Kenny Baier",
+    personnel: [
+      { name: "Joshua Wichtner", qualifications: ["Paramedic"] },
+      { name: "Lance Keller", qualifications: ["Paramedic"] },
+      { name: "Kenny Baier", qualifications: ["EMT"] },
+    ],
+  };
+  assert.equal(
+    check(crew),
+    "Cannot assign Kenny Baier: does not meet required qualification for that segmented slot.",
+  );
+  schedule.slotSegments["8a-8p::2026-11-05"].Ambulance[1][0].endMinutes = 10 * 60;
+  assert.equal(check(crew), "");
+});
+
 test("a higher qualification can take a lower seat", () => {
   const schedule = day({ Ambulance: ["", "Joshua Wichtner"] });
   assert.equal(

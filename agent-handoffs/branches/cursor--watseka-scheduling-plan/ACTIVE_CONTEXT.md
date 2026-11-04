@@ -25,7 +25,7 @@
 ## Latest known status
 - Steps 8–10 click-test passed on November 3, 2026.
 - Step 11: `POST /api/trades` refuses the request before saving it. The reason shows in the centered notice on Personnel → Trades.
-- `npm run lint` and `npm run build` passed after Step 11. `node --test server/trades/eligibility.test.mjs` passed (11 tests). This cloud agent has no `~/fu-local-db`, so the on-screen check is the user's.
+- `npm run lint` and `npm run build` passed after the seat-move fix. `node --test server/trades/eligibility.test.mjs` passed (14 tests). This cloud agent has no `~/fu-local-db`, so the on-screen check is the user's.
 - Accepting a trade changes its status only. It does not change the calendar. That is Step 12.
 
 ## This Mac's test runtime (do not point at staging)
@@ -45,7 +45,7 @@
 - Scheduler Settings → Trades has three checkboxes, all starting off: Admin approval for trades, Payback required, Require approval before cancelling a trade. They are department payload flags `tradeAdminApproval`, `tradePaybackRequired`, and `tradeCancelApproval`.
 - Payback required on a new request starts from that department setting. The sender can change it for one request. When it is off, Date You Work Instead is gray. When a payback date is entered, Step 12 puts the requester on that day in the other person's place for the same hours.
 - With admin approval on, Accept sets status `awaiting_admin`. A sub admin or above then Approves (`accepted`) or Denies (`admin_denied`, reason required). With it off, Accept sets `accepted`.
-- Before a request is saved, the other person is checked against the requester's seat for those hours. A higher qualification can cover a lower seat. The same centered schedule messages are used: qualification, then Injury / Vacation / Sick / Kelly Day, then hours that overlap. Chief on Call does not block. If the requester is not on a seat for those hours, only leave and overlap are checked. The payback date is not checked until Step 12.
+- Before a request is saved, the other person is checked against the truck for those hours. Someone already on that truck can move into the seat being given up when they hold that qualification, and the new person must meet the seat that move opens. A higher qualification can cover a lower seat. Injury / Vacation / Sick / Kelly Day and overlapping hours are reported before the qualification message. Chief on Call does not block. If the requester is not on a seat for those hours, only leave and overlap are checked. The payback date is not checked until Step 12.
 - Cancel approval is saved and shown as a note. The Cancel button is Step 13. Either person requests the cancel, the other accepts, and an admin too when that box is on. Then both days go back to how they were.
 - Your Assigned Date can be typed or picked from days the person is already on a truck or a split piece. Support rows such as Injury are not scheduled-work days. On November 3, Joshua was on `8a-8p` for 2026-11-01, 03, 05, 06, 07, and 09.
 - Trade With lists Scheduler Settings → Personnel except the signed-in person. Both people need a sign-in account. You cannot trade with yourself.

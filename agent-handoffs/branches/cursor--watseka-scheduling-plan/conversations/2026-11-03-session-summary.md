@@ -22,7 +22,7 @@ The schedule changes made earlier in the day were accepted. Then Personnel → T
 - The three Trades settings save with the department.
 - The request form uses the roster, scheduled days, 24-hour times, and the payback setting.
 - If admin approval is on, Accept waits for a Sub Admin or above. Approve and Deny show for those roles. The calendar does not change yet.
-- A request is stopped before it is saved when the other person misses that seat's qualification, already works those hours, or is on Injury, Vacation, Sick, or Kelly Day. The reason pops up in the center of the screen. A person with a higher qualification can cover a lower seat.
+- A request is stopped before it is saved when the truck cannot be covered for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. The reason pops up in the center of the screen. Someone already on the truck can move into a higher seat when they hold that qualification. The new person must meet the seat that opens. A person with a higher qualification can cover a lower seat.
 
 ## Not built yet
 - Putting an accepted trade onto the schedule. The payback day is checked then, not now.
@@ -38,7 +38,8 @@ Refresh http://localhost:5173 once. Sign in as wicj (Joshua). Open Personnel →
 1. Pick a day Joshua is on a seat, and a person who is free that day and meets that seat. November 5, 08:00 to 10:00, Landon LeDuke, payback off, is the example if Landon is not already working those hours and not on Injury, Vacation, Sick, or Kelly Day. Click Submit Trade Request. The request appears in Active Requests.
 2. Put Landon on Injury for that same day (open that day on the schedule and add him on the Injury row). Submit the same request again. The centered message is: `Landon LeDuke is on Injury. Remove them from Injury before scheduling them on apparatus.` The new request is not added. Vacation, Sick, and Kelly Day use the same sentence with that row's name.
 3. Remove Landon from Injury. Place Landon on a truck for 08:00–20:00 that day, or for any hours that include 08:00–10:00. Submit again. The message is: `Landon LeDuke already assigned to [truck name]. Remove or segment assignments so times do not overlap.` Remove him, or pick hours he is not working, and the request can send.
-4. Joshua must be on the seat that day or this check is skipped. If that seat requires a qualification Landon does not have, the message is: `Cannot assign Landon LeDuke: does not meet required qualification for that segmented slot.` Give Landon that qualification, or a higher one, and the request can send. If that seat has no required qualification, this message will not appear. That is expected.
+4. Joshua must be on the seat that day or this check is skipped. If that seat requires a qualification nobody staying on the truck can cover, the message is: `Cannot assign Landon LeDuke: does not meet required qualification for that segmented slot.` If that seat has no required qualification, this message will not appear. That is expected.
+5. Put Joshua in the top paramedic seat and Lance, also a paramedic, in the lower seat. Submit 08:00–10:00 with Kenny (EMT-B). The request is saved. Kenny is allowed because Lance can move to the paramedic seat. If Lance is not a paramedic, the same request is refused.
 
 Tell the next agent what matched and what did not. The next build step waits on that.
 
