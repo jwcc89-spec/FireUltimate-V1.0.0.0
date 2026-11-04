@@ -42,8 +42,8 @@ const stages: StageDef[] = [
       { n: "3", title: "Let a shift run on chosen weekdays (Monday–Friday)", status: "Next",
         problem: "Shift Information → Recurrence only offers Daily, Every other Day, Every 2 days, Every 3 days, or Custom (a number of days). Daily also schedules Saturday and Sunday.",
         why: "This department works 08:00–20:00 Monday through Friday only. Weekend days would show empty seats and false HIRE openings.",
-        fix: "November 4: you chose to put this under Recurrence → Custom. Custom will let an admin pick weekdays (Monday–Friday for this department), saved with the existing shift settings (no database structure change). The calendar shows only the chosen days. Still open: whether Custom keeps its 'every N days' choice next to the weekday checkboxes. See Decisions.",
-        who: "Me, after you answer the Custom layout question.",
+        fix: "November 4: you chose to put this under Recurrence → Custom. Custom will let an admin pick weekdays (Monday–Friday for this department), saved with the existing shift settings (no database structure change). The calendar shows only the chosen days. Custom offers two choices: 'every N days' as today, or pick weekdays with Monday–Sunday checkboxes.",
+        who: "Me.",
         done: "Not started. Done when the weekday department's calendar shows only Monday–Friday and a 24/48 shift still shows exactly the same days as before." },
       { n: "4", title: "Stop tying the rotation to the letters A, B and C", status: "New",
         problem: "The calendar counts shift days from January 1, 2026 and shifts the start by one day for 'A Shift' and two days for 'B Shift'. Shift names other than A, B or C start on day zero. The list is also sorted A, B, C, D by name.",
@@ -121,7 +121,7 @@ const stages: StageDef[] = [
   },
   {
     id: "E", name: "Stage E — Fixes found during testing",
-    summary: "Added November 4, 2026 from your notes after the Stage D tests. Each is a separate small change. Steps 15, 17, and 19 have open questions in Decisions.",
+    summary: "Added November 4, 2026 from your notes after the Stage D tests. Each is a separate small change. Steps 17 and 19 each have one small open question in Decisions.",
     steps: [
       { n: "14", title: "Widen the Department Apparatus window", status: "New",
         problem: "Admin Functions → Setup/Configuration → Operational Details → Department Apparatus opens a window that is too narrow. You must scroll sideways to see the whole table and to reach Close and Edit.",
@@ -132,7 +132,7 @@ const stages: StageDef[] = [
       { n: "15", title: "Lock the schedule for people who may not edit it", status: "New",
         problem: "Admin Functions → Setup/Configuration → Access/Restrictions → Edit the schedule can be set to Sub Admin. A regular user can still open a day block, remove people, and make changes. The server already refuses to save those changes, so they disappear on refresh, but the screen gives no sign of that.",
         why: "A user should not be able to make changes that look saved but are thrown away.",
-        fix: "When the signed-in person lacks Edit the schedule, the schedule is view-only: no removing, adding, moving, splitting, or typing in a day block. Trades are not affected. Requesting, accepting, and cancelling a trade go through the Trades page and the server's trades route, which is separate from schedule saving.",
+        fix: "When the signed-in person lacks Edit the schedule, clicking a day block does nothing (decided November 4), so nothing can be removed, added, moved, split, or typed. Trades are not affected. Requesting, accepting, and cancelling a trade go through the Trades page and the server's trades route, which is separate from schedule saving.",
         who: "Me.",
         done: "Not started. Done when a user without the permission cannot change a day block, an admin still can, and a user can still send and accept trades that change the schedule." },
       { n: "16", title: "Pick a qualification for each seat in Scheduler Apparatus", status: "New",
@@ -144,8 +144,8 @@ const stages: StageDef[] = [
       { n: "17", title: "Request Admin Permission when a person misses a seat's qualification", status: "New",
         problem: "Personnel → Schedule → day block: when an EMT-B is already in the lower seat and another EMT-B tries the top (Paramedic) seat, the qualification message blocks it. Some departments allow two EMT-Bs to ride with an administrator's approval.",
         why: "Those departments need a way to staff the apparatus legally without turning the qualification check off for everyone.",
-        fix: "Add a setting in Admin Functions → Scheduler Settings → Personnel Qualifications: Allow admin override for each qualification. When it is on for the seat's qualification, the blocking message gets a Request Admin Permission button. Who approves, where the request waits, and what the seat shows meanwhile are open questions in Decisions.",
-        who: "Me, after you answer the open questions.",
+        fix: "Add a setting in Admin Functions → Scheduler Settings → Personnel Qualifications: Allow admin override for each qualification. Each overridable qualification names the one lower qualification allowed (for example EMT-B for Paramedic). When a person with that lower qualification is blocked, the message gets a Request Admin Permission button. The person sits in the seat marked Pending until a Sub Admin or above approves or denies. Requests are saved in a new database table (approved November 4), one row per request in one department. Where admins see the list is still open.",
+        who: "Me, after you choose where admins see requests.",
         done: "Not started. Done when an overridable seat offers Request Admin Permission, the placement takes effect only after an approval, and a seat without the setting still blocks as it does today." },
       { n: "18", title: "Clean up the New Trade Request form", status: "New",
         problem: "Personnel → Trades has a Payback required checkbox on each request, but payback is a department rule. Some labels are long, and the date fields sit on their own row.",
@@ -205,18 +205,17 @@ const decided = [
   ["November 4, 2026", "Overtime length (Step 5)", "Closed. Standard Overtime Slot is a department setting in Overtime Setup. 24 hours is only the starting value."],
   ["November 4, 2026", "Re-test (Step 6)", "Closed. The Stage D tests covered segmenting, month and day views, trades, and overtime with no problems found."],
   ["November 4, 2026", "Weekday recurrence (Step 3)", "Weekday selection goes under Recurrence → Custom, so Monday–Friday can be chosen."],
+  ["November 4, 2026", "Custom recurrence layout (Step 3)", "Custom offers two choices: 'every N days' as today, or pick weekdays with Monday–Sunday checkboxes."],
+  ["November 4, 2026", "Locked day block (Step 15)", "For a person without Edit the schedule, clicking a day block does nothing."],
+  ["November 4, 2026", "Admin override approval (Step 17)", "Sub Admin and above approve. While waiting, the person is in the seat marked Pending. Each overridable qualification names the one lower qualification allowed, such as EMT-B for Paramedic."],
+  ["November 4, 2026", "Override requests storage (Step 17)", "You approved a new database table for permission requests, one row per request in one department, like the trades table. Local test database first."],
   ["November 4, 2026", "Payback on the request (Step 18)", "Payback required is set only by the department in Scheduler Settings → Trades. The checkbox comes off the request form."],
   ["November 4, 2026", "Locked schedule and trades (Step 15)", "Locking the schedule must not stop members from sending, accepting, or cancelling trades."],
   ["November 3, 2026", "Trade send check", "A request is refused before it is saved when the crew cannot cover the truck for those hours, the other person already works those hours, or that person is on Injury, Vacation, Sick, or Kelly Day. Someone in a lower seat can move into a higher seat when they hold that qualification, and the new person must meet the seat that opens. A higher qualification can cover a lower seat. The payback day is not checked until Step 12."],
 ];
 
 const stillOpen = [
-  ["Step 3 — Custom layout", "Under Recurrence → Custom, should the weekday checkboxes replace the 'every N days' number, or sit next to it as a second Custom choice?"],
-  ["Step 15 — Locked day block", "For a person without Edit the schedule, can they still open a day block to read it, or should clicking a day do nothing?"],
-  ["Step 17 — Who approves", "Sub Admin and above, like trades? Or Admin and above only?"],
-  ["Step 17 — While waiting", "Does the person show in the seat marked Pending until approved, or stay off the seat until approved?"],
-  ["Step 17 — Where requests wait", "A list on the schedule or a new Personnel page for admins. Saving these requests may need a new database table, which needs your approval."],
-  ["Step 17 — Which lower qualification", "With override on for Paramedic, may anyone with a lower qualification (EMT-B, EMR) be approved, or only a chosen one such as EMT-B?"],
+  ["Step 17 — Where admins see requests", "A list on the schedule, or a new page under Personnel? To be proposed before building."],
   ["Step 19 — How far ahead", "How many months ahead should Select Scheduled Day list? Suggested: 3 months."],
   ["Holidays", "Are holidays worked or skipped?"],
 ];
@@ -346,7 +345,7 @@ export default function Plan() {
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
       <Callout tone="info" title="Next: Step 3 and Stage E, after your answers">
-        Steps 5 and 6 are closed. Step 3 puts weekdays under Recurrence → Custom. Stage E lists six fixes from your November 4 notes. Steps 14, 16, 18, and 19 can start now. Steps 3, 15, and 17 wait on the questions in Decisions → Still open. A 24/48 shift must keep showing the same days it shows today.
+        Steps 5 and 6 are closed. Step 3 puts weekdays under Recurrence → Custom. Stage E lists six fixes from your November 4 notes. Your November 4 answers are in Decisions. Steps 3 and 14–16, 18, and 19 can start now. Step 17 waits on where admins see requests. A 24/48 shift must keep showing the same days it shows today.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

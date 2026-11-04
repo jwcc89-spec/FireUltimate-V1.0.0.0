@@ -57,7 +57,7 @@
 
 ## Current blocker / status
 - November 4, 11:45 a.m.: Steps 5 and 6 are closed by the user (overtime length is the Overtime Setup setting; Stage D tests covered the re-test). Step 3 goes under Recurrence → Custom. Stage E, Steps 14–19, was added from the user's notes: Department Apparatus window width, view-only schedule without Edit the schedule (`schedule.edit` already blocks the save on the server; trades use `/api/trades` and must keep working), per-seat qualifications in Scheduler Apparatus, Request Admin Permission override, Trades form cleanup, and Select Scheduled Day listing roster days (today it lists only days saved on the server).
-- Open questions are in the canvas Decisions → Still open. Steps 14, 16, 18, and 19 have no blocking question. Step 17 may need a new table; ask before any Prisma change.
+- User answers (November 4): Step 3 Custom offers 'every N days' or weekday checkboxes. Step 15: without `schedule.edit`, clicking a day block does nothing. Step 17: Sub Admin and above approve; the person sits in the seat marked Pending; each overridable qualification names one allowed lower qualification; a new request table is approved (local `fu_local` first). Still open: where admins see override requests (Step 17) and how far ahead Select Scheduled Day lists (Step 19, suggested 3 months), plus Holidays.
 - Step 13 click-test passed on November 4, 2026.
 
 ## Now vs later
