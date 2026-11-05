@@ -131,12 +131,16 @@ import {
   parseQualificationOverrides,
   parseRecurrenceWeekdays,
   QUALIFICATION_COLOR_OPTIONS,
+  SCHEDULE_ROW_ICON_OPTIONS,
+  parseScheduleRowColor,
+  parseScheduleRowIcon,
   recurrenceDisplayLabel,
   formatMonthDayYear,
   WEEKDAY_CHOICES,
   type QualificationOverrideRule,
   toDateKey,
 } from "./scheduleUtils";
+import { ScheduleRowLabelIcon } from "./scheduleRowLabels";
 import { onSessionExpired } from "./api/http";
 import { RolePermissionsPanel } from "./RolePermissionsPanel";
 import { useMyPermissions } from "./useMyPermissions";
@@ -508,7 +512,19 @@ interface SchedulerApparatusRecord {
   maximumPersonnel: number;
   personnelRequirements: string[];
   station: string;
+  scheduleLabelIcon: string;
+  scheduleLabelColor: string;
 }
+
+const EMPTY_SCHEDULER_APPARATUS_DRAFT: SchedulerApparatusRecord = {
+  apparatus: "",
+  minimumPersonnel: 0,
+  maximumPersonnel: 2,
+  personnelRequirements: [],
+  station: "",
+  scheduleLabelIcon: "",
+  scheduleLabelColor: "",
+};
 
 type AdditionalFieldValueMode = "text" | "personnel";
 
@@ -1442,6 +1458,8 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
               ? (entry.personnelRequirements as string[]).filter((q): q is string => typeof q === "string")
               : [],
             station: String(entry?.station ?? "").trim(),
+            scheduleLabelIcon: parseScheduleRowIcon(entry?.scheduleLabelIcon),
+            scheduleLabelColor: parseScheduleRowColor(entry?.scheduleLabelColor),
           };
         })
         .filter((entry) => entry.apparatus.length > 0)
@@ -1457,6 +1475,8 @@ function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, 
           maximumPersonnel,
           personnelRequirements: entry.personnelRequirements,
           station: entry.station,
+          scheduleLabelIcon: "",
+          scheduleLabelColor: "",
         };
       });
   const additionalFields = normalizeAdditionalFields(d.additionalFields);
@@ -6983,13 +7003,9 @@ function DepartmentDetailsPage({
     model: "",
     year: "",
   });
-  const [schedulerApparatusDraft, setSchedulerApparatusDraft] = useState<SchedulerApparatusRecord>({
-    apparatus: "",
-    minimumPersonnel: 0,
-    maximumPersonnel: 2,
-    personnelRequirements: [],
-    station: "",
-  });
+  const [schedulerApparatusDraft, setSchedulerApparatusDraft] = useState<SchedulerApparatusRecord>(
+    EMPTY_SCHEDULER_APPARATUS_DRAFT,
+  );
   const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>(EMPTY_SHIFT_DRAFT);
   const [personnelDraft, setPersonnelDraft] = useState<DepartmentPersonnelRecord>({
     name: "",
@@ -8204,13 +8220,7 @@ function DepartmentDetailsPage({
       });
     }
     if (isSchedulerApparatusEditor) {
-      setSchedulerApparatusDraft({
-        apparatus: "",
-        minimumPersonnel: 0,
-        maximumPersonnel: 2,
-        personnelRequirements: [],
-        station: "",
-      });
+      setSchedulerApparatusDraft(EMPTY_SCHEDULER_APPARATUS_DRAFT);
     }
     if (isUsersEditor) {
       setUserDraft({
@@ -8255,7 +8265,13 @@ function DepartmentDetailsPage({
         setApparatusDraft(apparatusRecords[index]!);
       }
       if (isSchedulerApparatusEditor && schedulerApparatusRecords[index]) {
-        setSchedulerApparatusDraft(schedulerApparatusRecords[index]!);
+        const entry = schedulerApparatusRecords[index]!;
+        setSchedulerApparatusDraft({
+          ...EMPTY_SCHEDULER_APPARATUS_DRAFT,
+          ...entry,
+          scheduleLabelIcon: parseScheduleRowIcon(entry.scheduleLabelIcon),
+          scheduleLabelColor: parseScheduleRowColor(entry.scheduleLabelColor),
+        });
         return;
       }
       if (isUsersEditor && userRecords[index]) {
@@ -8293,13 +8309,7 @@ function DepartmentDetailsPage({
       });
     }
     if (isSchedulerApparatusEditor) {
-      setSchedulerApparatusDraft({
-        apparatus: "",
-        minimumPersonnel: 0,
-        maximumPersonnel: 2,
-        personnelRequirements: [],
-        station: "",
-      });
+      setSchedulerApparatusDraft(EMPTY_SCHEDULER_APPARATUS_DRAFT);
     }
     if (isSchedulerPersonnelEditor) {
       setPersonnelBulkDraft({
@@ -8413,6 +8423,8 @@ function DepartmentDetailsPage({
       maximumPersonnel,
       personnelRequirements,
       station: schedulerApparatusDraft.station.trim(),
+      scheduleLabelIcon: parseScheduleRowIcon(schedulerApparatusDraft.scheduleLabelIcon),
+      scheduleLabelColor: parseScheduleRowColor(schedulerApparatusDraft.scheduleLabelColor),
     };
     setSchedulerApparatusRecords((previous) => {
       const next =
@@ -8423,13 +8435,7 @@ function DepartmentDetailsPage({
     });
     setEditingIndex(null);
     setSelectedSingleIndex(null);
-    setSchedulerApparatusDraft({
-      apparatus: "",
-      minimumPersonnel: 0,
-      maximumPersonnel: 2,
-      personnelRequirements: [],
-      station: "",
-    });
+    setSchedulerApparatusDraft(EMPTY_SCHEDULER_APPARATUS_DRAFT);
     setIsEntryFormOpen(false);
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
@@ -8458,11 +8464,8 @@ function DepartmentDetailsPage({
         .map((entry) => entry.commonName.trim())
         .filter((name) => name.length > 0 && !existing.has(name.toLocaleLowerCase()))
         .map((name) => ({
+          ...EMPTY_SCHEDULER_APPARATUS_DRAFT,
           apparatus: name,
-          minimumPersonnel: 0,
-          maximumPersonnel: 2,
-          personnelRequirements: [] as string[],
-          station: "",
         }));
       return normalizeSchedulerStationGrouping([...previous, ...imported]);
     });
@@ -10338,6 +10341,59 @@ function DepartmentDetailsPage({
                           }))
                         }
                       />
+                      <div className="scheduler-apparatus-look-row">
+                        <div className="scheduler-apparatus-look-group">
+                          <span className="field-hint">Schedule label icon</span>
+                          <div className="scheduler-apparatus-icon-choices" role="group" aria-label="Schedule label icon">
+                            {SCHEDULE_ROW_ICON_OPTIONS.map((choice) => {
+                              const selected = schedulerApparatusDraft.scheduleLabelIcon === choice.id;
+                              return (
+                                <button
+                                  key={`inline-icon-${choice.id}`}
+                                  type="button"
+                                  className={`scheduler-apparatus-icon-choice${selected ? " scheduler-apparatus-icon-choice-selected" : ""}`}
+                                  aria-pressed={selected}
+                                  title={choice.label}
+                                  onClick={() =>
+                                    setSchedulerApparatusDraft((previous) => ({
+                                      ...previous,
+                                      scheduleLabelIcon: selected ? "" : choice.id,
+                                    }))
+                                  }
+                                >
+                                  <ScheduleRowLabelIcon icon={choice.id} />
+                                  <span>{choice.label}</span>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                        <div className="scheduler-apparatus-look-group">
+                          <span className="field-hint">Schedule label color</span>
+                          <div className="qualification-color-choices" role="group" aria-label="Schedule label color">
+                            {QUALIFICATION_COLOR_OPTIONS.map((choice) => {
+                              const selected = schedulerApparatusDraft.scheduleLabelColor === choice.id;
+                              return (
+                                <button
+                                  key={`inline-color-${choice.id}`}
+                                  type="button"
+                                  className={`qualification-color-swatch${selected ? " qualification-color-swatch-selected" : ""}`}
+                                  style={{ backgroundColor: choice.hex }}
+                                  aria-label={`${choice.label}${selected ? ", selected" : ""}`}
+                                  aria-pressed={selected}
+                                  title={choice.label}
+                                  onClick={() =>
+                                    setSchedulerApparatusDraft((previous) => ({
+                                      ...previous,
+                                      scheduleLabelColor: selected ? "" : choice.id,
+                                    }))
+                                  }
+                                />
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </div>
                     </div>
                     <p className="field-hint" style={{ marginTop: "0.35rem" }}>
                       Click an apparatus in the list to edit it here. Use Import Apparatus to add trucks from Department Apparatus.
@@ -12526,6 +12582,59 @@ function DepartmentDetailsPage({
                     }))
                   }
                 />
+                <div className="scheduler-apparatus-look-row">
+                  <div className="scheduler-apparatus-look-group">
+                    <span className="field-hint">Schedule label icon</span>
+                    <div className="scheduler-apparatus-icon-choices" role="group" aria-label="Schedule label icon">
+                      {SCHEDULE_ROW_ICON_OPTIONS.map((choice) => {
+                        const selected = schedulerApparatusDraft.scheduleLabelIcon === choice.id;
+                        return (
+                          <button
+                            key={`modal-icon-${choice.id}`}
+                            type="button"
+                            className={`scheduler-apparatus-icon-choice${selected ? " scheduler-apparatus-icon-choice-selected" : ""}`}
+                            aria-pressed={selected}
+                            title={choice.label}
+                            onClick={() =>
+                              setSchedulerApparatusDraft((previous) => ({
+                                ...previous,
+                                scheduleLabelIcon: selected ? "" : choice.id,
+                              }))
+                            }
+                          >
+                            <ScheduleRowLabelIcon icon={choice.id} />
+                            <span>{choice.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                  <div className="scheduler-apparatus-look-group">
+                    <span className="field-hint">Schedule label color</span>
+                    <div className="qualification-color-choices" role="group" aria-label="Schedule label color">
+                      {QUALIFICATION_COLOR_OPTIONS.map((choice) => {
+                        const selected = schedulerApparatusDraft.scheduleLabelColor === choice.id;
+                        return (
+                          <button
+                            key={`modal-color-${choice.id}`}
+                            type="button"
+                            className={`qualification-color-swatch${selected ? " qualification-color-swatch-selected" : ""}`}
+                            style={{ backgroundColor: choice.hex }}
+                            aria-label={`${choice.label}${selected ? ", selected" : ""}`}
+                            aria-pressed={selected}
+                            title={choice.label}
+                            onClick={() =>
+                              setSchedulerApparatusDraft((previous) => ({
+                                ...previous,
+                                scheduleLabelColor: selected ? "" : choice.id,
+                              }))
+                            }
+                          />
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
               </div>
             ) : null}
 

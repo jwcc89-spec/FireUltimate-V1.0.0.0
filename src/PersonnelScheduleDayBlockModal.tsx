@@ -811,10 +811,12 @@ export function PersonnelScheduleDayBlockModal({
                             <span className="personnel-schedule-modal-ot-spacer" />
                           )}
                           <div
-                            className={`personnel-schedule-modal-slot ${isRed ? "personnel-schedule-slot-required-empty" : ""} ${
+                            className={`personnel-schedule-modal-slot${
+                              isTextRow ? " personnel-schedule-modal-slot-text" : ""
+                            }${isRed ? " personnel-schedule-slot-required-empty" : ""}${
                               dragOverSlot?.unitId === row.unitId &&
                               dragOverSlot?.slotIndex === slotIdx
-                                ? "personnel-schedule-slot-drag-over"
+                                ? " personnel-schedule-slot-drag-over"
                                 : ""
                             }`}
                             onDragOver={

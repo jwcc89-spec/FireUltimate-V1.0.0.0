@@ -227,35 +227,190 @@ const decided: [string, string, string][] = [
     "KPI formulas (Step 17)",
     "Open Seats = empty required apparatus seats in the days on screen (OPEN/HIRE = open). Coverage = filled ÷ required as %. Pending Overrides = pending requests dated in the days on screen (and active shift when set). On Kelly Day = named people on Kelly Day row in the days on screen, and the card is hidden when Kelly Day is hidden in Additional Fields.",
   ],
+  [
+    "November 5, 2026",
+    "Plan B",
+    "Parked follow-ups move into a Plan B tab with the same stage/step format. Plan A stages stay as completed history. Next is B1 Injury/Sick red person-pill override.",
+  ],
+  [
+    "November 5, 2026",
+    "B1 leave-row pill color",
+    "On Injury and Sick rows, filled person pills use the row red soft fill and ignore Admin qualification color. Other rows unchanged.",
+  ],
 ];
 
 const stillOpen: [string, string][] = [
-  ["Step 17 click-check", "Confirm the four KPI cards match week vs month and match open red seats / Kelly / pending overrides."],
-  ["What is next after Step 17", "Visual plan stages are complete except parked polish (7, 14, 16) and parked features (injury red override, admin label colors)."],
-  ["Step 7 slot spacing", "Tried and reverted November 5 before client meeting."],
-  ["Step 14 segment times", "Tried and reverted November 5; parked until a better layout is chosen."],
-  ["Step 16 Info/Trades chips", "Tried and reverted November 5 before client meeting."],
-  ["Inline seat select bug", "Pre-existing on staging/production. Parked during visual pass."],
+  ["B2 click-check", "In Scheduler Apparatus, set A51 to Medic + green and confirm the schedule left label updates."],
+  ["Plan B next step", "B3 slot spacing retry after B2 passes."],
+];
+
+const planBStages: StageDef[] = [
+  {
+    id: "B0",
+    name: "Plan B Stage 0 — Rules",
+    summary: "Same one-piece rule as Plan A. Plan B covers the parked follow-ups after the main visual pass.",
+    steps: [
+      {
+        n: "B0",
+        title: "Keep one piece at a time for Plan B",
+        status: "Done",
+        problem: "The parked list mixed polish retries, admin settings, shell chrome, and a bug fix with no clear order.",
+        why: "Without stages, the next agent may change too much at once again.",
+        fix: "Plan B uses the same step shape: what is wrong, why it matters, the fix, who, done when. You approve each step before the next. Prefer Personnel Schedule page work first; App shell and mobile stay last.",
+        who: "You approve; me executes one step at a time.",
+        done: "Plan B section added November 5, 2026. B1 completed the same day.",
+      },
+    ],
+  },
+  {
+    id: "H",
+    name: "Plan B Stage H — Person pill color on leave rows",
+    summary: "When someone sits on a red Injury or Sick-style row, that row’s red look wins over their qualification color.",
+    steps: [
+      {
+        n: "B1",
+        title: "Injury/Sick row overrides person pill color",
+        status: "Done",
+        problem: "Keller or Laduke on Injury still shows their Admin qualification color, so the red leave row does not read as clearly.",
+        why: "The leave row color should win so injury and sick stand out at a glance.",
+        fix: "On Injury and Sick rows (label tone sick), filled person pills use the row red soft fill (#fee2e2 / #991b1b) and ignore personal qualification color. Apparatus and other support rows unchanged.",
+        who: "Me.",
+        done: "A person on Injury shows a red pill on that row only. Their apparatus seat still uses their qualification color. Waiting on your click-check.",
+      },
+    ],
+  },
+  {
+    id: "I",
+    name: "Plan B Stage I — Admin row label color and icon",
+    summary: "Stop guessing Engine blue vs Medic green from the apparatus name alone.",
+    steps: [
+      {
+        n: "B2",
+        title: "Admin setting for schedule row label color and icon",
+        status: "Done",
+        problem: "Step 18D only guesses from the apparatus name, so A51 and A52 stay engine blue even when they should look like Medic/EMS green.",
+        why: "Each department needs to pick how schedule apparatus rows look without renaming the unit.",
+        fix: "Admin Functions → Scheduler Settings → Scheduler Apparatus edit form now has schedule label icon (fire truck, medic, info, trades, injury) and color swatches. Stored on schedulerApparatusRecords. Schedule left labels read those settings; unset still uses the name guess. Additional-field rows stay heuristic for now.",
+        who: "Me.",
+        done: "Changing A51 icon/color in Admin updates that row’s pill on the schedule. Waiting on your click-check.",
+      },
+    ],
+  },
+  {
+    id: "J",
+    name: "Plan B Stage J — Visual polish retries",
+    summary: "Retry the three November 5 reverts one at a time, then optional custom icons.",
+    steps: [
+      {
+        n: "B3",
+        title: "Retry Step 7 slot spacing",
+        status: "Next",
+        problem: "Assigned names can still sit too tight compared with the mockup’s pill stack gap.",
+        why: "A small gap makes stacked seats easier to scan without another big layout change.",
+        fix: "Try a gentler seat/stack gap than the first November 5 attempt. One CSS-only step. Revert if it looks wrong on Windows.",
+        who: "Me after you approve.",
+        done: "Seat stack spacing matches the mockup enough that you keep it.",
+      },
+      {
+        n: "B4",
+        title: "Retry Step 14 segment times on split pills",
+        status: "New",
+        problem: "Split seats still show dense name tokens; the mockup stacks name plus 24-hour time more clearly.",
+        why: "Weekday 12-hour and trade segments need the time visible without crowding.",
+        fix: "Choose a better layout than the first try (no narrow wrap that broke the grid). Keep military time. One visual piece only.",
+        who: "Me after B3, and only after you pick the layout direction.",
+        done: "Split pills show name and 24-hour time clearly without breaking week or month view.",
+      },
+      {
+        n: "B5",
+        title: "Retry Step 16 Info and Trades chips",
+        status: "New",
+        problem: "Info coverage lines and trade text still look like plain small text, not the pill system.",
+        why: "Support rows should feel like the same visual language as apparatus seats.",
+        fix: "Restyle Info and Trades cell content as quiet chips. CSS-first. Revert if it fights the coverage lines.",
+        who: "Me after B4.",
+        done: "Info and Trades content read as soft chips without changing coverage math.",
+      },
+      {
+        n: "B6",
+        title: "Custom SVG icons on Info / Trades (optional)",
+        status: "New",
+        problem: "Generic icons may still feel weak after B5.",
+        why: "Only needed if the CSS chips are not enough.",
+        fix: "Replace Info and Trades label icons with small custom SVGs. Skip this step if B5 is enough.",
+        who: "Me only if you ask after B5.",
+        done: "Info and Trades icons match the mockup closely enough, or you decide to skip.",
+      },
+    ],
+  },
+  {
+    id: "K",
+    name: "Plan B Stage K — Inline seat assign bug",
+    summary: "Fix the pre-existing inline dropdown assign after the main visual pass.",
+    steps: [
+      {
+        n: "B7",
+        title: "Fix inline seat dropdown assign",
+        status: "New",
+        problem: "Clicking a seat to pick someone from the small inline dropdown is broken on staging and production. The day-block modal still works.",
+        why: "Admins expect to assign from the grid without opening the day block every time.",
+        fix: "Repair the inline select assign path only. Do not redesign the dropdown. Keep limited-user self-fill rules.",
+        who: "Me after the polish you want first, or sooner if you bump it ahead.",
+        done: "Choosing a person from the inline seat dropdown assigns them and saves, matching day-block behavior.",
+      },
+    ],
+  },
+  {
+    id: "L",
+    name: "Plan B Stage L — Day-block modal, then later surfaces",
+    summary: "Match the day editor after the grid looks right. Shell, mobile, and palette stay last.",
+    steps: [
+      {
+        n: "B8",
+        title: "Restyle the day-block modal",
+        status: "New",
+        problem: "The day-block editor still looks like the older dense UI while the grid now matches the mockup.",
+        why: "Admins spend time in that modal; it should match the new pills and date chips.",
+        fix: "Restyle the day-block modal chrome and seat/segment presentation to match the grid. No assignment-rule changes in this step.",
+        who: "Me after the grid polish you want kept.",
+        done: "Opening a day block feels like the same visual system as the main schedule.",
+      },
+      {
+        n: "B9",
+        title: "Mobile-specific schedule layout",
+        status: "New",
+        problem: "Week and month views are desktop-first; phones still need sideways scanning.",
+        why: "Field users may need a readable phone layout later.",
+        fix: "Design a phone layout after desktop is stable. Do not squeeze the desktop grid.",
+        who: "Me later when you ask for mobile.",
+        done: "A phone schedule view is usable without breaking desktop week/month.",
+      },
+      {
+        n: "B10",
+        title: "App sidebar / topbar redesign",
+        status: "New",
+        problem: "The mockup shows a dark app shell and user avatar that the live app does not use.",
+        why: "That is shell chrome, not the Personnel Schedule page.",
+        fix: "Only touch App sidebar/topbar if you explicitly open an App-shell project. Stay out of it during schedule work.",
+        who: "Me only if you start a separate shell plan.",
+        done: "Either deferred forever for this plan, or completed under an App-shell plan you approve.",
+      },
+      {
+        n: "B11",
+        title: "Qualification color palette pass",
+        status: "New",
+        problem: "Departments may want a better default color set than the current Admin palette.",
+        why: "Pill fills are only as clear as the colors chosen in Admin Functions.",
+        fix: "Optional palette pass later. Until then, keep using colors already configured in Admin.",
+        who: "Me only if you ask for a palette redesign.",
+        done: "Either skipped, or Admin has an agreed clearer default palette.",
+      },
+    ],
+  },
 ];
 
 const parked: [string, string][] = [
-  ["App sidebar / topbar redesign", "Mockup sidebar and user avatar are shell chrome, not the schedule page. Stay out of App shell unless you ask later."],
-  ["Day-block modal restyle", "Match the modal after the main grid looks right."],
-  ["Custom SVG icons on Info / Trades", "Only if CSS polish in Step 16 is not enough."],
-  ["Mobile-specific schedule layout", "Desktop match first; phone layout later."],
-  ["Changing qualification color palette itself", "Use colors already configured in Admin Functions unless you want a palette pass later."],
-  ["Step 7 slot spacing", "Tried and reverted November 5 before client meeting."],
-  ["Step 14 segment times on split pills", "Tried and reverted November 5; revisit later with a better layout."],
-  ["Step 16 Info/Trades chips", "Tried and reverted November 5 before client meeting."],
-  ["Inline seat dropdown assign", "Pre-existing; day-block works. Fix after visual pass."],
-  [
-    "Admin: schedule row label color and icon",
-    "Later: Admin Functions lets the department pick color and icon for each apparatus and each additional field (Engine, Medic/EMS, Info, Kelly Day, Sick, Trades, Vacation, custom). Today Step 18D only guesses from the name (Medic/Ambulance/EMS/Rescue → green; everything else → engine blue), so A51/A52 stay blue until this exists.",
-  ],
-  [
-    "Injury/Sick row overrides person pill color",
-    "Later: when a person is listed on Injury (or the red Sick-style row), their assignment pill on that row uses the row’s red style and overrides their Admin qualification color.",
-  ],
+  ["See Plan B tab", "Parked follow-ups are now staged in Plan B (B1–B11). Use that tab instead of this list for order and status."],
 ];
 
 const safety: [string, string][] = [
@@ -266,18 +421,58 @@ const safety: [string, string][] = [
   ["Demo tenant", "Do not auto-reset demo. Visual checks can use the Weekday Test department or Watseka staging later."],
 ];
 
+function renderStages(theme: ReturnType<typeof useHostTheme>, stageList: StageDef[]) {
+  return (
+    <Stack gap={14}>
+      {stageList.map((stage) => (
+        <Card key={stage.id}>
+          <CardHeader trailing={<Pill tone="neutral">{stage.steps.length} steps</Pill>}>
+            {stage.name}
+          </CardHeader>
+          <CardBody>
+            <Stack gap={10}>
+              <Text tone="secondary">{stage.summary}</Text>
+              {stage.steps.map((step) => (
+                <Stack key={step.n} gap={4} style={{ paddingTop: 8, borderTop: `1px solid ${theme.stroke.tertiary}` }}>
+                  <Row gap={8} align="center" wrap>
+                    <Text weight="bold">Step {step.n}. {step.title}</Text>
+                    {step.status ? (
+                      <Pill tone={step.status === "Next" ? "info" : step.status === "Done" ? "success" : "neutral"}>
+                        {step.status}
+                      </Pill>
+                    ) : (
+                      <Pill tone="neutral">Queued</Pill>
+                    )}
+                  </Row>
+                  <Text size="small"><Text weight="bold">What is wrong: </Text>{step.problem}</Text>
+                  <Text size="small"><Text weight="bold">Why it matters: </Text>{step.why}</Text>
+                  <Text size="small"><Text weight="bold">The fix: </Text>{step.fix}</Text>
+                  <Text size="small"><Text weight="bold">Who: </Text>{step.who}</Text>
+                  <Text size="small"><Text weight="bold">Done when: </Text>{step.done}</Text>
+                </Stack>
+              ))}
+            </Stack>
+          </CardBody>
+        </Card>
+      ))}
+    </Stack>
+  );
+}
+
 export default function ScheduleVisualMockupPlan() {
   const theme = useHostTheme();
-  const [tab, setTab] = useState<"Plan" | "Decisions" | "Data safety" | "Parked">("Plan");
-  const nextStep = stages.flatMap((s) => s.steps).find((s) => s.status === "Next");
+  const [tab, setTab] = useState<"Plan A" | "Plan B" | "Decisions" | "Data safety" | "Parked">("Plan B");
+  const nextStep =
+    planBStages.flatMap((s) => s.steps).find((s) => s.status === "Next") ??
+    stages.flatMap((s) => s.steps).find((s) => s.status === "Next");
 
   return (
     <Stack gap={16} style={{ padding: 16 }}>
       <Stack gap={6}>
-        <Text tone="secondary" size="small">Updated November 5, 2026 · late morning · branch submenu/scheduler-pagevisuals · Step 17 hides On Kelly Day when that additional field is hidden</Text>
+        <Text tone="secondary" size="small">Updated November 5, 2026 · midday · branch submenu/scheduler-pagevisuals · Plan B Step B2 done; next is B3</Text>
         <H1>Personnel Schedule — visual mockup plan (one piece at a time)</H1>
         <Text>
-          Bring the live Personnel Schedule closer to the hybrid mockup without another big-bang visual rewrite.
+          Plan A brought the live Personnel Schedule to the hybrid mockup. Plan B stages the parked follow-ups in the same one-piece format.
           Reference: schedule-mockup-hybrid-a-layout-b-dates.jpg and docs/mockups/schedule-hybrid-wed-nov5.html.
         </Text>
         {nextStep ? (
@@ -288,7 +483,7 @@ export default function ScheduleVisualMockupPlan() {
       </Stack>
 
       <Row gap={8} wrap>
-        {(["Plan", "Decisions", "Data safety", "Parked"] as const).map((name) => (
+        {(["Plan A", "Plan B", "Decisions", "Data safety", "Parked"] as const).map((name) => (
           <Pill
             key={name}
             tone={tab === name ? "info" : "neutral"}
@@ -300,33 +495,13 @@ export default function ScheduleVisualMockupPlan() {
         ))}
       </Row>
 
-      {tab === "Plan" ? (
+      {tab === "Plan A" ? renderStages(theme, stages) : null}
+      {tab === "Plan B" ? (
         <Stack gap={14}>
-          {stages.map((stage) => (
-            <Card key={stage.id}>
-              <CardHeader trailing={<Pill tone="neutral">{stage.steps.length} steps</Pill>}>
-                {stage.name}
-              </CardHeader>
-              <CardBody>
-                <Stack gap={10}>
-                  <Text tone="secondary">{stage.summary}</Text>
-                  {stage.steps.map((step) => (
-                    <Stack key={step.n} gap={4} style={{ paddingTop: 8, borderTop: `1px solid ${theme.stroke.tertiary}` }}>
-                      <Row gap={8} align="center" wrap>
-                        <Text weight="bold">Step {step.n}. {step.title}</Text>
-                        {step.status ? <Pill tone={step.status === "Next" ? "info" : step.status === "Done" ? "success" : "neutral"}>{step.status}</Pill> : <Pill tone="neutral">Queued</Pill>}
-                      </Row>
-                      <Text size="small"><Text weight="bold">What is wrong: </Text>{step.problem}</Text>
-                      <Text size="small"><Text weight="bold">Why it matters: </Text>{step.why}</Text>
-                      <Text size="small"><Text weight="bold">The fix: </Text>{step.fix}</Text>
-                      <Text size="small"><Text weight="bold">Who: </Text>{step.who}</Text>
-                      <Text size="small"><Text weight="bold">Done when: </Text>{step.done}</Text>
-                    </Stack>
-                  ))}
-                </Stack>
-              </CardBody>
-            </Card>
-          ))}
+          <Callout tone="info" title="Plan B order">
+            B1 Injury red override → B2 Admin label color/icon → B3–B6 polish retries → B7 inline seat bug → B8 day-block modal → B9–B11 later surfaces.
+          </Callout>
+          {renderStages(theme, planBStages)}
         </Stack>
       ) : null}
 

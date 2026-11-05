@@ -316,6 +316,46 @@ export const QUALIFICATION_COLOR_OPTIONS = [
   { id: "gray", label: "Gray", hex: "#475569" },
 ] as const;
 
+export type ScheduleRowIconId = "engine" | "medic" | "info" | "trades" | "sick";
+
+export const SCHEDULE_ROW_ICON_OPTIONS: Array<{ id: ScheduleRowIconId; label: string }> = [
+  { id: "engine", label: "Fire truck" },
+  { id: "medic", label: "Medic" },
+  { id: "info", label: "Info" },
+  { id: "trades", label: "Trades" },
+  { id: "sick", label: "Injury / Sick" },
+];
+
+const SCHEDULE_ROW_ICON_IDS = new Set<string>(SCHEDULE_ROW_ICON_OPTIONS.map((choice) => choice.id));
+const SCHEDULE_ROW_COLOR_IDS = new Set<string>(QUALIFICATION_COLOR_OPTIONS.map((choice) => choice.id));
+
+export function parseScheduleRowIcon(raw: unknown): ScheduleRowIconId | "" {
+  const value = String(raw ?? "").trim();
+  return SCHEDULE_ROW_ICON_IDS.has(value) ? (value as ScheduleRowIconId) : "";
+}
+
+export function parseScheduleRowColor(raw: unknown): string {
+  const value = String(raw ?? "").trim();
+  return SCHEDULE_ROW_COLOR_IDS.has(value) ? value : "";
+}
+
+/** Name-only guess used when Admin has not picked an icon yet. */
+export function guessScheduleRowIconFromName(label: string): ScheduleRowIconId {
+  const normalized = label.toLowerCase();
+  if (
+    normalized.includes("medic") ||
+    normalized.includes("ambulance") ||
+    normalized.includes("ems") ||
+    normalized.includes("rescue")
+  ) {
+    return "medic";
+  }
+  if (normalized.includes("info")) return "info";
+  if (normalized.includes("trade")) return "trades";
+  if (normalized.includes("sick") || normalized.includes("injur")) return "sick";
+  return "engine";
+}
+
 /** Soft pill fills for schedule seats (strong hex stays for Admin swatches / text accents). */
 export const QUALIFICATION_COLOR_SOFT: Record<
   (typeof QUALIFICATION_COLOR_OPTIONS)[number]["id"],
