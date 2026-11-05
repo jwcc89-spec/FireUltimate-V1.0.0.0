@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import {
   getSlotCountForApparatus,
   isOverrideSupportPersonnelRow,
@@ -14,6 +14,7 @@ import {
   loadScheduleAssignments,
   loadScheduleOvertimeSplit,
   loadScheduleSlotSegments,
+  minutesToTimeValue,
   parseAssignedNames,
   parseTimeToMinutes,
   saveScheduleAssignments,
@@ -132,6 +133,49 @@ function seatNamesIncludeRealPerson(names: string[]): boolean {
     const trimmed = name.trim();
     return trimmed.length > 0 && !isOpenOrHireToken(trimmed);
   });
+}
+
+function isRealPersonSegment(segment: ScheduleSegment): boolean {
+  const name = segment.personnelName.trim();
+  return (
+    segment.assigneeType !== "hire" &&
+    segment.source !== "auto_hire" &&
+    name.length > 0 &&
+    !isOpenOrHireToken(name) &&
+    segment.endMinutes > segment.startMinutes
+  );
+}
+
+/** One person covering the whole shift is a normal seat, not split pieces. */
+function singleSegmentIfPersonCoversShift(
+  segments: ScheduleSegment[],
+  shiftStart: number,
+  shiftEnd: number,
+): ScheduleSegment[] | null {
+  const real = segments.filter(isRealPersonSegment);
+  if (real.length === 0 || !(shiftEnd > shiftStart)) return null;
+  const name = real[0]!.personnelName.trim();
+  if (real.some((segment) => segment.personnelName.trim().toLowerCase() !== name.toLowerCase())) {
+    return null;
+  }
+  const sorted = [...real].sort((left, right) => left.startMinutes - right.startMinutes);
+  let cursor = shiftStart;
+  for (const segment of sorted) {
+    if (segment.startMinutes > cursor) return null;
+    cursor = Math.max(cursor, segment.endMinutes);
+  }
+  if (cursor < shiftEnd) return null;
+  return [
+    {
+      id: `full-${name.toLowerCase().replace(/\s+/g, "-")}`,
+      assigneeType: "personnel",
+      personnelName: name,
+      startMinutes: shiftStart,
+      endMinutes: shiftEnd,
+      source: "manual",
+      overtime: false,
+    },
+  ];
 }
 
 function militaryToClock(raw: string): string | null {
@@ -382,7 +426,17 @@ export function PersonnelSchedulePage({
   );
   const [selectedShift, setSelectedShift] = useState<string>("");
   const [highlightPersonnelName, setHighlightPersonnelName] = useState("");
-  const [viewDate, setViewDate] = useState(() => new Date());
+  const [searchParams] = useSearchParams();
+  const focusDateKey = /^\d{4}-\d{2}-\d{2}$/.test(searchParams.get("date") ?? "")
+    ? (searchParams.get("date") ?? "")
+    : "";
+  const focusShift = searchParams.get("shift") ?? "";
+  const focusUnit = searchParams.get("unit") ?? "";
+  const [viewDate, setViewDate] = useState(() => {
+    if (!focusDateKey) return new Date();
+    const [year, month, day] = focusDateKey.split("-").map(Number);
+    return new Date(year, (month ?? 1) - 1, day ?? 1);
+  });
   const [calendarViewMode, setCalendarViewMode] = useState<"week" | "month">("week");
   const [isLoading, setIsLoading] = useState(true);
   const [scheduleAssignments, setScheduleAssignments] = useState<ScheduleAssignments>(() =>
@@ -420,6 +474,16 @@ export function PersonnelSchedulePage({
   limitedEditorRef.current = limitedScheduleEditor;
   const scheduleNoticeRef = useRef<(message: string) => void>(() => undefined);
   const pendingOverrideRef = useRef<QualificationOverrideRow[]>([]);
+  const placeOpenTimeRef = useRef<
+    | ((
+        dateKey: string,
+        unitId: string,
+        slotIndex: number,
+        startMinutes: number,
+        endMinutes: number,
+      ) => boolean)
+    | null
+  >(null);
   const assignPersonToSlotRef = useRef<
     | ((
         dateKey: string,
@@ -810,6 +874,29 @@ export function PersonnelSchedulePage({
     () => dates.filter((date) => activeDateKeys.has(toDateKey(date))),
     [dates, activeDateKeys],
   );
+  useEffect(() => {
+    if (!focusDateKey) return;
+    const [year, month, day] = focusDateKey.split("-").map(Number);
+    setViewDate(new Date(year, (month ?? 1) - 1, day ?? 1));
+    setCalendarViewMode("week");
+  }, [focusDateKey]);
+  useEffect(() => {
+    if (!focusShift) return;
+    if (shiftOptions.some((entry) => entry.shiftType === focusShift)) {
+      setSelectedShift(focusShift);
+    }
+  }, [focusShift, shiftOptions]);
+  useEffect(() => {
+    if (isLoading || !focusUnit || !focusDateKey) return;
+    const handle = window.setTimeout(() => {
+      document.querySelector("[data-schedule-focus='1']")?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+        inline: "center",
+      });
+    }, 50);
+    return () => window.clearTimeout(handle);
+  }, [isLoading, focusUnit, focusDateKey, effectiveShift, displayDates]);
   const buildDefaultAssignmentsForDate = useCallback(
     (dateKey: string): Record<string, string[]> => {
       const defaults: Record<string, string[]> = {};
@@ -1093,11 +1180,15 @@ export function PersonnelSchedulePage({
 
   const withDynamicHireSegments = useCallback(
     (segments: ScheduleSegment[]): ScheduleSegment[] => {
-      const manualSegments = sortSegments(
-        segments.filter((segment) => segment.assigneeType !== "hire"),
-      );
+      const manualSegments = sortSegments(segments.filter(isRealPersonSegment));
       const effectiveEnd = clampDayMinutes(shiftWindowEndMinutes);
       const effectiveStart = clampDayMinutes(shiftWindowStartMinutes);
+      const coveredByOnePerson = singleSegmentIfPersonCoversShift(
+        manualSegments,
+        effectiveStart,
+        effectiveEnd,
+      );
+      if (coveredByOnePerson) return coveredByOnePerson;
       const all: ScheduleSegment[] = [...manualSegments];
       let cursor = effectiveStart;
       manualSegments.forEach((segment, index) => {
@@ -1276,6 +1367,48 @@ export function PersonnelSchedulePage({
     [overrideDraftFor, rememberPending],
   );
 
+  const requestOpenTimeQualificationOverride = useCallback(
+    async (
+      dateKey: string,
+      personName: string,
+      unitId: string,
+      slotIndex: number,
+      startMinutes: number,
+      endMinutes: number,
+      placeNow = false,
+    ) => {
+      const draft = overrideDraftFor(personName, unitId, slotIndex);
+      if (!draft) return;
+      const response = await fetch("/api/qualification-overrides", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...draft, dateKey, placeNow }),
+      });
+      const json = (await response.json().catch(() => null)) as {
+        ok?: boolean;
+        message?: string;
+        request?: QualificationOverrideRow;
+      } | null;
+      if (!response.ok || !json?.ok || !json.request) {
+        setNoticeAction(null);
+        setScheduleNotice(json?.message || "The permission request could not be sent.");
+        return;
+      }
+      const approvedNow = placeNow && json.request.status === "approved";
+      rememberPending({ ...json.request, status: approvedNow ? "approved" : "pending" });
+      const placed = placeOpenTimeRef.current?.(dateKey, unitId, slotIndex, startMinutes, endMinutes) === true;
+      if (!placed) return;
+      const timeLabel = `${minutesToTimeValue(startMinutes)}–${minutesToTimeValue(endMinutes)}`;
+      setNoticeAction(null);
+      setScheduleNotice(
+        approvedNow
+          ? `${draft.personName} is placed on ${timeLabel}.`
+          : `${draft.personName} is on ${timeLabel} as Pending until a sub admin approves.`,
+      );
+    },
+    [overrideDraftFor, rememberPending],
+  );
+
   const requestSeatRemoval = useCallback(
     async (dateKey: string, unitId: string, slotIndex: number, personName: string) => {
       const row = scheduleRows.find((entry) => entry.unitId === unitId);
@@ -1354,11 +1487,25 @@ export function PersonnelSchedulePage({
   const openScheduleNotice = useCallback(
     (
       message: string,
-      blocked?: { dateKey: string; personName: string; unitId: string; slotIndex: number } | null,
+      blocked?: {
+        dateKey: string;
+        personName: string;
+        unitId: string;
+        slotIndex: number;
+        startMinutes?: number;
+        endMinutes?: number;
+      } | null,
     ) => {
       const draft = blocked
         ? overrideDraftFor(blocked.personName, blocked.unitId, blocked.slotIndex)
         : null;
+      const openTime =
+        blocked &&
+        typeof blocked.startMinutes === "number" &&
+        typeof blocked.endMinutes === "number" &&
+        blocked.endMinutes > blocked.startMinutes
+          ? { startMinutes: blocked.startMinutes, endMinutes: blocked.endMinutes }
+          : null;
       if (draft && blocked && message === "You do not meet the minimum qualifications.") {
         if (viewerIsReviewer) {
           const qualification = draft.lowerQualification.trim() || "that qualification";
@@ -1366,6 +1513,18 @@ export function PersonnelSchedulePage({
           setNoticeAction({
             label: "Place in seat",
             run: () => {
+              if (openTime) {
+                void requestOpenTimeQualificationOverride(
+                  blocked.dateKey,
+                  blocked.personName,
+                  blocked.unitId,
+                  blocked.slotIndex,
+                  openTime.startMinutes,
+                  openTime.endMinutes,
+                  true,
+                );
+                return;
+              }
               void requestQualificationOverride(
                 blocked.dateKey,
                 blocked.personName,
@@ -1383,6 +1542,17 @@ export function PersonnelSchedulePage({
         setNoticeAction({
           label: "Request Admin Permission",
           run: () => {
+            if (openTime) {
+              void requestOpenTimeQualificationOverride(
+                blocked.dateKey,
+                blocked.personName,
+                blocked.unitId,
+                blocked.slotIndex,
+                openTime.startMinutes,
+                openTime.endMinutes,
+              );
+              return;
+            }
             void requestQualificationOverride(
               blocked.dateKey,
               blocked.personName,
@@ -1396,7 +1566,7 @@ export function PersonnelSchedulePage({
       }
       setScheduleNotice(message);
     },
-    [overrideDraftFor, requestQualificationOverride, viewerIsReviewer],
+    [overrideDraftFor, requestOpenTimeQualificationOverride, requestQualificationOverride, viewerIsReviewer],
   );
   scheduleNoticeRef.current = (message) => openScheduleNotice(message);
 
@@ -1902,6 +2072,186 @@ export function PersonnelSchedulePage({
       shiftWindowEndMinutes,
     ],
   );
+
+  /** Limited user takes one already-open time block on a split seat without changing the other person. */
+  const claimOpenTimeBlock = useCallback(
+    (
+      dateKey: string,
+      unitId: string,
+      slotIndex: number,
+      startMinutes: number,
+      endMinutes: number,
+      bypassQualification = false,
+    ) => {
+      const personName = viewerName.trim();
+      if (!limitedScheduleEditor || !personName) return;
+      if (!(endMinutes > startMinutes)) return;
+      const targetRow = scheduleRows.find((row) => row.unitId === unitId);
+      if (!targetRow || targetRow.rowType !== "apparatus") return;
+      if (!isOvertimeEnabledForSlot(dateKey, unitId, slotIndex)) return;
+      const heldPartial = pendingOverrides.find(
+        (item) =>
+          item.status === "pending" &&
+          item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+          item.dateKey === dateKey &&
+          item.unitId === unitId &&
+          item.slotIndex === slotIndex,
+      );
+      if (heldPartial) {
+        openScheduleNotice(
+          `${heldPartial.personName} has a partial shift waiting for approval on this seat.`,
+        );
+        return;
+      }
+      const qualificationMessage = apparatusSeatQualificationMessage(unitId, slotIndex, personName);
+      if (qualificationMessage && !bypassQualification) {
+        openScheduleNotice("You do not meet the minimum qualifications.", {
+          dateKey,
+          personName,
+          unitId,
+          slotIndex,
+          startMinutes,
+          endMinutes,
+        });
+        return;
+      }
+      const overrideMessage = apparatusOverrideBlockMessage(dateKey, personName);
+      if (overrideMessage) {
+        openScheduleNotice(overrideMessage);
+        return;
+      }
+      const stored = getSegmentsForSlot(dateKey, unitId, slotIndex).filter(
+        (segment) =>
+          segment.source !== "auto_hire" &&
+          segment.assigneeType !== "hire" &&
+          segment.personnelName.trim().length > 0 &&
+          !isOpenOrHireToken(segment.personnelName) &&
+          segment.endMinutes > segment.startMinutes,
+      );
+      if (
+        stored.some((segment) =>
+          schedulesIntervalOverlap(startMinutes, endMinutes, segment.startMinutes, segment.endMinutes),
+        )
+      ) {
+        openScheduleNotice("That time is already filled.");
+        return;
+      }
+      const overlapMessage = assertApparatusTimeOverlap(
+        dateKey,
+        personName,
+        unitId,
+        slotIndex,
+        startMinutes,
+        endMinutes,
+      );
+      if (overlapMessage) {
+        openScheduleNotice(overlapMessage);
+        return;
+      }
+      const assignedOnFullShift = scheduleRows.some((row) => {
+        if (row.rowType !== "apparatus" || row.minimumPersonnel <= 0) return false;
+        for (let requiredSlotIndex = 0; requiredSlotIndex < row.minimumPersonnel; requiredSlotIndex += 1) {
+          if (row.unitId === unitId && requiredSlotIndex === slotIndex) continue;
+          if (isOvertimeEnabledForSlot(dateKey, row.unitId, requiredSlotIndex)) continue;
+          const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+          if (parseAssignedNames(slots[requiredSlotIndex] ?? "").includes(personName)) return true;
+        }
+        return false;
+      });
+      if (assignedOnFullShift) {
+        openScheduleNotice(
+          `Cannot assign ${personName}: already assigned to a full-shift required slot on this day.`,
+        );
+        return;
+      }
+      pushUndoSnapshot("Add yourself to open time");
+      const storageDateKey = toScheduleStorageDateKey(effectiveShift, dateKey);
+      setScheduleAssignments((previous) => {
+        const next = { ...previous };
+        const dayData = { ...(next[storageDateKey] ?? {}) } as Record<string, string[]>;
+        const current = getAssignmentsForDay(dateKey, unitId, targetRow.slotCount);
+        const unitSlots = [...(dayData[unitId] ?? current)];
+        while (unitSlots.length <= slotIndex) unitSlots.push("");
+        const names = parseAssignedNames(unitSlots[slotIndex] ?? "").filter(
+          (entry) => entry.trim() && !isOpenOrHireToken(entry),
+        );
+        if (!names.some((entry) => entry.toLowerCase() === personName.toLowerCase())) {
+          names.push(personName);
+        }
+        const drafted = sortSegments([
+          ...getSegmentsForSlot(dateKey, unitId, slotIndex).filter(isRealPersonSegment),
+          {
+            id: `self-${Date.now()}`,
+            assigneeType: "personnel" as const,
+            personnelName: personName,
+            startMinutes,
+            endMinutes,
+            source: "manual" as const,
+            overtime: false,
+          },
+        ]);
+        const covered = singleSegmentIfPersonCoversShift(
+          drafted,
+          shiftWindowStartMinutes,
+          shiftWindowEndMinutes,
+        );
+        unitSlots[slotIndex] = covered ? personName : serializeAssignedNames(names);
+        dayData[unitId] = unitSlots;
+        next[storageDateKey] = dayData;
+        saveScheduleAssignments(next);
+        return next;
+      });
+      setScheduleSlotSegments((previous) => {
+        const day = { ...(previous[storageDateKey] ?? {}) };
+        const unitRows = Array.isArray(day[unitId]) ? [...day[unitId]!] : [];
+        while (unitRows.length <= slotIndex) unitRows.push([]);
+        const existing = Array.isArray(unitRows[slotIndex]) ? unitRows[slotIndex]! : [];
+        const drafted = sortSegments([
+          ...existing.filter(isRealPersonSegment),
+          {
+            id: `self-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+            assigneeType: "personnel",
+            personnelName: personName,
+            startMinutes,
+            endMinutes,
+            source: "manual",
+            overtime: false,
+          },
+        ]);
+        const covered = singleSegmentIfPersonCoversShift(
+          drafted,
+          shiftWindowStartMinutes,
+          shiftWindowEndMinutes,
+        );
+        unitRows[slotIndex] = covered ?? drafted;
+        const next = { ...previous, [storageDateKey]: { ...day, [unitId]: unitRows } };
+        saveScheduleSlotSegments(next);
+        return next;
+      });
+      setLastScheduleAction(`Added ${personName} to the open time.`);
+      return true;
+    },
+    [
+      apparatusOverrideBlockMessage,
+      apparatusSeatQualificationMessage,
+      assertApparatusTimeOverlap,
+      effectiveShift,
+      getAssignmentsForDay,
+      getSegmentsForSlot,
+      isOvertimeEnabledForSlot,
+      limitedScheduleEditor,
+      openScheduleNotice,
+      pendingOverrides,
+      pushUndoSnapshot,
+      scheduleRows,
+      shiftWindowEndMinutes,
+      shiftWindowStartMinutes,
+      sortSegments,
+      viewerName,
+    ],
+  );
+  placeOpenTimeRef.current = (dateKey, unitId, slotIndex, startMinutes, endMinutes) =>
+    claimOpenTimeBlock(dateKey, unitId, slotIndex, startMinutes, endMinutes, true) === true;
 
   /** When only one segment remains (e.g. user deleted others), exit segment mode: one 24h slot + clear segment data. */
   const collapseSegmentModeToSingleSlot = useCallback(
@@ -2981,16 +3331,23 @@ export function PersonnelSchedulePage({
                       );
                     const coverageLines = getCoverageLines(dateKey, row.id);
                     const isTodayColumn = dateKey === toDateKey(new Date());
+                    const isFocusedSeat = Boolean(
+                      focusDateKey &&
+                        focusUnit &&
+                        dateKey === focusDateKey &&
+                        row.unitId === focusUnit,
+                    );
                     return (
                       <td
                         key={date.toISOString()}
+                        data-schedule-focus={isFocusedSeat ? "1" : undefined}
                         className={`personnel-schedule-day-block${
                           isTodayColumn ? " personnel-schedule-day-block-today" : ""
                         }${
                           blockHasQualificationGap
                             ? " personnel-schedule-day-block-invalid"
                             : ""
-                        }`}
+                        }${isFocusedSeat ? " personnel-schedule-day-block-focus" : ""}`}
                         onDoubleClick={() => {
                           if (!canEditSchedule) return;
                           setEditDayBlock({ date, dateKey });
@@ -3389,7 +3746,42 @@ export function PersonnelSchedulePage({
                                           ? formatScheduleSegmentToken(entry)
                                           : formatSchedulePersonnelDisplayName(entry);
                                       const isUnqualified = unqualifiedNames.has(entry.trim());
-                                      return (
+                                      const openBlockHasSomeoneElse = displaySegmentsForUi.some((other) => {
+                                        const otherName = other.personnelName.trim();
+                                        return (
+                                          otherName.length > 0 &&
+                                          !isOpenOrHireToken(otherName) &&
+                                          other.assigneeType !== "hire" &&
+                                          other.source !== "auto_hire"
+                                        );
+                                      });
+                                      const canClaimOpenBlock =
+                                        limitedScheduleEditor &&
+                                        isUnfilledSegment &&
+                                        !overtimeChecked &&
+                                        seg.endMinutes > seg.startMinutes &&
+                                        openBlockHasSomeoneElse;
+                                      return canClaimOpenBlock ? (
+                                        <button
+                                          type="button"
+                                          key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
+                                          className="personnel-schedule-open-token personnel-schedule-open-token-claim"
+                                          title="Add yourself to this open time"
+                                          onClick={(event) => {
+                                            event.stopPropagation();
+                                            claimOpenTimeBlock(
+                                              dateKey,
+                                              row.unitId,
+                                              slotIdx,
+                                              seg.startMinutes,
+                                              seg.endMinutes,
+                                            );
+                                          }}
+                                        >
+                                          {shownName}
+                                          {nameIndex < slotNames.length - 1 ? " / " : ""}
+                                        </button>
+                                      ) : (
                                         <span
                                           key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
                                           className={
