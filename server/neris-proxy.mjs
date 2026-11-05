@@ -4941,6 +4941,10 @@ app.post("/api/schedule-assignments", async (request, response) => {
     });
 
     if (!canSeeAllTrades(request.auth)) {
+      const fullNameMap = await getTenantUserFullNameMap(tenantId);
+      const requesterUsername = request.auth.username.toLowerCase();
+      const requesterName =
+        trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername;
       const details = await prisma.departmentDetails.findUnique({
         where: { tenantId },
         select: { payloadJson: true },
@@ -4987,8 +4991,18 @@ app.post("/api/schedule-assignments", async (request, response) => {
         }
         row.assignmentsJson.overtimeSplit =
           payload.overtimeSplit && typeof payload.overtimeSplit === "object" ? payload.overtimeSplit : {};
-        row.assignmentsJson.slotSegments =
+        const previousSegments =
           payload.slotSegments && typeof payload.slotSegments === "object" ? payload.slotSegments : {};
+        const mergedSegments = mergeLimitedUserSlotSegments(
+          previousSegments,
+          row.assignmentsJson.slotSegments,
+          requesterName,
+        );
+        if (!mergedSegments.ok) {
+          response.status(403).json({ ok: false, message: mergedSegments.message });
+          return;
+        }
+        row.assignmentsJson.slotSegments = mergedSegments.segments;
       }
     }
 
@@ -5036,6 +5050,122 @@ const TRADE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 function canSeeAllTrades(auth) {
   return roleLevel(auth?.role) >= roleLevel("subadmin");
+}
+
+function isFilledScheduleSegment(segment) {
+  if (!segment || typeof segment !== "object") return false;
+  const name = trimValue(String(segment.personnelName ?? ""));
+  const upper = name.toUpperCase();
+  if (!name || upper === "HIRE" || upper === "OPEN") return false;
+  if (segment.assigneeType === "hire" || segment.source === "auto_hire") return false;
+  const start = Number(segment.startMinutes);
+  const end = Number(segment.endMinutes);
+  return Number.isFinite(start) && Number.isFinite(end) && end > start;
+}
+
+function sameFilledSegment(left, right) {
+  return (
+    trimValue(String(left.personnelName ?? "")).toLowerCase() ===
+      trimValue(String(right.personnelName ?? "")).toLowerCase() &&
+    Number(left.startMinutes) === Number(right.startMinutes) &&
+    Number(left.endMinutes) === Number(right.endMinutes)
+  );
+}
+
+function scheduleSegmentsOverlap(left, right) {
+  return (
+    Math.max(Number(left.startMinutes), Number(right.startMinutes)) <
+    Math.min(Number(left.endMinutes), Number(right.endMinutes))
+  );
+}
+
+function segmentPersonName(segment) {
+  return trimValue(String(segment.personnelName ?? "")).toLowerCase();
+}
+
+function coverageIncludesSegment(coverSegments, target) {
+  const sorted = [...coverSegments].sort(
+    (left, right) => Number(left.startMinutes) - Number(right.startMinutes),
+  );
+  let cursor = Number(target.startMinutes);
+  const end = Number(target.endMinutes);
+  for (const segment of sorted) {
+    const start = Number(segment.startMinutes);
+    const segmentEnd = Number(segment.endMinutes);
+    if (segmentEnd <= cursor) continue;
+    if (start > cursor) return false;
+    cursor = segmentEnd;
+    if (cursor >= end) return true;
+  }
+  return cursor >= end;
+}
+
+/** A regular user may add only their own name into a time that was empty. They may also join their own pieces into one full shift. */
+function mergeLimitedUserSlotSegments(previousRaw, nextRaw, selfName) {
+  const self = trimValue(selfName).toLowerCase();
+  const filledSlots = (raw) => {
+    const map = new Map();
+    if (!raw || typeof raw !== "object") return map;
+    for (const [unitId, slots] of Object.entries(raw)) {
+      if (!Array.isArray(slots)) continue;
+      slots.forEach((segments, index) => {
+        const filled = (Array.isArray(segments) ? segments : []).filter(isFilledScheduleSegment);
+        if (filled.length > 0) map.set(`${unitId}::${index}`, { unitId, index, filled });
+      });
+    }
+    return map;
+  };
+  const previous = filledSlots(previousRaw);
+  const next = filledSlots(nextRaw);
+  const merged =
+    previousRaw && typeof previousRaw === "object" ? JSON.parse(JSON.stringify(previousRaw)) : {};
+  const keys = new Set([...previous.keys(), ...next.keys()]);
+  for (const key of keys) {
+    const prevSlot = previous.get(key);
+    const nextSlot = next.get(key);
+    const prevFilled = prevSlot?.filled ?? [];
+    const nextFilled = nextSlot?.filled ?? [];
+    const unitId = prevSlot?.unitId ?? nextSlot?.unitId;
+    const index = prevSlot?.index ?? nextSlot?.index;
+    const othersPrev = prevFilled.filter((segment) => segmentPersonName(segment) !== self);
+    const selfPrev = prevFilled.filter((segment) => segmentPersonName(segment) === self);
+    const othersNext = nextFilled.filter((segment) => segmentPersonName(segment) !== self);
+    const selfNext = nextFilled.filter((segment) => segmentPersonName(segment) === self);
+    if (
+      othersPrev.length !== othersNext.length ||
+      othersPrev.some((prevSeg) => !othersNext.some((segment) => sameFilledSegment(prevSeg, segment)))
+    ) {
+      return {
+        ok: false,
+        message: "You can fill an open time. You cannot change someone else's hours.",
+      };
+    }
+    if (selfPrev.some((prevSeg) => !coverageIncludesSegment(selfNext, prevSeg))) {
+      return {
+        ok: false,
+        message: "You can fill an open time. You cannot change someone else's hours.",
+      };
+    }
+    if (selfNext.some((segment) => othersPrev.some((other) => scheduleSegmentsOverlap(segment, other)))) {
+      return { ok: false, message: "That time is already filled." };
+    }
+    const selfUnchanged =
+      selfPrev.length === selfNext.length &&
+      selfPrev.every((prevSeg) => selfNext.some((segment) => sameFilledSegment(prevSeg, segment)));
+    if (selfUnchanged) continue;
+    if (!Array.isArray(merged[unitId])) merged[unitId] = [];
+    const slots = [...merged[unitId]];
+    while (slots.length <= index) slots.push([]);
+    slots[index] = [...othersNext, ...selfNext].map((segment) => ({
+      ...segment,
+      personnelName: trimValue(String(segment.personnelName ?? "")),
+      assigneeType: "personnel",
+      source: segment.source === "trade" ? "trade" : "manual",
+      overtime: segment.overtime === true,
+    }));
+    merged[unitId] = slots;
+  }
+  return { ok: true, segments: merged };
 }
 
 async function readTradeSettings(tenantId) {

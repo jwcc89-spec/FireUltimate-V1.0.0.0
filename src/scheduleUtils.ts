@@ -41,6 +41,23 @@ export function toDateKey(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** Ordinal suffix for a calendar day (1st, 2nd, 3rd, 4th, …). */
+export function dayOrdinalSuffix(day: number): string {
+  const n = Math.trunc(day);
+  const mod100 = n % 100;
+  if (mod100 >= 11 && mod100 <= 13) return "th";
+  switch (n % 10) {
+    case 1:
+      return "st";
+    case 2:
+      return "nd";
+    case 3:
+      return "rd";
+    default:
+      return "th";
+  }
+}
+
 export function getDatesForMonth(year: number, month: number): Date[] {
   const dates: Date[] = [];
   const daysInMonth = new Date(year, month + 1, 0).getDate();
@@ -48,6 +65,38 @@ export function getDatesForMonth(year: number, month: number): Date[] {
     dates.push(new Date(year, month, d));
   }
   return dates;
+}
+
+/** Sunday-start week containing the given local date. */
+export function startOfWeekSunday(d: Date): Date {
+  const date = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  date.setDate(date.getDate() - date.getDay());
+  return date;
+}
+
+/** Seven local dates Sunday through Saturday for the week containing d. */
+export function getDatesForWeekContaining(d: Date): Date[] {
+  const start = startOfWeekSunday(d);
+  return Array.from(
+    { length: 7 },
+    (_, index) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + index),
+  );
+}
+
+/** Example: Week of Nov 3–9 2026 */
+export function formatScheduleWeekNavLabel(d: Date): string {
+  const days = getDatesForWeekContaining(d);
+  const start = days[0]!;
+  const end = days[6]!;
+  const startMonth = start.toLocaleDateString("en-US", { month: "short" });
+  const endMonth = end.toLocaleDateString("en-US", { month: "short" });
+  if (start.getMonth() === end.getMonth() && start.getFullYear() === end.getFullYear()) {
+    return `Week of ${startMonth} ${start.getDate()}–${end.getDate()} ${end.getFullYear()}`;
+  }
+  if (start.getFullYear() === end.getFullYear()) {
+    return `Week of ${startMonth} ${start.getDate()}–${endMonth} ${end.getDate()} ${end.getFullYear()}`;
+  }
+  return `Week of ${startMonth} ${start.getDate()} ${start.getFullYear()}–${endMonth} ${end.getDate()} ${end.getFullYear()}`;
 }
 
 export function getShiftStartOffsetDays(shiftType: string): number {
@@ -267,6 +316,21 @@ export const QUALIFICATION_COLOR_OPTIONS = [
   { id: "gray", label: "Gray", hex: "#475569" },
 ] as const;
 
+/** Soft pill fills for schedule seats (strong hex stays for Admin swatches / text accents). */
+export const QUALIFICATION_COLOR_SOFT: Record<
+  (typeof QUALIFICATION_COLOR_OPTIONS)[number]["id"],
+  { backgroundColor: string; borderColor: string; color: string }
+> = {
+  red: { backgroundColor: "#fee2e2", borderColor: "#fecaca", color: "#991b1b" },
+  orange: { backgroundColor: "#ffedd5", borderColor: "#fed7aa", color: "#c2410c" },
+  gold: { backgroundColor: "#fef3c7", borderColor: "#fde68a", color: "#a16207" },
+  green: { backgroundColor: "#dcfce7", borderColor: "#bbf7d0", color: "#15803d" },
+  teal: { backgroundColor: "#ccfbf1", borderColor: "#99f6e4", color: "#0f766e" },
+  blue: { backgroundColor: "#dbeafe", borderColor: "#bfdbfe", color: "#1d4ed8" },
+  purple: { backgroundColor: "#f3e8ff", borderColor: "#e9d5ff", color: "#7e22ce" },
+  gray: { backgroundColor: "#e2e8f0", borderColor: "#cbd5e1", color: "#334155" },
+};
+
 export interface QualificationOverrideRule {
   enabled: boolean;
   lowerQualification: string;
@@ -301,6 +365,13 @@ export function parseQualificationColorMap(raw: unknown): Record<string, string>
 
 export function qualificationColorHex(colorId: string | undefined): string | undefined {
   return QUALIFICATION_COLOR_OPTIONS.find((choice) => choice.id === colorId)?.hex;
+}
+
+export function qualificationColorSoftStyle(
+  colorId: string | undefined,
+): { backgroundColor: string; borderColor: string; color: string } | undefined {
+  if (!colorId) return undefined;
+  return QUALIFICATION_COLOR_SOFT[colorId as keyof typeof QUALIFICATION_COLOR_SOFT];
 }
 
 export function buildQualificationRankMap(qualificationOrder: string[]): Map<string, number> {

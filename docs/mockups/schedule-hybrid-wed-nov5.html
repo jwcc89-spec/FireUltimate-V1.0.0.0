@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>FireUltimate — Schedule Hybrid Mockup (Wed Nov 5)</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --canvas: #edf2f8;
+      --text: #0f172a;
+      --muted: #64748b;
+      --border: #dbe2ec;
+      --chip-border: #cbd5e1;
+      --blue: #2563eb;
+      --blue-soft: #eff6ff;
+      --panel: #ffffff;
+      --sidebar-w: 268px;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; height: 100%; }
+    body {
+      font-family: Inter, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      background: var(--canvas);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .shell {
+      display: grid;
+      grid-template-columns: var(--sidebar-w) minmax(0, 1fr);
+      min-height: 100vh;
+      background: var(--canvas);
+    }
+
+    /* —— Sidebar (match FireUltimate shell) —— */
+    .sidebar {
+      background:
+        radial-gradient(circle at top, #1e293b 0%, #0f172a 52%),
+        #0f172a;
+      color: #cbd5e1;
+      padding: 0.95rem 0.8rem 1rem;
+      border-right: 1px solid #1f2937;
+    }
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 0.7rem;
+      padding: 0.75rem;
+      border: 1px solid #334155;
+      border-radius: 12px;
+      background: rgba(30, 41, 59, 0.64);
+      margin-bottom: 0.95rem;
+    }
+    .sidebar-logo {
+      width: 32px;
+      height: 32px;
+      border-radius: 9px;
+      display: grid;
+      place-items: center;
+      background: rgba(30, 64, 175, 0.32);
+      color: #93c5fd;
+      font-size: 0.72rem;
+      font-weight: 800;
+    }
+    .sidebar-brand strong {
+      display: block;
+      color: #f8fafc;
+      font-size: 0.84rem;
+      letter-spacing: 0.01em;
+    }
+    .sidebar-brand span {
+      color: #94a3b8;
+      font-size: 0.72rem;
+    }
+    .nav-link {
+      display: flex;
+      align-items: center;
+      gap: 0.55rem;
+      padding: 0.58rem 0.72rem;
+      border-radius: 10px;
+      color: #cbd5e1;
+      text-decoration: none;
+      font-size: 0.86rem;
+      font-weight: 600;
+      margin-bottom: 0.22rem;
+    }
+    .nav-link.active {
+      background: rgba(37, 99, 235, 0.38);
+      color: #fff;
+    }
+    .nav-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 99px;
+      background: #64748b;
+    }
+    .nav-link.active .nav-dot { background: #93c5fd; }
+
+    /* —— Main shell —— */
+    .main-shell { min-width: 0; display: flex; flex-direction: column; }
+    .topbar {
+      height: 52px;
+      background: #fff;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 1.1rem;
+    }
+    .breadcrumb {
+      color: var(--muted);
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .breadcrumb em {
+      font-style: normal;
+      color: var(--text);
+    }
+    .user-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 0.28rem 0.65rem 0.28rem 0.28rem;
+      background: #fff;
+      font-size: 0.78rem;
+      font-weight: 600;
+      color: #334155;
+    }
+    .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 99px;
+      background: #1e293b;
+      color: #e2e8f0;
+      display: grid;
+      place-items: center;
+      font-size: 0.65rem;
+      font-weight: 700;
+    }
+
+    .page-content { padding: 1rem 1.1rem 1.25rem; }
+
+    .page-header {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 1rem;
+      flex-wrap: wrap;
+      margin-bottom: 0.85rem;
+    }
+    .page-header h1 {
+      margin: 0;
+      font-size: clamp(1.22rem, 1.8vw, 1.55rem);
+      font-weight: 750;
+      letter-spacing: -0.02em;
+    }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+    }
+    .month-nav {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.22rem;
+    }
+    .month-nav button {
+      width: 30px;
+      height: 30px;
+      border: 0;
+      border-radius: 8px;
+      background: transparent;
+      color: #334155;
+      font-weight: 700;
+      cursor: default;
+    }
+    .month-label {
+      min-width: 132px;
+      text-align: center;
+      font-size: 0.84rem;
+      font-weight: 700;
+    }
+    .shift-select {
+      height: 36px;
+      border: 1px solid #cbd5e1;
+      border-radius: 10px;
+      padding: 0 0.7rem;
+      background: #fff;
+      font-size: 0.82rem;
+      font-weight: 600;
+      color: var(--text);
+    }
+    .btn {
+      height: 36px;
+      border-radius: 10px;
+      padding: 0 0.85rem;
+      font-size: 0.84rem;
+      font-weight: 700;
+      border: 1px solid #c6d0dd;
+      background: #fff;
+      color: var(--text);
+    }
+    .btn.primary {
+      background: var(--blue);
+      border-color: var(--blue);
+      color: #fff;
+    }
+
+    /* —— KPI strip —— */
+    .stat-grid {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.72rem;
+      margin-bottom: 0.9rem;
+    }
+    .stat-card {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 0.78rem 0.85rem;
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 0.5rem;
+      min-height: 76px;
+    }
+    .stat-card p {
+      margin: 0;
+      color: var(--muted);
+      font-size: 0.77rem;
+      font-weight: 600;
+    }
+    .stat-card strong {
+      display: block;
+      margin-top: 0.28rem;
+      font-size: 1.28rem;
+      letter-spacing: -0.02em;
+    }
+    .tone {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      font-size: 0.68rem;
+      font-weight: 750;
+      padding: 0.2rem 0.48rem;
+      white-space: nowrap;
+    }
+    .tone-warning { background: #fef3c7; color: #92400e; }
+    .tone-positive { background: #dcfce7; color: #166534; }
+    .tone-critical { background: #fee2e2; color: #991b1b; }
+    .tone-neutral { background: #e2e8f0; color: #334155; }
+    .stat-open strong { color: #c2410c; }
+    .stat-coverage strong { color: #166534; }
+    .stat-override strong { color: #991b1b; }
+
+    /* —— Schedule panel —— */
+    .panel {
+      background: #fff;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+    }
+
+    .schedule {
+      width: 100%;
+      border-collapse: separate;
+      border-spacing: 0;
+      table-layout: fixed;
+    }
+
+    .schedule col.label { width: 118px; }
+    .schedule col.day { width: calc((100% - 118px) / 5); }
+
+    .schedule th,
+    .schedule td {
+      border-right: 1px solid #e8eef5;
+      border-bottom: 1px solid #e8eef5;
+      vertical-align: top;
+      padding: 0.55rem 0.5rem;
+    }
+    .schedule th:last-child,
+    .schedule td:last-child { border-right: 0; }
+    .schedule tbody tr:last-child td { border-bottom: 0; }
+
+    .schedule thead th {
+      background: #f8fafc;
+      padding: 0.65rem 0.45rem 0.7rem;
+      text-align: center;
+    }
+
+    .row-label {
+      background: #f1f5f9;
+      font-weight: 700;
+      font-size: 0.8rem;
+      color: #334155;
+      text-align: center;
+      vertical-align: middle !important;
+      padding: 0.65rem 0.4rem !important;
+    }
+
+    .date-chip {
+      width: 72px;
+      margin: 0 auto;
+      border: 1.5px solid var(--chip-border);
+      border-radius: 10px;
+      background: #fff;
+      padding: 0.42rem 0.2rem 0.4rem;
+      line-height: 1.1;
+    }
+    .date-chip .dow {
+      display: block;
+      font-size: 0.68rem;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      color: #475569;
+    }
+    .date-chip .md {
+      display: block;
+      margin-top: 0.18rem;
+      font-size: 0.72rem;
+      font-weight: 750;
+      color: #334155;
+    }
+    .date-chip.today {
+      border-color: var(--blue);
+      background: var(--blue-soft);
+      box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+    }
+    .date-chip.today .dow,
+    .date-chip.today .md { color: var(--blue); }
+
+    td.today-col {
+      background: linear-gradient(180deg, rgba(239, 246, 255, 0.55), rgba(239, 246, 255, 0.18));
+    }
+
+    .cell-stack {
+      display: flex;
+      flex-direction: column;
+      gap: 0.28rem;
+      min-height: 2.4rem;
+    }
+
+    .pill {
+      display: block;
+      border-radius: 999px;
+      padding: 0.32rem 0.58rem;
+      font-size: 0.74rem;
+      font-weight: 700;
+      line-height: 1.2;
+      border: 1px solid transparent;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      text-align: center;
+    }
+
+    /* Qualification-ish colors (match mockup A palette) */
+    .pill-blue { background: #dbeafe; color: #1d4ed8; border-color: #bfdbfe; }
+    .pill-green { background: #dcfce7; color: #15803d; border-color: #bbf7d0; }
+    .pill-teal { background: #ccfbf1; color: #0f766e; border-color: #99f6e4; }
+    .pill-purple { background: #f3e8ff; color: #7e22ce; border-color: #e9d5ff; }
+    .pill-amber { background: #fef3c7; color: #a16207; border-color: #fde68a; }
+    .pill-slate { background: #e2e8f0; color: #334155; border-color: #cbd5e1; }
+    .pill-open { background: #fee2e2; color: #991b1b; border-color: #fecaca; }
+
+    .split-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.28rem;
+    }
+    .pill.split {
+      border-radius: 10px;
+      white-space: normal;
+      font-size: 0.66rem;
+      padding: 0.36rem 0.35rem;
+      line-height: 1.25;
+    }
+    .pill .time {
+      display: block;
+      font-weight: 650;
+      opacity: 0.9;
+      margin-top: 0.08rem;
+    }
+
+    .support-start td {
+      border-top: 2px solid #cbd5e1;
+    }
+  </style>
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-logo">FU</div>
+        <div>
+          <strong>FireUltimate</strong>
+          <span>Operations</span>
+        </div>
+      </div>
+      <a class="nav-link" href="#"><span class="nav-dot"></span>Dashboard</a>
+      <a class="nav-link active" href="#"><span class="nav-dot"></span>Personnel</a>
+      <a class="nav-link" href="#"><span class="nav-dot"></span>Apparatus</a>
+    </aside>
+
+    <div class="main-shell">
+      <div class="topbar">
+        <div class="breadcrumb">Personnel / <em>Schedule</em></div>
+        <div class="user-pill">
+          <span class="avatar">JW</span>
+          Ops Admin
+        </div>
+      </div>
+
+      <div class="page-content">
+        <header class="page-header">
+          <h1>Personnel Schedule</h1>
+          <div class="header-actions">
+            <div class="month-nav">
+              <button type="button" aria-label="Previous">‹</button>
+              <div class="month-label">November 2026</div>
+              <button type="button" aria-label="Next">›</button>
+            </div>
+            <select class="shift-select" aria-label="Shift">
+              <option>Weekday 12-Hour</option>
+            </select>
+            <button class="btn" type="button">Highlight Personnel</button>
+            <button class="btn" type="button">Undo</button>
+          </div>
+        </header>
+
+        <section class="stat-grid">
+          <article class="stat-card stat-open">
+            <div>
+              <p>Open Seats</p>
+              <strong>0</strong>
+            </div>
+            <span class="tone tone-warning">Staffed</span>
+          </article>
+          <article class="stat-card stat-coverage">
+            <div>
+              <p>Coverage</p>
+              <strong>100%</strong>
+            </div>
+            <span class="tone tone-positive">Good</span>
+          </article>
+          <article class="stat-card stat-override">
+            <div>
+              <p>Pending Overrides</p>
+              <strong>0</strong>
+            </div>
+            <span class="tone tone-critical">None</span>
+          </article>
+          <article class="stat-card">
+            <div>
+              <p>On Kelly Day</p>
+              <strong>0</strong>
+            </div>
+            <span class="tone tone-neutral">Today</span>
+          </article>
+        </section>
+
+        <section class="panel">
+          <table class="schedule">
+            <colgroup>
+              <col class="label" />
+              <col class="day" />
+              <col class="day" />
+              <col class="day" />
+              <col class="day" />
+              <col class="day" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th class="row-label"></th>
+                <th>
+                  <div class="date-chip">
+                    <span class="dow">MON</span>
+                    <span class="md">NOV 3</span>
+                  </div>
+                </th>
+                <th>
+                  <div class="date-chip">
+                    <span class="dow">TUE</span>
+                    <span class="md">NOV 4</span>
+                  </div>
+                </th>
+                <th>
+                  <div class="date-chip today">
+                    <span class="dow">WED</span>
+                    <span class="md">NOV 5</span>
+                  </div>
+                </th>
+                <th>
+                  <div class="date-chip">
+                    <span class="dow">THU</span>
+                    <span class="md">NOV 6</span>
+                  </div>
+                </th>
+                <th>
+                  <div class="date-chip">
+                    <span class="dow">FRI</span>
+                    <span class="md">NOV 7</span>
+                  </div>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="row-label">Engine 1</td>
+                <td></td>
+                <td></td>
+                <td class="today-col">
+                  <div class="cell-stack">
+                    <span class="pill pill-blue">J. Wichtner</span>
+                    <span class="pill pill-green">L. Leduc</span>
+                  </div>
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+              <tr>
+                <td class="row-label">Engine 2</td>
+                <td></td>
+                <td></td>
+                <td class="today-col">
+                  <div class="cell-stack">
+                    <span class="pill pill-teal">C. Wolf</span>
+                    <span class="pill pill-purple">T. Johnson</span>
+                  </div>
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+              <tr>
+                <td class="row-label">Medic 1</td>
+                <td></td>
+                <td></td>
+                <td class="today-col">
+                  <div class="cell-stack">
+                    <span class="pill pill-blue">M. Harnish</span>
+                    <div class="split-row">
+                      <span class="pill split pill-amber">T. Allen<span class="time">08:00–12:00</span></span>
+                      <span class="pill split pill-green">K. Smith<span class="time">12:00–20:00</span></span>
+                    </div>
+                  </div>
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+              <tr class="support-start">
+                <td class="row-label">Info</td>
+                <td></td>
+                <td></td>
+                <td class="today-col">
+                  <div class="split-row">
+                    <span class="pill split pill-amber">T. Allen<span class="time">08:00–12:00</span></span>
+                    <span class="pill split pill-green">K. Smith<span class="time">12:00–20:00</span></span>
+                  </div>
+                </td>
+                <td></td>
+                <td></td>
+              </tr>
+              <tr>
+                <td class="row-label">Vacation</td>
+                <td></td><td></td><td class="today-col"></td><td></td><td></td>
+              </tr>
+              <tr>
+                <td class="row-label">Kelly Day</td>
+                <td></td><td></td><td class="today-col"></td><td></td><td></td>
+              </tr>
+              <tr>
+                <td class="row-label">Sick</td>
+                <td></td><td></td><td class="today-col"></td><td></td><td></td>
+              </tr>
+              <tr>
+                <td class="row-label">Trades</td>
+                <td></td><td></td><td class="today-col"></td><td></td><td></td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
