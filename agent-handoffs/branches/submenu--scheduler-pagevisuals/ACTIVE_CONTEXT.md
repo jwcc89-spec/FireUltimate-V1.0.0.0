@@ -10,7 +10,7 @@
 - `submenu/scheduler-pagevisuals`
 
 ## Current focus
-- Personnel Schedule visual mockup pass, one piece at a time (canvas plan).
+- Personnel Schedule visual mockup plan is complete (November 5, 2026) and archived at `docs/completed/schedule-visual-mockup-plan.canvas.tsx`.
 
 ## Latest known status
 - Latest commit at branch tip when work started: `6efda0e` - Merge pull request #37 from jwcc89-spec/submenu/neris-golive-cifpd
@@ -20,10 +20,9 @@
 - Blue day highlight decision: default is real calendar today.
 
 ## Current blocker / status
-- Steps 18A–18D done November 5: week/month view + left label pills.
-- Parked later: admin label colors/icons; Injury/Sick row forces red person pills.
-- Next after your click-check: Step 17 KPI formulas, then cards.
-- Week is Sunday–Saturday, hides non-shift days, default week. Calendar icon toggles week/month.
+- Visual plan closed November 5, 2026. No next step on that plan.
+- B9 phone layout is its own parked plan: `docs/plans/canvases/schedule-mobile-plan.canvas.tsx`. Do not start it unless asked.
+- B11 qualification color palette is parked inside the archived visual plan. Do not start it unless asked.
 
 ## External dependency status
 - None.
@@ -33,6 +32,6 @@
 
 ## Next agent should do this first
 1. **Do now:** Read `cursoragent-context.md` and `.cursor/project-context.md`.
-2. **Do now:** Open [schedule-visual-mockup-plan.canvas.tsx](/Users/jeremywichtner/.cursor/projects/Users-jeremywichtner-CursorProjects-FireUltimate-V1-0-0-0/canvases/schedule-visual-mockup-plan.canvas.tsx) and start from the step marked **Next**.
-3. Stay on `submenu/scheduler-pagevisuals`. One visual piece per step. No schema/auth/trade logic.
-4. After each step: `npm run lint`; if TSX changed, `npm run build`; wait for user approval.
+2. **Do not restart** the visual mockup plan. It is archived at `docs/completed/schedule-visual-mockup-plan.canvas.tsx`.
+3. Stay on `submenu/scheduler-pagevisuals` unless the user names another branch.
+4. Phone layout and the color palette stay parked until the user asks.

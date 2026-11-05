@@ -1881,6 +1881,14 @@ app.use(async (request, response, next) => {
     ) {
       permission = null;
     }
+    if (permission === "schedule.edit") {
+      const scheduleMinimum = await minimumRoleFor(prisma, request.tenant.id, permission);
+      const scheduleAllowed =
+        scheduleMinimum != null && roleLevel(request.auth.role) >= roleLevel(scheduleMinimum);
+      request.scheduleSelfServeOnly = !scheduleAllowed;
+      next();
+      return;
+    }
     if (!permission) {
       next();
       return;
@@ -4940,7 +4948,7 @@ app.post("/api/schedule-assignments", async (request, response) => {
       select: { id: true, shiftType: true, dateKey: true, assignmentsJson: true },
     });
 
-    if (!canSeeAllTrades(request.auth)) {
+    if (!canSeeAllTrades(request.auth) || request.scheduleSelfServeOnly) {
       const fullNameMap = await getTenantUserFullNameMap(tenantId);
       const requesterUsername = request.auth.username.toLowerCase();
       const requesterName =

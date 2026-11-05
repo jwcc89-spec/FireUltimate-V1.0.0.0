@@ -1,5 +1,5 @@
 import {
-  Callout, Card, CardBody, CardHeader, Divider, H1, H2,
+  Callout, Card, CardBody, CardHeader, H1, H2,
   Pill, Row, Stack, Table, Text, useHostTheme, useState,
 } from "cursor/canvas";
 
@@ -237,11 +237,46 @@ const decided: [string, string, string][] = [
     "B1 leave-row pill color",
     "On Injury and Sick rows, filled person pills use the row red soft fill and ignore Admin qualification color. Other rows unchanged.",
   ],
-];
-
-const stillOpen: [string, string][] = [
-  ["B2 click-check", "In Scheduler Apparatus, set A51 to Medic + green and confirm the schedule left label updates."],
-  ["Plan B next step", "B3 slot spacing retry after B2 passes."],
+  [
+    "November 5, 2026",
+    "B3 slot spacing",
+    "Seat stack gap set to 0.28rem to match the hybrid mockup. Day-cell padding unchanged. Keep or revert after click-check.",
+  ],
+  [
+    "November 5, 2026",
+    "B4 split segment pills",
+    "Split seats render as separate mini-pills with name + 24-hour time. Flex wrap instead of a forced narrow two-column grid.",
+  ],
+  [
+    "November 5, 2026",
+    "Schedule self-serve vs Edit the schedule",
+    "Edit the schedule (admin only) controls the day block and changing other people. Every signed-in user can still fill an open spot and click their own name to request cancellation.",
+  ],
+  [
+    "November 5, 2026",
+    "B5 parked, B6 apparatus icons",
+    "Info and Trades cell styling stays. Apparatus icons are Fire truck, Ambulance, Fire (Maltese cross), and Medic (Star of Life). Info, Trades, and Injury icons stay.",
+  ],
+  [
+    "November 5, 2026",
+    "B7 closed, B8 day-block modal",
+    "Inline seat dropdown confirmed working. Day-block modal restyled to match schedule pills and date chips.",
+  ],
+  [
+    "November 5, 2026",
+    "Phone layout is a separate plan",
+    "B9 left this visual mockup plan. Continue it later in schedule-mobile-plan.canvas.tsx.",
+  ],
+  [
+    "November 5, 2026",
+    "B10 top bar",
+    "Initials circle with a settings arrow. Bell opens Dashboard alerts. Search box and department/date box removed. Sidebar unchanged. You confirmed it looks right.",
+  ],
+  [
+    "November 5, 2026",
+    "Plan closed",
+    "Visual mockup plan is complete. B9 phone layout stays in its own plan, schedule-mobile-plan.canvas.tsx. B11 qualification color palette is parked and not started.",
+  ],
 ];
 
 const planBStages: StageDef[] = [
@@ -304,42 +339,42 @@ const planBStages: StageDef[] = [
       {
         n: "B3",
         title: "Retry Step 7 slot spacing",
-        status: "Next",
+        status: "Done",
         problem: "Assigned names can still sit too tight compared with the mockup’s pill stack gap.",
         why: "A small gap makes stacked seats easier to scan without another big layout change.",
-        fix: "Try a gentler seat/stack gap than the first November 5 attempt. One CSS-only step. Revert if it looks wrong on Windows.",
-        who: "Me after you approve.",
-        done: "Seat stack spacing matches the mockup enough that you keep it.",
+        fix: "CSS-only: `.personnel-schedule-slots` gap 0.1rem → 0.28rem to match the hybrid mockup cell-stack. Day-cell padding left alone (gentler than the first full Step 7 try).",
+        who: "Me.",
+        done: "Stacked seats show the mockup gap. Waiting on your click-check; revert if Windows looks wrong.",
       },
       {
         n: "B4",
         title: "Retry Step 14 segment times on split pills",
-        status: "New",
+        status: "Done",
         problem: "Split seats still show dense name tokens; the mockup stacks name plus 24-hour time more clearly.",
         why: "Weekday 12-hour and trade segments need the time visible without crowding.",
-        fix: "Choose a better layout than the first try (no narrow wrap that broke the grid). Keep military time. One visual piece only.",
-        who: "Me after B3, and only after you pick the layout direction.",
-        done: "Split pills show name and 24-hour time clearly without breaking week or month view.",
+        fix: "When a seat has 2+ timed segments, drop the slash list. Render each segment as its own mini-pill with display name and 24-hour range. Flex wrap so two sit side-by-side when space allows and stack when the day column is narrow (avoids the first Step 14 grid break).",
+        who: "Me.",
+        done: "Split seats show separate pills with military times. Waiting on your click-check.",
       },
       {
         n: "B5",
         title: "Retry Step 16 Info and Trades chips",
-        status: "New",
+        status: "Updated",
         problem: "Info coverage lines and trade text still look like plain small text, not the pill system.",
         why: "Support rows should feel like the same visual language as apparatus seats.",
-        fix: "Restyle Info and Trades cell content as quiet chips. CSS-first. Revert if it fights the coverage lines.",
-        who: "Me after B4.",
-        done: "Info and Trades content read as soft chips without changing coverage math.",
+        fix: "Parked November 5. Info cells already use the light-gray sidebar pill. Trades text stays as it reads now.",
+        who: "You.",
+        done: "Parked. Do not restyle Info or Trades cell content unless you ask again.",
       },
       {
         n: "B6",
-        title: "Custom SVG icons on Info / Trades (optional)",
-        status: "New",
-        problem: "Generic icons may still feel weak after B5.",
-        why: "Only needed if the CSS chips are not enough.",
-        fix: "Replace Info and Trades label icons with small custom SVGs. Skip this step if B5 is enough.",
-        who: "Me only if you ask after B5.",
-        done: "Info and Trades icons match the mockup closely enough, or you decide to skip.",
+        title: "Apparatus icon set: ambulance, Maltese cross, Star of Life",
+        status: "Done",
+        problem: "Scheduler Apparatus only had a fire truck and a green medic box. Info and Trades icons were going to be replaced.",
+        why: "Departments need a fire truck, an ambulance, a fire cross, and a medic star. The existing Info, Trades, and Injury icons should stay.",
+        fix: "Picker order: Fire truck, Ambulance, Fire (Maltese cross), Medic (Star of Life), then Info, Trades, and Injury. The old green medic box is now the blue Star of Life. Info and Trades label icons are unchanged.",
+        who: "Me.",
+        done: "Admin can pick those icons on a scheduler apparatus and the schedule left label uses them. Waiting on your click-check.",
       },
     ],
   },
@@ -351,66 +386,58 @@ const planBStages: StageDef[] = [
       {
         n: "B7",
         title: "Fix inline seat dropdown assign",
-        status: "New",
+        status: "Done",
         problem: "Clicking a seat to pick someone from the small inline dropdown is broken on staging and production. The day-block modal still works.",
         why: "Admins expect to assign from the grid without opening the day block every time.",
-        fix: "Repair the inline select assign path only. Do not redesign the dropdown. Keep limited-user self-fill rules.",
-        who: "Me after the polish you want first, or sooner if you bump it ahead.",
-        done: "Choosing a person from the inline seat dropdown assigns them and saves, matching day-block behavior.",
+        fix: "No code change. You confirmed November 5 that the inline seat dropdown already works as expected.",
+        who: "You.",
+        done: "Closed as working. No repair needed right now.",
       },
     ],
   },
   {
     id: "L",
-    name: "Plan B Stage L — Day-block modal, then later surfaces",
-    summary: "Match the day editor after the grid looks right. Shell, mobile, and palette stay last.",
+    name: "Plan B Stage L — Day-block modal and top bar",
+    summary: "Day editor and top bar are done. Phone layout has its own plan. The color palette is parked.",
     steps: [
       {
         n: "B8",
         title: "Restyle the day-block modal",
-        status: "New",
+        status: "Done",
         problem: "The day-block editor still looks like the older dense UI while the grid now matches the mockup.",
         why: "Admins spend time in that modal; it should match the new pills and date chips.",
-        fix: "Restyle the day-block modal chrome and seat/segment presentation to match the grid. No assignment-rule changes in this step.",
-        who: "Me after the grid polish you want kept.",
-        done: "Opening a day block feels like the same visual system as the main schedule.",
+        fix: "CSS + light header markup only: soft modal panel, date-chip next to the title, pill-shaped seats and roster items, softer apparatus cards and segment cards. No assignment-rule changes.",
+        who: "Me.",
+        done: "Day block matches the grid. You confirmed the segment tray looks right on November 5.",
       },
       {
         n: "B9",
         title: "Mobile-specific schedule layout",
-        status: "New",
+        status: "Updated",
         problem: "Week and month views are desktop-first; phones still need sideways scanning.",
-        why: "Field users may need a readable phone layout later.",
-        fix: "Design a phone layout after desktop is stable. Do not squeeze the desktop grid.",
-        who: "Me later when you ask for mobile.",
-        done: "A phone schedule view is usable without breaking desktop week/month.",
+        why: "A phone layout is its own project, not another visual tweak on this plan.",
+        fix: "This step does not live here. It has its own plan: schedule-mobile-plan.canvas.tsx (repo copy docs/plans/canvases/schedule-mobile-plan.canvas.tsx). Do not build the phone layout from this visual plan.",
+        who: "You, when you ask to start that separate plan.",
+        done: "Moved out November 5, 2026. This visual plan is closed without it.",
       },
       {
         n: "B10",
         title: "App sidebar / topbar redesign",
-        status: "New",
-        problem: "The mockup shows a dark app shell and user avatar that the live app does not use.",
-        why: "That is shell chrome, not the Personnel Schedule page.",
-        fix: "Only touch App sidebar/topbar if you explicitly open an App-shell project. Stay out of it during schedule work.",
-        who: "Me only if you start a separate shell plan.",
-        done: "Either deferred forever for this plan, or completed under an App-shell plan you approve.",
-      },
-      {
-        n: "B11",
-        title: "Qualification color palette pass",
-        status: "New",
-        problem: "Departments may want a better default color set than the current Admin palette.",
-        why: "Pill fills are only as clear as the colors chosen in Admin Functions.",
-        fix: "Optional palette pass later. Until then, keep using colors already configured in Admin.",
-        who: "Me only if you ask for a palette redesign.",
-        done: "Either skipped, or Admin has an agreed clearer default palette.",
+        status: "Done",
+        problem: "The top bar showed a search box and a rectangle with the department name and date. Settings lived on a gear icon.",
+        why: "You asked for the initials circle, with the arrow as the settings menu, and for the bell to open dashboard alerts.",
+        fix: "November 5, 2026: removed the search box and the department box. Initials circle plus arrow opens Profile, Display, and Logout. Bell opens Dashboard and scrolls to Alerts. Dark sidebar was already the live shell and was left as-is. Role badge stays.",
+        who: "Me.",
+        done: "You confirmed the top bar looks right on November 5.",
       },
     ],
   },
 ];
 
 const parked: [string, string][] = [
-  ["See Plan B tab", "Parked follow-ups are now staged in Plan B (B1–B11). Use that tab instead of this list for order and status."],
+  ["B9 phone schedule layout", "Has its own plan: schedule-mobile-plan.canvas.tsx in docs/plans/canvases. Not part of this visual plan. Not started."],
+  ["B11 qualification color palette", "Parked November 5, 2026. Keep the colors already set in Admin Functions. Do not redesign the palette unless you ask later."],
+  ["B5 Info and Trades restyle", "Parked November 5. Info already uses the light-gray pill. Trades text stays as it reads now."],
 ];
 
 const safety: [string, string][] = [
@@ -469,17 +496,21 @@ export default function ScheduleVisualMockupPlan() {
   return (
     <Stack gap={16} style={{ padding: 16 }}>
       <Stack gap={6}>
-        <Text tone="secondary" size="small">Updated November 5, 2026 · midday · branch submenu/scheduler-pagevisuals · Plan B Step B2 done; next is B3</Text>
-        <H1>Personnel Schedule — visual mockup plan (one piece at a time)</H1>
+        <Text tone="secondary" size="small">Completed November 5, 2026 · branch submenu/scheduler-pagevisuals · archived in docs/completed</Text>
+        <H1>Personnel Schedule — visual mockup plan (complete)</H1>
         <Text>
-          Plan A brought the live Personnel Schedule to the hybrid mockup. Plan B stages the parked follow-ups in the same one-piece format.
+          Plan A and Plan B are done. Phone layout is a separate plan. The qualification color palette is parked.
           Reference: schedule-mockup-hybrid-a-layout-b-dates.jpg and docs/mockups/schedule-hybrid-wed-nov5.html.
         </Text>
         {nextStep ? (
           <Callout tone="info" title={`Next: Step ${nextStep.n} — ${nextStep.title}`}>
             {nextStep.fix}
           </Callout>
-        ) : null}
+        ) : (
+          <Callout tone="success" title="Plan complete">
+            Closed November 5, 2026. B9 continues only in schedule-mobile-plan. B11 stays parked.
+          </Callout>
+        )}
       </Stack>
 
       <Row gap={8} wrap>
@@ -498,8 +529,8 @@ export default function ScheduleVisualMockupPlan() {
       {tab === "Plan A" ? renderStages(theme, stages) : null}
       {tab === "Plan B" ? (
         <Stack gap={14}>
-          <Callout tone="info" title="Plan B order">
-            B1 Injury red override → B2 Admin label color/icon → B3–B6 polish retries → B7 inline seat bug → B8 day-block modal → B9–B11 later surfaces.
+          <Callout tone="success" title="Plan B closed">
+            B1 through B8 and B10 are done. B9 has its own plan, schedule-mobile-plan. B11 is parked. B5 stays parked.
           </Callout>
           {renderStages(theme, planBStages)}
         </Stack>
@@ -511,12 +542,6 @@ export default function ScheduleVisualMockupPlan() {
           <Table
             headers={["When", "Topic", "Decision"]}
             rows={decided}
-          />
-          <Divider />
-          <H2>Still open</H2>
-          <Table
-            headers={["Question", "Notes"]}
-            rows={stillOpen}
           />
         </Stack>
       ) : null}

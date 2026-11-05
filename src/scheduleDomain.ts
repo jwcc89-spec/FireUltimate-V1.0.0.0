@@ -43,7 +43,7 @@ export interface PersonnelScheduleData {
     maximumPersonnel: number;
     personnelRequirements: string[];
     station: string;
-    /** Schedule left-label icon: engine, medic, info, trades, sick. */
+    /** Schedule left-label icon: engine, ambulance, maltese, medic, info, trades, sick. */
     scheduleLabelIcon?: string;
     /** Schedule left-label soft color id from Admin color swatches. */
     scheduleLabelColor?: string;
