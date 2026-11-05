@@ -3,7 +3,7 @@
 Last updated: 2026-03-15
 Branch: `submenu/neris-golive-cifpd`
 
-This file is the March 2026 resume note. It is history. Current status as of 2026-11-01 is in `docs/plans/security-remediation-plan.md` and `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`. Stage B is on staging. Production is not updated. Do not treat the "production missing route" note below as the current production program.
+This file is the March 2026 resume note. It is history. Current status as of 2026-11-04 is in `docs/plans/security-remediation-plan.md`. Stage B is on staging and production (PR #37 / `6efda0e`). Stage C Fire Recovery code is on production with billing left off. Do not treat older "production not updated" sentences below as current.
 
 **Staging and deployment:** Staging is **\*.staging.fireultimate.app** (e.g. **cifpdil.staging.fireultimate.app**). It uses branch **`submenu/neris-golive-cifpd`** and is deployed via **Render**. When Render shows the latest commit (e.g. **462f6e2**) as deployed, that is what is running. For “commit before push” and “push” vs “redeploy on Render,” see **STAGING_AND_DEPLOYMENT.md**.
 

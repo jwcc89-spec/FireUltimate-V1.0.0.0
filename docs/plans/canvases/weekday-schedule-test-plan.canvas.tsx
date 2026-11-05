@@ -69,12 +69,12 @@ const stages: StageDef[] = [
     id: "C", name: "Stage C — Take it to the Watseka staging trial",
     summary: "Only after the local test passes.",
     steps: [
-      { n: "7", title: "Push to GitHub and test on watsekademo.staging.fireultimate.app", status: "Next",
+      { n: "7", title: "Push to GitHub and test on watsekademo.staging.fireultimate.app", status: "Done",
         problem: "Local testing cannot prove the change works on the real staging site.",
         why: "Every change passes on staging before production.",
         fix: "Commit, push, and release to staging under the repair plan's release rules, then repeat the key checks on the Watseka trial department.",
         who: "You, with guidance.",
-        done: "Started November 4. Backup branch backup-2026-11-04-before-weekday-schedule. The two new tables were added to the staging database and are empty. Code version b52c3a4 is being released to the staging site. Production is not updated. Done when the weekday schedule works on watsekademo.staging.fireultimate.app and Crescent's schedule is unchanged." },
+        done: "Passed November 4. Staging backup backup-2026-11-04-before-weekday-schedule; staging tip b52c3a4. Production backup backup-2026-11-04-before-production-weekday; PR #37 merged to main as 6efda0e. Crescent production: NERIS reports intact, schedule unused, trades visible. Fire Recovery left off." },
     ],
   },
   {
@@ -136,7 +136,7 @@ const stages: StageDef[] = [
         who: "Me.",
         done: "Passed November 4. Without Edit the schedule, a day click does nothing. Trades still work. Follow-up the same day: a user who may edit the schedule can fill an open seat or request to be taken off. They cannot remove someone else or change segments. A sub admin approves the cancellation." },
       { n: "16", title: "Pick a qualification for each seat in Scheduler Apparatus", status: "Done",
-        problem: "Admin Functions → Setup/Configuration → Scheduler Settings → Scheduler Apparatus lets each qualification be chosen only once. With a minimum of 2, an apparatus can require Paramedic and EMT-B but not two Paramedics or two EMT-Bs.",
+        problem: "Admin Functions → Scheduler Settings → Scheduler Apparatus lets each qualification be chosen only once. With a minimum of 2, an apparatus can require Paramedic and EMT-B but not two Paramedics or two EMT-Bs.",
         why: "Many apparatus require two people with the same qualification.",
         fix: "Show one qualification choice per seat (Seat 1, Seat 2, and so on, up to the minimum), and allow the same qualification on more than one seat. If only one qualification is chosen, every seat uses it. Saved in the existing scheduler settings (no database structure change). Apparatus saved before this change keep working.",
         who: "Me.",
@@ -211,6 +211,7 @@ const decided = [
   ["November 4, 2026", "Overtime length (Step 5)", "Closed. Standard Overtime Slot is a department setting in Overtime Setup. 24 hours is only the starting value."],
   ["November 4, 2026", "Re-test (Step 6)", "Closed. The Stage D tests covered segmenting, month and day views, trades, and overtime with no problems found."],
   ["November 4, 2026", "Weekday recurrence (Step 3)", "Weekday selection goes under Recurrence → Custom, so Monday–Friday can be chosen."],
+  ["November 4, 2026", "Menu path", "Scheduler Settings is Admin Functions → Scheduler Settings. It is not under Setup/Configuration. Setup/Configuration is a separate Admin Functions page."],
   ["November 4, 2026", "Rotation start (Step 4)", "Each shift can save an optional Rotation starts on date in the existing shift settings. That date is day one for every-other-day and every-N-days shifts. A blank date keeps the January 2026 A/B/C start. Selected weekdays ignore the date. Daily still shows every day."],
   ["November 4, 2026", "Custom recurrence layout (Step 3)", "Custom offers two choices: 'every N days' as today, or pick weekdays with Monday–Sunday checkboxes."],
   ["November 4, 2026", "Locked day block (Step 15)", "For a person without Edit the schedule, clicking a day block does nothing."],
@@ -350,11 +351,11 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 4, 2026, afternoon Chicago · Staging backup backup-2026-11-04-before-weekday-schedule · Tables added · Production is not updated</Text>
+        <Text size="small" tone="tertiary">Updated November 4, 2026, evening Chicago · Staging and production released · Fire Recovery billing stays off · Next optional: watsekafire.fireultimate.app</Text>
         <H1>Scheduling — weekday 12-hour department test</H1>
       </Stack>
-      <Callout tone="info" title="Next: click-test Watseka staging">
-        The staging backup is backup-2026-11-04-before-weekday-schedule. The trades table and the permission-request table are on the staging database and empty. Sign in at watsekademo.staging.fireultimate.app after the site finishes updating. Then open Crescent on staging and confirm the schedule still opens.
+      <Callout tone="info" title="Next: optional Watseka production hostname">
+        The weekday plan is complete through production (PR #37 / 6efda0e). Stage B security from November 1–2 is on production with billing left off. Scheduler Settings is Admin Functions → Scheduler Settings. When you want the Watseka demo on the live domain, create tenant watsekafire and wire watsekafire.fireultimate.app in Render and Cloudflare.
       </Callout>
       <Row gap={6} wrap>{tabs.map((t) => <Pill key={t} active={t === tab} onClick={() => setTab(t)}>{t}</Pill>)}</Row>
       <Divider />

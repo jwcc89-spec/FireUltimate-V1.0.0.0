@@ -564,3 +564,9 @@ Second independent post-remediation verification, 2026-11-01 (America/Chicago), 
 
 ### Still to verify on staging or at deployment
 Everything listed under the October 31 "Still to verify" list, plus each Part 2B staging check after fixes 11–14 are promoted, and fix 15's 403 check on each live environment after it is deployed.
+
+---
+
+## Appendix — historical correction (do not rewrite the freeze blocks above)
+
+**2026-11-04, evening America/Chicago:** Production received Stage B (November 1 security stack) and later staging work via PR #37 (`6efda0e` on `main`), including November 1–2 Stage C Fire Recovery *code* with billing left off (`FIRE_RECOVERY_MODE` unset). Production Neon backup: `backup-2026-11-04-before-production-weekday`. Production API build command: `npm ci --engine-strict=false && npm run build`. Live status and open work: `docs/plans/security-remediation-plan.md`. This appendix does not change the frozen 2026-11-01 narrative above.
