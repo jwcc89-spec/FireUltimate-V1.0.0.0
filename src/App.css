@@ -6239,6 +6239,12 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   padding: 0.08rem 0.2rem;
 }
 
+.personnel-schedule-slot-leave-red {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
 .personnel-schedule-slot-highlighted {
   background-color: #fef9c3;
   border-color: #facc15;
@@ -6254,6 +6260,65 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Info / text slots: match sidebar Info pill (light gray + black text), no nested box. */
+.personnel-schedule-slot-text {
+  background-color: #e2e8f0;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.personnel-schedule-slot-text .personnel-schedule-info-input {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-size: inherit;
+  line-height: inherit;
+  padding: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.personnel-schedule-slot-text .personnel-schedule-info-input::placeholder {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.personnel-schedule-slot-text .personnel-schedule-info-input:focus {
+  outline: none;
+}
+
+.personnel-schedule-modal-slot-text {
+  background-color: #e2e8f0;
+  border-color: #e2e8f0;
+  color: #0f172a;
+  border-radius: 999px;
+  cursor: text;
+}
+
+.personnel-schedule-modal-slot-text:hover {
+  background-color: #e2e8f0;
+}
+
+.personnel-schedule-modal-slot-text .personnel-schedule-info-input {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.personnel-schedule-modal-slot-text .personnel-schedule-info-input::placeholder {
+  color: #64748b;
+  font-weight: 600;
 }
 
 .personnel-schedule-coverage-info {
@@ -6336,6 +6401,42 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   flex: 0 0 15rem;
   width: 15rem;
   max-width: 50%;
+}
+
+.scheduler-apparatus-look-row {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.scheduler-apparatus-look-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.scheduler-apparatus-icon-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.scheduler-apparatus-icon-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.scheduler-apparatus-icon-choice-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
 }
 
 .trades-override-actions {

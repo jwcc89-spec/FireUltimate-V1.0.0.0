@@ -36,7 +36,10 @@ import {
   formatScheduleWeekNavLabel,
   formatSegmentCoverageLines,
   getHighestQualificationLabel,
+  guessScheduleRowIconFromName,
   parseQualificationColorMap,
+  parseScheduleRowColor,
+  parseScheduleRowIcon,
   qualificationColorHex,
   qualificationColorSoftStyle,
   getBestQualificationRankForPerson,
@@ -53,9 +56,11 @@ import {
   toDateKey,
   visibleAdditionalRowCount,
   withNextAdditionalRow,
+  type ScheduleRowIconId,
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
+import { ScheduleRowLabelIcon } from "./scheduleRowLabels";
 
 type QualificationOverrideRow = {
   id: string;
@@ -304,27 +309,16 @@ function computeCrossApparatusOverlapMessage(params: {
 }
 
 type ScheduleRowLabelTone =
-  | "engine"
-  | "medic"
-  | "info"
+  | ScheduleRowIconId
   | "kelly"
-  | "sick"
-  | "trades"
   | "vacation"
   | "support";
 
 function getScheduleRowLabelTone(row: PersonnelScheduleRow): ScheduleRowLabelTone {
   if (row.rowType === "apparatus") {
-    const label = row.label.toLowerCase();
-    if (
-      label.includes("medic") ||
-      label.includes("ambulance") ||
-      label.includes("ems") ||
-      label.includes("rescue")
-    ) {
-      return "medic";
-    }
-    return "engine";
+    const chosen = parseScheduleRowIcon(row.scheduleLabelIcon);
+    if (chosen) return chosen;
+    return guessScheduleRowIconFromName(row.label);
   }
   const id = row.id.toLowerCase();
   const label = row.label.toLowerCase();
@@ -337,35 +331,7 @@ function getScheduleRowLabelTone(row: PersonnelScheduleRow): ScheduleRowLabelTon
   return "support";
 }
 
-function ScheduleRowLabelIcon({ tone }: { tone: ScheduleRowLabelTone }) {
-  if (tone === "engine") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <rect x="2" y="7" width="10" height="5" rx="1" fill="#dc2626" />
-        <rect x="8" y="4" width="4" height="3" rx="0.5" fill="#b91c1c" />
-        <circle cx="5" cy="12" r="1.4" fill="#1e293b" />
-        <circle cx="11" cy="12" r="1.4" fill="#1e293b" />
-      </svg>
-    );
-  }
-  if (tone === "medic") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <rect x="2" y="3" width="12" height="10" rx="2" fill="#059669" />
-        <rect x="7" y="5" width="2" height="6" fill="#ffffff" />
-        <rect x="5" y="7" width="6" height="2" fill="#ffffff" />
-      </svg>
-    );
-  }
-  if (tone === "info") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <circle cx="8" cy="8" r="6" fill="none" stroke="#0f172a" strokeWidth="1.5" />
-        <circle cx="8" cy="5" r="1" fill="#0f172a" />
-        <rect x="7.2" y="7" width="1.6" height="5" rx="0.6" fill="#0f172a" />
-      </svg>
-    );
-  }
+function ScheduleRowLabelIconForTone({ tone }: { tone: ScheduleRowLabelTone }) {
   if (tone === "kelly" || tone === "vacation") {
     return (
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -374,34 +340,14 @@ function ScheduleRowLabelIcon({ tone }: { tone: ScheduleRowLabelTone }) {
       </svg>
     );
   }
-  if (tone === "sick") {
+  if (tone === "support") {
     return (
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <rect x="3" y="3" width="10" height="10" rx="2" fill="#dc2626" />
-        <rect x="7" y="5" width="2" height="6" fill="#ffffff" />
-        <rect x="5" y="7" width="6" height="2" fill="#ffffff" />
+        <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       </svg>
     );
   }
-  if (tone === "trades") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <path
-          d="M3 6h8M9 4l2 2-2 2M13 10H5M7 8l-2 2 2 2"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
+  return <ScheduleRowLabelIcon icon={tone} />;
 }
 
 interface PersonnelSchedulePageProps {
@@ -766,6 +712,8 @@ export function PersonnelSchedulePage({
           ? app.personnelRequirements.filter(Boolean)
           : [],
         stationName: app.station ?? "",
+        scheduleLabelIcon: parseScheduleRowIcon(app.scheduleLabelIcon) || undefined,
+        scheduleLabelColor: parseScheduleRowColor(app.scheduleLabelColor) || undefined,
       });
     });
 
@@ -3237,6 +3185,10 @@ export function PersonnelSchedulePage({
             ) : (
               scheduleRows.map((row) => {
                 const rowLabelTone = getScheduleRowLabelTone(row);
+                const customLabelColor =
+                  row.rowType === "apparatus"
+                    ? qualificationColorSoftStyle(parseScheduleRowColor(row.scheduleLabelColor))
+                    : undefined;
                 return (
                 <tr
                   key={row.id}
@@ -3251,11 +3203,23 @@ export function PersonnelSchedulePage({
                   }
                 >
                   <td
-                    className={`personnel-schedule-row-label personnel-schedule-row-label--${rowLabelTone}`}
+                    className={`personnel-schedule-row-label${
+                      customLabelColor ? "" : ` personnel-schedule-row-label--${rowLabelTone}`
+                    }`}
                   >
-                    <span className="personnel-schedule-row-label-pill">
+                    <span
+                      className="personnel-schedule-row-label-pill"
+                      style={
+                        customLabelColor
+                          ? {
+                              backgroundColor: customLabelColor.backgroundColor,
+                              color: customLabelColor.color,
+                            }
+                          : undefined
+                      }
+                    >
                       <span className="personnel-schedule-row-label-icon">
-                        <ScheduleRowLabelIcon tone={rowLabelTone} />
+                        <ScheduleRowLabelIconForTone tone={rowLabelTone} />
                       </span>
                       <span className="personnel-schedule-row-label-text">{row.label}</span>
                     </span>
@@ -3540,6 +3504,8 @@ export function PersonnelSchedulePage({
                                 !unqualifiedNames.has(entry.trim())
                               );
                             });
+                            const leaveRowOverridesPersonColor =
+                              row.rowType === "support" && rowLabelTone === "sick";
                             const softPillStyle =
                               !isTextRow &&
                               !isActiveInlineSelect &&
@@ -3547,7 +3513,13 @@ export function PersonnelSchedulePage({
                               !isHighlighted &&
                               !isRequiredInvalid &&
                               fillPersonName
-                                ? softStyleForPersonnelName(fillPersonName)
+                                ? leaveRowOverridesPersonColor
+                                  ? {
+                                      backgroundColor: "#fee2e2",
+                                      borderColor: "#fecaca",
+                                      color: "#991b1b",
+                                    }
+                                  : softStyleForPersonnelName(fillPersonName)
                                 : undefined;
                             const eligiblePeople = getEligibleShiftPersonnelForSlot(
                               dateKey,
@@ -3558,17 +3530,23 @@ export function PersonnelSchedulePage({
                             return (
                               <div
                                 key={slotIdx}
-                                className={`personnel-schedule-slot ${
+                                className={`personnel-schedule-slot${
+                                  isTextRow ? " personnel-schedule-slot-text" : ""
+                                }${
                                   isRed
-                                    ? "personnel-schedule-slot-required-empty"
+                                    ? " personnel-schedule-slot-required-empty"
                                     : ""
-                                } ${
+                                }${
                                   isHighlighted
-                                    ? "personnel-schedule-slot-highlighted"
+                                    ? " personnel-schedule-slot-highlighted"
                                     : ""
-                                } ${
+                                }${
                                   isRequiredInvalid
-                                    ? "personnel-schedule-slot-required-invalid"
+                                    ? " personnel-schedule-slot-required-invalid"
+                                    : ""
+                                }${
+                                  leaveRowOverridesPersonColor && softPillStyle
+                                    ? " personnel-schedule-slot-leave-red"
                                     : ""
                                 }`}
                                 style={softPillStyle}
