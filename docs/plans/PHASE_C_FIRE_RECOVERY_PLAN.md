@@ -1,9 +1,9 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 6 is done on the practice branch. Next is the operator's Wave 7 staging sandbox test, after this branch is merged to staging. Wave 5b still waits. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-02, late morning America/Chicago. Incident 12345 NERIS export succeeded (201 Created, 11:14:04). Wave 6 fake-vendor tests passed (44 tests). Staging promote and Wave 7 clicks are not done.
-**Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
-**Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
+**Status:** Waves 1–6 code is on staging and on production (2026-11-04 PR #37 / `6efda0e`). Billing is **not** live. Keep `FIRE_RECOVERY_MODE` unset. Do not create `FIRE_RECOVERY_CREDENTIAL_KEY` until Wave 7. Next is the operator's Wave 7 staging sandbox test. Wave 5b and vendor Q5 still wait.
+**Updated:** 2026-11-04, evening America/Chicago. Production received the Stage B security stack and Stage C Fire Recovery code with the weekday schedule promote. Crescent NERIS reports remain; no Fire Recovery bill was sent. Target date of November 2 for a real bill is superseded until Wave 7 passes.
+**Target:** one real Crescent motor-vehicle-incident bill from production, only after Wave 7 sandbox pass and Wave 8.
+**Branch:** practice notes on `cursor/stage-b-foundation-b5ff`. Live staging: `submenu/neris-golive-cifpd`. Live production: `main`.
 
 > **When this plan is complete:** move this file to `docs/plans/completed/PHASE_C_FIRE_RECOVERY_PLAN.md` (create the folder if it does not exist) using `git mv`. Then update every link to it (`agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`, `docs/task-2-multitenant-domain-plan.md`, the latest session note) and commit. "Complete" means §12's done list is fully checked and one real production bill has a tracking ID.
 
