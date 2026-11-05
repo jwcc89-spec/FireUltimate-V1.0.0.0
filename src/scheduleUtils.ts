@@ -316,10 +316,12 @@ export const QUALIFICATION_COLOR_OPTIONS = [
   { id: "gray", label: "Gray", hex: "#475569" },
 ] as const;
 
-export type ScheduleRowIconId = "engine" | "medic" | "info" | "trades" | "sick";
+export type ScheduleRowIconId = "engine" | "ambulance" | "maltese" | "medic" | "info" | "trades" | "sick";
 
 export const SCHEDULE_ROW_ICON_OPTIONS: Array<{ id: ScheduleRowIconId; label: string }> = [
   { id: "engine", label: "Fire truck" },
+  { id: "ambulance", label: "Ambulance" },
+  { id: "maltese", label: "Fire" },
   { id: "medic", label: "Medic" },
   { id: "info", label: "Info" },
   { id: "trades", label: "Trades" },
@@ -342,14 +344,8 @@ export function parseScheduleRowColor(raw: unknown): string {
 /** Name-only guess used when Admin has not picked an icon yet. */
 export function guessScheduleRowIconFromName(label: string): ScheduleRowIconId {
   const normalized = label.toLowerCase();
-  if (
-    normalized.includes("medic") ||
-    normalized.includes("ambulance") ||
-    normalized.includes("ems") ||
-    normalized.includes("rescue")
-  ) {
-    return "medic";
-  }
+  if (normalized.includes("ambulance")) return "ambulance";
+  if (normalized.includes("medic") || normalized.includes("ems")) return "medic";
   if (normalized.includes("info")) return "info";
   if (normalized.includes("trade")) return "trades";
   if (normalized.includes("sick") || normalized.includes("injur")) return "sick";

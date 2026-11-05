@@ -415,7 +415,9 @@ export function PersonnelSchedulePage({
   const [viewerIsReviewer, setViewerIsReviewer] = useState(false);
   const [viewerIsAdmin, setViewerIsAdmin] = useState(false);
   const navigate = useNavigate();
-  const limitedScheduleEditor = canEditSchedule && !viewerIsReviewer;
+  /** Day block and changing other people. Self-fill and own-name cancellation stay available without this. */
+  const canManageSchedule = canEditSchedule && viewerIsReviewer;
+  const limitedScheduleEditor = !canManageSchedule;
   const limitedEditorRef = useRef(false);
   limitedEditorRef.current = limitedScheduleEditor;
   const scheduleNoticeRef = useRef<(message: string) => void>(() => undefined);
@@ -615,7 +617,10 @@ export function PersonnelSchedulePage({
   }, [normalizeAdditionalFields, normalizeDepartmentDraft]);
 
   useEffect(() => {
-    if (!hasLoadedRemoteSchedule || !canEditSchedule) {
+    if (!hasLoadedRemoteSchedule) {
+      return;
+    }
+    if (!canEditSchedule && viewerName.trim().length === 0) {
       return;
     }
     const timeout = window.setTimeout(() => {
@@ -638,7 +643,7 @@ export function PersonnelSchedulePage({
         });
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [scheduleAssignments, scheduleOvertimeSplit, scheduleSlotSegments, hasLoadedRemoteSchedule, canEditSchedule]);
+  }, [scheduleAssignments, scheduleOvertimeSplit, scheduleSlotSegments, hasLoadedRemoteSchedule, canEditSchedule, viewerName]);
 
   const shiftOptions = useMemo(() => {
     const ordered = [...departmentData.shiftEntries].sort((a, b) => {
@@ -2251,6 +2256,36 @@ export function PersonnelSchedulePage({
     ],
   );
 
+  const promptSelfCancellation = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number) => {
+      const personName = viewerName.trim();
+      if (!personName) return;
+      const alreadyPending = pendingOverrides.some(
+        (item) =>
+          item.status === "pending" &&
+          item.requiredQualification === SEAT_REMOVAL &&
+          item.dateKey === dateKey &&
+          item.unitId === unitId &&
+          item.slotIndex === slotIndex &&
+          item.personName.trim().toLowerCase() === personName.toLowerCase(),
+      );
+      if (alreadyPending) {
+        openScheduleNotice("Your cancellation is already waiting for a sub admin.");
+        return;
+      }
+      setNoticeAction({
+        label: "Request cancellation",
+        run: () => {
+          void requestSeatRemoval(dateKey, unitId, slotIndex, personName);
+        },
+      });
+      setScheduleNotice(
+        "Taking yourself off this seat needs a sub admin to approve. You stay on the schedule until then.",
+      );
+    },
+    [openScheduleNotice, pendingOverrides, requestSeatRemoval, viewerName],
+  );
+
   const clearSlotValue = useCallback(
     (dateKey: string, unitId: string, slotIndex: number) => {
       if (limitedScheduleEditor) {
@@ -2264,15 +2299,7 @@ export function PersonnelSchedulePage({
           openScheduleNotice("You cannot remove someone else from the schedule.");
           return;
         }
-        setNoticeAction({
-          label: "Request cancellation",
-          run: () => {
-            void requestSeatRemoval(dateKey, unitId, slotIndex, names[0] ?? viewerName);
-          },
-        });
-        setScheduleNotice(
-          "Taking yourself off this seat needs a sub admin to approve. You stay on the schedule until then.",
-        );
+        promptSelfCancellation(dateKey, unitId, slotIndex);
         return;
       }
       pushUndoSnapshot("Clear slot");
@@ -2313,7 +2340,7 @@ export function PersonnelSchedulePage({
       viewerName,
       getAssignmentsForDay,
       openScheduleNotice,
-      requestSeatRemoval,
+      promptSelfCancellation,
     ],
   );
 
@@ -3506,8 +3533,10 @@ export function PersonnelSchedulePage({
                             });
                             const leaveRowOverridesPersonColor =
                               row.rowType === "support" && rowLabelTone === "sick";
+                            const isSplitSeatDisplay = displaySegmentsForUi.length > 1;
                             const softPillStyle =
                               !isTextRow &&
+                              !isSplitSeatDisplay &&
                               !isActiveInlineSelect &&
                               !isRed &&
                               !isHighlighted &&
@@ -3533,6 +3562,8 @@ export function PersonnelSchedulePage({
                                 className={`personnel-schedule-slot${
                                   isTextRow ? " personnel-schedule-slot-text" : ""
                                 }${
+                                  isSplitSeatDisplay ? " personnel-schedule-slot-split" : ""
+                                }${
                                   isRed
                                     ? " personnel-schedule-slot-required-empty"
                                     : ""
@@ -3551,7 +3582,7 @@ export function PersonnelSchedulePage({
                                 }`}
                                 style={softPillStyle}
                                 onClick={(event) => {
-                                  if (!canEditSchedule || isTextRow) return;
+                                  if (isTextRow) return;
                                   event.stopPropagation();
                                   const heldPartial = pendingOverrides.find(
                                     (item) =>
@@ -3592,6 +3623,14 @@ export function PersonnelSchedulePage({
                                     const self = viewerName.trim().toLowerCase();
                                     if (occupied.length === 1 && occupied[0]?.toLowerCase() === self) {
                                       clearSlotValue(dateKey, row.unitId, slotIdx);
+                                      return;
+                                    }
+                                    if (
+                                      isSplitSeatDisplay &&
+                                      self &&
+                                      occupied.some((entryName) => entryName.toLowerCase() === self)
+                                    ) {
+                                      promptSelfCancellation(dateKey, row.unitId, slotIdx);
                                       return;
                                     }
                                     openScheduleNotice("You can only add yourself to an open seat.");
@@ -3660,7 +3699,13 @@ export function PersonnelSchedulePage({
                                     ))}
                                   </select>
                                 ) : shownSlotNames.length > 0 ? (
-                                  <span className="personnel-schedule-slot-name-list">
+                                  <span
+                                    className={
+                                      isSplitSeatDisplay
+                                        ? "personnel-schedule-split-row"
+                                        : "personnel-schedule-slot-name-list"
+                                    }
+                                  >
                                     {(displaySegmentsForUi.length > 0
                                       ? displaySegmentsForUi
                                       : shownSlotNames.map((n) => ({
@@ -3720,9 +3765,21 @@ export function PersonnelSchedulePage({
                                         ? overtimeChecked
                                           ? "HIRE"
                                           : "OPEN"
-                                        : slotNames.length > 1
-                                          ? formatScheduleSegmentToken(entry)
-                                          : formatSchedulePersonnelDisplayName(entry);
+                                        : isSplitSeatDisplay
+                                          ? formatSchedulePersonnelDisplayName(entry)
+                                          : slotNames.length > 1
+                                            ? formatScheduleSegmentToken(entry)
+                                            : formatSchedulePersonnelDisplayName(entry);
+                                      const timeLabel =
+                                        isSplitSeatDisplay && seg.endMinutes > seg.startMinutes
+                                          ? `${minutesToTimeValue(seg.startMinutes)}–${minutesToTimeValue(seg.endMinutes)}`
+                                          : "";
+                                      const statusSuffix =
+                                        isPendingSeat || isPartialPending
+                                          ? " (Pending)"
+                                          : isCancelPending
+                                            ? " (Cancel pending)"
+                                            : "";
                                       const isUnqualified = unqualifiedNames.has(entry.trim());
                                       const openBlockHasSomeoneElse = displaySegmentsForUi.some((other) => {
                                         const otherName = other.personnelName.trim();
@@ -3739,6 +3796,104 @@ export function PersonnelSchedulePage({
                                         !overtimeChecked &&
                                         seg.endMinutes > seg.startMinutes &&
                                         openBlockHasSomeoneElse;
+                                      const segmentSoftStyle =
+                                        isSplitSeatDisplay &&
+                                        !isUnfilledSegment &&
+                                        !isUnqualified &&
+                                        !isHighlighted &&
+                                        !isRequiredInvalid
+                                          ? leaveRowOverridesPersonColor
+                                            ? {
+                                                backgroundColor: "#fee2e2",
+                                                borderColor: "#fecaca",
+                                                color: "#991b1b",
+                                              }
+                                            : softStyleForPersonnelName(entry)
+                                          : undefined;
+                                      if (isSplitSeatDisplay) {
+                                        const splitClassName = [
+                                          "personnel-schedule-segment-pill",
+                                          isUnfilledSegment && overtimeChecked
+                                            ? "personnel-schedule-segment-pill-hire"
+                                            : "",
+                                          isUnfilledSegment && !overtimeChecked
+                                            ? "personnel-schedule-segment-pill-open"
+                                            : "",
+                                          isUnqualified ? "personnel-schedule-segment-pill-unqualified" : "",
+                                          isOffShiftInOtSlot ? "personnel-schedule-segment-pill-off-shift" : "",
+                                          canClaimOpenBlock ? "personnel-schedule-segment-pill-claim" : "",
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" ");
+                                        const splitBody = (
+                                          <>
+                                            <span className="personnel-schedule-segment-pill-name">
+                                              {`${shownName}${statusSuffix}`}
+                                            </span>
+                                            {timeLabel ? (
+                                              <span className="personnel-schedule-segment-pill-time">
+                                                {timeLabel}
+                                              </span>
+                                            ) : null}
+                                          </>
+                                        );
+                                        const selfName = viewerName.trim().toLowerCase();
+                                        const isOwnSegment =
+                                          !isUnfilledSegment &&
+                                          selfName.length > 0 &&
+                                          entry.trim().toLowerCase() === selfName;
+                                        return canClaimOpenBlock ? (
+                                          <button
+                                            type="button"
+                                            key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
+                                            className={splitClassName}
+                                            style={segmentSoftStyle}
+                                            title="Add yourself to this open time"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              claimOpenTimeBlock(
+                                                dateKey,
+                                                row.unitId,
+                                                slotIdx,
+                                                seg.startMinutes,
+                                                seg.endMinutes,
+                                              );
+                                            }}
+                                          >
+                                            {splitBody}
+                                          </button>
+                                        ) : (
+                                          <span
+                                            key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
+                                            className={`${splitClassName}${
+                                              limitedScheduleEditor && isOwnSegment
+                                                ? " personnel-schedule-segment-pill-self"
+                                                : ""
+                                            }`}
+                                            style={segmentSoftStyle}
+                                            onClick={
+                                              limitedScheduleEditor && !isUnfilledSegment
+                                                ? (event) => {
+                                                    event.stopPropagation();
+                                                    if (isOwnSegment) {
+                                                      promptSelfCancellation(
+                                                        dateKey,
+                                                        row.unitId,
+                                                        slotIdx,
+                                                      );
+                                                      return;
+                                                    }
+                                                    openScheduleNotice(
+                                                      "You cannot remove someone else from the schedule.",
+                                                    );
+                                                  }
+                                                : undefined
+                                            }
+                                          >
+                                            {splitBody}
+                                          </span>
+                                        );
+                                      }
                                       return canClaimOpenBlock ? (
                                         <button
                                           type="button"
@@ -3783,11 +3938,7 @@ export function PersonnelSchedulePage({
                                                 : undefined
                                           }
                                         >
-                                          {isPendingSeat || isPartialPending
-                                            ? `${shownName} (Pending)`
-                                            : isCancelPending
-                                              ? `${shownName} (Cancel pending)`
-                                              : shownName}
+                                          {`${shownName}${statusSuffix}`}
                                           {nameIndex < slotNames.length - 1 ? " / " : ""}
                                         </span>
                                       );

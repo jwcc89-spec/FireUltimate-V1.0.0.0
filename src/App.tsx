@@ -18,7 +18,6 @@ import {
   LogOut,
   Menu,
   Palette,
-  Search,
   Settings,
   Shield,
   ShieldCheck,
@@ -3252,10 +3251,21 @@ function AuthPage({ onLogin }: AuthPageProps) {
   );
 }
 
+function sessionInitials(username: string): string {
+  const parts = username
+    .trim()
+    .split(/[^A-Za-z0-9]+/)
+    .filter((part) => part.length > 0);
+  if (parts.length >= 2) {
+    return `${parts[0]?.[0] ?? ""}${parts[1]?.[0] ?? ""}`.toUpperCase();
+  }
+  const word = parts[0] ?? "";
+  return word.slice(0, 2).toUpperCase() || "?";
+}
+
 function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
   const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
     readShellSidebarWidth(),
   );
@@ -3292,15 +3302,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     [location.pathname],
   );
   const schedulerEnabled = readSchedulerEnabledFromDraft();
-  const dateLabel = useMemo(
-    () =>
-      new Intl.DateTimeFormat("en-US", {
-        weekday: "short",
-        month: "short",
-        day: "numeric",
-      }).format(new Date()),
-    [],
-  );
+  const accountInitials = sessionInitials(session.username);
 
   const breadcrumb = useMemo(() => {
     const path = normalizePath(location.pathname);
@@ -3584,17 +3586,21 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
           </div>
 
           <div className="topbar-right">
-            <label className="search-field">
-              <Search size={15} />
-              <input
-                type="search"
-                placeholder="Search calls, units, reports..."
-                value={searchQuery}
-                onChange={(event) => setSearchQuery(event.target.value)}
-              />
-            </label>
-
-            <button type="button" className="icon-button" aria-label="Notifications">
+            <button
+              type="button"
+              className="icon-button"
+              aria-label="Alerts"
+              onClick={() => {
+                if (normalizePath(location.pathname) === "/dashboard") {
+                  document.getElementById("dashboard-alerts")?.scrollIntoView({
+                    behavior: "smooth",
+                    block: "start",
+                  });
+                  return;
+                }
+                navigate("/dashboard", { state: { focusAlerts: true } });
+              }}
+            >
               <Bell size={16} />
             </button>
 
@@ -3606,24 +3612,19 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                   : "User"}
             </span>
 
-            <div className="user-pill">
-              <UserRound size={15} />
-              <div>
-                <strong>{session.unit}</strong>
-                <span>
-                  Fire Dept {session.username} | {dateLabel}
-                </span>
-              </div>
-            </div>
-
-            <div className="settings-wrap">
+            <div className="settings-wrap topbar-account">
               <button
                 type="button"
-                className="icon-button"
-                aria-label="Settings"
+                className="topbar-account-button"
+                aria-label={`Settings for ${session.username}`}
+                aria-expanded={settingsOpen}
+                aria-haspopup="menu"
                 onClick={() => setSettingsOpen((previous) => !previous)}
               >
-                <Settings size={16} />
+                <span className="topbar-avatar" aria-hidden>
+                  {accountInitials}
+                </span>
+                <ChevronDown size={16} className="topbar-account-chevron" />
               </button>
 
               {settingsOpen ? (
@@ -3930,7 +3931,7 @@ function formatAlertDate(value: string): string {
   return match ? `${match[2]}-${match[3]}-${match[1].slice(2)}` : value;
 }
 
-function DashboardAttentionAlerts() {
+function DashboardAttentionAlerts({ anchorId }: { anchorId?: string }) {
   const [alerts, setAlerts] = useState<
     Array<{ id: string; personName: string; apparatus: string; dateKey: string; requiredQualification: string }>
   >([]);
@@ -3949,7 +3950,7 @@ function DashboardAttentionAlerts() {
   }, []);
   if (alerts.length === 0) return null;
   return (
-    <article className="panel dashboard-attention-alerts">
+    <article id={anchorId} className="panel dashboard-attention-alerts">
       <h2>Alerts</h2>
       <ul>
         {alerts.map((alert) => (
@@ -3973,6 +3974,7 @@ function DashboardAttentionAlerts() {
 }
 
 function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
+  const location = useLocation();
   const dashboardMenu = getMainMenuById("dashboard");
   const [widgetEditorOpen, setWidgetEditorOpen] = useState(false);
   const [hiddenWidgets, setHiddenWidgets] = useState<DashboardWidgetId[]>(() =>
@@ -3985,6 +3987,15 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   });
   const showPriorityShortcuts = !hiddenWidgetSet.has("priority-shortcuts");
   const showLiveAlerts = !hiddenWidgetSet.has("live-alerts");
+
+  useEffect(() => {
+    const state = location.state as { focusAlerts?: boolean } | null;
+    if (!state?.focusAlerts) return;
+    document.getElementById("dashboard-alerts")?.scrollIntoView({
+      behavior: "smooth",
+      block: "start",
+    });
+  }, [location.state]);
 
   const toggleDashboardWidget = (id: DashboardWidgetId) => {
     setHiddenWidgets((previous) => {
@@ -4090,7 +4101,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
         ) : null}
 
         {showLiveAlerts ? (
-        <article className="panel">
+        <article className="panel" id="dashboard-alerts">
           <div className="panel-header">
             <h2>Live Alerts</h2>
             <span className="panel-caption">Most recent operational notices</span>
@@ -4111,7 +4122,7 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
       </section>
       ) : null}
 
-      <DashboardAttentionAlerts />
+      <DashboardAttentionAlerts anchorId={showLiveAlerts ? undefined : "dashboard-alerts"} />
       {dashboardMenu ? (
         <MenuDisplayCards
           menu={dashboardMenu}
