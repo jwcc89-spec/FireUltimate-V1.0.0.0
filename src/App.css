@@ -2273,6 +2273,14 @@ tbody tr:last-of-type td {
   font-weight: 700;
 }
 
+.trades-override-row-link {
+  cursor: pointer;
+}
+
+.personnel-schedule-day-block-focus {
+  box-shadow: inset 0 0 0 3px #2563eb;
+}
+
 .dashboard-attention-alerts ul {
   margin: 0;
   padding-left: 1.1rem;
@@ -6386,6 +6394,18 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   color: #991b1b;
   font-weight: 700;
   text-transform: uppercase;
+}
+
+button.personnel-schedule-open-token-claim {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: #991b1b;
+  font-weight: 700;
+  text-transform: uppercase;
+  cursor: pointer;
 }
 
 .personnel-schedule-slot:has(.personnel-schedule-open-token):not(

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useLocation } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
 import { shiftOccursOnDate, toDateKey, type ScheduleShiftEntryLike } from "./scheduleUtils";
 
@@ -159,6 +159,7 @@ function datesFromToday(entry: ScheduleShiftEntryLike & { shiftType: string }, m
 
 export function PersonnelTradesPage() {
   const location = useLocation();
+  const navigate = useNavigate();
   const activeRequestsRef = useRef<HTMLElement | null>(null);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [canSeeAll, setCanSeeAll] = useState(false);
@@ -184,6 +185,7 @@ export function PersonnelTradesPage() {
       id: string;
       personName: string;
       apparatus: string;
+      unitId: string;
       dateKey: string;
       requiredQualification: string;
       shiftType: string;
@@ -228,6 +230,7 @@ export function PersonnelTradesPage() {
         id: string;
         personName: string;
         apparatus: string;
+        unitId: string;
         dateKey: string;
         requiredQualification: string;
         shiftType: string;
@@ -631,7 +634,20 @@ export function PersonnelTradesPage() {
               </thead>
               <tbody>
                 {overrideRequests.map((request, index) => (
-                  <tr key={`override-${request.id}`} className="trades-override-row" style={{ top: `${index * 2.6}rem` }}>
+                  <tr
+                    key={`override-${request.id}`}
+                    className="trades-override-row trades-override-row-link"
+                    style={{ top: `${index * 2.6}rem` }}
+                    title="Show this request on the schedule"
+                    onClick={() => {
+                      const params = new URLSearchParams();
+                      if (request.dateKey) params.set("date", request.dateKey);
+                      if (request.shiftType) params.set("shift", request.shiftType);
+                      const unit = request.unitId || request.apparatus;
+                      if (unit) params.set("unit", unit);
+                      navigate(`/personnel/schedule?${params.toString()}`);
+                    }}
+                  >
                     <td>{`* ${request.shiftType || "—"}`}</td>
                     <td>{request.personName}</td>
                     <td>{request.apparatus || "—"}</td>
@@ -653,13 +669,21 @@ export function PersonnelTradesPage() {
                     <td>Pending</td>
                     <td>
                       <div className="trades-override-actions">
-                        <button type="button" className="primary-button compact-button" onClick={() => void answerOverride(request.id, "approve")}>
+                        <button
+                          type="button"
+                          className="primary-button compact-button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void answerOverride(request.id, "approve");
+                          }}
+                        >
                           Approve
                         </button>
                         <button
                           type="button"
                           className="secondary-button compact-button"
-                          onClick={() => {
+                          onClick={(event) => {
+                            event.stopPropagation();
                             setDenyPromptId(request.id);
                             setDenyPromptReason("");
                             setDenyPromptError("");
