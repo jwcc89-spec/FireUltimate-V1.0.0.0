@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import {
   getSlotCountForApparatus,
   isOverrideSupportPersonnelRow,
@@ -111,7 +112,7 @@ function pinOverrideSeats(
   }
   return next;
 }
-import { hasAtLeastRole } from "./roleHierarchy";
+import { hasAtLeastRole, isAdminOrHigher } from "./roleHierarchy";
 import { useMyPermissions } from "./useMyPermissions";
 
 const SEAT_REMOVAL = "Remove from seat";
@@ -119,6 +120,18 @@ const PARTIAL_SHIFT = "Partial shift ";
 
 function isHeldQualification(value: string): boolean {
   return value !== SEAT_REMOVAL && !value.startsWith(PARTIAL_SHIFT);
+}
+
+function isOpenOrHireToken(name: string): boolean {
+  const normalized = name.trim().toUpperCase();
+  return normalized === "OPEN" || normalized === "HIRE";
+}
+
+function seatNamesIncludeRealPerson(names: string[]): boolean {
+  return names.some((name) => {
+    const trimmed = name.trim();
+    return trimmed.length > 0 && !isOpenOrHireToken(trimmed);
+  });
 }
 
 function militaryToClock(raw: string): string | null {
@@ -400,6 +413,8 @@ export function PersonnelSchedulePage({
   const canEditSchedule = permissionGrants?.["schedule.edit"] === true;
   const [viewerName, setViewerName] = useState("");
   const [viewerIsReviewer, setViewerIsReviewer] = useState(false);
+  const [viewerIsAdmin, setViewerIsAdmin] = useState(false);
+  const navigate = useNavigate();
   const limitedScheduleEditor = canEditSchedule && !viewerIsReviewer;
   const limitedEditorRef = useRef(false);
   limitedEditorRef.current = limitedScheduleEditor;
@@ -1158,6 +1173,7 @@ export function PersonnelSchedulePage({
         if (!active || !json?.ok || !json.user) return;
         setViewerName(String(json.user.name ?? "").trim());
         setViewerIsReviewer(hasAtLeastRole(json.user.role, "subadmin"));
+        setViewerIsAdmin(isAdminOrHigher(json.user.role));
       })
       .catch(() => undefined);
     return () => {
@@ -2460,6 +2476,109 @@ export function PersonnelSchedulePage({
     [departmentData.overtimeSummaryTarget, departmentData.segmentSummaryTarget, getSegmentsForSlot, isOvertimeEnabledForSlot, scheduleRows],
   );
 
+  /** Step 17 KPIs — all counts use the dates currently on screen (week or month). */
+  const scheduleKpis = useMemo(() => {
+    const visibleDateKeys = new Set(displayDates.map((date) => toDateKey(date)));
+    let requiredSeats = 0;
+    let openSeats = 0;
+    let kellyOn = 0;
+
+    for (const date of displayDates) {
+      const dateKey = toDateKey(date);
+      for (const row of scheduleRows) {
+        if (row.rowType === "apparatus" && row.minimumPersonnel > 0) {
+          const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+          for (let slotIdx = 0; slotIdx < row.minimumPersonnel; slotIdx += 1) {
+            requiredSeats += 1;
+            const name = slots[slotIdx] ?? "";
+            const segmentModeEnabled = isOvertimeEnabledForSlot(
+              dateKey,
+              row.unitId,
+              slotIdx,
+            );
+            const storedSegments = getSegmentsForSlot(dateKey, row.unitId, slotIdx);
+            const hasSegmentPersonnel =
+              segmentModeEnabled &&
+              storedSegments.some(
+                (segment) =>
+                  segment.source !== "auto_hire" &&
+                  seatNamesIncludeRealPerson([segment.personnelName]),
+              );
+            const pendingPartialNames = pendingOverrides
+              .filter(
+                (item) =>
+                  item.status === "pending" &&
+                  item.requiredQualification.startsWith(PARTIAL_SHIFT) &&
+                  item.dateKey === dateKey &&
+                  item.unitId === row.unitId &&
+                  item.slotIndex === slotIdx,
+              )
+              .map((item) => item.personName.trim())
+              .filter(Boolean);
+            const slotNames = parseAssignedNames(name);
+            const hasRealPerson =
+              seatNamesIncludeRealPerson(slotNames) ||
+              hasSegmentPersonnel ||
+              seatNamesIncludeRealPerson(pendingPartialNames);
+            if (!hasRealPerson) {
+              openSeats += 1;
+            }
+          }
+        }
+
+        if (row.unitId === "support-kelly-day") {
+          const slots = getAssignmentsForDay(
+            dateKey,
+            row.unitId,
+            row.maximumRows ?? row.slotCount,
+            true,
+            false,
+          );
+          const visibleCount = visibleAdditionalRowCount(
+            slots,
+            row.rowsVisible ?? 1,
+            row.maximumRows ?? row.slotCount,
+          );
+          for (const slotValue of slots.slice(0, visibleCount)) {
+            parseAssignedNames(slotValue).forEach((personName) => {
+              if (personName.trim() && !isOpenOrHireToken(personName)) {
+                kellyOn += 1;
+              }
+            });
+          }
+        }
+      }
+    }
+
+    const filledSeats = Math.max(0, requiredSeats - openSeats);
+    const coveragePercent =
+      requiredSeats === 0 ? 100 : Math.round((filledSeats / requiredSeats) * 100);
+    const pendingOverrideCount = pendingOverrides.filter(
+      (item) =>
+        item.status === "pending" &&
+        visibleDateKeys.has(item.dateKey) &&
+        (!item.shiftType || item.shiftType === effectiveShift),
+    ).length;
+
+    const kellyRowVisible = scheduleRows.some((row) => row.unitId === "support-kelly-day");
+
+    return {
+      openSeats,
+      coveragePercent,
+      pendingOverrideCount,
+      kellyOn,
+      kellyRowVisible,
+    };
+  }, [
+    displayDates,
+    effectiveShift,
+    getAssignmentsForDay,
+    getSegmentsForSlot,
+    isOvertimeEnabledForSlot,
+    pendingOverrides,
+    scheduleRows,
+  ]);
+
   if (isLoading && departmentData.personnel.length === 0) {
     return (
       <section className="page-section">
@@ -2619,6 +2738,92 @@ export function PersonnelSchedulePage({
           </small>
         </div>
       </header>
+
+      <section
+        className={`personnel-schedule-kpi-grid${
+          scheduleKpis.kellyRowVisible ? "" : " personnel-schedule-kpi-grid--three"
+        }`}
+        aria-label="Schedule summary"
+      >
+        <article className="personnel-schedule-kpi-card personnel-schedule-kpi-open">
+          <div>
+            <p>Open Seats</p>
+            <strong>{scheduleKpis.openSeats}</strong>
+          </div>
+          <span
+            className={`personnel-schedule-kpi-tone ${
+              scheduleKpis.openSeats === 0
+                ? "personnel-schedule-kpi-tone-warning"
+                : "personnel-schedule-kpi-tone-critical"
+            }`}
+          >
+            {scheduleKpis.openSeats === 0 ? "Staffed" : "Open"}
+          </span>
+        </article>
+        <article className="personnel-schedule-kpi-card personnel-schedule-kpi-coverage">
+          <div>
+            <p>Coverage</p>
+            <strong>{scheduleKpis.coveragePercent}%</strong>
+          </div>
+          <span
+            className={`personnel-schedule-kpi-tone ${
+              scheduleKpis.coveragePercent >= 100
+                ? "personnel-schedule-kpi-tone-positive"
+                : "personnel-schedule-kpi-tone-warning"
+            }`}
+          >
+            {scheduleKpis.coveragePercent >= 100 ? "Good" : "Watch"}
+          </span>
+        </article>
+        {viewerIsAdmin ? (
+          <button
+            type="button"
+            className="personnel-schedule-kpi-card personnel-schedule-kpi-override personnel-schedule-kpi-card-action"
+            onClick={() => navigate("/personnel/trades#active-requests")}
+          >
+            <div>
+              <p>Pending Overrides</p>
+              <strong>{scheduleKpis.pendingOverrideCount}</strong>
+            </div>
+            <span
+              className={`personnel-schedule-kpi-tone ${
+                scheduleKpis.pendingOverrideCount === 0
+                  ? "personnel-schedule-kpi-tone-critical"
+                  : "personnel-schedule-kpi-tone-warning"
+              }`}
+            >
+              {scheduleKpis.pendingOverrideCount === 0 ? "None" : "Review"}
+            </span>
+          </button>
+        ) : (
+          <article className="personnel-schedule-kpi-card personnel-schedule-kpi-override">
+            <div>
+              <p>Pending Overrides</p>
+              <strong>{scheduleKpis.pendingOverrideCount}</strong>
+            </div>
+            <span
+              className={`personnel-schedule-kpi-tone ${
+                scheduleKpis.pendingOverrideCount === 0
+                  ? "personnel-schedule-kpi-tone-critical"
+                  : "personnel-schedule-kpi-tone-warning"
+              }`}
+            >
+              {scheduleKpis.pendingOverrideCount === 0 ? "None" : "Review"}
+            </span>
+          </article>
+        )}
+        {scheduleKpis.kellyRowVisible ? (
+          <article className="personnel-schedule-kpi-card">
+            <div>
+              <p>On Kelly Day</p>
+              <strong>{scheduleKpis.kellyOn}</strong>
+            </div>
+            <span className="personnel-schedule-kpi-tone personnel-schedule-kpi-tone-neutral">
+              In view
+            </span>
+          </article>
+        ) : null}
+      </section>
 
       <div className="personnel-schedule-grid-wrapper">
         <table className="personnel-schedule-grid">

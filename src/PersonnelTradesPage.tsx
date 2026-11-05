@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useLocation } from "react-router-dom";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
 import { shiftOccursOnDate, toDateKey, type ScheduleShiftEntryLike } from "./scheduleUtils";
 
@@ -157,6 +158,8 @@ function datesFromToday(entry: ScheduleShiftEntryLike & { shiftType: string }, m
 }
 
 export function PersonnelTradesPage() {
+  const location = useLocation();
+  const activeRequestsRef = useRef<HTMLElement | null>(null);
   const [trades, setTrades] = useState<TradeRecord[]>([]);
   const [canSeeAll, setCanSeeAll] = useState(false);
   const [username, setUsername] = useState("");
@@ -210,6 +213,11 @@ export function PersonnelTradesPage() {
     setMyName(String(json.name ?? ""));
     return String(json.name ?? "");
   }, []);
+
+  useEffect(() => {
+    if (location.hash !== "#active-requests") return;
+    activeRequestsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, [location.hash, overrideRequests, trades]);
 
   const loadOverrideRequests = useCallback(async () => {
     const response = await fetch("/api/qualification-overrides");
@@ -586,7 +594,7 @@ export function PersonnelTradesPage() {
           Submit Trade Request
         </button>
       </article>
-      <article className="panel">
+      <article className="panel" id="active-requests" ref={activeRequestsRef}>
         <div className="trades-active-header">
           <h3>Active Requests</h3>
           {canSeeAll ? (

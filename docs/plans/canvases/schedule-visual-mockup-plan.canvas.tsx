@@ -182,19 +182,19 @@ const stages: StageDef[] = [
         why: "A small calendar picture beside the date label toggles the views.",
         fix: "Calendar-icon button inside the date navigator flips week and month and keeps the same focus date.",
         who: "Me.",
-        done: "Calendar button switches views. Ready for your click-check before Step 17." },
+        done: "Calendar button switches views. Click-check passed November 5." },
     ],
   },
   {
     id: "F", name: "Stage F — KPI strip (after week view)",
     summary: "Add the four summary cards only after week vs month is in place, so the numbers match the days on screen.",
     steps: [
-      { n: "17", title: "Add the four summary cards with live counts", status: "Next",
+      { n: "17", title: "Add the four summary cards with live counts", status: "Done",
         problem: "The mockup shows Open Seats, Coverage, Pending Overrides, and On Kelly Day above the grid. The live page has none of these.",
         why: "Counts must use the days currently shown, so week and month totals differ.",
-        fix: "After Steps 18D, 18A, 18B, and 18C. Cards are display-only from data already on the page. Confirm the four formulas before coding. No new API. No schema.",
-        who: "Me after you confirm the four formulas.",
-        done: "Four cards show numbers for the days on screen. Grid behavior unchanged." },
+        fix: "Four display-only cards above the grid. Open Seats = empty required apparatus seats in view (OPEN/HIRE count as open). Coverage = filled required seats ÷ required seats as %. Pending Overrides = pending requests whose date is in view (and match the active shift when set). On Kelly Day = named people on the Kelly Day row in view, and the card is omitted when Additional Fields has Kelly Day hidden. Badge for Kelly says In view. No new API. No schema.",
+        who: "Me.",
+        done: "Cards show live numbers for the days on screen. On Kelly Day is hidden when that additional field is hidden. Waiting on your click-check of the hide." },
     ],
   },
 ];
@@ -217,11 +217,21 @@ const decided: [string, string, string][] = [
     "Apparatus label colors today",
     "No Admin setting for schedule row label color/icon. Step 18D guesses from the apparatus name only. Qualification colors in Admin only color assigned people pills, not left labels.",
   ],
+  [
+    "November 5, 2026",
+    "Pending Overrides card",
+    "An administrator click on the Pending Overrides card opens Personnel → Trades and scrolls to Active Requests, where pending overrides are listed.",
+  ],
+  [
+    "November 5, 2026",
+    "KPI formulas (Step 17)",
+    "Open Seats = empty required apparatus seats in the days on screen (OPEN/HIRE = open). Coverage = filled ÷ required as %. Pending Overrides = pending requests dated in the days on screen (and active shift when set). On Kelly Day = named people on Kelly Day row in the days on screen, and the card is hidden when Kelly Day is hidden in Additional Fields.",
+  ],
 ];
 
 const stillOpen: [string, string][] = [
-  ["Steps 18A–18C click-check", "Confirm week default, week/month labels, calendar toggle, and Prev/Next. Then approve Step 17 formulas."],
-  ["KPI formulas (Step 17)", "Confirm Open Seats / Coverage / Pending Overrides / Kelly Day before coding."],
+  ["Step 17 click-check", "Confirm the four KPI cards match week vs month and match open red seats / Kelly / pending overrides."],
+  ["What is next after Step 17", "Visual plan stages are complete except parked polish (7, 14, 16) and parked features (injury red override, admin label colors)."],
   ["Step 7 slot spacing", "Tried and reverted November 5 before client meeting."],
   ["Step 14 segment times", "Tried and reverted November 5; parked until a better layout is chosen."],
   ["Step 16 Info/Trades chips", "Tried and reverted November 5 before client meeting."],
@@ -264,7 +274,7 @@ export default function ScheduleVisualMockupPlan() {
   return (
     <Stack gap={16} style={{ padding: 16 }}>
       <Stack gap={6}>
-        <Text tone="secondary" size="small">Updated November 5, 2026 · morning · branch submenu/scheduler-pagevisuals · Steps 18A–18C done; next is Step 17 after your check</Text>
+        <Text tone="secondary" size="small">Updated November 5, 2026 · late morning · branch submenu/scheduler-pagevisuals · Step 17 hides On Kelly Day when that additional field is hidden</Text>
         <H1>Personnel Schedule — visual mockup plan (one piece at a time)</H1>
         <Text>
           Bring the live Personnel Schedule closer to the hybrid mockup without another big-bang visual rewrite.
