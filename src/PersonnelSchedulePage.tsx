@@ -28,14 +28,18 @@ import {
 import {
   buildQualificationRankMap,
   comparePersonnelByQualifications,
+  dayOrdinalSuffix,
   formatSchedulePersonnelDisplayName,
   formatScheduleSegmentToken,
+  formatScheduleWeekNavLabel,
   formatSegmentCoverageLines,
   getHighestQualificationLabel,
   parseQualificationColorMap,
   qualificationColorHex,
+  qualificationColorSoftStyle,
   getBestQualificationRankForPerson,
   getDatesForMonth,
+  getDatesForWeekContaining,
   getRecurrenceIntervalDays,
   parseQualificationOverrides,
   parseRecurrenceWeekdays,
@@ -242,6 +246,107 @@ function computeCrossApparatusOverlapMessage(params: {
   return null;
 }
 
+type ScheduleRowLabelTone =
+  | "engine"
+  | "medic"
+  | "info"
+  | "kelly"
+  | "sick"
+  | "trades"
+  | "vacation"
+  | "support";
+
+function getScheduleRowLabelTone(row: PersonnelScheduleRow): ScheduleRowLabelTone {
+  if (row.rowType === "apparatus") {
+    const label = row.label.toLowerCase();
+    if (
+      label.includes("medic") ||
+      label.includes("ambulance") ||
+      label.includes("ems") ||
+      label.includes("rescue")
+    ) {
+      return "medic";
+    }
+    return "engine";
+  }
+  const id = row.id.toLowerCase();
+  const label = row.label.toLowerCase();
+  if (id.includes("info") || label === "info") return "info";
+  if (id.includes("kelly") || label.includes("kelly")) return "kelly";
+  if (id.includes("sick") || label === "sick") return "sick";
+  if (id.includes("trade") || label.includes("trade")) return "trades";
+  if (id.includes("vacation") || label.includes("vacation")) return "vacation";
+  if (id.includes("injur") || label.includes("injur")) return "sick";
+  return "support";
+}
+
+function ScheduleRowLabelIcon({ tone }: { tone: ScheduleRowLabelTone }) {
+  if (tone === "engine") {
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <rect x="2" y="7" width="10" height="5" rx="1" fill="#dc2626" />
+        <rect x="8" y="4" width="4" height="3" rx="0.5" fill="#b91c1c" />
+        <circle cx="5" cy="12" r="1.4" fill="#1e293b" />
+        <circle cx="11" cy="12" r="1.4" fill="#1e293b" />
+      </svg>
+    );
+  }
+  if (tone === "medic") {
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <rect x="2" y="3" width="12" height="10" rx="2" fill="#059669" />
+        <rect x="7" y="5" width="2" height="6" fill="#ffffff" />
+        <rect x="5" y="7" width="6" height="2" fill="#ffffff" />
+      </svg>
+    );
+  }
+  if (tone === "info") {
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <circle cx="8" cy="8" r="6" fill="none" stroke="#0f172a" strokeWidth="1.5" />
+        <circle cx="8" cy="5" r="1" fill="#0f172a" />
+        <rect x="7.2" y="7" width="1.6" height="5" rx="0.6" fill="#0f172a" />
+      </svg>
+    );
+  }
+  if (tone === "kelly" || tone === "vacation") {
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <rect x="2" y="3" width="12" height="11" rx="2" fill="none" stroke="currentColor" strokeWidth="1.5" />
+        <path d="M5 2v2M11 2v2M2 7h12" stroke="currentColor" strokeWidth="1.5" />
+      </svg>
+    );
+  }
+  if (tone === "sick") {
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <rect x="3" y="3" width="10" height="10" rx="2" fill="#dc2626" />
+        <rect x="7" y="5" width="2" height="6" fill="#ffffff" />
+        <rect x="5" y="7" width="6" height="2" fill="#ffffff" />
+      </svg>
+    );
+  }
+  if (tone === "trades") {
+    return (
+      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+        <path
+          d="M3 6h8M9 4l2 2-2 2M13 10H5M7 8l-2 2 2 2"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+      <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
 interface PersonnelSchedulePageProps {
   readDepartmentDetailsDraft: () => Record<string, unknown>;
   normalizeDepartmentDraft: (raw: Record<string, unknown>) => Record<string, unknown>;
@@ -265,6 +370,7 @@ export function PersonnelSchedulePage({
   const [selectedShift, setSelectedShift] = useState<string>("");
   const [highlightPersonnelName, setHighlightPersonnelName] = useState("");
   const [viewDate, setViewDate] = useState(() => new Date());
+  const [calendarViewMode, setCalendarViewMode] = useState<"week" | "month">("week");
   const [isLoading, setIsLoading] = useState(true);
   const [scheduleAssignments, setScheduleAssignments] = useState<ScheduleAssignments>(() =>
     loadScheduleAssignments(),
@@ -613,9 +719,19 @@ export function PersonnelSchedulePage({
   }, [departmentData.apparatus, departmentData.additionalFields]);
 
   const dates = useMemo(
-    () => getDatesForMonth(viewDate.getFullYear(), viewDate.getMonth()),
-    [viewDate],
+    () =>
+      calendarViewMode === "week"
+        ? getDatesForWeekContaining(viewDate)
+        : getDatesForMonth(viewDate.getFullYear(), viewDate.getMonth()),
+    [calendarViewMode, viewDate],
   );
+  const calendarNavLabel =
+    calendarViewMode === "week"
+      ? formatScheduleWeekNavLabel(viewDate)
+      : viewDate.toLocaleDateString("en-US", {
+          month: "long",
+          year: "numeric",
+        });
 
   const activeDateKeys = useMemo(() => {
     const set = new Set<string>();
@@ -663,6 +779,17 @@ export function PersonnelSchedulePage({
       departmentData.personnelQualifications,
     );
     return qualificationColorHex(departmentData.personnelQualificationColors[qualification]);
+  };
+  const softStyleForPersonnelName = (name: string) => {
+    const person = personnelByName.get(name);
+    if (!person) return undefined;
+    const qualification = getHighestQualificationLabel(
+      person,
+      departmentData.personnelQualifications,
+    );
+    return qualificationColorSoftStyle(
+      departmentData.personnelQualificationColors[qualification],
+    );
   };
   const displayDates = useMemo(
     () => dates.filter((date) => activeDateKeys.has(toDateKey(date))),
@@ -2337,7 +2464,7 @@ export function PersonnelSchedulePage({
     return (
       <section className="page-section">
         <header className="page-header">
-          <h1>Schedule (Personnel)</h1>
+          <h1>Personnel Schedule</h1>
           <p>Loading department details…</p>
         </header>
       </section>
@@ -2348,7 +2475,7 @@ export function PersonnelSchedulePage({
     return (
       <section className="page-section">
         <header className="page-header">
-          <h1>Schedule (Personnel)</h1>
+          <h1>Personnel Schedule</h1>
           <p>
             Schedule calculations are blocked until this shift has a Start Time.
             Go to Admin Functions {"->"} Scheduler Settings {"->"} Shift Information and set
@@ -2362,148 +2489,184 @@ export function PersonnelSchedulePage({
   return (
     <section className="page-section personnel-schedule-page">
       <header className="page-header">
-        <div>
-          <div className="personnel-schedule-title-row">
-            <h1>Schedule (Personnel)</h1>
-            <div className="personnel-schedule-month-nav">
-              <button
-                type="button"
-                className="secondary-button compact-button"
-                onClick={() =>
-                  setViewDate((d) => new Date(d.getFullYear(), d.getMonth() - 1))
-                }
-              >
-                ← Prev
-              </button>
-              <span className="personnel-schedule-month-label">
-                {viewDate.toLocaleDateString("en-US", {
-                  month: "long",
-                  year: "numeric",
-                })}
-              </span>
-              <button
-                type="button"
-                className="secondary-button compact-button"
-                onClick={() =>
-                  setViewDate((d) => new Date(d.getFullYear(), d.getMonth() + 1))
-                }
-              >
-                Next →
-              </button>
-            </div>
-          </div>
+        <div className="personnel-schedule-header-lead">
+          <h1>Personnel Schedule</h1>
           {isDemoTenant ? (
             <p className="demo-helper-text">
               Double click day column to open day block.
             </p>
           ) : null}
-          <div className="personnel-schedule-shift-select">
-            <div className="personnel-schedule-controls">
-              <select
-                id="personnel-schedule-shift"
-                value={effectiveShift}
-                onChange={(e) => setSelectedShift(e.target.value)}
+        </div>
+        <div className="personnel-schedule-header-trail">
+          <div className="header-actions personnel-schedule-header-actions">
+            <div className="personnel-schedule-month-nav">
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                aria-label={
+                  calendarViewMode === "week" ? "Previous week" : "Previous month"
+                }
+                onClick={() =>
+                  setViewDate((d) =>
+                    calendarViewMode === "week"
+                      ? new Date(d.getFullYear(), d.getMonth(), d.getDate() - 7)
+                      : new Date(d.getFullYear(), d.getMonth() - 1),
+                  )
+                }
               >
-                {shiftOptions.map((opt) => (
-                  <option key={opt.shiftType} value={opt.shiftType}>
-                    {opt.shiftType}
+                {"<"}
+              </button>
+              <button
+                type="button"
+                className="personnel-schedule-calendar-toggle"
+                aria-label={
+                  calendarViewMode === "week"
+                    ? "Switch to month view"
+                    : "Switch to week view"
+                }
+                title={
+                  calendarViewMode === "week"
+                    ? "Switch to month view"
+                    : "Switch to week view"
+                }
+                onClick={() =>
+                  setCalendarViewMode((mode) => (mode === "week" ? "month" : "week"))
+                }
+              >
+                <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
+                  <rect
+                    x="2"
+                    y="3"
+                    width="12"
+                    height="11"
+                    rx="2"
+                    fill="none"
+                    stroke="currentColor"
+                    strokeWidth="1.5"
+                  />
+                  <path d="M5 2v2M11 2v2M2 7h12" stroke="currentColor" strokeWidth="1.5" />
+                  <circle cx="5.5" cy="10" r="0.8" fill="currentColor" />
+                  <circle cx="8" cy="10" r="0.8" fill="currentColor" />
+                  <circle cx="10.5" cy="10" r="0.8" fill="currentColor" />
+                </svg>
+              </button>
+              <span className="personnel-schedule-month-label">{calendarNavLabel}</span>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                aria-label={calendarViewMode === "week" ? "Next week" : "Next month"}
+                onClick={() =>
+                  setViewDate((d) =>
+                    calendarViewMode === "week"
+                      ? new Date(d.getFullYear(), d.getMonth(), d.getDate() + 7)
+                      : new Date(d.getFullYear(), d.getMonth() + 1),
+                  )
+                }
+              >
+                {">"}
+              </button>
+            </div>
+            <select
+              id="personnel-schedule-shift"
+              value={effectiveShift}
+              onChange={(e) => setSelectedShift(e.target.value)}
+            >
+              {shiftOptions.map((opt) => (
+                <option key={opt.shiftType} value={opt.shiftType}>
+                  {opt.shiftType}
+                </option>
+              ))}
+            </select>
+            <div className="personnel-schedule-highlight-row">
+              <select
+                id="personnel-schedule-highlight"
+                value={highlightPersonnelName}
+                onChange={(e) => setHighlightPersonnelName(e.target.value)}
+              >
+                <option value="">Highlight Personnel</option>
+                {sortedShiftPersonnel.map((person) => (
+                  <option key={person.name} value={person.name}>
+                    {person.name}
                   </option>
                 ))}
               </select>
-              <div className="personnel-schedule-highlight-row">
-                <select
-                  id="personnel-schedule-highlight"
-                  value={highlightPersonnelName}
-                  onChange={(e) => setHighlightPersonnelName(e.target.value)}
-                >
-                  <option value="">Highlight Personnel</option>
-                  {sortedShiftPersonnel.map((person) => (
-                    <option key={person.name} value={person.name}>
-                      {person.name}
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  className="secondary-button compact-button"
-                  onClick={() => setHighlightPersonnelName("")}
-                  aria-label="Clear highlighted personnel"
-                >
-                  X
-                </button>
-                <button
-                  type="button"
-                  className="secondary-button compact-button"
-                  onClick={undoLastScheduleChange}
-                  disabled={scheduleUndoStack.length === 0}
-                >
-                  Undo
-                </button>
-              </div>
-              <small
-                className={
-                  lastScheduleAction.startsWith("Cannot assign")
-                    ? "auth-error"
-                    : "field-hint"
-                }
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={() => setHighlightPersonnelName("")}
+                aria-label="Clear highlighted personnel"
               >
-                Last action: {lastScheduleAction}
-              </small>
+                X
+              </button>
+              <button
+                type="button"
+                className="secondary-button compact-button"
+                onClick={undoLastScheduleChange}
+                disabled={scheduleUndoStack.length === 0}
+              >
+                Undo
+              </button>
             </div>
           </div>
+          <small
+            className={
+              lastScheduleAction.startsWith("Cannot assign")
+                ? "auth-error personnel-schedule-header-hint"
+                : "field-hint personnel-schedule-header-hint"
+            }
+          >
+            Last action: {lastScheduleAction}
+          </small>
         </div>
       </header>
 
       <div className="personnel-schedule-grid-wrapper">
         <table className="personnel-schedule-grid">
           <thead>
-            <tr className="personnel-schedule-header-row-day">
-              <th className="personnel-schedule-col-day">DAY</th>
-              {displayDates.map((d) => (
-                <th
-                  key={d.toISOString()}
-                  className="personnel-schedule-date-col"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    if (!canEditSchedule) return;
-                    setEditDayBlock({ date: d, dateKey: toDateKey(d) });
-                  }}
-                  onKeyDown={(e) => {
-                    if (!canEditSchedule) return;
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
+            <tr className="personnel-schedule-header-row-dates">
+              <th className="personnel-schedule-col-day" aria-hidden="true" />
+              {displayDates.map((d) => {
+                const isToday = toDateKey(d) === toDateKey(new Date());
+                return (
+                  <th
+                    key={d.toISOString()}
+                    className="personnel-schedule-date-col"
+                    role="button"
+                    tabIndex={0}
+                    aria-current={isToday ? "date" : undefined}
+                    aria-label={d.toLocaleDateString("en-US", {
+                      weekday: "long",
+                      month: "long",
+                      day: "numeric",
+                      year: "numeric",
+                    })}
+                    onClick={() => {
+                      if (!canEditSchedule) return;
                       setEditDayBlock({ date: d, dateKey: toDateKey(d) });
-                    }
-                  }}
-                >
-                  {d.toLocaleDateString("en-US", { weekday: "short" })}
-                </th>
-              ))}
-            </tr>
-            <tr className="personnel-schedule-header-row-date">
-              <th className="personnel-schedule-col-date">DATE</th>
-              {displayDates.map((d) => (
-                <th
-                  key={d.toISOString()}
-                  className="personnel-schedule-date-col"
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    if (!canEditSchedule) return;
-                    setEditDayBlock({ date: d, dateKey: toDateKey(d) });
-                  }}
-                  onKeyDown={(e) => {
-                    if (!canEditSchedule) return;
-                    if (e.key === "Enter" || e.key === " ") {
-                      e.preventDefault();
-                      setEditDayBlock({ date: d, dateKey: toDateKey(d) });
-                    }
-                  }}
-                >
-                  {d.getMonth() + 1}/{d.getDate()}
-                </th>
-              ))}
+                    }}
+                    onKeyDown={(e) => {
+                      if (!canEditSchedule) return;
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        setEditDayBlock({ date: d, dateKey: toDateKey(d) });
+                      }
+                    }}
+                  >
+                    <div
+                      className={`personnel-schedule-date-chip${
+                        isToday ? " personnel-schedule-date-chip-today" : ""
+                      }`}
+                    >
+                      <span className="personnel-schedule-date-chip-label">
+                        {`${d.toLocaleDateString("en-US", { weekday: "short" })} ${d.toLocaleDateString("en-US", { month: "short" })} ${d.getDate()}`}
+                        <sup className="personnel-schedule-date-chip-ordinal">
+                          {dayOrdinalSuffix(d.getDate())}
+                        </sup>
+                      </span>
+                    </div>
+                  </th>
+                );
+              })}
             </tr>
           </thead>
           <tbody>
@@ -2517,7 +2680,9 @@ export function PersonnelSchedulePage({
                 </td>
               </tr>
             ) : (
-              scheduleRows.map((row) => (
+              scheduleRows.map((row) => {
+                const rowLabelTone = getScheduleRowLabelTone(row);
+                return (
                 <tr
                   key={row.id}
                   className={
@@ -2530,7 +2695,16 @@ export function PersonnelSchedulePage({
                       : "personnel-schedule-apparatus-row"
                   }
                 >
-                  <td className="personnel-schedule-row-label">{row.label}</td>
+                  <td
+                    className={`personnel-schedule-row-label personnel-schedule-row-label--${rowLabelTone}`}
+                  >
+                    <span className="personnel-schedule-row-label-pill">
+                      <span className="personnel-schedule-row-label-icon">
+                        <ScheduleRowLabelIcon tone={rowLabelTone} />
+                      </span>
+                      <span className="personnel-schedule-row-label-text">{row.label}</span>
+                    </span>
+                  </td>
                   {displayDates.map((date) => {
                     const dateKey = toDateKey(date);
                     const slots = getAssignmentsForDay(
@@ -2601,12 +2775,15 @@ export function PersonnelSchedulePage({
                         qualificationRankMap,
                       );
                     const coverageLines = getCoverageLines(dateKey, row.id);
+                    const isTodayColumn = dateKey === toDateKey(new Date());
                     return (
                       <td
                         key={date.toISOString()}
-                        className={`personnel-schedule-day-block ${
+                        className={`personnel-schedule-day-block${
+                          isTodayColumn ? " personnel-schedule-day-block-today" : ""
+                        }${
                           blockHasQualificationGap
-                            ? "personnel-schedule-day-block-invalid"
+                            ? " personnel-schedule-day-block-invalid"
                             : ""
                         }`}
                         onDoubleClick={() => {
@@ -2789,6 +2966,27 @@ export function PersonnelSchedulePage({
                               activeInlineSlot?.dateKey === dateKey &&
                               activeInlineSlot?.unitId === row.unitId &&
                               activeInlineSlot?.slotIndex === slotIdx;
+                            const isHighlighted =
+                              Boolean(highlightPersonnelName) &&
+                              slotNames.includes(highlightPersonnelName);
+                            const fillPersonName = shownSlotNames.find((entry) => {
+                              const normalized = entry.trim().toUpperCase();
+                              return (
+                                normalized.length > 0 &&
+                                normalized !== "HIRE" &&
+                                normalized !== "OPEN" &&
+                                !unqualifiedNames.has(entry.trim())
+                              );
+                            });
+                            const softPillStyle =
+                              !isTextRow &&
+                              !isActiveInlineSelect &&
+                              !isRed &&
+                              !isHighlighted &&
+                              !isRequiredInvalid &&
+                              fillPersonName
+                                ? softStyleForPersonnelName(fillPersonName)
+                                : undefined;
                             const eligiblePeople = getEligibleShiftPersonnelForSlot(
                               dateKey,
                               row,
@@ -2803,8 +3001,7 @@ export function PersonnelSchedulePage({
                                     ? "personnel-schedule-slot-required-empty"
                                     : ""
                                 } ${
-                                  highlightPersonnelName &&
-                                  slotNames.includes(highlightPersonnelName)
+                                  isHighlighted
                                     ? "personnel-schedule-slot-highlighted"
                                     : ""
                                 } ${
@@ -2812,6 +3009,7 @@ export function PersonnelSchedulePage({
                                     ? "personnel-schedule-slot-required-invalid"
                                     : ""
                                 }`}
+                                style={softPillStyle}
                                 onClick={(event) => {
                                   if (!canEditSchedule || isTextRow) return;
                                   event.stopPropagation();
@@ -3001,11 +3199,13 @@ export function PersonnelSchedulePage({
                                                     : undefined
                                           }
                                           style={
-                                            !isUnfilledSegment &&
-                                            !isUnqualified &&
-                                            colorForPersonnelName(entry)
-                                              ? { color: colorForPersonnelName(entry) }
-                                              : undefined
+                                            softPillStyle
+                                              ? undefined
+                                              : !isUnfilledSegment &&
+                                                  !isUnqualified &&
+                                                  colorForPersonnelName(entry)
+                                                ? { color: colorForPersonnelName(entry) }
+                                                : undefined
                                           }
                                         >
                                           {isPendingSeat || isPartialPending
@@ -3029,7 +3229,8 @@ export function PersonnelSchedulePage({
                     );
                   })}
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

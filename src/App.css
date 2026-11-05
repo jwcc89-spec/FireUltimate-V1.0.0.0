@@ -5758,120 +5758,317 @@ body.printing-neris .neris-print-root {
 /* Personnel Schedule (Personnel > Schedule) */
 .personnel-schedule-page .page-header {
   flex-wrap: wrap;
-  gap: 1rem;
+  align-items: flex-start;
+  gap: 0.85rem 1rem;
 }
 
-.personnel-schedule-shift-select {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  flex-wrap: wrap;
+.personnel-schedule-header-lead {
+  min-width: 0;
+}
+
+.personnel-schedule-header-trail {
+  display: grid;
+  gap: 0.35rem;
+  justify-items: end;
+  margin-left: auto;
+}
+
+.personnel-schedule-header-actions {
+  justify-content: flex-end;
+}
+
+.personnel-schedule-header-hint {
+  text-align: right;
+  max-width: 42rem;
 }
 
 .page-header .demo-helper-text {
-  margin: 0.35rem 0 0.15rem;
+  margin: 0.35rem 0 0;
   color: #2563eb;
   font-size: 0.83rem;
   font-weight: 600;
 }
 
-.personnel-schedule-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-
-.personnel-schedule-controls {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.personnel-schedule-shift-select label {
-  font-weight: 600;
-  font-size: 0.82rem;
-}
-
-.personnel-schedule-shift-select select {
-  padding: 0.3rem 0.55rem;
+.personnel-schedule-header-actions select {
+  height: 2.25rem;
+  min-width: 7.5rem;
+  padding: 0 0.7rem;
   border: 1px solid #cbd5e1;
-  border-radius: 6px;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
   font-size: 0.82rem;
-  min-width: 120px;
+  font-weight: 600;
 }
 
 .personnel-schedule-highlight-row {
   display: inline-flex;
   align-items: center;
-  gap: 0.35rem;
-}
-
-.personnel-schedule-month-nav {
-  display: flex;
-  align-items: center;
   gap: 0.5rem;
 }
 
+.personnel-schedule-highlight-row .secondary-button.compact-button {
+  height: 2.25rem;
+  padding: 0 0.85rem;
+  border: 1px solid #c6d0dd;
+  border-radius: 10px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.84rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.personnel-schedule-highlight-row .secondary-button.compact-button:hover:not(:disabled) {
+  background: #f8fafc;
+  border-color: #94a3b8;
+  color: #0f172a;
+}
+
+.personnel-schedule-highlight-row .secondary-button.compact-button:disabled {
+  opacity: 0.55;
+}
+
+.personnel-schedule-month-nav {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: #ffffff;
+  border: 1px solid #dbe2ec;
+  border-radius: 10px;
+  padding: 0.22rem;
+}
+
+.personnel-schedule-month-nav .secondary-button.compact-button {
+  min-width: 2rem;
+  height: 1.875rem;
+  padding: 0 0.45rem;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #334155;
+  font-size: 0.78rem;
+  font-weight: 700;
+  box-shadow: none;
+}
+
+.personnel-schedule-month-nav .secondary-button.compact-button:hover:not(:disabled) {
+  background: #f1f5f9;
+  color: #0f172a;
+}
+
+.personnel-schedule-calendar-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.875rem;
+  height: 1.875rem;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.personnel-schedule-calendar-toggle:hover {
+  background: #f1f5f9;
+}
+
 .personnel-schedule-month-label {
-  font-weight: 600;
-  min-width: 140px;
-  text-align: center;
+  min-width: 9.5rem;
+  text-align: left;
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #0f172a;
+  white-space: nowrap;
+  padding-right: 0.25rem;
 }
 
 .personnel-schedule-grid-wrapper {
   overflow-x: auto;
-  margin-top: 1rem;
-  border: 1px solid #e2e8f0;
-  border-radius: 8px;
+  margin-top: 0.9rem;
+  background: #ffffff;
+  border: 1px solid #dbe2ec;
+  border-radius: 12px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
 }
 
 .personnel-schedule-grid {
   width: 100%;
-  border-collapse: collapse;
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: 0.85rem;
 }
 
 .personnel-schedule-grid th,
 .personnel-schedule-grid td {
-  border: 1px solid #e2e8f0;
-  padding: 0.4rem 0.5rem;
+  border-right: 1px solid #e8eef5;
+  border-bottom: 1px solid #e8eef5;
+  border-top: 0;
+  border-left: 0;
+  padding: 0.55rem 0.5rem;
   vertical-align: top;
+}
+
+.personnel-schedule-grid th:last-child,
+.personnel-schedule-grid td:last-child {
+  border-right: 0;
+}
+
+.personnel-schedule-grid tbody tr:last-child td {
+  border-bottom: 0;
 }
 
 .personnel-schedule-col-day,
 .personnel-schedule-col-date {
-  background-color: #d1d5db;
-  font-weight: 600;
+  background-color: #f1f5f9;
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.8rem;
   min-width: 78px;
   vertical-align: middle;
   text-align: center;
 }
 
-.personnel-schedule-header-row-day .personnel-schedule-date-col,
-.personnel-schedule-header-row-date .personnel-schedule-date-col {
-  min-width: 7.125rem;
+.personnel-schedule-header-row-dates th {
+  background: #f8fafc;
+  padding: 0.65rem 0.45rem 0.7rem;
   text-align: center;
-  color: #b91c1c;
+  vertical-align: middle;
+}
+
+.personnel-schedule-header-row-dates .personnel-schedule-col-day {
+  background-color: #f1f5f9;
+}
+
+.personnel-schedule-header-row-dates .personnel-schedule-date-col {
+  min-width: 7.125rem;
+  color: inherit;
+  font-style: normal;
+  font-weight: inherit;
+  cursor: pointer;
+}
+
+.personnel-schedule-date-chip {
+  width: max-content;
+  max-width: 100%;
+  margin: 0 auto;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0.42rem 0.55rem 0.4rem;
+  line-height: 1.15;
+}
+
+.personnel-schedule-date-chip-label {
+  display: block;
+  white-space: nowrap;
+  font-size: 0.74rem;
   font-weight: 700;
-  font-style: italic;
+  color: #334155;
+}
+
+.personnel-schedule-date-chip-ordinal {
+  font-size: 0.58em;
+  font-weight: 700;
+  line-height: 0;
+  vertical-align: super;
+}
+
+.personnel-schedule-date-chip-today {
+  border-color: #2563eb;
+  background: #eff6ff;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.12);
+}
+
+.personnel-schedule-date-chip-today .personnel-schedule-date-chip-label,
+.personnel-schedule-date-chip-today .personnel-schedule-date-chip-ordinal {
+  color: #2563eb;
 }
 
 .personnel-schedule-row-label {
-  background-color: #d1d5db;
-  font-weight: 600;
-  min-width: 105px;
-  text-align: center;
+  background-color: #f8fafc;
+  color: #334155;
+  font-weight: 700;
+  font-size: 0.8rem;
+  min-width: 7.5rem;
+  width: 7.5rem;
+  text-align: left;
+  vertical-align: middle;
+  padding: 0.45rem 0.4rem;
+}
+
+.personnel-schedule-row-label-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  max-width: 100%;
+  border-radius: 10px;
+  padding: 0.42rem 0.55rem;
+  line-height: 1.15;
+  box-sizing: border-box;
+}
+
+.personnel-schedule-row-label-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+  color: inherit;
+}
+
+.personnel-schedule-row-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personnel-schedule-row-label--engine .personnel-schedule-row-label-pill {
+  background-color: #dbeafe;
+  color: #1e3a8a;
+}
+
+.personnel-schedule-row-label--medic .personnel-schedule-row-label-pill {
+  background-color: #d1fae5;
+  color: #065f46;
+}
+
+.personnel-schedule-row-label--info .personnel-schedule-row-label-pill {
+  background-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.personnel-schedule-row-label--kelly .personnel-schedule-row-label-pill {
+  background-color: #ede9fe;
+  color: #5b21b6;
+}
+
+.personnel-schedule-row-label--trades .personnel-schedule-row-label-pill {
+  background-color: #ede9fe;
+  color: #5b21b6;
+}
+
+.personnel-schedule-row-label--sick .personnel-schedule-row-label-pill {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
+.personnel-schedule-row-label--vacation .personnel-schedule-row-label-pill {
+  background-color: #ffedd5;
+  color: #9a3412;
+}
+
+.personnel-schedule-row-label--support .personnel-schedule-row-label-pill {
+  background-color: #e2e8f0;
+  color: #334155;
 }
 
 .personnel-schedule-apparatus-row .personnel-schedule-row-label {
-  font-weight: 500;
+  font-weight: 700;
 }
 
 .personnel-schedule-support-start td {
-  border-top-width: 3px;
+  border-top: 2px solid #cbd5e1;
 }
 
 .personnel-schedule-support-row .personnel-schedule-row-label {
@@ -5885,8 +6082,16 @@ body.printing-neris .neris-print-root {
   padding: 0.15rem;
 }
 
+.personnel-schedule-day-block-today {
+  background-color: rgba(239, 246, 255, 0.7);
+}
+
 .personnel-schedule-day-block:hover {
   background-color: #f1f5f9;
+}
+
+.personnel-schedule-day-block-today:hover {
+  background-color: #e0effe;
 }
 
 .personnel-schedule-day-block-invalid {
@@ -5900,13 +6105,19 @@ body.printing-neris .neris-print-root {
 }
 
 .personnel-schedule-slot {
-  font-size: 0.68rem;
-  line-height: 1.05;
-  padding: 0.14rem 0.25rem;
-  border-radius: 4px;
+  display: block;
+  font-size: 0.74rem;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 0.32rem 0.58rem;
+  border-radius: 999px;
   min-height: 1.05rem;
   background-color: #fff;
   border: 1px solid #e2e8f0;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .personnel-schedule-inline-select {
@@ -6044,7 +6255,7 @@ body.printing-neris .neris-print-root {
 }
 
 .personnel-schedule-slot-required-empty {
-  background-color: #fef2f2;
+  background-color: #fee2e2;
   border-color: #fecaca;
   color: #991b1b;
 }
@@ -6068,16 +6279,22 @@ body.printing-neris .neris-print-root {
   font-weight: 700;
 }
 
-.personnel-schedule-hire-token {
-  color: #b91c1c;
+.personnel-schedule-hire-token,
+.personnel-schedule-open-token {
+  color: #991b1b;
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.personnel-schedule-open-token {
-  color: #b91c1c;
-  font-weight: 700;
-  text-transform: uppercase;
+.personnel-schedule-slot:has(.personnel-schedule-open-token):not(
+    .personnel-schedule-slot-highlighted
+  ):not(.personnel-schedule-slot-required-invalid),
+.personnel-schedule-slot:has(.personnel-schedule-hire-token):not(
+    .personnel-schedule-slot-highlighted
+  ):not(.personnel-schedule-slot-required-invalid) {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
 }
 
 .schedule-notice-backdrop {
