@@ -3,7 +3,7 @@
 Last updated: 2026-03-15
 Branch: `submenu/neris-golive-cifpd`
 
-Use this file as the single resume point if session ends.
+This file is the March 2026 resume note. It is history. Current status as of 2026-11-01 is in `docs/plans/security-remediation-plan.md` and `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`. Stage B is on staging. Production is not updated. Do not treat the "production missing route" note below as the current production program.
 
 **Staging and deployment:** Staging is **\*.staging.fireultimate.app** (e.g. **cifpdil.staging.fireultimate.app**). It uses branch **`submenu/neris-golive-cifpd`** and is deployed via **Render**. When Render shows the latest commit (e.g. **462f6e2**) as deployed, that is what is running. For “commit before push” and “push” vs “redeploy on Render,” see **STAGING_AND_DEPLOYMENT.md**.
 
@@ -83,8 +83,9 @@ NERIS returns **422 "Invalid internal_id format for incident"** if `base.inciden
 **Order:** Get incidents fully on the server (Step 4) and PR to main first; then CAD email ingest.  
 **Guide:** See **EMAIL_AND_CAD_SETUP.md** — single guide: (1) Part A optional: Google Workspace for jeremy@, (2) Part B: CAD address and Worker, test, give address to dispatch, (3) parse and auto-fill incident fields (if implemented).
 
-**Status:** CAD email ingest **verified** — test to **cifpdil@cad.fireultimate.app** (or cifpdil@fireultimate.app) shows in Render logs and Neon **CadEmailIngest** table.  
-**Next steps for CAD:** (1) **Before giving the address to dispatch for production:** Switch the **cad-email-ingest-worker** to production: in Cloudflare **Workers & Pages** → **cad-email-ingest-worker** → **Settings** → **Variables and Secrets**, set **CAD_INGEST_API_URL** to `https://cifpdil.fireultimate.app/api/cad/inbound-email` and, if used, **CAD_INGEST_SECRET** to match the production API’s value. (One Worker is enough; see **EMAIL_AND_CAD_SETUP.md** §B11.) (2) ~~Give **cifpdil@cad.fireultimate.app** (or the address you use) to dispatch.~~ (3) If you want automatic incident creation/auto-fill from incoming CAD emails, implement or enable that flow (consume **CadEmailIngest** rows and create/update incidents).
+**CAD address source of truth:** **`cifpdil@cad.fireultimate.app`**.  
+**Status:** CAD email ingest **verified** — mail to **`cifpdil@cad.fireultimate.app`** appears in **Admin Functions → Dispatch Parsing Settings → Raw Email** and in Neon **CadEmailIngest**. As of 2026-11-01 the Worker still pointed at **staging**. Render log search is optional and often fails even when mail arrived; prefer Raw Email or Neon.  
+**Next steps for CAD:** (1) **Before giving the address to dispatch for production:** Switch the **cad-email-ingest-worker** to production: in Cloudflare **Workers & Pages** → **cad-email-ingest-worker** → **Settings** → **Variables and Secrets**, set **CAD_INGEST_API_URL** to `https://cifpdil.fireultimate.app/api/cad/inbound-email` and, if used, **CAD_INGEST_SECRET** to match the production API’s value. (One Worker is enough; see **EMAIL_AND_CAD_SETUP.md** §B11.) (2) Give **`cifpdil@cad.fireultimate.app`** to dispatch when ready. (3) If you want automatic incident creation/auto-fill from incoming CAD emails, implement or enable that flow (consume **CadEmailIngest** rows and create/update incidents).
 
 ---
 

@@ -112,6 +112,13 @@ export interface IncidentCallSummary {
   nerisReportStatus?: string;
 }
 
+/** Display incident # (internal id, or incident number, or call id). */
+export function getIncidentDisplayNumber(call: IncidentCallSummary): string {
+  return (
+    String(call.incident_internal_id ?? call.incidentNumber ?? call.callNumber).trim() || call.callNumber
+  );
+}
+
 export interface DispatchNote {
   time: string;
   text: string;
@@ -433,17 +440,17 @@ export const MAIN_MENUS: MainMenu[] = [
     adminOnly: true,
     submenus: [
       {
-        label: "Department Details",
+        label: "Setup/Configuration",
         path: "/admin-functions/department-details",
         summary:
-          "Set department profile information, contacts, address, and resources.",
+          "Department profile, contacts, resources, NERIS export options, and Fire Recovery billing identifiers.",
         isBuilt: true,
         adminOnly: true,
       },
       {
-        label: "Audit Logs",
-        path: "/admin-functions/audit-logs",
-        summary: "Incident and system audit log views.",
+        label: "Personnel Management",
+        path: "/admin-functions/personnel-management",
+        summary: "Manage accounts, permissions, and personnel settings.",
         isBuilt: true,
         adminOnly: true,
       },
@@ -456,17 +463,41 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
+        label: "NERIS Reporting",
+        path: "/admin-functions/reporting",
+        summary: "NERIS required fields and narrative builder.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
+        label: "Hydrants",
+        path: "/admin-functions/hydrants",
+        summary:
+          "Mass upload hydrants with CSV and edit hydrant positions on the map.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
+        label: "Customization",
+        path: "/admin-functions/customization",
+        summary:
+          "Upload logo, choose colors, and define dispatch workflow states.",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
+        label: "Dispatch Parsing Settings",
+        path: "/admin-functions/dispatch-parsing-settings",
+        summary:
+          "View incoming CAD dispatch emails and configure parsing (future).",
+        isBuilt: true,
+        adminOnly: true,
+      },
+      {
         label: "Overtime Hiring",
         path: "/admin-functions/overtime-hiring",
         summary: "Overtime posting and selection workflows.",
         isBuilt: false,
-        adminOnly: true,
-      },
-      {
-        label: "Personnel Management",
-        path: "/admin-functions/personnel-management",
-        summary: "Manage accounts, permissions, and personnel settings.",
-        isBuilt: true,
         adminOnly: true,
       },
       {
@@ -498,33 +529,9 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
-        label: "Reporting",
-        path: "/admin-functions/reporting",
-        summary: "NERIS required fields and narrative builder (Reporting).",
-        isBuilt: true,
-        adminOnly: true,
-      },
-      {
-        label: "Hydrants",
-        path: "/admin-functions/hydrants",
-        summary:
-          "Mass upload hydrants with CSV and edit hydrant positions on the map.",
-        isBuilt: true,
-        adminOnly: true,
-      },
-      {
-        label: "Customization",
-        path: "/admin-functions/customization",
-        summary:
-          "Upload logo, choose colors, and define dispatch workflow states.",
-        isBuilt: true,
-        adminOnly: true,
-      },
-      {
-        label: "Dispatch Parsing Settings",
-        path: "/admin-functions/dispatch-parsing-settings",
-        summary:
-          "View incoming CAD dispatch emails and configure parsing (future).",
+        label: "Audit Logs",
+        path: "/admin-functions/audit-logs",
+        summary: "Incident and system audit log views.",
         isBuilt: true,
         adminOnly: true,
       },

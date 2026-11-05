@@ -9,6 +9,70 @@ const { PrismaClient } = pkg;
 import { PrismaPg } from "@prisma/adapter-pg";
 import { Pool } from "pg";
 
+import {
+  getDispatchPlainTextFromRawBody,
+  parseCadRulesJson,
+  runCadRulePipeline,
+} from "./cadDispatchRuleEngine.mjs";
+import { cadIngestGuard, configuredCadIngestSecret } from "./cad/ingestGuard.mjs";
+import {
+  buildFireRecoveryPayload,
+  isMotorVehicleIncident,
+  missingFireRecoveryFields,
+  missingRecommendedFireRecoveryFields,
+  extractIncidentMetadataFromExportPayload,
+} from "./fireRecoveryMapping.mjs";
+import {
+  getFireRecoveryJwt,
+  postAddNerisIncidentForBilling,
+  postIncidentBillingStatus,
+} from "./fireRecoveryClient.mjs";
+import {
+  fireRecoveryModeBanner,
+  readFireRecoveryMode,
+  resolveFireRecoveryDepartmentId,
+} from "./fireRecoveryMode.mjs";
+import {
+  classifyVendorReply,
+  displaySubmitStatus,
+  nextTrackingId,
+  previewHash,
+} from "./fireRecoverySubmit.mjs";
+import { decryptSecret, encryptSecret, isEncryptedSecret } from "./crypto/secretBox.mjs";
+import { PublicError, publicErrorMessage } from "./http/publicError.mjs";
+import {
+  PUBLIC_API_ROUTES,
+  applySessionCookie,
+  clearLoginLockouts,
+  clearSessionCookie,
+  createSession,
+  loginCredentialsOversized,
+  loginLockStatus,
+  noteLoginFailure,
+  noteLoginSuccess,
+  normalizeRole,
+  originAllowed,
+  publicHostname,
+  readAuthFromRequest,
+  revokeAllSessions,
+  revokeOtherSessions,
+} from "./auth/sessions.mjs";
+import {
+  PERMISSIONS,
+  accountChangeError,
+  canonicalRole,
+  isSelfNameOnlyUserPatch,
+  loadPolicy,
+  minimumRoleFor,
+  parseRole,
+  permissionForRequest,
+  policyChangeError,
+  roleLevel,
+  writeAccountAudit,
+} from "./auth/permissions.mjs";
+import { tradeRequestBlockReasonFromStored } from "./trades/eligibility.mjs";
+import { applyAcceptedTrade, rowsFromScheduleChange } from "./trades/applySchedule.mjs";
+
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
 if (!databaseUrl) {
@@ -31,6 +95,9 @@ const prisma = new PrismaClient({ adapter: prismaAdapter });
 
 
 const app = express();
+// /API/users and /api/users/ must not reach the real handlers.
+app.set("case sensitive routing", true);
+app.set("strict routing", true);
 app.use(express.json({ limit: "4mb" }));
 
 const DEFAULT_NERIS_BASE_URL = "https://api.neris.fsri.org/v1";
@@ -169,6 +236,21 @@ const NERIS_STATE_NAME_TO_CODE = {
 let cachedAccessToken = "";
 let cachedAccessTokenExpiresAt = 0;
 
+function chicagoLocalStamp(date) {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Chicago",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
+  const part = (type) => parts.find((entry) => entry.type === type)?.value ?? "00";
+  return `${part("year")}-${part("month")}-${part("day")}T${part("hour")}:${part("minute")}:${part("second")}`;
+}
+
 function trimValue(value) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -216,101 +298,11 @@ function validatePasswordPolicy(password) {
 }
 
 function mapUserTypeToRole(userType) {
-  const normalized = trimValue(userType).toLowerCase();
-  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
-    return "superadmin";
-  }
-  return normalized.includes("admin") ? "admin" : "user";
-}
-
-async function hashAndSyncTenantUsers(tenantId, payload) {
-  if (!payload || typeof payload !== "object" || !Array.isArray(payload.userRecords)) {
-    return payload;
-  }
-
-  const incomingUserRecords = payload.userRecords;
-  const existingUsers = await prisma.user.findMany({
-    where: { tenantId },
-  });
-  const existingUsersByUsername = new Map(
-    existingUsers.map((user) => [user.username.trim().toLowerCase(), user]),
-  );
-
-  const seenUsernames = new Set();
-  const nextUserRecords = [];
-
-  for (const candidate of incomingUserRecords) {
-    if (!candidate || typeof candidate !== "object") {
-      continue;
-    }
-
-    const normalizedName = trimValue(candidate.name);
-    const normalizedUsername = trimValue(candidate.username).toLowerCase();
-    const userType = trimValue(candidate.userType) || "User";
-    if (!normalizedUsername) {
-      continue;
-    }
-
-    const existingUser = existingUsersByUsername.get(normalizedUsername);
-    const incomingPassword = String(candidate.password ?? "").trim();
-    let passwordHash = "";
-
-    if (incomingPassword) {
-      passwordHash = isBcryptHash(incomingPassword)
-        ? incomingPassword
-        : await hashPassword(incomingPassword);
-    } else if (existingUser?.passwordHash) {
-      // Preserve existing hash when editing non-password user fields.
-      passwordHash = String(existingUser.passwordHash);
-    } else {
-      // Skip users that have no password and no existing hash.
-      continue;
-    }
-
-    await prisma.user.upsert({
-      where: {
-        tenantId_username: {
-          tenantId,
-          username: normalizedUsername,
-        },
-      },
-      update: {
-        role: mapUserTypeToRole(userType),
-        passwordHash,
-      },
-      create: {
-        tenantId,
-        username: normalizedUsername,
-        role: mapUserTypeToRole(userType),
-        passwordHash,
-      },
-    });
-
-    seenUsernames.add(normalizedUsername);
-    nextUserRecords.push({
-      ...candidate,
-      name: normalizedName,
-      username: normalizedUsername,
-      userType,
-      // Store hashed passwords in DepartmentDetails payload.
-      password: passwordHash,
-    });
-  }
-
-  // Keep auth table aligned with Department Access user list.
-  await prisma.user.deleteMany({
-    where: {
-      tenantId,
-      username: {
-        notIn: Array.from(seenUsernames),
-      },
-    },
-  });
-
-  return {
-    ...payload,
-    userRecords: nextUserRecords,
-  };
+  const normalized = trimValue(userType).toLowerCase().replace(/[\s-]+/g, "_");
+  if (normalized === "super_admin" || normalized === "superadmin") return "superadmin";
+  if (normalized === "sub_admin" || normalized === "subadmin") return "subadmin";
+  if (normalized === "admin" || normalized.includes("admin")) return "admin";
+  return "user";
 }
 
 function normalizeHostname(hostname) {
@@ -833,12 +825,12 @@ async function getAccessToken(config) {
   }
 
   if (!config.clientId || !config.clientSecret) {
-    throw new Error(
+    throw new PublicError(
       "Missing server auth config. Set NERIS_CLIENT_ID and NERIS_CLIENT_SECRET in .env.server (or set NERIS_STATIC_ACCESS_TOKEN).",
     );
   }
   if (config.grantType === "password" && (!config.username || !config.password)) {
-    throw new Error(
+    throw new PublicError(
       "Grant type password requires NERIS_USERNAME and NERIS_PASSWORD in .env.server.",
     );
   }
@@ -882,7 +874,7 @@ async function getAccessToken(config) {
           ? " Hint: verify NERIS_CLIENT_ID and NERIS_CLIENT_SECRET are for the test environment and are copied exactly."
           : " Hint: verify NERIS_BASE_URL and OAuth client credentials belong to the same NERIS environment."
       : "";
-    throw new Error(
+    throw new PublicError(
       `Token request failed (${tokenResponse.status} ${tokenResponse.statusText}). ${JSON.stringify(
         tokenResponseBody ?? {},
       )}${hint}`,
@@ -890,18 +882,18 @@ async function getAccessToken(config) {
   }
 
   if (!tokenResponseBody || typeof tokenResponseBody !== "object") {
-    throw new Error("Token response was empty or invalid.");
+    throw new PublicError("Token response was empty or invalid.");
   }
 
   const accessToken = trimValue(tokenResponseBody.access_token);
   if (!accessToken) {
     const challengeName = trimValue(tokenResponseBody.challenge_name);
     if (challengeName) {
-      throw new Error(
+      throw new PublicError(
         `Token flow requires additional challenge step (${challengeName}). Complete challenge auth in backend flow first.`,
       );
     }
-    throw new Error("Token response did not include access_token.");
+    throw new PublicError("Token response did not include access_token.");
   }
 
   const expiresInSeconds = Number.parseInt(
@@ -1147,12 +1139,12 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   const primaryIncidentType = normalizeEnumValue(formValues.primary_incident_type);
 
   if (!NERIS_ENTITY_ID_PATTERN.test(entityId)) {
-    throw new Error(
+    throw new PublicError(
       `Invalid entity ID format (${entityId}). Expected FD########, VN########, FM########, or FA########.`,
     );
   }
   if (!departmentNerisId) {
-    throw new Error(
+    throw new PublicError(
       "Missing or invalid department NERIS ID. Use FD######## format in report field 'Department NERIS ID' (or set NERIS_DEPARTMENT_NERIS_ID on server).",
     );
   }
@@ -1161,13 +1153,13 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     departmentNerisId = entityId;
   }
   if (!incidentNumber) {
-    throw new Error("Missing incident number.");
+    throw new PublicError("Missing incident number.");
   }
   if (!dispatchIncidentNumber) {
-    throw new Error("Missing dispatch incident number.");
+    throw new PublicError("Missing dispatch incident number.");
   }
   if (!primaryIncidentType) {
-    throw new Error("Missing primary incident type.");
+    throw new PublicError("Missing primary incident type.");
   }
 
   const nowIso = new Date().toISOString();
@@ -1205,22 +1197,37 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
     config.defaultCountry,
   );
   const normalizedLocationState = normalizeStateCode(
-    trimValue(formValues.location_state) || baseLocation.state,
+    trimValue(formValues.incident_location_state) ||
+      trimValue(formValues.location_state) ||
+      baseLocation.state,
+    config.defaultState,
+  );
+  const normalizedDispatchState = normalizeStateCode(
+    dispatchLocation.state || trimValue(formValues.location_state),
     config.defaultState,
   );
   const normalizedLocationCountry = normalizeCountryCode(
-    trimValue(formValues.location_country) || baseLocation.country,
-    config.defaultCountry,
+    trimValue(formValues.location_country) || baseLocation.country || "US",
+    config.defaultCountry || "US",
   );
   baseLocation.state = normalizedLocationState;
   baseLocation.country = normalizedLocationCountry;
-  dispatchLocation.state = normalizedLocationState;
+  dispatchLocation.state = normalizedDispatchState;
   dispatchLocation.country = normalizedLocationCountry;
 
-  const postalCode = trimValue(formValues.location_postal_code);
+  const incidentStreet = trimValue(formValues.incident_location_street);
+  const incidentCity = trimValue(formValues.incident_location_city);
+  if (incidentStreet) baseLocation.street = incidentStreet;
+  if (incidentCity) baseLocation.incorporated_municipality = incidentCity;
+  const postalCode =
+    trimValue(formValues.incident_location_zip) || trimValue(formValues.location_postal_code);
   if (postalCode) {
     baseLocation.postal_code = postalCode;
-    dispatchLocation.postal_code = postalCode;
+  }
+  const dispatchPostalCode =
+    trimValue(formValues.dispatch_location_address).match(/\b\d{5}(?:-\d{4})?\b/)?.[0] ?? "";
+  if (dispatchPostalCode) {
+    dispatchLocation.postal_code = dispatchPostalCode;
   }
   const county = trimValue(formValues.location_county);
   if (county) {
@@ -1590,29 +1597,16 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   return payload;
 }
 
-app.get("/api/neris/health", async (request, response) => {
-  const config = getProxyConfig();
-  const requiresUserCredentials = config.grantType === "password";
-  const tenantId = trimValue(request.tenant?.id);
-  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
-  response.json({
-    ok: true,
-    proxyPort: config.proxyPort,
-    baseUrl: config.baseUrl,
-    grantType: config.grantType,
-    requiresUserCredentials,
-    createIncidentUrlPrefix: config.createIncidentUrlPrefix,
-    usingStaticToken: Boolean(config.staticAccessToken),
-    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
-    hasUserCredentials: Boolean(config.username && config.password),
-    hasDefaultEntityId: Boolean(config.defaultEntityId),
-    hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
-    hasTenantEntityId: Boolean(tenantEntityId),
-  });
-});
-
 const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);
 const ADMIN_STATUSES = new Set(["sandbox", "trial", "active", "suspended", "archived"]);
+
+/** API path with one trailing slash removed. Empty when the path is not under /api. Letters after /api keep their case. */
+function canonicalApiPath(path) {
+  const exact = String(path || "").split("?")[0];
+  if (!exact.toLowerCase().startsWith("/api")) return "";
+  const trimmed = exact.length > 1 && exact.endsWith("/") ? exact.slice(0, -1) : exact;
+  return `/api${trimmed.slice(4)}`;
+}
 
 function requirePlatformAdmin(request, response, next) {
   if (!request.path.toLowerCase().startsWith("/api/admin")) {
@@ -1709,7 +1703,7 @@ app.post("/api/admin/tenants", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected error creating tenant.",
+      message: publicErrorMessage(error, "Unexpected error creating tenant."),
     });
   }
 });
@@ -1748,7 +1742,7 @@ app.post("/api/admin/tenants/:tenantId/domains", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected error adding domain.",
+      message: publicErrorMessage(error, "Unexpected error adding domain."),
     });
   }
 });
@@ -1761,10 +1755,7 @@ app.use(async (request, response, next) => {
       return;
     }
 
-    const host =
-      normalizeHostname(request.headers["x-forwarded-host"]) ||
-      normalizeHostname(request.headers.host) ||
-      normalizeHostname(request.hostname);
+    const host = publicHostname(request) || normalizeHostname(request.hostname);
 
     const localHosts = new Set(["localhost", "127.0.0.1"]);
     if (localHosts.has(host)) {
@@ -1810,7 +1801,255 @@ app.use(async (request, response, next) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Tenant resolution failed.",
+      message: publicErrorMessage(error, "Tenant resolution failed."),
+    });
+  }
+});
+
+const MUTATING_METHODS = new Set(["POST", "PUT", "PATCH", "DELETE"]);
+
+app.use(async (request, response, next) => {
+  try {
+    const exactPath = String(request.path || "").split("?")[0];
+    const canonical = canonicalApiPath(exactPath);
+    if (!canonical) {
+      next();
+      return;
+    }
+    // A different letter case or a trailing slash is not the real route.
+    if (exactPath !== canonical) {
+      response.status(404).json({ ok: false, message: "Not found." });
+      return;
+    }
+    // Program-owner tools keep the platform admin key. CAD inbound keeps its shared secret.
+    if (exactPath.startsWith("/api/admin") || exactPath === "/api/cad/inbound-email") {
+      next();
+      return;
+    }
+    const routeMethod = request.method === "HEAD" ? "GET" : request.method;
+    const routeKey = `${routeMethod} ${exactPath}`;
+    const isPublic = PUBLIC_API_ROUTES.has(routeKey);
+    const mutating = MUTATING_METHODS.has(request.method);
+    if (isPublic) {
+      if (mutating && !originAllowed(request)) {
+        response.status(403).json({
+          ok: false,
+          message: "This action must come from the department's own website.",
+        });
+        return;
+      }
+      next();
+      return;
+    }
+    const auth = await readAuthFromRequest(prisma, request);
+    if (!auth) {
+      clearSessionCookie(response, request);
+      response.status(401).json({
+        ok: false,
+        code: "AUTH_REQUIRED",
+        message: "Sign in required.",
+      });
+      return;
+    }
+    if (mutating && !originAllowed(request)) {
+      response.status(403).json({
+        ok: false,
+        message: "This action must come from the department's own website.",
+      });
+      return;
+    }
+    request.auth = auth;
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Sign-in check failed."),
+    });
+  }
+});
+
+app.use(async (request, response, next) => {
+  try {
+    if (!request.auth) {
+      next();
+      return;
+    }
+    let permission = permissionForRequest(request.method, request.path, request.body);
+    if (
+      permission === "users.manage" &&
+      isSelfNameOnlyUserPatch(request.method, request.path, request.body, request.auth)
+    ) {
+      permission = null;
+    }
+    if (!permission) {
+      next();
+      return;
+    }
+    const minimumRole = await minimumRoleFor(prisma, request.tenant.id, permission);
+    const allowed = minimumRole != null && roleLevel(request.auth.role) >= roleLevel(minimumRole);
+    if (!allowed) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "You do not have permission to do that.",
+      });
+      return;
+    }
+    next();
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Permission check failed."),
+    });
+  }
+});
+
+app.get("/api/neris/health", async (request, response) => {
+  const config = getProxyConfig();
+  const requiresUserCredentials = config.grantType === "password";
+  const tenantId = trimValue(request.tenant?.id);
+  const tenantEntityId = tenantId ? await resolveTenantEntityId(tenantId) : "";
+  response.json({
+    ok: true,
+    proxyPort: config.proxyPort,
+    baseUrl: config.baseUrl,
+    grantType: config.grantType,
+    requiresUserCredentials,
+    createIncidentUrlPrefix: config.createIncidentUrlPrefix,
+    usingStaticToken: Boolean(config.staticAccessToken),
+    hasClientCredentials: Boolean(config.clientId && config.clientSecret),
+    hasUserCredentials: Boolean(config.username && config.password),
+    hasDefaultEntityId: Boolean(config.defaultEntityId),
+    hasDefaultDepartmentNerisId: Boolean(config.defaultDepartmentNerisId),
+    hasTenantEntityId: Boolean(tenantEntityId),
+  });
+});
+
+app.get("/api/auth/session", async (request, response) => {
+  const tenantId = request.tenant?.id;
+  const fullNameMap = tenantId ? await getTenantUserFullNameMap(tenantId) : {};
+  const username = request.auth.username;
+  const name = trimValue(fullNameMap[username.toLowerCase()]) || username;
+  response.json({
+    ok: true,
+    user: {
+      username,
+      name,
+      role: request.auth.role,
+    },
+  });
+});
+
+app.post("/api/auth/logout", async (request, response) => {
+  if (request.auth?.sessionId) {
+    await prisma.session.update({
+      where: { id: request.auth.sessionId },
+      data: { revokedAt: new Date() },
+    }).catch(() => {});
+  }
+  clearSessionCookie(response, request);
+  response.json({ ok: true });
+});
+
+app.get("/api/permissions", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const { grants } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), grants });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not load permissions."),
+    });
+  }
+});
+
+app.get("/api/permissions/policy", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const { policy } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), policy });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not load the permission list."),
+    });
+  }
+});
+
+app.put("/api/permissions/policy", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const permission = trimValue(body.permission);
+    const known = PERMISSIONS.some((item) => item.key === permission);
+    if (!known) {
+      response.status(400).json({ ok: false, message: "Unknown permission." });
+      return;
+    }
+    const nextMinimum = parseRole(body.minimumRole);
+    if (!nextMinimum) {
+      response.status(400).json({ ok: false, message: "Unknown role." });
+      return;
+    }
+    const currentMinimum = await minimumRoleFor(prisma, tenantId, permission);
+    const denial = policyChangeError(request.auth.role, currentMinimum, nextMinimum);
+    if (denial) {
+      response.status(403).json({ ok: false, code: "FORBIDDEN", message: denial });
+      return;
+    }
+    await prisma.rolePermission.upsert({
+      where: { tenantId_permission: { tenantId, permission } },
+      update: { minimumRole: nextMinimum },
+      create: { tenantId, permission, minimumRole: nextMinimum },
+    });
+    const { policy } = await loadPolicy(prisma, tenantId, request.auth.role);
+    response.json({ ok: true, role: canonicalRole(request.auth.role), policy });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not save the permission."),
+    });
+  }
+});
+
+app.get("/api/account-audit", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const entries = await prisma.accountAuditLog.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: 50,
+      select: {
+        id: true,
+        actorUsername: true,
+        action: true,
+        targetUsername: true,
+        detail: true,
+        createdAt: true,
+      },
+    });
+    response.json({ ok: true, entries });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not load the account log."),
     });
   }
 });
@@ -1822,17 +2061,271 @@ app.get("/api/tenant/context", (request, response) => {
   });
 });
 
-// ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
-const CAD_INGEST_SECRET = trimValue(process.env.CAD_INGEST_SECRET);
+// ----- CAD inbound allowlist: unknown department or an empty sender list accepts no one -----
+function extractEmailFromCadFromField(fromRaw) {
+  const s = trimValue(fromRaw);
+  if (!s) return "";
+  const angle = s.match(/<([^>]+)>/);
+  const candidate = angle ? trimValue(angle[1]) : s;
+  const emailMatch = candidate.match(/([^\s<>]+@[^\s<>]+)/);
+  return emailMatch ? trimValue(emailMatch[1]).toLowerCase() : candidate.toLowerCase();
+}
 
+function emailLocalPartDomain(emailLower) {
+  const at = emailLower.lastIndexOf("@");
+  if (at <= 0) return { local: "", domain: "" };
+  return {
+    local: emailLower.slice(0, at),
+    domain: emailLower.slice(at + 1),
+  };
+}
+
+function matchesCadDomainSuffix(emailDomainLower, patternRaw) {
+  const p = trimValue(patternRaw).toLowerCase();
+  if (!p || !emailDomainLower) return false;
+  return emailDomainLower === p || emailDomainLower.endsWith("." + p);
+}
+
+function cadFromMatchesAllowlistEntry(fromRaw, emailLower, pattern, patternType) {
+  const p = trimValue(pattern);
+  if (!p) return false;
+  const type = trimValue(patternType).toLowerCase() || "domain_suffix";
+  if (type === "exact_email") {
+    return emailLower === p.toLowerCase();
+  }
+  if (type === "domain_suffix") {
+    const { domain } = emailLocalPartDomain(emailLower);
+    return matchesCadDomainSuffix(domain, p);
+  }
+  if (type === "regex") {
+    try {
+      const re = new RegExp(p, "i");
+      return re.test(fromRaw) || (emailLower && re.test(emailLower));
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
+
+/**
+ * @returns {Promise<{ allowed: boolean }>}
+ * Unknown department or an empty enabled-sender list accepts no one.
+ */
+async function cadInboundAllowlistDecision(tenantId, fromAddress) {
+  if (!tenantId) {
+    return { allowed: false };
+  }
+  const entries = await prisma.cadEmailAllowlistEntry.findMany({
+    where: { tenantId, enabled: true },
+    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    select: { pattern: true, patternType: true },
+  });
+  if (entries.length === 0) {
+    return { allowed: false };
+  }
+  const emailLower = extractEmailFromCadFromField(fromAddress);
+  const fromRaw = typeof fromAddress === "string" ? fromAddress : "";
+  for (const e of entries) {
+    if (cadFromMatchesAllowlistEntry(fromRaw, emailLower, e.pattern, e.patternType)) {
+      return { allowed: true };
+    }
+  }
+  return { allowed: false };
+}
+
+// ----- CAD ingest → message pipeline (Batch H): message rules → parsedMessageText on CadEmailIngest -----
+
+const CAD_MESSAGE_TEXT_MAX = 50000;
+
+async function cadIngestApplyMessagePipeline(tenantId, rawBody, emailRowId) {
+  if (!tenantId || !emailRowId) return;
+  try {
+    const settings = await prisma.cadParsingSettings.findUnique({
+      where: { tenantId },
+    });
+    if (!settings) return;
+
+    let rules;
+    try {
+      rules = parseCadRulesJson(settings.messageRulesJson);
+    } catch (e) {
+      console.warn("[CAD ingest] message rules invalid:", e instanceof Error ? e.message : e);
+      return;
+    }
+
+    const plain = getDispatchPlainTextFromRawBody(rawBody);
+    if (!plain) {
+      await prisma.cadEmailIngest.updateMany({
+        where: { id: emailRowId, tenantId },
+        data: { parsedMessageText: "" },
+      });
+      return;
+    }
+
+    const result = runCadRulePipeline(plain, rules);
+    const text = result.ok ? result.text : plain;
+    const slice = trimValue(String(text)).slice(0, CAD_MESSAGE_TEXT_MAX);
+    if (!result.ok) {
+      console.warn("[CAD ingest] message rule pipeline failed:", result.error);
+    }
+    await prisma.cadEmailIngest.updateMany({
+      where: { id: emailRowId, tenantId },
+      data: { parsedMessageText: slice },
+    });
+  } catch (e) {
+    console.warn("[CAD ingest] message pipeline error:", e instanceof Error ? e.message : e);
+  }
+}
+
+// ----- CAD ingest → incident automation (Batch G): after rules, create/update Incident by merge key -----
+
+const CAD_INCIDENT_FIELD_MAP_TARGETS = new Set([
+  "address",
+  "incidentType",
+  "priority",
+  "stillDistrict",
+  "assignedUnits",
+  "reportedBy",
+  "callbackNumber",
+  "dispatchNotes",
+  "mapReference",
+  "dispatchInfo",
+  "receivedAt",
+]);
+
+function extractCadIncidentMergeKey(slots, incidentNumberExtract) {
+  if (
+    incidentNumberExtract &&
+    typeof incidentNumberExtract === "object" &&
+    !Array.isArray(incidentNumberExtract)
+  ) {
+    const slotName = trimValue(incidentNumberExtract.slot);
+    if (slotName && slots[slotName]) return trimValue(String(slots[slotName]));
+  }
+  if (slots.cfs) return trimValue(String(slots.cfs));
+  if (slots.incidentNumber) return trimValue(String(slots.incidentNumber));
+  return "";
+}
+
+function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
+  const data = {};
+  if (fieldMap && typeof fieldMap === "object" && !Array.isArray(fieldMap)) {
+    for (const [slotKey, targetRaw] of Object.entries(fieldMap)) {
+      const target = trimValue(String(targetRaw));
+      if (!CAD_INCIDENT_FIELD_MAP_TARGETS.has(target)) continue;
+      const v = slots[slotKey];
+      if (v == null || trimValue(String(v)) === "") continue;
+      data[target] = trimValue(String(v));
+    }
+  }
+  if (!data.dispatchNotes && pipelineText) {
+    data.dispatchNotes = pipelineText.slice(0, 12000);
+  }
+  return data;
+}
+
+/**
+ * Loads tenant parsing settings; if enableIncidentCreation and rules yield a merge key, creates or updates Incident.
+ * Errors are logged; ingest HTTP response stays successful if email row was stored.
+ */
+async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
+  if (!tenantId) return;
+
+  const settings = await prisma.cadParsingSettings.findUnique({
+    where: { tenantId },
+  });
+  if (!settings || !settings.enableIncidentCreation) return;
+
+  const plain = getDispatchPlainTextFromRawBody(rawBody);
+  if (!plain) return;
+
+  let rules;
+  try {
+    rules = parseCadRulesJson(settings.incidentRulesJson);
+  } catch (e) {
+    console.warn("[CAD ingest] incident rules invalid:", e instanceof Error ? e.message : e);
+    return;
+  }
+
+  const result = runCadRulePipeline(plain, rules);
+  if (!result.ok) {
+    console.warn("[CAD ingest] rule pipeline failed:", result.error);
+    return;
+  }
+
+  const fieldMap =
+    settings.incidentFieldMapJson &&
+    typeof settings.incidentFieldMapJson === "object" &&
+    !Array.isArray(settings.incidentFieldMapJson)
+      ? settings.incidentFieldMapJson
+      : {};
+
+  const mergeKey = extractCadIncidentMergeKey(result.slots, settings.incidentNumberExtractJson);
+  if (!mergeKey) {
+    console.warn(
+      "[CAD ingest] no incident merge key in slots (set incidentNumberExtract.slot or extract slot cfs / incidentNumber).",
+    );
+    return;
+  }
+
+  const mapped = buildCadMappedIncidentFields(result.slots, fieldMap, result.text);
+
+  const existing = await prisma.incident.findFirst({
+    where: { tenantId, incidentNumber: mergeKey, deletedAt: null },
+  });
+
+  if (existing) {
+    const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
+    const combined = [trimValue(existing.dispatchNotes), newBlock].filter(Boolean).join("\n\n--- CAD dispatch ---\n");
+    const updateData = {
+      dispatchNotes: combined.slice(0, 20000),
+    };
+    if (trimValue(mapped.address)) updateData.address = mapped.address;
+    if (trimValue(mapped.incidentType)) updateData.incidentType = mapped.incidentType;
+    if (trimValue(mapped.priority)) updateData.priority = mapped.priority;
+    if (trimValue(mapped.stillDistrict)) updateData.stillDistrict = mapped.stillDistrict;
+    if (trimValue(mapped.assignedUnits)) updateData.assignedUnits = mapped.assignedUnits;
+    if (trimValue(mapped.reportedBy)) updateData.reportedBy = mapped.reportedBy;
+    if (trimValue(mapped.callbackNumber)) updateData.callbackNumber = mapped.callbackNumber;
+    if (trimValue(mapped.mapReference)) updateData.mapReference = mapped.mapReference;
+    if (trimValue(mapped.dispatchInfo)) updateData.dispatchInfo = mapped.dispatchInfo;
+    if (trimValue(mapped.receivedAt)) updateData.receivedAt = mapped.receivedAt;
+    await prisma.incident.update({
+      where: { id: existing.id },
+      data: updateData,
+    });
+    return;
+  }
+
+  await prisma.incident.create({
+    data: {
+      tenantId,
+      incidentNumber: mergeKey,
+      dispatchNumber: mergeKey,
+      incidentType: trimValue(mapped.incidentType) || "",
+      priority: trimValue(mapped.priority) || "",
+      address: trimValue(mapped.address) || "",
+      stillDistrict: trimValue(mapped.stillDistrict) || "",
+      assignedUnits: trimValue(mapped.assignedUnits) || "",
+      reportedBy: trimValue(mapped.reportedBy) || null,
+      callbackNumber: trimValue(mapped.callbackNumber) || null,
+      dispatchNotes: trimValue(mapped.dispatchNotes) || null,
+      mapReference: trimValue(mapped.mapReference) || null,
+      currentState: "Draft",
+      receivedAt: trimValue(mapped.receivedAt) || "",
+      dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",
+    },
+  });
+}
+
+// ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
 app.post("/api/cad/inbound-email", async (request, response) => {
   try {
-    if (CAD_INGEST_SECRET) {
-      const secret = trimValue(request.headers["x-cad-ingest-secret"]);
-      if (secret !== CAD_INGEST_SECRET) {
-        response.status(401).json({ ok: false, message: "Unauthorized." });
-        return;
-      }
+    const guard = cadIngestGuard(request);
+    if (!guard.ok) {
+      response.status(guard.status).json({ ok: false, message: guard.message });
+      return;
     }
 
     const body = request.body && typeof request.body === "object" ? request.body : {};
@@ -1854,7 +2347,18 @@ app.post("/api/cad/inbound-email", async (request, response) => {
       }
     }
 
-    await prisma.cadEmailIngest.create({
+    const allow = await cadInboundAllowlistDecision(tenantId, fromAddress);
+    if (!allow.allowed) {
+      response.status(200).json({
+        ok: false,
+        rejected: true,
+        code: "cad_allowlist",
+        message: "Sender is not allowed by CAD allowlist.",
+      });
+      return;
+    }
+
+    const ingestRow = await prisma.cadEmailIngest.create({
       data: {
         tenantId,
         fromAddress,
@@ -1862,13 +2366,26 @@ app.post("/api/cad/inbound-email", async (request, response) => {
         rawBody,
         headersJson,
       },
+      select: { id: true },
     });
+
+    try {
+      await cadIngestApplyMessagePipeline(tenantId, rawBody, ingestRow.id);
+    } catch (msgErr) {
+      console.error("[CAD ingest] message pipeline error:", msgErr);
+    }
+
+    try {
+      await cadIngestApplyIncidentAutomation(tenantId, rawBody);
+    } catch (autoErr) {
+      console.error("[CAD ingest] incident automation error:", autoErr);
+    }
 
     response.status(200).json({ ok: true });
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "CAD inbound email store failed.",
+      message: publicErrorMessage(error, "CAD inbound email store failed."),
     });
   }
 });
@@ -1894,6 +2411,7 @@ app.get("/api/cad/emails", async (request, response) => {
         toAddress: true,
         rawBody: true,
         headersJson: true,
+        parsedMessageText: true,
         createdAt: true,
       },
     });
@@ -1903,13 +2421,289 @@ app.get("/api/cad/emails", async (request, response) => {
       toAddress: r.toAddress ?? "",
       rawBody: r.rawBody ?? "",
       headersJson: r.headersJson ?? null,
+      parsedMessageText: r.parsedMessageText ?? "",
       createdAt: r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt ?? ""),
     }));
     response.json({ ok: true, data: list });
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Failed to list CAD emails.",
+      message: publicErrorMessage(error, "Failed to list CAD emails."),
+    });
+  }
+});
+
+const CAD_ALLOWLIST_PATTERN_TYPES = new Set(["domain_suffix", "exact_email", "regex"]);
+const CAD_ALLOWLIST_MAX_ENTRIES = 200;
+const CAD_ALLOWLIST_PATTERN_MAX_LEN = 500;
+
+function defaultCadParsingConfigApi() {
+  return {
+    enableIncidentCreation: false,
+    messageRules: [],
+    incidentRules: [],
+    incidentFieldMap: {},
+    incidentNumberExtract: null,
+  };
+}
+
+function cadParsingRowToApi(row) {
+  const msg = row.messageRulesJson;
+  const inc = row.incidentRulesJson;
+  const map = row.incidentFieldMapJson;
+  const ext = row.incidentNumberExtractJson;
+  return {
+    enableIncidentCreation: Boolean(row.enableIncidentCreation),
+    messageRules: Array.isArray(msg) ? msg : [],
+    incidentRules: Array.isArray(inc) ? inc : [],
+    incidentFieldMap: map && typeof map === "object" && !Array.isArray(map) ? map : {},
+    incidentNumberExtract:
+      ext !== null && ext !== undefined && typeof ext === "object" && !Array.isArray(ext)
+        ? ext
+        : null,
+  };
+}
+
+// ----- GET/PATCH /api/cad/parsing-config (tenant-scoped; Dispatch Parsing admin) -----
+app.get("/api/cad/parsing-config", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const row = await prisma.cadParsingSettings.findUnique({
+      where: { tenantId },
+    });
+    if (!row) {
+      response.json({ ok: true, data: defaultCadParsingConfigApi() });
+      return;
+    }
+    response.json({ ok: true, data: cadParsingRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Failed to load CAD parsing config."),
+    });
+  }
+});
+
+app.patch("/api/cad/parsing-config", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const existing = await prisma.cadParsingSettings.findUnique({
+      where: { tenantId },
+    });
+    const base = existing ? cadParsingRowToApi(existing) : defaultCadParsingConfigApi();
+
+    let enableIncidentCreation = base.enableIncidentCreation;
+    if (typeof body.enableIncidentCreation === "boolean") {
+      enableIncidentCreation = body.enableIncidentCreation;
+    }
+
+    let messageRules = base.messageRules;
+    if (body.messageRules !== undefined) {
+      if (!Array.isArray(body.messageRules)) {
+        response.status(400).json({ ok: false, message: "messageRules must be an array." });
+        return;
+      }
+      messageRules = body.messageRules;
+    }
+
+    let incidentRules = base.incidentRules;
+    if (body.incidentRules !== undefined) {
+      if (!Array.isArray(body.incidentRules)) {
+        response.status(400).json({ ok: false, message: "incidentRules must be an array." });
+        return;
+      }
+      incidentRules = body.incidentRules;
+    }
+
+    let incidentFieldMap = base.incidentFieldMap;
+    if (body.incidentFieldMap !== undefined) {
+      if (
+        typeof body.incidentFieldMap !== "object" ||
+        body.incidentFieldMap === null ||
+        Array.isArray(body.incidentFieldMap)
+      ) {
+        response.status(400).json({ ok: false, message: "incidentFieldMap must be an object." });
+        return;
+      }
+      incidentFieldMap = body.incidentFieldMap;
+    }
+
+    let incidentNumberExtract = base.incidentNumberExtract;
+    if (Object.prototype.hasOwnProperty.call(body, "incidentNumberExtract")) {
+      if (body.incidentNumberExtract === null) {
+        incidentNumberExtract = null;
+      } else if (
+        typeof body.incidentNumberExtract === "object" &&
+        !Array.isArray(body.incidentNumberExtract)
+      ) {
+        incidentNumberExtract = body.incidentNumberExtract;
+      } else {
+        response.status(400).json({
+          ok: false,
+          message: "incidentNumberExtract must be an object or null.",
+        });
+        return;
+      }
+    }
+
+    await prisma.cadParsingSettings.upsert({
+      where: { tenantId },
+      create: {
+        tenantId,
+        enableIncidentCreation,
+        messageRulesJson: messageRules,
+        incidentRulesJson: incidentRules,
+        incidentFieldMapJson: incidentFieldMap,
+        incidentNumberExtractJson: incidentNumberExtract,
+      },
+      update: {
+        enableIncidentCreation,
+        messageRulesJson: messageRules,
+        incidentRulesJson: incidentRules,
+        incidentFieldMapJson: incidentFieldMap,
+        incidentNumberExtractJson: incidentNumberExtract,
+      },
+    });
+
+    response.json({
+      ok: true,
+      data: {
+        enableIncidentCreation,
+        messageRules,
+        incidentRules,
+        incidentFieldMap,
+        incidentNumberExtract,
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Failed to save CAD parsing config."),
+    });
+  }
+});
+
+// ----- GET/PATCH /api/cad/allowlist (tenant-scoped; Batch D will enforce on ingest) -----
+app.get("/api/cad/allowlist", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.cadEmailAllowlistEntry.findMany({
+      where: { tenantId },
+      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+    });
+    const entries = rows.map((r) => ({
+      id: r.id,
+      pattern: r.pattern,
+      patternType: r.patternType,
+      enabled: r.enabled,
+      sortOrder: r.sortOrder,
+    }));
+    response.json({ ok: true, data: { entries } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Failed to load CAD allowlist."),
+    });
+  }
+});
+
+app.patch("/api/cad/allowlist", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    if (!Array.isArray(body.entries)) {
+      response.status(400).json({ ok: false, message: "Body must include entries array." });
+      return;
+    }
+    if (body.entries.length > CAD_ALLOWLIST_MAX_ENTRIES) {
+      response.status(400).json({
+        ok: false,
+        message: `At most ${CAD_ALLOWLIST_MAX_ENTRIES} allowlist entries allowed.`,
+      });
+      return;
+    }
+
+    const normalized = [];
+    for (let i = 0; i < body.entries.length; i++) {
+      const e = body.entries[i];
+      if (!e || typeof e !== "object") {
+        response.status(400).json({ ok: false, message: `Invalid entry at index ${i}.` });
+        return;
+      }
+      const pattern = trimValue(typeof e.pattern === "string" ? e.pattern : "");
+      if (!pattern) {
+        response.status(400).json({ ok: false, message: `Empty pattern at index ${i}.` });
+        return;
+      }
+      if (pattern.length > CAD_ALLOWLIST_PATTERN_MAX_LEN) {
+        response.status(400).json({
+          ok: false,
+          message: `Pattern at index ${i} exceeds ${CAD_ALLOWLIST_PATTERN_MAX_LEN} characters.`,
+        });
+        return;
+      }
+      const patternType = trimValue(
+        typeof e.patternType === "string" ? e.patternType : "domain_suffix",
+      );
+      if (!CAD_ALLOWLIST_PATTERN_TYPES.has(patternType)) {
+        response.status(400).json({
+          ok: false,
+          message: `Invalid patternType at index ${i}. Use domain_suffix, exact_email, or regex.`,
+        });
+        return;
+      }
+      const enabled = typeof e.enabled === "boolean" ? e.enabled : true;
+      const sortOrder =
+        typeof e.sortOrder === "number" && Number.isFinite(e.sortOrder) ? Math.trunc(e.sortOrder) : i;
+      normalized.push({ pattern, patternType, enabled, sortOrder });
+    }
+
+    const created = await prisma.$transaction(async (tx) => {
+      await tx.cadEmailAllowlistEntry.deleteMany({ where: { tenantId } });
+      const out = [];
+      for (const e of normalized) {
+        const row = await tx.cadEmailAllowlistEntry.create({
+          data: {
+            tenantId,
+            pattern: e.pattern,
+            patternType: e.patternType,
+            enabled: e.enabled,
+            sortOrder: e.sortOrder,
+          },
+        });
+        out.push({
+          id: row.id,
+          pattern: row.pattern,
+          patternType: row.patternType,
+          enabled: row.enabled,
+          sortOrder: row.sortOrder,
+        });
+      }
+      return out;
+    });
+
+    response.json({ ok: true, data: { entries: created } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Failed to save CAD allowlist."),
     });
   }
 });
@@ -1976,6 +2770,7 @@ app.get("/api/incidents", async (request, response) => {
     const reportStatusByCall = new Map();
     for (const d of drafts) {
       const payload = d.payload && typeof d.payload === "object" ? d.payload : {};
+      if (payload.reportRemoved === true) continue;
       const status =
         typeof payload.reportStatus === "string" && payload.reportStatus.trim()
           ? payload.reportStatus.trim()
@@ -1991,7 +2786,7 @@ app.get("/api/incidents", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incidents list error.",
+      message: publicErrorMessage(error, "Unexpected incidents list error."),
     });
   }
 });
@@ -2034,7 +2829,7 @@ app.post("/api/incidents", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident create error.",
+      message: publicErrorMessage(error, "Unexpected incident create error."),
     });
   }
 });
@@ -2058,7 +2853,7 @@ app.get("/api/incidents/:id", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident get error.",
+      message: publicErrorMessage(error, "Unexpected incident get error."),
     });
   }
 });
@@ -2106,15 +2901,23 @@ app.patch("/api/incidents/:id", async (request, response) => {
       const v = body.apparatusJson ?? body.apparatus;
       update.apparatusJson = v == null ? null : (typeof v === "object" ? v : null);
     }
-    const updated = await prisma.incident.update({
-      where: { id },
-      data: update,
-    });
+    let updated = existing;
+    if (Object.keys(update).length > 0) {
+      const written = await prisma.incident.updateMany({
+        where: { id, tenantId },
+        data: update,
+      });
+      if (written.count !== 1) {
+        response.status(404).json({ ok: false, message: "Incident not found." });
+        return;
+      }
+      updated = await prisma.incident.findFirst({ where: { id, tenantId } });
+    }
     response.json({ ok: true, data: incidentRowToApi(updated) });
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident update error.",
+      message: publicErrorMessage(error, "Unexpected incident update error."),
     });
   }
 });
@@ -2134,27 +2937,141 @@ app.delete("/api/incidents/:id", async (request, response) => {
       response.status(404).json({ ok: false, message: "Incident not found." });
       return;
     }
+    const reportCallNumbers = [id];
+    const incidentNumber = trimValue(existing.incidentNumber);
+    if (incidentNumber && incidentNumber !== id) reportCallNumbers.push(incidentNumber);
+    const linkedReports = (
+      await prisma.nerisDraft.findMany({
+        where: { tenantId, callNumber: { in: reportCallNumbers } },
+      })
+    ).filter((row) => !isReportRemoved(row.payload));
+    if (linkedReports.length > 0 && roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can delete a report.",
+      });
+      return;
+    }
+    if (linkedReports.some((row) => reportStatusOf(row.payload) !== "Draft")) {
+      response.status(409).json({
+        ok: false,
+        code: "REPORT_LOCKED",
+        message: "This report is locked. Unlock it before deleting.",
+      });
+      return;
+    }
     const body = request.body && typeof request.body === "object" ? request.body : {};
     const deletedBy = trimValue(body.deletedBy) || null;
     const deletedReason = trimValue(body.deletedReason) || null;
-    const updated = await prisma.incident.update({
-      where: { id },
+    const written = await prisma.incident.updateMany({
+      where: { id, tenantId },
       data: {
         deletedAt: new Date(),
         deletedBy,
         deletedReason,
       },
     });
+    if (written.count !== 1) {
+      response.status(404).json({ ok: false, message: "Incident not found." });
+      return;
+    }
+    const updated = await prisma.incident.findFirst({ where: { id, tenantId } });
     response.json({ ok: true, data: incidentRowToApi(updated) });
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected incident delete error.",
+      message: publicErrorMessage(error, "Unexpected incident delete error."),
     });
   }
 });
 
 // ----- /api/neris/export-history (NERIS export history, cross-browser) -----
+const SERVER_EXPORT_RECEIPT = "server-receipt:v1";
+
+function stampServerExportDetail(detail) {
+  return `${SERVER_EXPORT_RECEIPT}\n${String(detail ?? "").slice(0, 8000)}`;
+}
+
+function stripServerExportReceipt(detail) {
+  const text = String(detail ?? "");
+  const prefix = `${SERVER_EXPORT_RECEIPT}\n`;
+  if (text.startsWith(prefix)) return text.slice(prefix.length);
+  if (text === SERVER_EXPORT_RECEIPT) return "";
+  return text;
+}
+
+function formatExportClock(date, offsetMinutes) {
+  const shift = Number.isFinite(offsetMinutes) ? offsetMinutes : 0;
+  const local = new Date(date.getTime() - shift * 60 * 1000);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${local.getUTCFullYear()}-${pad(local.getUTCMonth() + 1)}-${pad(local.getUTCDate())} ${pad(local.getUTCHours())}:${pad(local.getUTCMinutes())}:${pad(local.getUTCSeconds())}`;
+}
+
+function nerisIdFromReply(responseBody, fallback) {
+  if (responseBody && typeof responseBody === "object" && typeof responseBody.neris_id === "string") {
+    const fromBody = trimValue(responseBody.neris_id);
+    if (fromBody) return fromBody;
+  }
+  return trimValue(fallback?.usedIncidentNerisId);
+}
+
+async function writeNerisExportReceipt({
+  tenantId,
+  auth,
+  requestBody,
+  entityId,
+  payload,
+  httpStatus,
+  httpStatusText,
+  responseBody,
+  fallback,
+}) {
+  const body = requestBody && typeof requestBody === "object" ? requestBody : {};
+  const formValues = body.formValues && typeof body.formValues === "object" ? body.formValues : {};
+  const snapshot =
+    body.incidentSnapshot && typeof body.incidentSnapshot === "object" ? body.incidentSnapshot : {};
+  const integration = body.integration && typeof body.integration === "object" ? body.integration : {};
+  const offset = Number.parseInt(String(integration.clientUtcOffsetMinutes ?? ""), 10);
+  const succeeded = httpStatus >= 200 && httpStatus < 300;
+  const now = new Date();
+  const detailSource =
+    responseBody && typeof responseBody === "object"
+      ? JSON.stringify(responseBody)
+      : readNerisDetailString(responseBody);
+  const summary = readNerisDetailString(responseBody) || `${httpStatus} ${httpStatusText}`.trim();
+  let preview = "";
+  try {
+    preview = JSON.stringify(payload ?? {});
+  } catch {
+    preview = "";
+  }
+  return prisma.nerisExportHistory.create({
+    data: {
+      tenantId,
+      callNumber: trimValue(body.callNumber) ?? "",
+      incidentType: trimValue(snapshot.incidentType) || trimValue(formValues.primary_incident_type) || "",
+      address: trimValue(snapshot.address) || trimValue(formValues.incident_location_address) || "",
+      exportedAtIso: now.toISOString(),
+      exportedAtLabel: formatExportClock(now, offset),
+      attemptStatus: succeeded ? "success" : "failed",
+      httpStatus,
+      httpStatusText: String(httpStatusText ?? "").slice(0, 200),
+      statusLabel: `${httpStatus} ${httpStatusText}`.trim(),
+      reportStatusAtExport: succeeded ? "Exported" : trimValue(body.reportStatus) || "Draft",
+      validatorName: "",
+      reportWriterName: String(auth?.username ?? "").slice(0, 200),
+      submittedEntityId: trimValue(entityId) ?? "",
+      submittedDepartmentNerisId:
+        trimValue(payload?.base?.department_neris_id) || trimValue(formValues.fd_neris_id) || "",
+      nerisId: nerisIdFromReply(responseBody, fallback),
+      responseSummary: summary.slice(0, 2000),
+      responseDetail: stampServerExportDetail(detailSource),
+      submittedPayloadPreview: preview.slice(0, 200000),
+    },
+  });
+}
+
 function nerisExportHistoryRowToApi(row) {
   return {
     id: row.id,
@@ -2174,7 +3091,7 @@ function nerisExportHistoryRowToApi(row) {
     submittedDepartmentNerisId: row.submittedDepartmentNerisId ?? "",
     nerisId: row.nerisId ?? "",
     responseSummary: row.responseSummary ?? "",
-    responseDetail: row.responseDetail ?? "",
+    responseDetail: stripServerExportReceipt(row.responseDetail),
     submittedPayloadPreview: row.submittedPayloadPreview ?? "",
   };
 }
@@ -2199,7 +3116,7 @@ app.get("/api/neris/export-history", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected export history list error.",
+      message: publicErrorMessage(error, "Unexpected export history list error."),
     });
   }
 });
@@ -2212,12 +3129,19 @@ app.post("/api/neris/export-history", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
+    if (body.attemptStatus !== "failed") {
+      response.status(400).json({
+        ok: false,
+        message: "The browser can record only a failed export. The server records NERIS replies.",
+      });
+      return;
+    }
     const callNumber = trimValue(body.callNumber) ?? "";
     const incidentType = trimValue(body.incidentType) ?? "";
     const address = trimValue(body.address) ?? "";
     const exportedAtIso = trimValue(body.exportedAtIso) ?? "";
     const exportedAtLabel = trimValue(body.exportedAtLabel) ?? "";
-    const attemptStatus = body.attemptStatus === "failed" ? "failed" : "success";
+    const attemptStatus = "failed";
     const httpStatus =
       typeof body.httpStatus === "number" && Number.isFinite(body.httpStatus)
         ? body.httpStatus
@@ -2233,7 +3157,7 @@ app.post("/api/neris/export-history", async (request, response) => {
     const submittedDepartmentNerisId = trimValue(body.submittedDepartmentNerisId) ?? "";
     const nerisId = trimValue(body.nerisId) ?? "";
     const responseSummary = trimValue(body.responseSummary) ?? "";
-    const responseDetail = trimValue(body.responseDetail) ?? "";
+    const responseDetail = stripServerExportReceipt(trimValue(body.responseDetail) ?? "");
     const submittedPayloadPreview = trimValue(body.submittedPayloadPreview) ?? "";
 
     const row = await prisma.nerisExportHistory.create({
@@ -2263,7 +3187,230 @@ app.post("/api/neris/export-history", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected export history create error.",
+      message: publicErrorMessage(error, "Unexpected export history create error."),
+    });
+  }
+});
+
+const REPORT_CONFLICT_MESSAGE =
+  "Someone else saved this report while you were editing. Reload to see their changes before saving again.";
+const REPORT_LOCKED_MESSAGE = "This report is locked. Unlock it before saving changes.";
+const LOGO_MAX_BYTES = 500 * 1024;
+
+function reportStatusOf(payload) {
+  const status = trimValue(payload && typeof payload === "object" ? payload.reportStatus : "");
+  if (status === "In Review" || status === "Exported") return status;
+  return "Draft";
+}
+
+function isReportRemoved(payload) {
+  return Boolean(payload && typeof payload === "object" && !Array.isArray(payload) && payload.reportRemoved === true);
+}
+
+function removedReportPayload(existing) {
+  const previous =
+    existing?.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? existing.payload
+      : {};
+  return { ...previous, reportRemoved: true, reportStatus: "Draft" };
+}
+
+function draftPayloadFromBody(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  const nested =
+    source.payload && typeof source.payload === "object" && !Array.isArray(source.payload)
+      ? source.payload
+      : source;
+  const payload = { ...nested };
+  delete payload.baseUpdatedAt;
+  delete payload.payload;
+  delete payload.seedFormValues;
+  delete payload.reportRemoved;
+  return payload;
+}
+
+function seedFormValuesFromBody(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body.seedFormValues : null;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const seed = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (typeof value === "string" || typeof value === "number") seed[key] = String(value);
+  }
+  return seed;
+}
+
+function revisionMatches(updatedAt, baseUpdatedAt) {
+  const expected = Date.parse(String(baseUpdatedAt ?? ""));
+  const actual = updatedAt instanceof Date ? updatedAt.getTime() : Date.parse(String(updatedAt ?? ""));
+  return Number.isFinite(expected) && Number.isFinite(actual) && expected === actual;
+}
+
+const HISTORY_SKIP_KEYS = new Set([
+  "formValues",
+  "baseUpdatedAt",
+  "lastSavedAt",
+  "payload",
+  "reportRemoved",
+  "seedFormValues",
+]);
+
+function plainObject(value) {
+  return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+}
+
+function isEmptyHistoryValue(value) {
+  if (value == null || value === "") return true;
+  if (Array.isArray(value)) return value.length === 0;
+  if (typeof value === "object") return Object.keys(value).length === 0;
+  return false;
+}
+
+function changedFieldNames(previous, next, seedFormValues) {
+  const prev = plainObject(previous);
+  const nxt = plainObject(next);
+  const seed = plainObject(seedFormValues);
+  const names = new Set();
+  const prevForm = plainObject(prev.formValues);
+  const nextForm = plainObject(nxt.formValues);
+  for (const key of new Set([...Object.keys(prevForm), ...Object.keys(nextForm)])) {
+    const previousValue = String(prevForm[key] ?? "");
+    const nextValue = String(nextForm[key] ?? "");
+    if (previousValue === nextValue) continue;
+    const copiedFromIncident =
+      !Object.prototype.hasOwnProperty.call(prevForm, key) &&
+      Object.prototype.hasOwnProperty.call(seed, key) &&
+      String(seed[key] ?? "") === nextValue;
+    if (copiedFromIncident) continue;
+    names.add(key);
+  }
+  for (const key of new Set([...Object.keys(prev), ...Object.keys(nxt)])) {
+    if (HISTORY_SKIP_KEYS.has(key)) continue;
+    if (key === "reportStatus") {
+      const nextStatus = trimValue(nxt.reportStatus) || "Draft";
+      if (!trimValue(prev.reportStatus) && nextStatus === "Draft") continue;
+      if ((trimValue(prev.reportStatus) || "Draft") !== nextStatus) names.add(key);
+      continue;
+    }
+    const prevValue = prev[key] ?? null;
+    const nextValue = nxt[key] ?? null;
+    if (JSON.stringify(prevValue) === JSON.stringify(nextValue)) continue;
+    if (isEmptyHistoryValue(prevValue) && isEmptyHistoryValue(nextValue)) continue;
+    names.add(key);
+  }
+  return [...names].sort();
+}
+
+async function recordReportChange(tenantId, callNumber, auth, fieldNames) {
+  if (!fieldNames.length) return;
+  await prisma.nerisReportChange.create({
+    data: {
+      tenantId,
+      callNumber,
+      actorUserId: auth?.userId ?? null,
+      actorUsername: trimValue(auth?.username) || "unknown",
+      fieldNames,
+    },
+  });
+}
+
+function draftJson(row) {
+  const payload = row.payload && typeof row.payload === "object" && !Array.isArray(row.payload) ? row.payload : {};
+  const updatedAt = row.updatedAt instanceof Date ? row.updatedAt : new Date(row.updatedAt);
+  return { ok: true, data: payload, updatedAt: updatedAt.toISOString() };
+}
+
+function imageDataUrlBytes(dataUrl) {
+  const match = /^data:image\/[a-z0-9.+-]+;base64,([a-z0-9+/=\s]+)$/i.exec(dataUrl);
+  if (!match) return null;
+  try {
+    return Buffer.from(match[1].replace(/\s/g, ""), "base64").length;
+  } catch {
+    return null;
+  }
+}
+
+function sharedSettingsPatch(body) {
+  const source = body && typeof body === "object" && !Array.isArray(body) ? body : {};
+  const patch = {};
+  if (Object.prototype.hasOwnProperty.call(source, "logoDataUrl")) {
+    if (typeof source.logoDataUrl !== "string") {
+      return { error: "The department logo must be an image file." };
+    }
+    const logo = source.logoDataUrl.trim();
+    if (logo === "") {
+      patch.logoDataUrl = "";
+    } else {
+      const bytes = imageDataUrlBytes(logo);
+      if (bytes === null) return { error: "The department logo must be an image file." };
+      if (bytes > LOGO_MAX_BYTES) return { error: "The department logo must be 500 KB or smaller." };
+      patch.logoDataUrl = logo;
+    }
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "workflowStates")) {
+    if (!Array.isArray(source.workflowStates)) return { error: "Workflow states must be a list." };
+    const states = [];
+    for (const item of source.workflowStates) {
+      const text = trimValue(item);
+      if (!text || text.length > 80 || states.includes(text)) continue;
+      states.push(text);
+      if (states.length >= 40) break;
+    }
+    if (!states.length) return { error: "Keep at least one workflow state." };
+    patch.workflowStates = states;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "submenuVisibility")) {
+    const raw = source.submenuVisibility;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { error: "Submenu visibility must be a set of on or off choices." };
+    }
+    const visibility = {};
+    for (const [key, value] of Object.entries(raw)) {
+      if (typeof value !== "boolean") continue;
+      const path = trimValue(key);
+      if (!path.startsWith("/") || path.length > 120) continue;
+      visibility[path] = value;
+    }
+    patch.submenuVisibility = visibility;
+  }
+  if (Object.prototype.hasOwnProperty.call(source, "displayCards")) {
+    const raw = source.displayCards;
+    if (!raw || typeof raw !== "object" || Array.isArray(raw)) {
+      return { error: "Submenu cards must be a list." };
+    }
+    const cards = {};
+    for (const [key, value] of Object.entries(raw)) {
+      const menuId = trimValue(key);
+      if (!menuId || menuId.length > 40 || !Array.isArray(value)) continue;
+      cards[menuId] = value
+        .map((item) => trimValue(item))
+        .filter((item) => item.startsWith("/") && item.length <= 120)
+        .slice(0, 40);
+    }
+    patch.displayCards = cards;
+  }
+  return { patch };
+}
+
+// Call numbers whose NERIS report was deleted. The incident itself stays.
+app.get("/api/neris/removed-reports", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.nerisDraft.findMany({
+      where: {
+        tenantId,
+        payload: { path: ["reportRemoved"], equals: true },
+      },
+      select: { callNumber: true },
+    });
+    response.json({ ok: true, data: { callNumbers: rows.map((row) => row.callNumber) } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected removed report list error."),
     });
   }
 });
@@ -2282,21 +3429,50 @@ app.get("/api/neris/drafts/:callNumber", async (request, response) => {
       return;
     }
     const row = await prisma.nerisDraft.findUnique({
-      where: {
-        tenantId_callNumber: { tenantId, callNumber },
-      },
+      where: { tenantId_callNumber: { tenantId, callNumber } },
     });
     if (!row) {
       response.status(404).json({ ok: false, message: "No draft found for this incident." });
       return;
     }
-    const payload =
-      row.payload && typeof row.payload === "object" ? row.payload : {};
-    response.json({ ok: true, data: payload });
+    response.json(draftJson(row));
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected draft get error.",
+      message: publicErrorMessage(error, "Unexpected draft get error."),
+    });
+  }
+});
+
+app.get("/api/neris/drafts/:callNumber/history", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const rows = await prisma.nerisReportChange.findMany({
+      where: { tenantId, callNumber },
+      orderBy: { createdAt: "desc" },
+    });
+    response.json({
+      ok: true,
+      data: rows.map((row) => ({
+        id: row.id,
+        createdAt: row.createdAt.toISOString(),
+        actorUsername: row.actorUsername,
+        fieldNames: Array.isArray(row.fieldNames) ? row.fieldNames.filter((name) => typeof name === "string") : [],
+      })),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected report history error."),
     });
   }
 });
@@ -2314,30 +3490,212 @@ app.patch("/api/neris/drafts/:callNumber", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const payload =
-      body.payload && typeof body.payload === "object"
-        ? body.payload
-        : body && typeof body === "object"
-          ? body
-          : {};
+    const payload = draftPayloadFromBody(body);
+    const seedFormValues = seedFormValuesFromBody(body);
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    const removed = Boolean(existing && isReportRemoved(existing.payload));
+    const active = existing && !removed ? existing : null;
+    const sentRevision = trimValue(body.baseUpdatedAt);
+    if (active && !revisionMatches(active.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    if (removed && sentRevision && !revisionMatches(existing.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    if (active) {
+      const previousStatus = reportStatusOf(active.payload);
+      const nextStatus = reportStatusOf(payload);
+      const contentChanges = changedFieldNames(active.payload, payload, seedFormValues).filter(
+        (name) => name !== "reportStatus",
+      );
+      if (nextStatus === "Exported" && previousStatus !== "Exported") {
+        const minimumRole = await minimumRoleFor(prisma, tenantId, "neris.export");
+        if (roleLevel(request.auth?.role) < roleLevel(minimumRole)) {
+          response.status(403).json({
+            ok: false,
+            code: "FORBIDDEN",
+            message: "You do not have permission to do that.",
+          });
+          return;
+        }
+      }
+      if (previousStatus !== "Draft") {
+        if (contentChanges.length > 0 || (nextStatus !== previousStatus && nextStatus !== "Exported")) {
+          response.status(409).json({ ok: false, code: "REPORT_LOCKED", message: REPORT_LOCKED_MESSAGE });
+          return;
+        }
+      }
+    }
     const row = await prisma.nerisDraft.upsert({
-      where: {
-        tenantId_callNumber: { tenantId, callNumber },
-      },
-      create: {
-        tenantId,
-        callNumber,
-        payload,
-      },
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      create: { tenantId, callNumber, payload },
       update: { payload },
     });
-    const out =
-      row.payload && typeof row.payload === "object" ? row.payload : {};
-    response.json({ ok: true, data: out });
+    await recordReportChange(
+      tenantId,
+      callNumber,
+      request.auth,
+      changedFieldNames(existing?.payload ?? {}, payload, seedFormValues),
+    );
+    response.json(draftJson(row));
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected draft save error.",
+      message: publicErrorMessage(error, "Unexpected draft save error."),
+    });
+  }
+});
+
+app.post("/api/neris/drafts/:callNumber/unlock", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (!existing || isReportRemoved(existing.payload)) {
+      response.status(404).json({ ok: false, message: "No draft found for this incident." });
+      return;
+    }
+    if (!revisionMatches(existing.updatedAt, body.baseUpdatedAt)) {
+      response.status(409).json({ ok: false, code: "REPORT_CONFLICT", message: REPORT_CONFLICT_MESSAGE });
+      return;
+    }
+    const status = reportStatusOf(existing.payload);
+    if (status === "Draft") {
+      response.json(draftJson(existing));
+      return;
+    }
+    if (status === "Exported" && roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can unlock an exported report.",
+      });
+      return;
+    }
+    const previous =
+      existing.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+        ? existing.payload
+        : {};
+    const row = await prisma.nerisDraft.update({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      data: { payload: { ...previous, reportStatus: "Draft" } },
+    });
+    await recordReportChange(tenantId, callNumber, request.auth, ["reportStatus"]);
+    response.json(draftJson(row));
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected unlock error."),
+    });
+  }
+});
+
+app.delete("/api/neris/drafts/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing or empty callNumber." });
+      return;
+    }
+    if (roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({
+        ok: false,
+        code: "FORBIDDEN",
+        message: "Only an admin can delete a report.",
+      });
+      return;
+    }
+    const existing = await prisma.nerisDraft.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (existing && !isReportRemoved(existing.payload) && reportStatusOf(existing.payload) !== "Draft") {
+      response.status(409).json({
+        ok: false,
+        code: "REPORT_LOCKED",
+        message: "This report is locked. Unlock it before deleting.",
+      });
+      return;
+    }
+    await prisma.nerisDraft.upsert({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      create: { tenantId, callNumber, payload: removedReportPayload(existing) },
+      update: { payload: removedReportPayload(existing) },
+    });
+    response.json({ ok: true });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected report delete error."),
+    });
+  }
+});
+
+app.patch("/api/department-shared-settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const parsed = sharedSettingsPatch(request.body);
+    if (parsed.error) {
+      response.status(400).json({ ok: false, message: parsed.error });
+      return;
+    }
+    if (Object.keys(parsed.patch).length === 0) {
+      response.status(400).json({ ok: false, message: "No shared settings were sent." });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true, departmentName: true },
+    });
+    const existingPayload =
+      details?.payloadJson && typeof details.payloadJson === "object" && !Array.isArray(details.payloadJson)
+        ? { ...details.payloadJson }
+        : {};
+    const current =
+      existingPayload.sharedDepartmentSettings &&
+      typeof existingPayload.sharedDepartmentSettings === "object" &&
+      !Array.isArray(existingPayload.sharedDepartmentSettings)
+        ? existingPayload.sharedDepartmentSettings
+        : {};
+    const shared = { ...current, ...parsed.patch };
+    const payloadToStore = { ...existingPayload, sharedDepartmentSettings: shared };
+    await prisma.departmentDetails.upsert({
+      where: { tenantId },
+      update: { payloadJson: payloadToStore },
+      create: {
+        tenantId,
+        departmentName: details?.departmentName || request.tenant?.name || "Unknown",
+        payloadJson: payloadToStore,
+      },
+    });
+    response.json({ ok: true, data: shared });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected shared settings error."),
     });
   }
 });
@@ -2401,7 +3759,7 @@ app.get("/api/neris/settings", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS settings read error.",
+        publicErrorMessage(error, "Unexpected NERIS settings read error."),
     });
   }
 });
@@ -2430,6 +3788,14 @@ app.patch("/api/neris/settings", async (request, response) => {
     for (const key of NERIS_SETTINGS_KEYS) {
       if (typeof body[key] === "string") merged[key] = body[key];
     }
+    const savedEntityId = trimValue(merged.vendorCode).toUpperCase();
+    if (savedEntityId && NERIS_ENTITY_ID_PATTERN.test(savedEntityId)) {
+      merged.vendorCode = savedEntityId;
+      await prisma.tenant.update({
+        where: { id: tenantId },
+        data: { nerisEntityId: savedEntityId },
+      });
+    }
     const payloadToStore = { ...existingPayload, nerisExportSettings: merged };
     await prisma.departmentDetails.upsert({
       where: { tenantId },
@@ -2444,7 +3810,734 @@ app.patch("/api/neris/settings", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS settings save error.",
+        publicErrorMessage(error, "Unexpected NERIS settings save error."),
+    });
+  }
+});
+
+// ----- Fire Recovery USA (incident billing) -----
+function maskFireRecoverySubscriptionKey(raw) {
+  const s = trimValue(raw);
+  if (!s) return "";
+  if (s.length <= 4) return "****";
+  return `****${s.slice(-4)}`;
+}
+
+const FIRE_RECOVERY_REENTER = "re-enter the password";
+
+function scrubSecret(message, secret) {
+  const text = String(message ?? "");
+  const hidden = String(secret ?? "");
+  if (!hidden) return text;
+  return text.split(hidden).join("[removed]");
+}
+
+function publicFireRecoveryMessage(error, secret) {
+  const raw = error instanceof Error ? error.message : "Unexpected Fire Recovery error.";
+  return scrubSecret(raw, secret);
+}
+
+function tenantHasFireRecoveryLogin(tenant) {
+  return Boolean(trimValue(tenant?.fireRecoveryApiUsername) && trimValue(tenant?.fireRecoveryApiPassword));
+}
+
+async function readFireRecoveryPassword(stored) {
+  const value = trimValue(stored);
+  if (!value) return "";
+  if (!isEncryptedSecret(value)) {
+    const error = new Error(FIRE_RECOVERY_REENTER);
+    error.code = "SECRET_PLAINTEXT";
+    throw error;
+  }
+  return decryptSecret(value);
+}
+
+async function fireRecoveryCredentialsFromTenant(tenant) {
+  const username = trimValue(tenant?.fireRecoveryApiUsername);
+  const password = await readFireRecoveryPassword(tenant?.fireRecoveryApiPassword);
+  if (!username || !password) return null;
+  return { username, password };
+}
+
+function formatFireRecoveryExportDateLabel(value) {
+  if (!value) return "";
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function fireRecoverySettingsData(tenant) {
+  const mode = readFireRecoveryMode();
+  const resolved = resolveFireRecoveryDepartmentId(mode, tenant?.nerisEntityId);
+  return {
+    subscriptionKeyMasked: maskFireRecoverySubscriptionKey(tenant?.fireRecoverySubscriptionKey),
+    departmentName: trimValue(tenant?.fireRecoveryDepartmentName),
+    apiUsername: trimValue(tenant?.fireRecoveryApiUsername),
+    passwordIsSet: isEncryptedSecret(tenant?.fireRecoveryApiPassword),
+    mode,
+    departmentId: resolved.departmentId,
+    banner: fireRecoveryModeBanner(mode),
+  };
+}
+
+function fireRecoveryBillingRowToApi(row) {
+  const due = row.invoiceAmountDue ?? "";
+  return {
+    id: row.id,
+    callNumber: row.callNumber,
+    trackingId: row.trackingId ?? "",
+    incidentType: row.incidentType ?? "",
+    incidentDateLabel: row.incidentDateLabel ?? "",
+    lastSubmitAt: row.lastSubmitAt ? row.lastSubmitAt.toISOString() : null,
+    lastSubmitOk: row.lastSubmitOk,
+    lastSubmitError: row.lastSubmitError ?? "",
+    exportDateLabel:
+      row.lastSubmitOk && row.lastSubmitAt ? formatFireRecoveryExportDateLabel(row.lastSubmitAt) : "",
+    amountDue: due,
+    invoiceAmountDue: due,
+    amountPaid: row.lastPaymentAmount ?? "",
+    invoiceId: row.invoiceId ?? "",
+    invoiceStatus: row.invoiceStatus ?? "",
+    invoiceAmount: row.invoiceAmount ?? "",
+    invoiceSubmitDate: row.invoiceSubmitDate ?? "",
+    lastPaymentDate: row.lastPaymentDate ?? "",
+    paymentPlan: row.paymentPlan ? "Yes" : "No",
+    billingFetchedAt: row.billingFetchedAt ? row.billingFetchedAt.toISOString() : null,
+    submitStatus: displaySubmitStatus(row),
+    submitStartedAt: row.submitStartedAt ? row.submitStartedAt.toISOString() : null,
+  };
+}
+
+function parseExportPayloadPreview(raw) {
+  if (!raw || typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    return null;
+  }
+}
+
+app.get("/api/fire-recovery/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const tenant = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        nerisEntityId: true,
+        fireRecoverySubscriptionKey: true,
+        fireRecoveryDepartmentName: true,
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
+      },
+    });
+    response.json({
+      ok: true,
+      data: fireRecoverySettingsData(tenant),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        publicErrorMessage(error, "Unexpected Fire Recovery settings read error."),
+    });
+  }
+});
+
+app.patch("/api/fire-recovery/settings", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const subscriptionKey =
+      typeof body.fireRecoverySubscriptionKey === "string"
+        ? body.fireRecoverySubscriptionKey
+        : undefined;
+    const departmentName =
+      typeof body.fireRecoveryDepartmentName === "string"
+        ? body.fireRecoveryDepartmentName
+        : undefined;
+    const apiUsername =
+      typeof body.fireRecoveryApiUsername === "string" ? body.fireRecoveryApiUsername : undefined;
+    const apiPassword =
+      typeof body.fireRecoveryApiPassword === "string" ? body.fireRecoveryApiPassword : undefined;
+    const data = {};
+    if (subscriptionKey !== undefined) {
+      data.fireRecoverySubscriptionKey = subscriptionKey.trim() || null;
+    }
+    if (departmentName !== undefined) {
+      data.fireRecoveryDepartmentName = departmentName.trim() || null;
+    }
+    if (apiUsername !== undefined) {
+      data.fireRecoveryApiUsername = apiUsername.trim() || null;
+    }
+    if (apiPassword !== undefined) {
+      const trimmedPassword = apiPassword.trim();
+      if (!trimmedPassword) {
+        data.fireRecoveryApiPassword = null;
+      } else {
+        try {
+          data.fireRecoveryApiPassword = encryptSecret(trimmedPassword);
+        } catch (error) {
+          response.status(400).json({
+            ok: false,
+            message: publicFireRecoveryMessage(error, trimmedPassword),
+          });
+          return;
+        }
+      }
+    }
+    if (Object.keys(data).length === 0) {
+      response.status(400).json({ ok: false, message: "No Fire Recovery fields to update." });
+      return;
+    }
+    const tenant = await prisma.tenant.update({
+      where: { id: tenantId },
+      data,
+      select: {
+        nerisEntityId: true,
+        fireRecoverySubscriptionKey: true,
+        fireRecoveryDepartmentName: true,
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
+      },
+    });
+    response.json({
+      ok: true,
+      data: fireRecoverySettingsData(tenant),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicFireRecoveryMessage(error, apiPassword),
+    });
+  }
+});
+
+app.get("/api/fire-recovery/incidents", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const rows = await prisma.fireRecoveryIncidentBilling.findMany({
+      where: { tenantId },
+      orderBy: { updatedAt: "desc" },
+      take: 500,
+    });
+    response.json({ ok: true, data: rows.map(fireRecoveryBillingRowToApi) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        publicErrorMessage(error, "Unexpected Fire Recovery incidents list error."),
+    });
+  }
+});
+
+app.get("/api/fire-recovery/incidents/:callNumber", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const callNumber = trimValue(request.params.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "Missing call number." });
+      return;
+    }
+    const row = await prisma.fireRecoveryIncidentBilling.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (!row) {
+      response.status(404).json({ ok: false, message: "Fire Recovery row not found for this incident." });
+      return;
+    }
+    response.json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message:
+        publicErrorMessage(error, "Unexpected Fire Recovery incident read error."),
+    });
+  }
+});
+
+async function prepareFireRecoveryBill(request) {
+  const tenantId = request.tenant?.id;
+  if (!tenantId) return { ok: false, status: 400, message: "Missing tenant context." };
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const callNumber = trimValue(body.callNumber);
+  if (!callNumber) return { ok: false, status: 400, message: "callNumber is required." };
+  const tenant = await prisma.tenant.findUnique({
+    where: { id: tenantId },
+    select: {
+      nerisEntityId: true,
+      fireRecoveryDepartmentName: true,
+      fireRecoveryApiUsername: true,
+      fireRecoveryApiPassword: true,
+    },
+  });
+  const mode = readFireRecoveryMode();
+  const department = resolveFireRecoveryDepartmentId(mode, tenant?.nerisEntityId);
+  if (!tenantHasFireRecoveryLogin(tenant)) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
+    };
+  }
+  const credentials = await fireRecoveryCredentialsFromTenant(tenant);
+  if (!credentials) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
+    };
+  }
+  const dept = trimValue(tenant?.fireRecoveryDepartmentName);
+  if (!dept) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "Set Fire Recovery department name (Admin Functions → Setup/Configuration → Fire Recovery) before submitting.",
+    };
+  }
+  const latestOk = await prisma.nerisExportHistory.findFirst({
+    where: {
+      tenantId,
+      callNumber,
+      attemptStatus: "success",
+      responseDetail: { startsWith: SERVER_EXPORT_RECEIPT },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+  if (!latestOk?.submittedPayloadPreview) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "No successful NERIS export payload found for this incident. Export the NERIS report successfully first.",
+    };
+  }
+  const nerisId = trimValue(latestOk.nerisId);
+  if (!nerisId) {
+    return {
+      ok: false,
+      status: 400,
+      message:
+        "NERIS incident ID is missing from export history. Re-export the NERIS report so the response includes a NERIS incident id.",
+    };
+  }
+  const parsed = parseExportPayloadPreview(latestOk.submittedPayloadPreview);
+  if (!parsed) {
+    return { ok: false, status: 400, message: "Stored export payload is not valid JSON; cannot map to Fire Recovery." };
+  }
+  const draft = await prisma.nerisDraft.findUnique({
+    where: { tenantId_callNumber: { tenantId, callNumber } },
+  });
+  const draftPayload =
+    draft?.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload) ? draft.payload : null;
+  if (trimValue(draftPayload?.reportStatus) !== "Exported") {
+    return { ok: false, status: 400, message: "Export this report to NERIS first." };
+  }
+  const formValues =
+    draftPayload.formValues && typeof draftPayload.formValues === "object" && !Array.isArray(draftPayload.formValues)
+      ? draftPayload.formValues
+      : {};
+  if (!isMotorVehicleIncident(formValues.primary_incident_type, formValues.additional_incident_types)) {
+    return { ok: false, status: 400, message: "Fire Recovery billing is only for a motor-vehicle incident." };
+  }
+  const departmentDetails = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const requirementSettings =
+    departmentDetails?.payloadJson && typeof departmentDetails.payloadJson === "object"
+      ? departmentDetails.payloadJson.fireRecoveryFieldRequirements
+      : null;
+  const missing = missingFireRecoveryFields(formValues, requirementSettings, latestOk.reportWriterName);
+  const departmentId = department.ok ? department.departmentId : "";
+  const payload = buildFireRecoveryPayload(
+    formValues,
+    { nerisId, reportWriterName: latestOk.reportWriterName, callNumber },
+    { departmentId, departmentName: dept },
+    { submittedAt: chicagoLocalStamp(new Date()) },
+  );
+  return {
+    ok: true,
+    tenantId,
+    callNumber,
+    mode,
+    department,
+    credentials,
+    password: credentials.password,
+    formValues,
+    requirementSettings,
+    missing,
+    payload,
+    hash: previewHash(payload),
+    meta: extractIncidentMetadataFromExportPayload({ formValues }),
+    banner: fireRecoveryModeBanner(mode),
+    departmentId,
+  };
+}
+
+function fireRecoveryTimeoutMs(name, fallback) {
+  const parsed = Number.parseInt(String(process.env[name] ?? ""), 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+async function claimFireRecoverySubmitLock(tenantId, callNumber) {
+  const now = new Date();
+  try {
+    await prisma.fireRecoveryIncidentBilling.create({
+      data: {
+        tenantId,
+        callNumber,
+        submitStatus: "submitting",
+        submitStartedAt: now,
+      },
+    });
+    return true;
+  } catch (error) {
+    if (error?.code !== "P2002") throw error;
+  }
+  const updated = await prisma.fireRecoveryIncidentBilling.updateMany({
+    where: {
+      tenantId,
+      callNumber,
+      AND: [
+        { OR: [{ trackingId: null }, { trackingId: "" }] },
+        { submitStatus: { in: ["", "not_sent", "failed"] } },
+      ],
+    },
+    data: {
+      submitStatus: "submitting",
+      submitStartedAt: now,
+      lastSubmitError: "",
+    },
+  });
+  return updated.count === 1;
+}
+
+async function saveFireRecoveryOutcome(prepared, outcome) {
+  const existing = await prisma.fireRecoveryIncidentBilling.findUnique({
+    where: { tenantId_callNumber: { tenantId: prepared.tenantId, callNumber: prepared.callNumber } },
+  });
+  const now = new Date();
+  return prisma.fireRecoveryIncidentBilling.upsert({
+    where: { tenantId_callNumber: { tenantId: prepared.tenantId, callNumber: prepared.callNumber } },
+    create: {
+      tenantId: prepared.tenantId,
+      callNumber: prepared.callNumber,
+      trackingId: nextTrackingId("", outcome.trackingId),
+      lastSubmitAt: now,
+      lastSubmitOk: outcome.outcome === "sent",
+      lastSubmitError: outcome.message.slice(0, 2000),
+      submitStatus: outcome.outcome,
+      submitStartedAt: now,
+      incidentType: prepared.meta.incidentType,
+      incidentDateLabel: prepared.meta.incidentDateLabel,
+    },
+    update: {
+      trackingId: nextTrackingId(existing?.trackingId, outcome.trackingId),
+      lastSubmitAt: now,
+      lastSubmitOk: outcome.outcome === "sent",
+      lastSubmitError: outcome.message.slice(0, 2000),
+      submitStatus: outcome.outcome,
+      incidentType: prepared.meta.incidentType,
+      incidentDateLabel: prepared.meta.incidentDateLabel,
+    },
+  });
+}
+
+app.post("/api/fire-recovery/preview", async (request, response) => {
+  try {
+    const prepared = await prepareFireRecoveryBill(request);
+    if (!prepared.ok) {
+      response.status(prepared.status).json({ ok: false, message: prepared.message });
+      return;
+    }
+    response.json({
+      ok: true,
+      data: {
+        previewHash: prepared.hash,
+        payload: prepared.payload,
+        departmentId: prepared.departmentId,
+        mode: prepared.mode,
+        banner: prepared.banner,
+        missingRequired: prepared.missing,
+        missingRecommended: missingRecommendedFireRecoveryFields(prepared.formValues, prepared.requirementSettings),
+      },
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected Fire Recovery preview error."),
+    });
+  }
+});
+
+app.post("/api/fire-recovery/submit", async (request, response) => {
+  let prepared = null;
+  let locked = false;
+  try {
+    prepared = await prepareFireRecoveryBill(request);
+    if (!prepared.ok) {
+      response.status(prepared.status).json({ ok: false, message: prepared.message });
+      return;
+    }
+    if (!prepared.department.ok) {
+      response.status(400).json({ ok: false, message: prepared.department.message });
+      return;
+    }
+    if (prepared.missing.length > 0) {
+      response.status(400).json({
+        ok: false,
+        message: `Fire Recovery billing is missing required fields: ${prepared.missing.join("; ")}.`,
+      });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    if (trimValue(body.previewHash) !== prepared.hash) {
+      response.status(400).json({
+        ok: false,
+        message: "The report changed since the preview. Preview again.",
+      });
+      return;
+    }
+    locked = await claimFireRecoverySubmitLock(prepared.tenantId, prepared.callNumber);
+    if (!locked) {
+      response.status(409).json({
+        ok: false,
+        message: "Already sent, being sent, or needs review.",
+      });
+      return;
+    }
+    let jwt;
+    try {
+      jwt = await getFireRecoveryJwt(
+        prepared.credentials,
+        AbortSignal.timeout(fireRecoveryTimeoutMs("FIRE_RECOVERY_LOGIN_TIMEOUT_MS", 20000)),
+      );
+    } catch (error) {
+      const timedOut = error?.name === "TimeoutError" || error?.name === "AbortError";
+      const outcome = timedOut
+        ? classifyVendorReply({ timedOut: true })
+        : { outcome: "failed", trackingId: "", message: publicFireRecoveryMessage(error, prepared.password) };
+      const row = await saveFireRecoveryOutcome(prepared, outcome);
+      response.status(timedOut ? 409 : 400).json({
+        ok: false,
+        message: outcome.message,
+        data: fireRecoveryBillingRowToApi(row),
+      });
+      return;
+    }
+    const vendor = await postAddNerisIncidentForBilling(
+      jwt,
+      prepared.payload,
+      fireRecoveryTimeoutMs("FIRE_RECOVERY_POST_TIMEOUT_MS", 45000),
+    );
+    const outcome = classifyVendorReply(vendor);
+    const row = await saveFireRecoveryOutcome(prepared, outcome);
+    if (outcome.outcome === "sent") {
+      response.status(201).json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+      return;
+    }
+    response.status(outcome.outcome === "failed" ? 400 : 409).json({
+      ok: false,
+      message: outcome.message,
+      data: fireRecoveryBillingRowToApi(row),
+    });
+  } catch (error) {
+    const message = publicFireRecoveryMessage(error, prepared?.password ?? "");
+    if (locked && prepared?.ok) {
+      try {
+        await saveFireRecoveryOutcome(prepared, {
+          outcome: "needs_review",
+          trackingId: "",
+          message,
+        });
+      } catch {
+        // The lock stays. A later read shows a stale Submitting row as Needs review.
+      }
+      response.status(409).json({ ok: false, message });
+      return;
+    }
+    response.status(400).json({ ok: false, message });
+  }
+});
+
+app.post("/api/fire-recovery/resolve-review", async (request, response) => {
+  try {
+    if (roleLevel(request.auth?.role) < roleLevel("admin")) {
+      response.status(403).json({ ok: false, code: "FORBIDDEN", message: "You do not have permission to do that." });
+      return;
+    }
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const callNumber = trimValue(body.callNumber);
+    const outcome = trimValue(body.outcome);
+    if (!callNumber || (outcome !== "not_received" && outcome !== "received")) {
+      response.status(400).json({ ok: false, message: "callNumber and outcome are required." });
+      return;
+    }
+    const existing = await prisma.fireRecoveryIncidentBilling.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    if (!existing) {
+      response.status(404).json({ ok: false, message: "Fire Recovery row not found for this incident." });
+      return;
+    }
+    const providedTrackingId = trimValue(body.trackingId);
+    if (outcome === "received" && !providedTrackingId && !trimValue(existing.trackingId)) {
+      response.status(400).json({ ok: false, message: "Enter the tracking ID from Recovery Hub." });
+      return;
+    }
+    const row = await prisma.fireRecoveryIncidentBilling.update({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      data:
+        outcome === "received"
+          ? {
+              submitStatus: "sent",
+              lastSubmitOk: true,
+              lastSubmitError: "",
+              trackingId: nextTrackingId(existing.trackingId, providedTrackingId),
+            }
+          : {
+              submitStatus: "failed",
+              lastSubmitOk: false,
+              lastSubmitError: "Checked in Recovery Hub: this bill was not received.",
+              trackingId: nextTrackingId(existing.trackingId, ""),
+            },
+    });
+    response.json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected Fire Recovery review error."),
+    });
+  }
+});
+
+app.post("/api/fire-recovery/billing-status", async (request, response) => {
+  let fireRecoveryPassword = "";
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const callNumber = trimValue(body.callNumber);
+    if (!callNumber) {
+      response.status(400).json({ ok: false, message: "callNumber is required." });
+      return;
+    }
+
+    const tenantForJwt = await prisma.tenant.findUnique({
+      where: { id: tenantId },
+      select: {
+        fireRecoveryApiUsername: true,
+        fireRecoveryApiPassword: true,
+      },
+    });
+    if (!tenantHasFireRecoveryLogin(tenantForJwt)) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
+      });
+      return;
+    }
+    const statusCredentials = await fireRecoveryCredentialsFromTenant(tenantForJwt);
+    fireRecoveryPassword = statusCredentials?.password ?? "";
+    if (!statusCredentials) {
+      response.status(400).json({
+        ok: false,
+        message:
+          "Fire Recovery username and password are required. Set them under Admin Functions → Setup/Configuration → Fire Recovery for this tenant.",
+      });
+      return;
+    }
+
+    const existing = await prisma.fireRecoveryIncidentBilling.findUnique({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+    });
+    const trackingId = trimValue(existing?.trackingId);
+    if (!trackingId) {
+      response.status(400).json({
+        ok: false,
+        message: "No Fire Recovery tracking ID for this incident. Submit to Fire Recovery first.",
+      });
+      return;
+    }
+
+    const jwt = await getFireRecoveryJwt(statusCredentials);
+    const resp = await postIncidentBillingStatus(jwt, trackingId);
+    const now = new Date();
+
+    const invoiceAmount =
+      resp.InvoiceAmount !== undefined && resp.InvoiceAmount !== null
+        ? String(resp.InvoiceAmount)
+        : "";
+    const invoiceAmountDue =
+      resp.InvoiceAmountDue !== undefined && resp.InvoiceAmountDue !== null
+        ? String(resp.InvoiceAmountDue)
+        : "";
+    const lastPaymentAmount =
+      resp.LastPaymentAmount !== undefined && resp.LastPaymentAmount !== null
+        ? String(resp.LastPaymentAmount)
+        : "";
+    const lastPaymentDate =
+      resp.LastPaymentDate !== undefined && resp.LastPaymentDate !== null
+        ? String(resp.LastPaymentDate)
+        : "";
+    const invoiceSubmitDate =
+      resp.InvoiceSubmitDate !== undefined && resp.InvoiceSubmitDate !== null
+        ? String(resp.InvoiceSubmitDate)
+        : "";
+    const paymentPlan = Boolean(resp.PaymentPlan);
+
+    const row = await prisma.fireRecoveryIncidentBilling.update({
+      where: { tenantId_callNumber: { tenantId, callNumber } },
+      data: {
+        invoiceId: trimValue(String(resp.InvoiceID ?? "")),
+        invoiceAmount,
+        invoiceAmountDue,
+        invoiceSubmitDate,
+        invoiceStatus: trimValue(String(resp.InvoiceStatus ?? "")),
+        lastPaymentDate,
+        lastPaymentAmount,
+        paymentPlan,
+        billingFetchedAt: now,
+      },
+    });
+
+    response.json({ ok: true, data: fireRecoveryBillingRowToApi(row) });
+  } catch (error) {
+    response.status(400).json({
+      ok: false,
+      message: publicFireRecoveryMessage(error, fireRecoveryPassword),
     });
   }
 });
@@ -2472,16 +4565,20 @@ app.get("/api/department-details", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected department details read error.",
+      message: publicErrorMessage(error, "Unexpected department details read error."),
     });
   }
 });
 
 app.post("/api/auth/login", (request, response) => {
   const body = request.body && typeof request.body === "object" ? request.body : {};
+  if (loginCredentialsOversized(body.username, body.password)) {
+    response.status(401).json({
+      ok: false,
+      message: "Invalid username or password.",
+    });
+    return;
+  }
   const submittedUsername = String(body.username ?? "").trim().toLowerCase();
   const submittedPassword = String(body.password ?? "");
   const tenantId = request.tenant?.id;
@@ -2501,7 +4598,15 @@ app.post("/api/auth/login", (request, response) => {
   }
 
   (async () => {
-    // Preferred path: tenant-scoped users table.
+    const lock = loginLockStatus(tenantId, submittedUsername);
+    if (lock.locked) {
+      response.status(429).json({
+        ok: false,
+        message: "Too many failed sign-in attempts. Try again in 15 minutes.",
+      });
+      return;
+    }
+
     const dbUser = await prisma.user.findUnique({
       where: {
         tenantId_username: {
@@ -2511,49 +4616,51 @@ app.post("/api/auth/login", (request, response) => {
       },
     });
 
-    if (dbUser) {
-      const storedHash = String(dbUser.passwordHash ?? "");
-      const valid = await verifyPassword(submittedPassword, storedHash);
-      if (!valid) {
-        response.status(401).json({
+    const storedHash = dbUser ? String(dbUser.passwordHash ?? "") : "";
+    const valid = dbUser ? await verifyPassword(submittedPassword, storedHash) : false;
+    if (!dbUser || !valid) {
+      const failure = noteLoginFailure(tenantId, submittedUsername, Date.now(), {
+        knownAccount: Boolean(dbUser),
+      });
+      if (failure.deferred) {
+        response.status(429).json({
           ok: false,
-          message: "Invalid username or password.",
+          message: "Too many sign-in attempts. Try again later.",
         });
         return;
       }
-      // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
-      if (!isBcryptHash(storedHash)) {
-        hashPassword(submittedPassword).then((hash) => {
-          prisma.user.update({
-            where: { id: dbUser.id },
-            data: { passwordHash: hash },
-          }).catch(() => {});
-        });
-      }
-      const userTypeLabelMap = await getTenantUserTypeLabelMap(tenantId);
-      const userType =
-        userTypeLabelMap[submittedUsername] ||
-        roleToUserTypeLabel(dbUser.role);
-      response.status(200).json({
-        ok: true,
-        user: {
-          name: dbUser.username,
-          userType,
-          username: dbUser.username,
-        },
+      response.status(401).json({
+        ok: false,
+        message: "Invalid username or password.",
       });
       return;
     }
-
-    response.status(401).json({
-      ok: false,
-      message: "Invalid username or password.",
+    // Auto-upgrade: if still plaintext, re-save as bcrypt hash (non-blocking).
+    if (!isBcryptHash(storedHash)) {
+      hashPassword(submittedPassword).then((hash) => {
+        prisma.user.update({
+          where: { id: dbUser.id },
+          data: { passwordHash: hash },
+        }).catch(() => {});
+      });
+    }
+    noteLoginSuccess(tenantId, submittedUsername);
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const token = await createSession(prisma, { tenantId, userId: dbUser.id });
+    applySessionCookie(response, token, request);
+    response.status(200).json({
+      ok: true,
+      user: {
+        name: trimValue(fullNameMap[submittedUsername]) || dbUser.username,
+        username: dbUser.username,
+        role: normalizeRole(dbUser.role),
+      },
     });
   })().catch((error) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected login service error.",
+        publicErrorMessage(error, "Unexpected login service error."),
     });
   });
 });
@@ -2566,13 +4673,13 @@ app.post("/api/auth/change-password", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const username = trimValue(String(body.username ?? "")).toLowerCase();
+    const username = trimValue(request.auth?.username).toLowerCase();
     const currentPassword = String(body.currentPassword ?? "");
     const newPassword = String(body.newPassword ?? "");
     if (!username || !currentPassword || !newPassword) {
       response.status(400).json({
         ok: false,
-        message: "Username, current password, and new password are required.",
+        message: "Current password and new password are required.",
       });
       return;
     }
@@ -2606,12 +4713,13 @@ app.post("/api/auth/change-password", async (request, response) => {
       where: { id: user.id },
       data: { passwordHash: nextHash },
     });
+    await revokeOtherSessions(prisma, user.id, request.auth?.sessionId ?? null);
     response.status(200).json({ ok: true, message: "Password updated." });
   } catch (error) {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected change-password error.",
+        publicErrorMessage(error, "Unexpected change-password error."),
     });
   }
 });
@@ -2627,8 +4735,9 @@ app.post("/api/department-details", async (request, response) => {
       return;
     }
     const body = request.body && typeof request.body === "object" ? request.body : {};
-    const payloadWithSyncedUsers = await hashAndSyncTenantUsers(tenantId, body);
-    const { userRecords: _dropped, ...payloadWithoutAuth } = payloadWithSyncedUsers;
+    // Accounts change only through /api/users. Saving department settings never creates, edits, or deletes them.
+    const payloadToStore = { ...body };
+    delete payloadToStore.userRecords;
     const existingDetails = await prisma.departmentDetails.findUnique({
       where: { tenantId },
       select: { payloadJson: true },
@@ -2637,7 +4746,6 @@ app.post("/api/department-details", async (request, response) => {
       existingDetails?.payloadJson && typeof existingDetails.payloadJson === "object"
         ? existingDetails.payloadJson
         : {};
-    const payloadToStore = _dropped !== undefined ? payloadWithoutAuth : payloadWithSyncedUsers;
     const tenantEntityIdFromPayload = readTenantEntityIdFromDepartmentPayload(payloadToStore);
     // Keep non-auth user profile metadata when saving department details.
     if (
@@ -2664,6 +4772,14 @@ app.post("/api/department-details", async (request, response) => {
     ) {
       payloadToStore.nerisExportSettings = existingPayload.nerisExportSettings;
     }
+    if (
+      existingPayload.sharedDepartmentSettings &&
+      payloadToStore.sharedDepartmentSettings === undefined &&
+      typeof existingPayload.sharedDepartmentSettings === "object" &&
+      !Array.isArray(existingPayload.sharedDepartmentSettings)
+    ) {
+      payloadToStore.sharedDepartmentSettings = existingPayload.sharedDepartmentSettings;
+    }
     await prisma.departmentDetails.upsert({
       where: { tenantId },
       update: {
@@ -2686,10 +4802,7 @@ app.post("/api/department-details", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected department details write error.",
+      message: publicErrorMessage(error, "Unexpected department details write error."),
     });
   }
 });
@@ -2746,13 +4859,27 @@ app.get("/api/schedule-assignments", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected schedule assignments read error.",
+      message: publicErrorMessage(error, "Unexpected schedule assignments read error."),
     });
   }
 });
+
+function collectScheduleNames(assignments) {
+  const names = new Set();
+  if (!assignments || typeof assignments !== "object" || Array.isArray(assignments)) return names;
+  for (const slots of Object.values(assignments)) {
+    if (!Array.isArray(slots)) continue;
+    for (const slot of slots) {
+      String(slot ?? "")
+        .split("||OT||")
+        .forEach((part) => {
+          const name = part.trim().toLowerCase();
+          if (name) names.add(name);
+        });
+    }
+  }
+  return names;
+}
 
 app.post("/api/schedule-assignments", async (request, response) => {
   try {
@@ -2810,19 +4937,69 @@ app.post("/api/schedule-assignments", async (request, response) => {
     );
     const existingRows = await prisma.scheduleAssignments.findMany({
       where: { tenantId },
-      select: { id: true, shiftType: true, dateKey: true },
+      select: { id: true, shiftType: true, dateKey: true, assignmentsJson: true },
     });
+
+    if (!canSeeAllTrades(request.auth)) {
+      const details = await prisma.departmentDetails.findUnique({
+        where: { tenantId },
+        select: { payloadJson: true },
+      });
+      const payloadRoot =
+        details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+      const roster = new Set(
+        (Array.isArray(payloadRoot.schedulerPersonnelRecords) ? payloadRoot.schedulerPersonnelRecords : [])
+          .map((record) => trimValue(String(record?.name ?? "")).toLowerCase())
+          .filter(Boolean),
+      );
+      const existingByKey = new Map(
+        existingRows.map((row) => [`${row.shiftType}::${row.dateKey}`, row]),
+      );
+      for (const existing of existingRows) {
+        const key = `${existing.shiftType}::${existing.dateKey}`;
+        if (!validCompositeKeys.has(key)) {
+          response.status(403).json({
+            ok: false,
+            message: "You can fill an open seat. Taking someone off the schedule needs a sub admin to approve.",
+          });
+          return;
+        }
+      }
+      for (const row of parsedRows) {
+        const key = `${row.shiftType}::${row.dateKey}`;
+        const existing = existingByKey.get(key);
+        const payload =
+          existing?.assignmentsJson && typeof existing.assignmentsJson === "object"
+            ? existing.assignmentsJson
+            : {};
+        const previousAssignments =
+          payload.assignments && typeof payload.assignments === "object" ? payload.assignments : payload;
+        const nextAssignments = row.assignmentsJson.assignments;
+        const previousNames = collectScheduleNames(previousAssignments);
+        const nextNames = collectScheduleNames(nextAssignments);
+        for (const name of previousNames) {
+          if (!roster.has(name) || nextNames.has(name)) continue;
+          response.status(403).json({
+            ok: false,
+            message: "You can fill an open seat. Taking someone off the schedule needs a sub admin to approve.",
+          });
+          return;
+        }
+        row.assignmentsJson.overtimeSplit =
+          payload.overtimeSplit && typeof payload.overtimeSplit === "object" ? payload.overtimeSplit : {};
+        row.assignmentsJson.slotSegments =
+          payload.slotSegments && typeof payload.slotSegments === "object" ? payload.slotSegments : {};
+      }
+    }
 
     const deletions = existingRows
       .filter((row) => !validCompositeKeys.has(`${row.shiftType}::${row.dateKey}`))
       .map((row) => row.id);
 
     await prisma.$transaction([
-      ...deletions.map((id) =>
-        prisma.scheduleAssignments.delete({
-          where: { id },
-        }),
-      ),
+      prisma.scheduleAssignments.deleteMany({
+        where: { tenantId, id: { in: deletions } },
+      }),
       ...parsedRows.map((row) =>
         prisma.scheduleAssignments.upsert({
           where: {
@@ -2847,10 +5024,1027 @@ app.post("/api/schedule-assignments", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message:
-        error instanceof Error
-          ? error.message
-          : "Unexpected schedule assignments write error.",
+      message: publicErrorMessage(error, "Unexpected schedule assignments write error."),
+    });
+  }
+});
+
+// ----- /api/trades (tenant-scoped; members see their own trades, subadmin and above see all) -----
+
+const TRADE_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+const TRADE_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/;
+
+function canSeeAllTrades(auth) {
+  return roleLevel(auth?.role) >= roleLevel("subadmin");
+}
+
+async function readTradeSettings(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  return {
+    adminApproval: payload.tradeAdminApproval === true,
+    paybackRequired: payload.tradePaybackRequired === true,
+    cancelApproval: payload.tradeCancelApproval !== false,
+  };
+}
+
+async function loadTradeRoster(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  const records = Array.isArray(payload.schedulerPersonnelRecords)
+    ? payload.schedulerPersonnelRecords
+    : [];
+  const fullNameMap = await getTenantUserFullNameMap(tenantId);
+  const users = await prisma.user.findMany({ where: { tenantId }, select: { username: true } });
+  const usernameByName = new Map();
+  for (const user of users) {
+    const username = user.username.toLowerCase();
+    usernameByName.set(username, username);
+  }
+  for (const [username, fullName] of Object.entries(fullNameMap)) {
+    usernameByName.set(fullName.toLowerCase(), username);
+  }
+  const roster = records
+    .map((record) => {
+      const name = trimValue(String(record?.name ?? ""));
+      return {
+        name,
+        shift: trimValue(String(record?.shift ?? "").split("|")[0]),
+        username: usernameByName.get(name.toLowerCase()) ?? "",
+      };
+    })
+    .filter((entry) => entry.name);
+  return { roster, fullNameMap };
+}
+
+function toTradeResponse(row) {
+  return {
+    id: row.id,
+    shiftType: row.shiftType,
+    requesterUsername: row.requesterUsername,
+    requesterName: row.requesterName,
+    counterpartUsername: row.counterpartUsername,
+    counterpartName: row.counterpartName,
+    tradeDate: row.tradeDate,
+    startTime: row.startTime,
+    endTime: row.endTime,
+    paybackRequired: row.paybackRequired,
+    paybackDate: row.paybackDate,
+    reason: row.reason,
+    status: row.status,
+    denialReason: row.denialReason,
+    cancelRequestedBy: cancelRequesterUsername(row.historyJson),
+    statusNote: tradeStatusNote(row.historyJson),
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+function cancelRequesterUsername(historyJson) {
+  const history = Array.isArray(historyJson) ? historyJson : [];
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    if (history[index]?.action === "cancel_requested") {
+      return String(history[index].by ?? "").trim().toLowerCase();
+    }
+  }
+  return "";
+}
+
+function tradeStatusNote(historyJson) {
+  const history = Array.isArray(historyJson) ? historyJson : [];
+  const latest = history[history.length - 1];
+  if (!latest) return "";
+  if (latest.action !== "cancel_declined" && latest.action !== "cancel_admin_denied") return "";
+  return trimValue(String(latest.note ?? ""));
+}
+
+function appendTradeHistory(historyJson, entry) {
+  const history = Array.isArray(historyJson) ? historyJson : [];
+  return [...history, { at: new Date().toISOString(), ...entry }];
+}
+
+app.get("/api/trades", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const username = request.auth.username.toLowerCase();
+    const seeAll = canSeeAllTrades(request.auth);
+    const rows = await prisma.tradeRequest.findMany({
+      where: seeAll
+        ? { tenantId }
+        : {
+            tenantId,
+            OR: [{ requesterUsername: username }, { counterpartUsername: username }],
+          },
+      orderBy: { createdAt: "desc" },
+    });
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    response.json({
+      ok: true,
+      canSeeAll: seeAll,
+      username,
+      name: trimValue(fullNameMap[username] ?? "") || username,
+      trades: rows.map(toTradeResponse),
+    });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected trades read error."),
+    });
+  }
+});
+
+app.post("/api/trades", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const requesterUsername = request.auth.username.toLowerCase();
+    const counterpartName = trimValue(String(body.counterpartName ?? ""));
+    const tradeDate = trimValue(String(body.tradeDate ?? ""));
+    const startTime = trimValue(String(body.startTime ?? ""));
+    const endTime = trimValue(String(body.endTime ?? ""));
+    const paybackRequired = body.paybackRequired === true;
+    const paybackDate = paybackRequired ? trimValue(String(body.paybackDate ?? "")) : "";
+    const reason = trimValue(String(body.reason ?? "")).slice(0, 500);
+
+    const { roster, fullNameMap } = await loadTradeRoster(tenantId);
+    const requesterName = trimValue(fullNameMap[requesterUsername] ?? "");
+    const requester = roster.find(
+      (entry) => entry.username === requesterUsername ||
+        (requesterName && entry.name.toLowerCase() === requesterName.toLowerCase()),
+    );
+    if (!requester) {
+      response.status(400).json({
+        ok: false,
+        message: "Only people listed in Scheduler Settings → Personnel can request trades.",
+      });
+      return;
+    }
+    const counterpart = roster.find(
+      (entry) => entry.name.toLowerCase() === counterpartName.toLowerCase(),
+    );
+    if (!counterpart) {
+      response.status(400).json({
+        ok: false,
+        message: "Choose someone from Scheduler Settings → Personnel.",
+      });
+      return;
+    }
+    if (!counterpart.username) {
+      response.status(400).json({
+        ok: false,
+        message: `${counterpart.name} has no sign-in account, so they cannot accept a trade.`,
+      });
+      return;
+    }
+    if (counterpart.username === requesterUsername) {
+      response.status(400).json({ ok: false, message: "You cannot trade with yourself." });
+      return;
+    }
+    if (!TRADE_DATE_PATTERN.test(tradeDate)) {
+      response.status(400).json({ ok: false, message: "Enter your assigned date." });
+      return;
+    }
+    if (!TRADE_TIME_PATTERN.test(startTime) || !TRADE_TIME_PATTERN.test(endTime)) {
+      response.status(400).json({
+        ok: false,
+        message: "Enter start and end times in 24-hour format (HH:MM).",
+      });
+      return;
+    }
+    if (startTime === endTime) {
+      response.status(400).json({ ok: false, message: "Start and end times must differ." });
+      return;
+    }
+    if (paybackRequired && !TRADE_DATE_PATTERN.test(paybackDate)) {
+      response.status(400).json({
+        ok: false,
+        message: "Payback is required, so enter the date you work instead.",
+      });
+      return;
+    }
+
+    const [tradeDetails, scheduleRows] = await Promise.all([
+      prisma.departmentDetails.findUnique({
+        where: { tenantId },
+        select: { payloadJson: true },
+      }),
+      prisma.scheduleAssignments.findMany({
+        where: { tenantId, dateKey: tradeDate },
+        select: { shiftType: true, dateKey: true, assignmentsJson: true },
+      }),
+    ]);
+    const tradePayload =
+      tradeDetails?.payloadJson && typeof tradeDetails.payloadJson === "object"
+        ? tradeDetails.payloadJson
+        : {};
+    const blockReason = tradeRequestBlockReasonFromStored({
+      payload: tradePayload,
+      rows: scheduleRows,
+      requesterName: requester.name,
+      counterpartName: counterpart.name,
+      tradeDate,
+      startTime,
+      endTime,
+    });
+    if (blockReason) {
+      response.status(400).json({ ok: false, message: blockReason });
+      return;
+    }
+
+    const row = await prisma.tradeRequest.create({
+      data: {
+        tenantId,
+        shiftType: requester.shift,
+        requesterUsername,
+        requesterName: requester.name,
+        counterpartUsername: counterpart.username,
+        counterpartName: counterpart.name,
+        tradeDate,
+        startTime,
+        endTime,
+        paybackRequired,
+        paybackDate,
+        reason,
+        historyJson: appendTradeHistory([], { by: requesterUsername, action: "requested" }),
+      },
+    });
+    response.json({ ok: true, trade: toTradeResponse(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected trade request error."),
+    });
+  }
+});
+
+async function saveAcceptedTrade(tenantId, existing, username, historyAction) {
+  const dates = [existing.tradeDate];
+  if (existing.paybackRequired && existing.paybackDate) dates.push(existing.paybackDate);
+  const [details, scheduleRows] = await Promise.all([
+    prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    }),
+    prisma.scheduleAssignments.findMany({
+      where: { tenantId, dateKey: { in: dates } },
+      select: { shiftType: true, dateKey: true, assignmentsJson: true },
+    }),
+  ]);
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  const applied = applyAcceptedTrade({ payload, rows: scheduleRows, trade: existing });
+  if (!applied.ok) return applied;
+  const saved = await prisma.$transaction([
+    ...applied.rows.map((row) =>
+      prisma.scheduleAssignments.upsert({
+        where: {
+          tenantId_shiftType_dateKey: {
+            tenantId,
+            shiftType: row.shiftType,
+            dateKey: row.dateKey,
+          },
+        },
+        update: { assignmentsJson: row.assignmentsJson },
+        create: {
+          tenantId,
+          shiftType: row.shiftType,
+          dateKey: row.dateKey,
+          assignmentsJson: row.assignmentsJson,
+        },
+      }),
+    ),
+    prisma.tradeRequest.update({
+      where: { id: existing.id },
+      data: {
+        status: "accepted",
+        denialReason: "",
+        scheduleChangeJson: applied.scheduleChange,
+        historyJson: appendTradeHistory(existing.historyJson, {
+          by: username,
+          action: historyAction,
+        }),
+      },
+    }),
+  ]);
+  return { ok: true, trade: toTradeResponse(saved[saved.length - 1]) };
+}
+
+async function saveCancelledTrade(tenantId, existing, username, historyAction) {
+  const restored = rowsFromScheduleChange(existing.scheduleChangeJson);
+  if (!restored.ok) return restored;
+  const saved = await prisma.$transaction([
+    ...restored.rows.map((row) =>
+      prisma.scheduleAssignments.upsert({
+        where: {
+          tenantId_shiftType_dateKey: {
+            tenantId,
+            shiftType: row.shiftType,
+            dateKey: row.dateKey,
+          },
+        },
+        update: { assignmentsJson: row.assignmentsJson },
+        create: {
+          tenantId,
+          shiftType: row.shiftType,
+          dateKey: row.dateKey,
+          assignmentsJson: row.assignmentsJson,
+        },
+      }),
+    ),
+    prisma.tradeRequest.update({
+      where: { id: existing.id },
+      data: {
+        status: "cancelled",
+        historyJson: appendTradeHistory(existing.historyJson, {
+          by: username,
+          action: historyAction,
+        }),
+      },
+    }),
+  ]);
+  return { ok: true, trade: toTradeResponse(saved[saved.length - 1]) };
+}
+
+app.patch("/api/trades/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const username = request.auth.username.toLowerCase();
+    const existing = await prisma.tradeRequest.findFirst({
+      where: { id: trimValue(request.params.id), tenantId },
+    });
+    const involved =
+      existing &&
+      (existing.requesterUsername === username || existing.counterpartUsername === username);
+    if (!existing || (!involved && !canSeeAllTrades(request.auth))) {
+      response.status(404).json({ ok: false, message: "Trade not found." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const action = trimValue(String(body.action ?? ""));
+    const note = trimValue(String(body.denialReason ?? "")).slice(0, 500);
+
+    if (action === "accept" || action === "deny") {
+      if (existing.counterpartUsername !== username) {
+        response.status(403).json({
+          ok: false,
+          message: `Only ${existing.counterpartName} can accept or deny this trade.`,
+        });
+        return;
+      }
+      if (existing.status !== "requested") {
+        response.status(409).json({ ok: false, message: "This trade was already answered." });
+        return;
+      }
+      if (action === "deny" && !note) {
+        response.status(400).json({ ok: false, message: "Enter a reason for denying." });
+        return;
+      }
+      const settings = action === "accept" ? await readTradeSettings(tenantId) : null;
+      const nextStatus =
+        action === "deny" ? "denied" : settings.adminApproval ? "awaiting_admin" : "accepted";
+      if (nextStatus === "accepted") {
+        const saved = await saveAcceptedTrade(tenantId, existing, username, "accepted");
+        if (!saved.ok) {
+          response.status(400).json({ ok: false, message: saved.message });
+          return;
+        }
+        response.json(saved);
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: nextStatus,
+          denialReason: action === "deny" ? note : "",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: nextStatus,
+            note,
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    if (action === "approve" || action === "admin_deny") {
+      if (!canSeeAllTrades(request.auth)) {
+        response.status(403).json({
+          ok: false,
+          message: "Only a sub admin or above can approve or deny a trade.",
+        });
+        return;
+      }
+      if (existing.status !== "awaiting_admin") {
+        response.status(409).json({ ok: false, message: "This trade is not waiting for approval." });
+        return;
+      }
+      if (action === "admin_deny" && !note) {
+        response.status(400).json({ ok: false, message: "Enter a reason for denying." });
+        return;
+      }
+      if (action === "approve") {
+        const saved = await saveAcceptedTrade(tenantId, existing, username, "approved");
+        if (!saved.ok) {
+          response.status(400).json({ ok: false, message: saved.message });
+          return;
+        }
+        response.json(saved);
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: action === "approve" ? "accepted" : "admin_denied",
+          denialReason: action === "admin_deny" ? note : "",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: action === "approve" ? "approved" : "admin_denied",
+            note,
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    if (action === "cancel_request") {
+      const party =
+        existing.requesterUsername === username || existing.counterpartUsername === username;
+      if (!party) {
+        response.status(403).json({
+          ok: false,
+          message: "Only the two people in this trade can cancel it.",
+        });
+        return;
+      }
+      if (existing.status !== "accepted") {
+        response.status(409).json({ ok: false, message: "Only an accepted trade can be cancelled." });
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: "cancel_requested",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: "cancel_requested",
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    if (action === "cancel_accept" || action === "cancel_decline") {
+      if (existing.status !== "cancel_requested") {
+        response.status(409).json({
+          ok: false,
+          message: "This trade is not waiting for the cancellation to be accepted.",
+        });
+        return;
+      }
+      const requestedBy = cancelRequesterUsername(existing.historyJson);
+      const otherParty =
+        (existing.requesterUsername === username || existing.counterpartUsername === username) &&
+        username !== requestedBy;
+      if (!otherParty) {
+        response.status(403).json({
+          ok: false,
+          message: "Only the other person in this trade can accept the cancellation.",
+        });
+        return;
+      }
+      if (action === "cancel_decline") {
+        if (!note) {
+          response.status(400).json({ ok: false, message: "Enter a reason for keeping the trade." });
+          return;
+        }
+        const row = await prisma.tradeRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: "accepted",
+            historyJson: appendTradeHistory(existing.historyJson, {
+              by: username,
+              action: "cancel_declined",
+              note,
+            }),
+          },
+        });
+        response.json({ ok: true, trade: toTradeResponse(row) });
+        return;
+      }
+      const settings = await readTradeSettings(tenantId);
+      if (settings.cancelApproval) {
+        const row = await prisma.tradeRequest.update({
+          where: { id: existing.id },
+          data: {
+            status: "cancel_awaiting_admin",
+            historyJson: appendTradeHistory(existing.historyJson, {
+              by: username,
+              action: "cancel_accepted",
+            }),
+          },
+        });
+        response.json({ ok: true, trade: toTradeResponse(row) });
+        return;
+      }
+      const saved = await saveCancelledTrade(tenantId, existing, username, "cancelled");
+      if (!saved.ok) {
+        response.status(400).json({ ok: false, message: saved.message });
+        return;
+      }
+      response.json(saved);
+      return;
+    }
+
+    if (action === "cancel_approve" || action === "cancel_admin_deny") {
+      if (!canSeeAllTrades(request.auth)) {
+        response.status(403).json({
+          ok: false,
+          message: "Only a sub admin or above can approve or deny a cancellation.",
+        });
+        return;
+      }
+      if (existing.status !== "cancel_awaiting_admin") {
+        response.status(409).json({
+          ok: false,
+          message: "This cancellation is not waiting for approval.",
+        });
+        return;
+      }
+      if (action === "cancel_admin_deny" && !note) {
+        response.status(400).json({ ok: false, message: "Enter a reason for denying the cancellation." });
+        return;
+      }
+      if (action === "cancel_approve") {
+        const saved = await saveCancelledTrade(tenantId, existing, username, "cancel_approved");
+        if (!saved.ok) {
+          response.status(400).json({ ok: false, message: saved.message });
+          return;
+        }
+        response.json(saved);
+        return;
+      }
+      const row = await prisma.tradeRequest.update({
+        where: { id: existing.id },
+        data: {
+          status: "accepted",
+          historyJson: appendTradeHistory(existing.historyJson, {
+            by: username,
+            action: "cancel_admin_denied",
+            note,
+          }),
+        },
+      });
+      response.json({ ok: true, trade: toTradeResponse(row) });
+      return;
+    }
+
+    response.status(400).json({ ok: false, message: "Unknown trade action." });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected trade update error."),
+    });
+  }
+});
+
+// ----- /api/qualification-overrides (tenant-scoped; sub admin and above review) -----
+
+function clockToMinutes(value) {
+  const match = /^([01]\d|2[0-3]):([0-5]\d)$/.exec(String(value ?? ""));
+  if (!match) return null;
+  return Number(match[1]) * 60 + Number(match[2]);
+}
+
+function isScheduleLeaveRequest(requiredQualification) {
+  const value = String(requiredQualification ?? "");
+  return value === "Remove from seat" || value.startsWith("Partial shift ");
+}
+
+async function applyPartialShift(tenantId, requestRow) {
+  const match = /^Partial shift (\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(requestRow.requiredQualification);
+  if (!match) return;
+  const startMinutes = clockToMinutes(match[1]);
+  const endMinutes = clockToMinutes(match[2]);
+  if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) return;
+  const existing = await prisma.scheduleAssignments.findUnique({
+    where: {
+      tenantId_shiftType_dateKey: {
+        tenantId,
+        shiftType: requestRow.shiftType,
+        dateKey: requestRow.dateKey,
+      },
+    },
+  });
+  const payload =
+    existing?.assignmentsJson && typeof existing.assignmentsJson === "object"
+      ? JSON.parse(JSON.stringify(existing.assignmentsJson))
+      : {};
+  if (!payload.assignments || typeof payload.assignments !== "object") payload.assignments = {};
+  if (!payload.overtimeSplit || typeof payload.overtimeSplit !== "object") payload.overtimeSplit = {};
+  if (!payload.slotSegments || typeof payload.slotSegments !== "object") payload.slotSegments = {};
+  const flags = Array.isArray(payload.overtimeSplit[requestRow.unitId])
+    ? [...payload.overtimeSplit[requestRow.unitId]]
+    : [];
+  while (flags.length <= requestRow.slotIndex) flags.push(false);
+  flags[requestRow.slotIndex] = true;
+  payload.overtimeSplit[requestRow.unitId] = flags;
+  const unitSegments = Array.isArray(payload.slotSegments[requestRow.unitId])
+    ? [...payload.slotSegments[requestRow.unitId]]
+    : [];
+  while (unitSegments.length <= requestRow.slotIndex) unitSegments.push([]);
+  const current = Array.isArray(unitSegments[requestRow.slotIndex]) ? unitSegments[requestRow.slotIndex] : [];
+  const segmentId = `partial-${requestRow.id}`;
+  const assignedNames = String(
+    Array.isArray(payload.assignments[requestRow.unitId])
+      ? payload.assignments[requestRow.unitId][requestRow.slotIndex] ?? ""
+      : "",
+  )
+    .split("||OT||")
+    .map((name) => name.trim())
+    .filter((name) => name && name.toLowerCase() !== requestRow.personName.trim().toLowerCase());
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const departmentPayload =
+    details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+  const shifts = Array.isArray(departmentPayload.shiftInformationEntries)
+    ? departmentPayload.shiftInformationEntries
+    : [];
+  const shift = shifts.find((entry) => String(entry?.shiftType ?? "") === requestRow.shiftType);
+  const shiftStart = clockToMinutes(String(shift?.startTime ?? "")) ?? 8 * 60;
+  const shiftHours = Math.max(1, Number(shift?.shiftDuration) || 12);
+  const shiftEnd = shiftStart + shiftHours * 60;
+  const keptOthers = assignedNames.map((name) => ({
+    id: `kept-${requestRow.id}-${name.toLowerCase().replace(/\s+/g, "-")}`,
+    assigneeType: "personnel",
+    personnelName: name,
+    startMinutes: shiftStart,
+    endMinutes: shiftEnd,
+    source: "manual",
+    overtime: false,
+  }));
+  const keptNames = new Set(assignedNames.map((name) => name.toLowerCase()));
+  unitSegments[requestRow.slotIndex] = [
+    ...current.filter(
+      (item) =>
+        item &&
+        item.id !== segmentId &&
+        !keptNames.has(String(item.personnelName ?? "").trim().toLowerCase()) &&
+        String(item.personnelName ?? "").trim().toLowerCase() !== requestRow.personName.trim().toLowerCase(),
+    ),
+    ...keptOthers,
+    {
+      id: segmentId,
+      assigneeType: "personnel",
+      personnelName: requestRow.personName,
+      startMinutes,
+      endMinutes,
+      source: "manual",
+      overtime: false,
+    },
+  ];
+  payload.slotSegments[requestRow.unitId] = unitSegments;
+  if (existing) {
+    await prisma.scheduleAssignments.update({
+      where: { id: existing.id },
+      data: { assignmentsJson: payload },
+    });
+    return;
+  }
+  await prisma.scheduleAssignments.create({
+    data: {
+      tenantId,
+      shiftType: requestRow.shiftType,
+      dateKey: requestRow.dateKey,
+      assignmentsJson: payload,
+    },
+  });
+}
+
+function toOverrideResponse(row) {
+  return {
+    id: row.id,
+    requesterUsername: row.requesterUsername,
+    requesterName: row.requesterName,
+    personName: row.personName,
+    apparatus: row.apparatus,
+    unitId: row.unitId,
+    slotIndex: row.slotIndex,
+    dateKey: row.dateKey,
+    requiredQualification: row.requiredQualification,
+    shiftType: row.shiftType,
+    status: row.status,
+    denialReason: row.denialReason,
+  };
+}
+
+function slotNamesWithout(slotValue, personName) {
+  const target = personName.trim().toLowerCase();
+  return String(slotValue ?? "")
+    .split("||OT||")
+    .map((name) => name.trim())
+    .filter((name) => name && name.toLowerCase() !== target)
+    .join("||OT||");
+}
+
+async function removeOverrideFromSchedule(tenantId, requestRow) {
+  const row = await prisma.scheduleAssignments.findUnique({
+    where: {
+      tenantId_shiftType_dateKey: {
+        tenantId,
+        shiftType: requestRow.shiftType,
+        dateKey: requestRow.dateKey,
+      },
+    },
+  });
+  if (!row?.assignmentsJson || typeof row.assignmentsJson !== "object") return;
+  const payload = JSON.parse(JSON.stringify(row.assignmentsJson));
+  const assignments =
+    payload.assignments && typeof payload.assignments === "object" ? payload.assignments : payload;
+  const slots = assignments[requestRow.unitId];
+  if (Array.isArray(slots) && requestRow.slotIndex >= 0 && requestRow.slotIndex < slots.length) {
+    slots[requestRow.slotIndex] = slotNamesWithout(slots[requestRow.slotIndex], requestRow.personName);
+  }
+  const segmentDay = payload.slotSegments?.[requestRow.unitId];
+  if (Array.isArray(segmentDay) && Array.isArray(segmentDay[requestRow.slotIndex])) {
+    segmentDay[requestRow.slotIndex] = segmentDay[requestRow.slotIndex].map((segment) => {
+      if (!segment || typeof segment !== "object") return segment;
+      if (String(segment.personnelName ?? "").trim().toLowerCase() !== requestRow.personName.trim().toLowerCase()) {
+        return segment;
+      }
+      return { ...segment, personnelName: "", assigneeType: "hire" };
+    });
+  }
+  await prisma.scheduleAssignments.update({
+    where: { id: row.id },
+    data: { assignmentsJson: payload },
+  });
+}
+
+app.get("/api/qualification-overrides", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const canReview = canSeeAllTrades(request.auth);
+    const rows = await prisma.qualificationOverrideRequest.findMany({
+      where: {
+        tenantId,
+        status: { in: ["pending", "approved"] },
+      },
+      orderBy: { createdAt: "asc" },
+    });
+    response.json({ ok: true, canReview, requests: rows.map(toOverrideResponse) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected permission request read error."),
+    });
+  }
+});
+
+app.post("/api/qualification-overrides", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const personName = trimValue(String(body.personName ?? ""));
+    const dateKey = trimValue(String(body.dateKey ?? ""));
+    const unitId = trimValue(String(body.unitId ?? ""));
+    const apparatus = trimValue(String(body.apparatus ?? ""));
+    const shiftType = trimValue(String(body.shiftType ?? ""));
+    const requiredQualification = trimValue(String(body.requiredQualification ?? ""));
+    const slotIndex = Math.floor(Number(body.slotIndex));
+    if (!personName || !TRADE_DATE_PATTERN.test(dateKey) || !unitId || !requiredQualification || slotIndex < 0) {
+      response.status(400).json({ ok: false, message: "The permission request is missing a seat or a date." });
+      return;
+    }
+    const details = await prisma.departmentDetails.findUnique({
+      where: { tenantId },
+      select: { payloadJson: true },
+    });
+    const payload =
+      details?.payloadJson && typeof details.payloadJson === "object" ? details.payloadJson : {};
+    const rules =
+      payload.personnelQualificationOverrides && typeof payload.personnelQualificationOverrides === "object"
+        ? payload.personnelQualificationOverrides
+        : {};
+    const rule = rules[requiredQualification];
+    const placeNow = body.placeNow === true && canSeeAllTrades(request.auth);
+    const removalRequest = requiredQualification === "Remove from seat";
+    if (removalRequest) {
+      const fullNameMap = await getTenantUserFullNameMap(tenantId);
+      const requesterUsername = request.auth.username.toLowerCase();
+      const requesterName = trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername;
+      if (personName.toLowerCase() !== requesterName.toLowerCase()) {
+        response.status(403).json({ ok: false, message: "You can only request to be removed from your own seat." });
+        return;
+      }
+      const existing = await prisma.qualificationOverrideRequest.findFirst({
+        where: { tenantId, personName, dateKey, unitId, slotIndex, status: "pending", requiredQualification: "Remove from seat" },
+      });
+      if (existing) {
+        response.json({ ok: true, request: toOverrideResponse(existing) });
+        return;
+      }
+      const row = await prisma.qualificationOverrideRequest.create({
+        data: {
+          tenantId,
+          requesterUsername,
+          requesterName,
+          personName,
+          apparatus,
+          unitId,
+          slotIndex,
+          dateKey,
+          requiredQualification: "Remove from seat",
+          shiftType,
+          status: "pending",
+        },
+      });
+      response.json({ ok: true, request: toOverrideResponse(row) });
+      return;
+    }
+    const partialMatch = /^Partial shift (\d{2}:\d{2})-(\d{2}:\d{2})$/.exec(requiredQualification);
+    if (partialMatch) {
+      const startMinutes = clockToMinutes(partialMatch[1]);
+      const endMinutes = clockToMinutes(partialMatch[2]);
+      if (startMinutes == null || endMinutes == null || endMinutes <= startMinutes) {
+        response.status(400).json({
+          ok: false,
+          message: "Enter a start and end in 24-hour time, with the end later than the start.",
+        });
+        return;
+      }
+      const fullNameMap = await getTenantUserFullNameMap(tenantId);
+      const requesterUsername = request.auth.username.toLowerCase();
+      const requesterName = trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername;
+      if (personName.toLowerCase() !== requesterName.toLowerCase()) {
+        response.status(403).json({ ok: false, message: "You can only request a partial shift for yourself." });
+        return;
+      }
+      const existing = await prisma.qualificationOverrideRequest.findFirst({
+        where: { tenantId, personName, dateKey, unitId, slotIndex, status: "pending", requiredQualification },
+      });
+      if (existing) {
+        response.json({ ok: true, request: toOverrideResponse(existing) });
+        return;
+      }
+      const partialRow = await prisma.qualificationOverrideRequest.create({
+        data: {
+          tenantId,
+          requesterUsername,
+          requesterName,
+          personName,
+          apparatus,
+          unitId,
+          slotIndex,
+          dateKey,
+          requiredQualification,
+          shiftType,
+          status: "pending",
+        },
+      });
+      response.json({ ok: true, request: toOverrideResponse(partialRow) });
+      return;
+    }
+    const lower = trimValue(String(rule?.lowerQualification ?? ""));
+    if (!rule || rule.enabled !== true || !lower) {
+      response.status(400).json({
+        ok: false,
+        message: "This qualification does not allow an admin override.",
+      });
+      return;
+    }
+    const records = Array.isArray(payload.schedulerPersonnelRecords) ? payload.schedulerPersonnelRecords : [];
+    const person = records.find(
+      (entry) => trimValue(String(entry?.name ?? "")).toLowerCase() === personName.toLowerCase(),
+    );
+    const qualifications = Array.isArray(person?.qualifications)
+      ? person.qualifications.map((item) => trimValue(String(item ?? ""))).filter(Boolean)
+      : [];
+    if (!qualifications.includes(lower)) {
+      response.status(400).json({
+        ok: false,
+        message: `${personName} does not have ${lower}, so this seat cannot be requested.`,
+      });
+      return;
+    }
+    const existing = await prisma.qualificationOverrideRequest.findFirst({
+      where: { tenantId, personName, dateKey, unitId, slotIndex, status: "pending", requiredQualification },
+    });
+    if (existing) {
+      response.json({ ok: true, request: toOverrideResponse(existing) });
+      return;
+    }
+    const fullNameMap = await getTenantUserFullNameMap(tenantId);
+    const requesterUsername = request.auth.username.toLowerCase();
+    const row = await prisma.qualificationOverrideRequest.create({
+      data: {
+        tenantId,
+        requesterUsername,
+        requesterName: trimValue(fullNameMap[requesterUsername] ?? "") || requesterUsername,
+        personName,
+        apparatus,
+        unitId,
+        slotIndex,
+        dateKey,
+        requiredQualification,
+        shiftType,
+        status: placeNow ? "approved" : "pending",
+      },
+    });
+    response.json({ ok: true, request: toOverrideResponse(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected permission request error."),
+    });
+  }
+});
+
+app.patch("/api/qualification-overrides/:id", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(400).json({ ok: false, message: "Missing tenant context." });
+      return;
+    }
+    if (!canSeeAllTrades(request.auth)) {
+      response.status(403).json({ ok: false, message: "Only a sub admin or above can approve this request." });
+      return;
+    }
+    const existing = await prisma.qualificationOverrideRequest.findFirst({
+      where: { id: request.params.id, tenantId },
+    });
+    if (!existing || existing.status !== "pending") {
+      response.status(404).json({ ok: false, message: "That permission request is no longer waiting." });
+      return;
+    }
+    const action = trimValue(String(request.body?.action ?? ""));
+    if (action === "deny") {
+      const denialReason = trimValue(String(request.body?.denialReason ?? ""));
+      if (!denialReason) {
+        response.status(400).json({ ok: false, message: "Enter a reason before denying." });
+        return;
+      }
+      if (!isScheduleLeaveRequest(existing.requiredQualification)) {
+        await removeOverrideFromSchedule(tenantId, existing);
+      }
+      const row = await prisma.qualificationOverrideRequest.update({
+        where: { id: existing.id },
+        data: { status: "denied", denialReason },
+      });
+      response.json({ ok: true, request: toOverrideResponse(row) });
+      return;
+    }
+    if (action !== "approve") {
+      response.status(400).json({ ok: false, message: "Unknown permission action." });
+      return;
+    }
+    if (existing.requiredQualification.startsWith("Partial shift ")) {
+      await applyPartialShift(tenantId, existing);
+    } else if (existing.requiredQualification === "Remove from seat") {
+      await removeOverrideFromSchedule(tenantId, existing);
+    }
+    const row = await prisma.qualificationOverrideRequest.update({
+      where: { id: existing.id },
+      data: { status: "approved", denialReason: "" },
+    });
+    response.json({ ok: true, request: toOverrideResponse(row) });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Unexpected permission update error."),
     });
   }
 });
@@ -3061,10 +6255,29 @@ async function removeTenantUserTypeLabel(tenantId, username) {
 }
 
 function roleToUserTypeLabel(role) {
-  const r = trimValue(role || "").toLowerCase();
+  const r = trimValue(role || "").toLowerCase().replace(/[\s-]+/g, "_");
   if (r === "superadmin" || r === "super_admin") return "Super Admin";
+  if (r === "subadmin" || r === "sub_admin") return "Subadmin";
   if (r === "admin") return "Admin";
   return "User";
+}
+
+async function refuseAccountChange(response, tenantId, actor, change) {
+  const denial = await accountChangeError(prisma, tenantId, actor, change);
+  if (!denial) return false;
+  response.status(403).json({ ok: false, code: "FORBIDDEN", message: denial });
+  return true;
+}
+
+async function auditAccountChange(tenantId, actor, action, targetUsername, detail) {
+  await writeAccountAudit(prisma, {
+    tenantId,
+    actorUserId: actor?.userId ?? null,
+    actorUsername: actor?.username ?? "",
+    action,
+    targetUsername,
+    detail,
+  });
 }
 
 function toUserResponse(user, fullNameMap = {}, userTypeLabelMap = {}) {
@@ -3100,7 +6313,7 @@ app.get("/api/users", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected users list error.",
+        publicErrorMessage(error, "Unexpected users list error."),
     });
   }
 });
@@ -3130,17 +6343,32 @@ app.post("/api/users", async (request, response) => {
       response.status(400).json({ ok: false, message: passwordPolicyError });
       return;
     }
+    const nextRole = mapUserTypeToRole(userType);
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "create",
+      target: null,
+      nextRole,
+    })) {
+      return;
+    }
     const passwordHash = await hashPassword(password);
     const user = await prisma.user.create({
       data: {
         tenantId,
         username,
         passwordHash,
-        role: mapUserTypeToRole(userType),
+        role: nextRole,
       },
     });
     await setTenantUserFullName(tenantId, username, fullName);
     await setTenantUserTypeLabel(tenantId, username, userType);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "create",
+      username,
+      `Created account with role ${nextRole}.`,
+    );
     response.status(201).json({
       ok: true,
       user: toUserResponse(user, { [username]: fullName }, { [username]: userType }),
@@ -3153,7 +6381,7 @@ app.post("/api/users", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected user create error.",
+        publicErrorMessage(error, "Unexpected user create error."),
     });
   }
 });
@@ -3209,10 +6437,36 @@ app.patch("/api/users/:id", async (request, response) => {
       }
       updates.passwordHash = await hashPassword(nextPassword);
     }
-    const user = await prisma.user.update({
-      where: { id },
-      data: updates,
-    });
+    const nameOnlySelf =
+      request.auth?.userId === existing.id &&
+      updates.username === undefined &&
+      updates.role === undefined &&
+      updates.passwordHash === undefined;
+    if (!nameOnlySelf) {
+      if (await refuseAccountChange(response, tenantId, request.auth, {
+        action: "update",
+        target: existing,
+        nextRole: updates.role ?? existing.role,
+      })) {
+        return;
+      }
+    }
+    let user = existing;
+    if (Object.keys(updates).length > 0) {
+      const written = await prisma.user.updateMany({
+        where: { id, tenantId },
+        data: updates,
+      });
+      if (written.count !== 1) {
+        response.status(404).json({ ok: false, message: "User not found." });
+        return;
+      }
+      user = await prisma.user.findFirst({ where: { id, tenantId } });
+    }
+    if (updates.passwordHash) {
+      const keepSessionId = request.auth?.userId === user.id ? request.auth.sessionId : null;
+      await revokeOtherSessions(prisma, user.id, keepSessionId);
+    }
     const nextUsername = trimValue(user.username).toLowerCase();
     await setTenantUserFullName(
       tenantId,
@@ -3226,6 +6480,21 @@ app.patch("/api/users/:id", async (request, response) => {
       nextUserTypeLabel || roleToUserTypeLabel(user.role),
       trimValue(existing.username).toLowerCase(),
     );
+    const changes = [];
+    if (updates.username) changes.push("Changed username.");
+    if (updates.role) changes.push(`Changed role to ${canonicalRole(user.role)}.`);
+    if (updates.passwordHash) changes.push("Changed password.");
+    if (body.name !== undefined) changes.push("Changed display name.");
+    if (body.userType !== undefined && !updates.role) changes.push("Changed user type label.");
+    if (changes.length > 0) {
+      await auditAccountChange(
+        tenantId,
+        request.auth,
+        "update",
+        nextUsername,
+        changes.join(" "),
+      );
+    }
     response.json({
       ok: true,
       user: toUserResponse(
@@ -3245,7 +6514,7 @@ app.patch("/api/users/:id", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected user update error.",
+        publicErrorMessage(error, "Unexpected user update error."),
     });
   }
 });
@@ -3275,22 +6544,40 @@ app.post("/api/users/:id/reset-password", async (request, response) => {
     }
     const existing = await prisma.user.findFirst({
       where: { id, tenantId },
-      select: { id: true },
     });
     if (!existing) {
       response.status(404).json({ ok: false, message: "User not found." });
       return;
     }
-    await prisma.user.update({
-      where: { id: existing.id },
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "reset-password",
+      target: existing,
+      nextRole: existing.role,
+    })) {
+      return;
+    }
+    const written = await prisma.user.updateMany({
+      where: { id: existing.id, tenantId },
       data: { passwordHash: await hashPassword(newPassword) },
     });
+    if (written.count !== 1) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
+    await revokeAllSessions(prisma, existing.id);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "reset-password",
+      existing.username,
+      "Reset password.",
+    );
     response.status(200).json({ ok: true, message: "Password reset." });
   } catch (error) {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected reset-password error.",
+        publicErrorMessage(error, "Unexpected reset-password error."),
     });
   }
 });
@@ -3314,15 +6601,33 @@ app.delete("/api/users/:id", async (request, response) => {
       response.status(404).json({ ok: false, message: "User not found." });
       return;
     }
-    await prisma.user.delete({ where: { id } });
+    if (await refuseAccountChange(response, tenantId, request.auth, {
+      action: "delete",
+      target: existing,
+      nextRole: null,
+    })) {
+      return;
+    }
+    const removed = await prisma.user.deleteMany({ where: { id, tenantId } });
+    if (removed.count !== 1) {
+      response.status(404).json({ ok: false, message: "User not found." });
+      return;
+    }
     await removeTenantUserFullName(tenantId, existing.username);
     await removeTenantUserTypeLabel(tenantId, existing.username);
+    await auditAccountChange(
+      tenantId,
+      request.auth,
+      "delete",
+      existing.username,
+      `Deleted account with role ${canonicalRole(existing.role)}.`,
+    );
     response.status(204).send();
   } catch (error) {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected user delete error.",
+        publicErrorMessage(error, "Unexpected user delete error."),
     });
   }
 });
@@ -3352,7 +6657,7 @@ app.get("/api/neris/debug/entities", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected proxy debug error.",
+      message: publicErrorMessage(error, "Unexpected proxy debug error."),
     });
   }
 });
@@ -3392,7 +6697,7 @@ app.get("/api/neris/entities", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS entities error.",
+        publicErrorMessage(error, "Unexpected NERIS entities error."),
     });
   }
 });
@@ -3411,12 +6716,13 @@ app.post("/api/admin/neris/entities/refresh", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected NERIS entities refresh error.",
+        publicErrorMessage(error, "Unexpected NERIS entities refresh error."),
     });
   }
 });
 
 app.get("/api/neris/debug/entity-check", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const requestedNerisId =
     readQueryValue(request.query.nerisId) ||
@@ -3426,7 +6732,7 @@ app.get("/api/neris/debug/entity-check", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set this tenant's NERIS entity ID in Department Details.",
+        "Missing NERIS entity ID. Provide ?nerisId=FD######## or set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -3478,7 +6784,7 @@ app.get("/api/neris/debug/entity-check", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected entity-check debug error.",
+        publicErrorMessage(error, "Unexpected entity-check debug error."),
       submittedEntityId: requestedNerisId,
     });
   }
@@ -3551,6 +6857,7 @@ async function resolveTenantEntityId(tenantId) {
 }
 
 app.get("/api/neris/debug/incident", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const requestedIncidentNerisId =
     readQueryValue(request.query.incidentNerisId) ||
@@ -3572,7 +6879,7 @@ app.get("/api/neris/debug/incident", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Provide ?entityId=... or set this tenant's NERIS entity ID in Department Details.",
+        "Missing NERIS entity ID. Provide ?entityId=... or set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -3601,6 +6908,17 @@ app.get("/api/neris/debug/incident", async (request, response) => {
         "Invalid incident NERIS ID format. Expected FD########|incident-number|##########.",
       submittedEntityId: requestedEntityId,
       incidentNerisId: requestedIncidentNerisId,
+    });
+    return;
+  }
+  const tenantEntityId = trimValue(request.tenant?.id)
+    ? await resolveTenantEntityId(request.tenant.id)
+    : "";
+  if (request.tenant?.id && incidentEntityFromId && incidentEntityFromId !== tenantEntityId) {
+    response.status(403).json({
+      ok: false,
+      code: "TENANT_ENTITY_MISMATCH",
+      message: "This department can only use its own NERIS entity ID.",
     });
     return;
   }
@@ -3657,14 +6975,55 @@ app.get("/api/neris/debug/incident", async (request, response) => {
     response.status(500).json({
       ok: false,
       message:
-        error instanceof Error ? error.message : "Unexpected proxy get-incident debug error.",
+        publicErrorMessage(error, "Unexpected proxy get-incident debug error."),
       submittedEntityId: requestedEntityId,
       incidentNerisId: requestedIncidentNerisId,
     });
   }
 });
 
+function clientSuppliedEntityIds(request) {
+  const body = request.body && typeof request.body === "object" ? request.body : {};
+  const integration =
+    body.integration && typeof body.integration === "object" ? body.integration : {};
+  const values = [
+    integration.entityId,
+    request.headers?.["x-neris-entity-id"],
+    request.headers?.["x-neris-vendor-code"],
+    readQueryValue(request.query?.entityId),
+    readQueryValue(request.query?.nerisId),
+    readQueryValue(request.query?.neris_id),
+  ];
+  return values.map((value) => trimValue(value)).filter((value) => NERIS_ENTITY_ID_PATTERN.test(value));
+}
+
+/** A department may only act as its own NERIS entity. Returns true when the response was sent. */
+async function rejectForeignNerisEntity(request, response) {
+  const tenantId = trimValue(request.tenant?.id);
+  if (!tenantId) return false;
+  const supplied = clientSuppliedEntityIds(request);
+  if (supplied.length === 0) return false;
+  const tenantEntityId = await resolveTenantEntityId(tenantId);
+  if (supplied.every((value) => value === tenantEntityId)) return false;
+  response.status(403).json({
+    ok: false,
+    code: "TENANT_ENTITY_MISMATCH",
+    message: "This department can only use its own NERIS entity ID.",
+  });
+  return true;
+}
+
 async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, tenant) {
+  const tenantId = trimValue(tenant?.id);
+  if (tenantId) {
+    const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
+    if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
+      return tenantEntityIdFromContext;
+    }
+    // Fail-closed for tenant traffic: never use a caller-supplied id or the global env value.
+    return resolveTenantEntityId(tenantId);
+  }
+
   const integration =
     requestBody?.integration && typeof requestBody.integration === "object"
       ? requestBody.integration
@@ -3673,25 +7032,7 @@ async function resolveEntityIdFromRequest(requestBody, requestHeaders, config, t
     trimValue(requestHeaders["x-neris-entity-id"]) ||
     trimValue(requestHeaders["x-neris-vendor-code"]);
   const bodyEntityId = trimValue(integration.entityId);
-  if (bodyEntityId) {
-    return bodyEntityId;
-  }
-  if (headerEntityId) {
-    return headerEntityId;
-  }
-
-  const tenantId = trimValue(tenant?.id);
-  const tenantEntityIdFromContext = trimValue(tenant?.nerisEntityId);
-  if (tenantEntityIdFromContext && NERIS_ENTITY_ID_PATTERN.test(tenantEntityIdFromContext)) {
-    return tenantEntityIdFromContext;
-  }
-  if (tenantId) {
-    const tenantEntityId = await resolveTenantEntityId(tenantId);
-    // Fail-closed for tenant traffic: never fallback to global env value.
-    return tenantEntityId;
-  }
-
-  return config.defaultEntityId;
+  return bodyEntityId || headerEntityId || config.defaultEntityId;
 }
 
 function readNerisDetailString(responseBody) {
@@ -3811,6 +7152,7 @@ function shouldAttemptCreateConflictFallback(createStatus, createResponseBody) {
 }
 
 app.post("/api/neris/validate", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const entityId = await resolveEntityIdFromRequest(
     request.body,
@@ -3823,7 +7165,7 @@ app.post("/api/neris/validate", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+        "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -3886,12 +7228,13 @@ app.post("/api/neris/validate", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected proxy validate error.",
+      message: publicErrorMessage(error, "Unexpected proxy validate error."),
     });
   }
 });
 
 app.post("/api/neris/export", async (request, response) => {
+  if (await rejectForeignNerisEntity(request, response)) return;
   const config = getProxyConfig();
   const entityId = await resolveEntityIdFromRequest(
     request.body,
@@ -3904,7 +7247,7 @@ app.post("/api/neris/export", async (request, response) => {
     response.status(400).json({
       ok: false,
       message:
-        "Missing NERIS entity ID. Set this tenant's NERIS entity in Department Details or pass integration.entityId.",
+        "Missing NERIS entity ID. Set it in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration.",
     });
     return;
   }
@@ -4021,6 +7364,23 @@ app.post("/api/neris/export", async (request, response) => {
         entityIsAccessible,
       };
     }
+    let exportRecorded = false;
+    try {
+      await writeNerisExportReceipt({
+        tenantId: request.tenant?.id,
+        auth: request.auth,
+        requestBody: request.body,
+        entityId,
+        payload,
+        httpStatus: finalResponse.status,
+        httpStatusText: finalResponse.statusText,
+        responseBody: finalResponseBody,
+        fallback,
+      });
+      exportRecorded = true;
+    } catch {
+      console.error("[NERIS export] Could not store the export record.");
+    }
     response.status(finalResponse.status).json({
       ok: finalResponse.ok,
       status: finalResponse.status,
@@ -4030,6 +7390,7 @@ app.post("/api/neris/export", async (request, response) => {
       submittedPayload: payload,
       troubleshooting,
       fallback,
+      exportRecorded,
       createResult: {
         status: createResponse.status,
         statusText: createResponse.statusText,
@@ -4039,13 +7400,14 @@ app.post("/api/neris/export", async (request, response) => {
   } catch (error) {
     response.status(500).json({
       ok: false,
-      message: error instanceof Error ? error.message : "Unexpected proxy error.",
+      message: publicErrorMessage(error, "Unexpected proxy error."),
     });
   }
 });
 
 const config = getProxyConfig();
 const __filename = fileURLToPath(import.meta.url);
+const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === __filename;
 const __dirname = path.dirname(__filename);
 const frontendDistDir = path.resolve(__dirname, "../dist");
 const frontendIndexPath = path.join(frontendDistDir, "index.html");
@@ -4062,10 +7424,46 @@ if (hasFrontendBuild) {
   });
 }
 
-app.listen(config.proxyPort, () => {
-  console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
-  console.log(`NERIS base URL: ${config.baseUrl}`);
-  if (hasFrontendBuild) {
-    console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
+app.use((request, response, next) => {
+  if (!String(request.path || "").toLowerCase().startsWith("/api")) {
+    next();
+    return;
   }
+  response.status(404).json({ ok: false, message: "Not found." });
 });
+
+app.use((error, request, response, next) => {
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+  const unreadable = error?.type === "entity.parse.failed" || error instanceof SyntaxError;
+  const status = unreadable ? 400 : 500;
+  console.error("[request error]", {
+    method: request.method,
+    path: String(request.path || "").slice(0, 200),
+    status,
+    type: typeof error?.type === "string" ? error.type : error?.name || "Error",
+  });
+  response.status(status).json({
+    ok: false,
+    message: unreadable ? "The request could not be read." : "Something went wrong.",
+  });
+});
+
+if (invokedDirectly) {
+  app.listen(config.proxyPort, () => {
+    console.log(`NERIS proxy listening on http://localhost:${config.proxyPort}`);
+    console.log(`NERIS base URL: ${config.baseUrl}`);
+    if (!configuredCadIngestSecret()) {
+      console.warn(
+        "[CAD ingest] CAD_INGEST_SECRET is unset — POST /api/cad/inbound-email returns 503 until configured.",
+      );
+    }
+    if (hasFrontendBuild) {
+      console.log(`Frontend build detected at ${frontendDistDir} and served by proxy.`);
+    }
+  });
+}
+
+export { app, prisma, clearLoginLockouts };

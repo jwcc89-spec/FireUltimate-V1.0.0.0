@@ -107,7 +107,7 @@ npm run dev
 ### 3) Configure frontend export values (Admin UI)
 
 1. Sign in as Admin.
-2. Go to **Admin Functions -> Customization**.
+2. Go to **Admin Functions → Setup/Configuration → NERIS Configuration**.
 3. Open **NERIS Export Configuration**.
 4. Use these defaults (already set by default):
    - Export URL: `/api/neris/export`
@@ -116,7 +116,7 @@ npm run dev
    - Auth scheme: `Bearer`
    - Content-Type: `application/json`
 5. Enter your **NERIS Entity ID** in the `NERIS Entity ID` field.
-6. Click **Save Customization**.
+6. Click **Save NERIS configuration**.
 
 ### 4) Send a test report export
 

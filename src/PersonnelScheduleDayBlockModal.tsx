@@ -7,7 +7,7 @@ import {
   parseTimeToMinutes,
   type ScheduleSegment,
 } from "./scheduleStorage";
-import { formatScheduleSegmentToken } from "./scheduleUtils";
+import { formatScheduleSegmentToken, qualificationColorHex, visibleAdditionalRowCount } from "./scheduleUtils";
 
 type ModalRowType = "apparatus" | "support";
 type ModalSupportValueMode = "text" | "personnel";
@@ -18,6 +18,8 @@ interface ModalScheduleRow {
   rowType: ModalRowType;
   unitId: string;
   slotCount: number;
+  rowsVisible?: number;
+  maximumRows?: number;
   minimumPersonnel: number;
   supportValueMode?: ModalSupportValueMode;
   supportSegmentedMode?: boolean;
@@ -41,11 +43,30 @@ interface PersonnelScheduleDayBlockModalProps {
   /** OT segment dropdown: personnel with shift set in Scheduler Settings (excludes incomplete records). */
   overtimeRosterPersonnel: ModalPersonnel[];
   personnelQualificationOrder: string[];
+  personnelQualificationColors: Record<string, string>;
   effectiveShift: string;
-  getAssignmentsForDay: (dateKey: string, unitId: string, slotCount: number) => string[];
+  getAssignmentsForDay: (
+    dateKey: string,
+    unitId: string,
+    slotCount: number,
+    keepExtraSlots?: boolean,
+    padToSlotCount?: boolean,
+  ) => string[];
   assignPersonToSlot: (dateKey: string, unitId: string, slotIndex: number, personName: string) => void;
   clearSlotValue: (dateKey: string, unitId: string, slotIndex: number) => void;
+  /** Sub admin and above can split seats. A regular user cannot. */
+  canChangeSegments?: boolean;
+  /** A regular user adds only themselves, through the fill dialog. */
+  selfFillOnly?: boolean;
+  onOpenSelfFill?: (unitId: string, slotIndex: number) => void;
+  /** Names waiting on a partial-shift approval. The seat stays closed until an admin answers. */
+  pendingHolds?: Array<{ unitId: string; slotIndex: number; personName: string }>;
   updateTextSlotValue: (dateKey: string, unitId: string, slotIndex: number, textValue: string) => void;
+  revealNextSupportRow: (dateKey: string, unitId: string) => void;
+  getCoverageLines: (
+    dateKey: string,
+    rowId: string,
+  ) => Array<{ personnelName: string; text: string; overtime?: boolean }>;
   importAssignmentsForDay: (dateKey: string) => void;
   assignedOnDay: (dateKey: string) => Set<string>;
   isOvertimeEnabledForSlot: (dateKey: string, unitId: string, slotIndex: number) => boolean;
@@ -56,6 +77,7 @@ interface PersonnelScheduleDayBlockModalProps {
     enabled: boolean,
   ) => void;
   overtimeSplitCount: number;
+  allowScheduledOvertime: boolean;
   lastScheduleAction: string;
   onUndo: () => void;
   canUndo: boolean;
@@ -80,6 +102,16 @@ interface PersonnelScheduleDayBlockModalProps {
     proposedStart: number,
     proposedEnd: number,
   ) => string | null;
+  apparatusOverrideBlockMessage?: (dateKey: string, personName: string) => string | null;
+  apparatusSeatQualificationMessage?: (
+    unitId: string,
+    slotIndex: number,
+    personName: string,
+  ) => string | null;
+  onScheduleNotice: (
+    message: string,
+    blocked?: { personName: string; unitId: string; slotIndex: number } | null,
+  ) => void;
   /** When segment count becomes 1, exit segment mode and store a single 24h assignment. */
   collapseSegmentModeToSingleSlot: (
     dateKey: string,
@@ -98,16 +130,24 @@ export function PersonnelScheduleDayBlockModal({
   allPersonnel,
   overtimeRosterPersonnel,
   personnelQualificationOrder,
+  personnelQualificationColors,
   effectiveShift,
   getAssignmentsForDay,
   assignPersonToSlot,
   clearSlotValue,
+  canChangeSegments = true,
+  selfFillOnly = false,
+  onOpenSelfFill,
+  pendingHolds = [],
   updateTextSlotValue,
+  revealNextSupportRow,
+  getCoverageLines,
   importAssignmentsForDay,
   assignedOnDay,
   isOvertimeEnabledForSlot,
   toggleOvertimeForSlot,
   overtimeSplitCount,
+  allowScheduledOvertime,
   lastScheduleAction,
   onUndo,
   canUndo,
@@ -118,6 +158,9 @@ export function PersonnelScheduleDayBlockModal({
   getSegmentsForSlot,
   setSegmentsForSlot,
   assertApparatusTimeOverlap,
+  apparatusOverrideBlockMessage,
+  apparatusSeatQualificationMessage,
+  onScheduleNotice,
   collapseSegmentModeToSingleSlot,
   onClose,
 }: PersonnelScheduleDayBlockModalProps) {
@@ -147,6 +190,23 @@ export function PersonnelScheduleDayBlockModal({
   const handleDrop = useCallback(
     (unitId: string, slotIndex: number) => {
       if (!draggedPerson) return;
+      if (selfFillOnly) {
+        setDraggedPerson(null);
+        setDragOverSlot(null);
+        const row = scheduleRows.find((r) => r.unitId === unitId);
+        const current = (getAssignmentsForDay(dateKey, unitId, row?.slotCount ?? slotIndex + 1)[slotIndex] ?? "").trim();
+        if (!current && onOpenSelfFill) onOpenSelfFill(unitId, slotIndex);
+        return;
+      }
+      if (pendingHolds.some((item) => item.unitId === unitId && item.slotIndex === slotIndex)) {
+        const held = pendingHolds.find((item) => item.unitId === unitId && item.slotIndex === slotIndex);
+        setDraggedPerson(null);
+        setDragOverSlot(null);
+        if (held) {
+          onScheduleNotice(`${held.personName} has a partial shift waiting for approval on this seat.`);
+        }
+        return;
+      }
       const row = scheduleRows.find((r) => r.unitId === unitId);
       if (!row) return;
       const currentSlots = getAssignmentsForDay(dateKey, unitId, row.slotCount);
@@ -160,7 +220,7 @@ export function PersonnelScheduleDayBlockModal({
       setDraggedPerson(null);
       setDragOverSlot(null);
     },
-    [draggedPerson, dateKey, scheduleRows, getAssignmentsForDay, assignPersonToSlot],
+    [draggedPerson, dateKey, scheduleRows, getAssignmentsForDay, assignPersonToSlot, selfFillOnly, onOpenSelfFill, pendingHolds, onScheduleNotice],
   );
 
   const handleRemoveFromSlot = useCallback(
@@ -303,6 +363,32 @@ export function PersonnelScheduleDayBlockModal({
       const segmentRows = ensureSegmentRows(unitId, slotIndex);
       const targetSeg = segmentRows.find((s) => s.id === targetSegmentId);
       if (!targetSeg) return;
+      if (supportRowType === "apparatus" && apparatusSeatQualificationMessage) {
+        const qualificationMsg = apparatusSeatQualificationMessage(
+          unitId,
+          slotIndex,
+          draggedPerson,
+        );
+        if (qualificationMsg) {
+          onScheduleNotice(qualificationMsg, {
+            personName: draggedPerson,
+            unitId,
+            slotIndex,
+          });
+          setDraggedPerson(null);
+          setDragOverSlot(null);
+          return;
+        }
+      }
+      if (supportRowType === "apparatus" && apparatusOverrideBlockMessage) {
+        const overrideMsg = apparatusOverrideBlockMessage(dateKey, draggedPerson);
+        if (overrideMsg) {
+          onScheduleNotice(overrideMsg);
+          setDraggedPerson(null);
+          setDragOverSlot(null);
+          return;
+        }
+      }
       if (
         supportRowType === "apparatus" &&
         assertApparatusTimeOverlap &&
@@ -317,7 +403,7 @@ export function PersonnelScheduleDayBlockModal({
           targetSeg.endMinutes,
         );
         if (msg) {
-          window.alert(msg);
+          onScheduleNotice(msg);
           setDraggedPerson(null);
           setDragOverSlot(null);
           return;
@@ -333,7 +419,7 @@ export function PersonnelScheduleDayBlockModal({
             s.personnelName.trim() === trimmedDrag,
         );
       if (!targetSeg.overtime && assignedOnAnotherSegment) {
-        window.alert(
+        onScheduleNotice(
           "That person is already assigned in another segment of this slot. Enable OT on this segment to pick from the full roster, or choose someone else.",
         );
         setDraggedPerson(null);
@@ -368,10 +454,13 @@ export function PersonnelScheduleDayBlockModal({
       setDragOverSlot(null);
     },
     [
+      apparatusOverrideBlockMessage,
+      apparatusSeatQualificationMessage,
       assertApparatusTimeOverlap,
       dateKey,
       draggedPerson,
       ensureSegmentRows,
+      onScheduleNotice,
       rebalanceApparatusForSupportSegment,
       updateSegmentCollection,
     ],
@@ -392,7 +481,7 @@ export function PersonnelScheduleDayBlockModal({
       .filter((s) => s.endMinutes > s.startMinutes)
       .sort((a, b) => a.startMinutes - b.startMinutes);
     if (sorted.length === 0) {
-      window.alert("Add at least one valid segment (end time after start time).");
+      onScheduleNotice("Add at least one valid segment (end time after start time).");
       return;
     }
     if (sorted.length === 1) {
@@ -413,7 +502,7 @@ export function PersonnelScheduleDayBlockModal({
       "Applied segment layout.",
     );
     setSegmentLayoutEditor(null);
-  }, [collapseSegmentModeToSingleSlot, segmentLayoutEditor, dateKey, setSegmentsForSlot]);
+  }, [collapseSegmentModeToSingleSlot, segmentLayoutEditor, dateKey, setSegmentsForSlot, onScheduleNotice]);
 
   const addSegmentLayoutDraftRow = useCallback(() => {
     setSegmentLayoutEditor((prev) => {
@@ -617,14 +706,63 @@ export function PersonnelScheduleDayBlockModal({
               Previous action: {lastScheduleAction}
             </p>
             {scheduleRows.map((row) => {
-              const slots = getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+              const storedSlots =
+                row.rowType === "support"
+                  ? getAssignmentsForDay(
+                      dateKey,
+                      row.unitId,
+                      row.maximumRows ?? row.slotCount,
+                      true,
+                      false,
+                    )
+                  : getAssignmentsForDay(dateKey, row.unitId, row.slotCount);
+              const visibleCount =
+                row.rowType === "support"
+                  ? visibleAdditionalRowCount(
+                      storedSlots,
+                      row.rowsVisible ?? 1,
+                      row.maximumRows ?? row.slotCount,
+                    )
+                  : storedSlots.length;
+              const slots =
+                row.rowType === "support"
+                  ? Array.from({ length: visibleCount }, (_, index) => storedSlots[index] ?? "")
+                  : storedSlots;
+              const coverageLines = getCoverageLines(dateKey, row.id);
+              const colorForPersonnelName = (name: string): string | undefined => {
+                const person = allPersonnel.find((entry) => entry.name === name);
+                if (!person) return undefined;
+                const qualification = getHighestQualificationLabel(person, personnelQualificationOrder);
+                return qualificationColorHex(personnelQualificationColors[qualification]);
+              };
               return (
                 <div key={row.id} className="personnel-schedule-modal-apparatus">
                   <strong>{row.label}</strong>
+                  {(row.id === "support-info" || row.id === "support-trade") &&
+                  coverageLines.length > 0 ? (
+                    <div className="personnel-schedule-coverage-info">
+                      {coverageLines.map((line) => (
+                        <div
+                          key={`${line.personnelName}-${line.text}-${line.overtime ? "ot" : "shift"}`}
+                          className={line.overtime ? "personnel-schedule-overtime-name" : undefined}
+                          style={
+                            line.overtime
+                              ? undefined
+                              : { color: colorForPersonnelName(line.personnelName) }
+                          }
+                        >
+                          {line.text}
+                        </div>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="personnel-schedule-modal-slots">
                     {slots.map((name, slotIdx) => {
+                      const heldName =
+                        pendingHolds.find((item) => item.unitId === row.unitId && item.slotIndex === slotIdx)
+                          ?.personName ?? "";
                       const isRequired = slotIdx < row.minimumPersonnel;
-                      const isEmpty = !name.trim();
+                      const isEmpty = !name.trim() && !heldName;
                       const isRed = isRequired && isEmpty;
                       const isTextRow =
                         row.rowType === "support" && row.supportValueMode === "text";
@@ -640,8 +778,9 @@ export function PersonnelScheduleDayBlockModal({
                           isOvertimeEnabledForSlot(dateKey, row.unitId, slotIdx));
                       return (
                         <div key={slotIdx} className="personnel-schedule-modal-slot-row">
-                          {((row.rowType === "apparatus" && slotIdx < row.minimumPersonnel) ||
-                            isAdditionalSegmentCapable) ? (
+                          {(canChangeSegments &&
+                            ((row.rowType === "apparatus" && slotIdx < row.minimumPersonnel) ||
+                              isAdditionalSegmentCapable)) ? (
                             <label
                               className="field-hint personnel-schedule-modal-ot-toggle"
                               title={
@@ -699,32 +838,49 @@ export function PersonnelScheduleDayBlockModal({
                             onClick={
                               isTextRow || isSegmentModeAtSlot
                                 ? undefined
-                                : () => name && handleRemoveFromSlot(row.unitId, slotIdx)
+                                : () => {
+                                    if (heldName && !name.trim()) return;
+                                    if (selfFillOnly && !name.trim()) {
+                                      onOpenSelfFill?.(row.unitId, slotIdx);
+                                      return;
+                                    }
+                                    if (name) handleRemoveFromSlot(row.unitId, slotIdx);
+                                  }
                             }
                             title={
                               isTextRow
                                 ? "Type note (max 25 chars)"
-                                : name
-                                  ? `Click to remove ${name}`
-                                  : "Drag personnel here"
+                                : selfFillOnly && !name.trim()
+                                  ? "Add yourself to this open seat"
+                                  : name
+                                    ? `Click to remove ${name}`
+                                    : "Drag personnel here"
                             }
                           >
                             {isTextRow ? (
-                              <input
-                                type="text"
-                                maxLength={25}
-                                value={name}
-                                className="personnel-schedule-info-input"
-                                placeholder="Type info..."
-                                onChange={(event) =>
-                                  updateTextSlotValue(
-                                    dateKey,
-                                    row.unitId,
-                                    slotIdx,
-                                    event.target.value,
-                                  )
-                                }
-                              />
+                              <>
+                                <input
+                                  type="text"
+                                  maxLength={25}
+                                  value={name}
+                                  className="personnel-schedule-info-input"
+                                  placeholder="Type info..."
+                                  onChange={(event) =>
+                                    updateTextSlotValue(
+                                      dateKey,
+                                      row.unitId,
+                                      slotIdx,
+                                      event.target.value,
+                                    )
+                                  }
+                                  onBlur={() => revealNextSupportRow(dateKey, row.unitId)}
+                                  onKeyDown={(event) => {
+                                    if (event.key !== "Enter") return;
+                                    event.preventDefault();
+                                    revealNextSupportRow(dateKey, row.unitId);
+                                  }}
+                                />
+                              </>
                             ) : (() => {
                               const names = parseAssignedNames(name);
                               const isSegmentMode = isSegmentModeAtSlot;
@@ -796,7 +952,7 @@ export function PersonnelScheduleDayBlockModal({
                                                   ×
                                                 </span>
                                               </button>
-                                              {row.rowType === "apparatus" ? (
+                                              {row.rowType === "apparatus" && allowScheduledOvertime ? (
                                                 <label className="personnel-schedule-modal-segment-ot field-hint">
                                                   <input
                                                     type="checkbox"
@@ -829,6 +985,39 @@ export function PersonnelScheduleDayBlockModal({
                                                     const nextName = event.target.value;
                                                     if (
                                                       row.rowType === "apparatus" &&
+                                                      nextName.trim() &&
+                                                      apparatusSeatQualificationMessage
+                                                    ) {
+                                                      const qualificationMsg = apparatusSeatQualificationMessage(
+                                                        row.unitId,
+                                                        slotIdx,
+                                                        nextName,
+                                                      );
+                                                      if (qualificationMsg) {
+                                                        onScheduleNotice(qualificationMsg, {
+                                                          personName: nextName,
+                                                          unitId: row.unitId,
+                                                          slotIndex: slotIdx,
+                                                        });
+                                                        return;
+                                                      }
+                                                    }
+                                                    if (
+                                                      row.rowType === "apparatus" &&
+                                                      nextName.trim() &&
+                                                      apparatusOverrideBlockMessage
+                                                    ) {
+                                                      const overrideMsg = apparatusOverrideBlockMessage(
+                                                        dateKey,
+                                                        nextName,
+                                                      );
+                                                      if (overrideMsg) {
+                                                        onScheduleNotice(overrideMsg);
+                                                        return;
+                                                      }
+                                                    }
+                                                    if (
+                                                      row.rowType === "apparatus" &&
                                                       assertApparatusTimeOverlap &&
                                                       nextName.trim() &&
                                                       !segment.overtime
@@ -842,7 +1031,7 @@ export function PersonnelScheduleDayBlockModal({
                                                         segment.endMinutes,
                                                       );
                                                       if (msg) {
-                                                        window.alert(msg);
+                                                        onScheduleNotice(msg);
                                                         return;
                                                       }
                                                     }
@@ -921,6 +1110,8 @@ export function PersonnelScheduleDayBlockModal({
                                         +
                                       </button>
                                     </div>
+                                  ) : heldName && names.length === 0 ? (
+                                    `${heldName} (Pending)`
                                   ) : names.length > 0 ? (
                                     names.map((personName, personIndex) => (
                                       <span key={`${personName}-${personIndex}`}>
@@ -961,8 +1152,10 @@ export function PersonnelScheduleDayBlockModal({
                   className={`personnel-schedule-modal-personnel-item ${
                     assigned.has(p.name) ? "personnel-schedule-personnel-assigned" : ""
                   }`}
-                  draggable
-                  onDragStart={() => setDraggedPerson(p.name)}
+                  draggable={!selfFillOnly}
+                  onDragStart={() => {
+                    if (!selfFillOnly) setDraggedPerson(p.name);
+                  }}
                   onDragEnd={() => {
                     setDraggedPerson(null);
                     setDragOverSlot(null);

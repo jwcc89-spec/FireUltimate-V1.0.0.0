@@ -39,6 +39,20 @@ This document describes how FireUltimate connects to **external systems**. It is
 
 ---
 
+## Fire Recovery USA (NERIS billing handoff)
+
+| Item | Details |
+|------|--------|
+| **Status** | In progress / planned — UX and screens: [plans/FIRE_RECOVERY_INCIDENT_BILLING_UX_PLAN.md](plans/FIRE_RECOVERY_INCIDENT_BILLING_UX_PLAN.md). Vendor API: [FIRE_RECOVERY_USA_API_REFERENCE.md](procedures/FIRE_RECOVERY_USA_API_REFERENCE.md). |
+| **Vendor docs** | [https://doc.firerecoveryusa.com/](https://doc.firerecoveryusa.com/) — **Add NERIS Incident for Billing** (confirm exact title in portal). The portal is browser-rendered; copy endpoint details into the reference doc. |
+| **Secrets** | API keys in `.env.server` (or approved per-tenant secrets strategy). Not in `DepartmentDetails.payloadJson`. |
+| **Support** | support@firerecoveryusa.com |
+
+**Do this now:** Read the reference procedure; fill the “API details to capture” table from the vendor site before locking request/response shapes in code.  
+**Do this later:** Keep this section and the reference doc aligned with shipped routes and env vars.
+
+---
+
 ## NEMSIS (EMS reporting)
 
 | Status | Notes |
@@ -56,6 +70,7 @@ This document describes how FireUltimate connects to **external systems**. It is
 |--------|-------------|----------------|
 | CAD | No | — |
 | NERIS | Yes | `server/neris-proxy.mjs`, `Tenant.nerisEntityId`, `POST /api/neris/export` |
+| Fire Recovery USA | In progress / planned | [procedures/FIRE_RECOVERY_USA_API_REFERENCE.md](procedures/FIRE_RECOVERY_USA_API_REFERENCE.md) |
 | NEMSIS | No (planned) | — |
 
 ---

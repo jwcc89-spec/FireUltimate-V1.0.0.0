@@ -12,15 +12,117 @@ model Tenant {
   name               String
   status             String               @default("active")
   nerisEntityId      String?
+  /// Fire Recovery USA Recovery Hub subscription key (non-secret identifier; store API password in env).
+  fireRecoverySubscriptionKey   String?
+  /// Department display name sent to Fire Recovery incident billing API.
+  fireRecoveryDepartmentName    String?
+  /// Optional per-tenant Fire Recovery API login (JWT). If both username and password are set, server uses them instead of FIRE_RECOVERY_API_* env.
+  fireRecoveryApiUsername       String?
+  fireRecoveryApiPassword       String?
   createdAt          DateTime             @default(now())
   updatedAt          DateTime             @updatedAt
   domains            TenantDomain[]
   users              User[]
   departments        DepartmentDetails[]
   incidents          Incident[]
-  cadEmails          CadEmailIngest[]
-  nerisExportHistory NerisExportHistory[]
-  nerisDrafts        NerisDraft[]
+  cadEmails               CadEmailIngest[]
+  cadParsingSettings      CadParsingSettings?
+  cadEmailAllowlist       CadEmailAllowlistEntry[]
+  nerisExportHistory      NerisExportHistory[]
+  nerisDrafts             NerisDraft[]
+  nerisReportChanges      NerisReportChange[]
+  fireRecoveryIncidentBillings FireRecoveryIncidentBilling[]
+  sessions                    Session[]
+  rolePermissions             RolePermission[]
+  accountAuditLogs            AccountAuditLog[]
+  tradeRequests               TradeRequest[]
+  qualificationOverrideRequests QualificationOverrideRequest[]
+}
+
+/// One row per shift trade request. Names match Scheduler Settings → Personnel; usernames decide who may see and act on it.
+model TradeRequest {
+  id                  String   @id @default(cuid())
+  tenantId            String
+  shiftType           String   @default("")
+  requesterUsername   String
+  requesterName       String
+  counterpartUsername String
+  counterpartName     String
+  tradeDate           String
+  startTime           String
+  endTime             String
+  paybackRequired     Boolean  @default(false)
+  paybackDate         String   @default("")
+  reason              String   @default("")
+  status              String   @default("requested")
+  denialReason        String   @default("")
+  /// What accepting the trade changed on the schedule, so a cancelled trade can be put back.
+  scheduleChangeJson  Json?
+  /// Who did what and when: [{ at, by, action, note }].
+  historyJson         Json     @default("[]")
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, requesterUsername])
+  @@index([tenantId, counterpartUsername])
+}
+
+/// One request to let a lower qualification fill a seat until a sub admin approves it.
+model QualificationOverrideRequest {
+  id                    String   @id @default(cuid())
+  tenantId              String
+  requesterUsername     String
+  requesterName         String
+  personName            String
+  shiftType             String   @default("")
+  apparatus             String   @default("")
+  unitId                String   @default("")
+  slotIndex             Int      @default(0)
+  dateKey               String
+  requiredQualification String   @default("")
+  status                String   @default("pending")
+  denialReason          String   @default("")
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, status])
+}
+
+/// One row per incident call number per tenant: Fire Recovery billing submit + cached billing status.
+model FireRecoveryIncidentBilling {
+  id                    String    @id @default(cuid())
+  tenantId              String
+  callNumber            String
+  trackingId            String?
+  lastSubmitAt          DateTime?
+  lastSubmitOk          Boolean   @default(false)
+  lastSubmitError       String    @default("")
+  submitStatus          String    @default("")
+  submitStartedAt       DateTime?
+  incidentType          String    @default("")
+  incidentDateLabel     String    @default("")
+  invoiceId             String    @default("")
+  invoiceAmount         String    @default("")
+  invoiceAmountDue      String    @default("")
+  invoiceSubmitDate     String    @default("")
+  invoiceStatus         String    @default("")
+  lastPaymentDate       String    @default("")
+  lastPaymentAmount     String    @default("")
+  paymentPlan           Boolean   @default(false)
+  billingFetchedAt      DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, callNumber])
+  @@index([tenantId])
+  @@index([tenantId, updatedAt])
 }
 
 model TenantDomain {
@@ -44,10 +146,61 @@ model User {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  tenant   Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  sessions Session[]
 
   @@unique([tenantId, username])
   @@index([tenantId])
+}
+
+/// Sign-in sheet. One row per login. The browser holds the pass; this table holds only its fingerprint.
+model Session {
+  id           String    @id @default(cuid())
+  tokenHash    String    @unique
+  tenantId     String
+  userId       String
+  createdAt    DateTime  @default(now())
+  lastActiveAt DateTime  @default(now())
+  expiresAt    DateTime
+  revokedAt    DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+/// One row per department per action: the lowest role allowed to do that action.
+model RolePermission {
+  id          String   @id @default(cuid())
+  tenantId    String
+  permission  String
+  minimumRole String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, permission])
+  @@index([tenantId])
+}
+
+/// Who changed an account, and what changed. Never stores a password.
+model AccountAuditLog {
+  id             String   @id @default(cuid())
+  tenantId       String
+  actorUserId    String?
+  actorUsername  String
+  action         String
+  targetUsername String
+  detail         String   @default("")
+  createdAt      DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, createdAt])
 }
 
 model DepartmentDetails {
@@ -108,18 +261,54 @@ model Incident {
 }
 
 model CadEmailIngest {
-  id          String   @id @default(cuid())
-  tenantId    String?
-  fromAddress String   @default("")
-  toAddress   String   @default("")
-  rawBody     String   @default("")
-  headersJson Json?
-  createdAt   DateTime @default(now())
+  id                 String   @id @default(cuid())
+  tenantId           String?
+  fromAddress        String   @default("")
+  toAddress          String   @default("")
+  rawBody            String   @default("")
+  headersJson        Json?
+  /// Output of message rules at ingest (Batch H); empty if no rules / failure.
+  parsedMessageText  String   @default("")
+  createdAt          DateTime @default(now())
 
   tenant Tenant? @relation(fields: [tenantId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
   @@index([createdAt])
+}
+
+/// Per-tenant CAD dispatch parsing config (message + incident rule JSON; Batch C+).
+model CadParsingSettings {
+  id                         String   @id @default(cuid())
+  tenantId                   String   @unique
+  enableIncidentCreation     Boolean  @default(false)
+  messageRulesJson           Json     @default("[]")
+  incidentRulesJson          Json     @default("[]")
+  incidentFieldMapJson       Json     @default("{}")
+  incidentNumberExtractJson  Json?
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Per-tenant allowed sender patterns for CAD email (enforced in Batch D).
+model CadEmailAllowlistEntry {
+  id          String   @id @default(cuid())
+  tenantId    String
+  pattern     String
+  patternType String   @default("domain_suffix")
+  enabled     Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, enabled])
 }
 
 model NerisExportHistory {
@@ -163,4 +352,19 @@ model NerisDraft {
 
   @@unique([tenantId, callNumber])
   @@index([tenantId])
+}
+
+/// Who saved a NERIS report, and which field names changed. Add-only. No old or new text.
+model NerisReportChange {
+  id            String   @id @default(cuid())
+  tenantId      String
+  callNumber    String
+  actorUserId   String?
+  actorUsername String
+  fieldNames    Json
+  createdAt     DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, callNumber, createdAt])
 }

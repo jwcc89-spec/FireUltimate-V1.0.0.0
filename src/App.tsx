@@ -45,8 +45,27 @@ import {
   getNerisExportHistory,
   postNerisExportRecord,
 } from "./api/nerisExportHistory";
-import { getNerisDraft, patchNerisDraft } from "./api/nerisDrafts";
+import {
+  deleteNerisDraft,
+  getNerisDraft,
+  getRemovedNerisReportCallNumbers,
+  patchNerisDraft,
+  unlockNerisDraft,
+} from "./api/nerisDrafts";
+import { patchSharedDepartmentSettings } from "./api/sharedDepartmentSettings";
 import { getNerisSettings, patchNerisSettings } from "./api/nerisSettings";
+import {
+  fireRecoveryStatusLabel,
+  fireRecoveryStatusTone,
+  getFireRecoveryIncidents,
+  getFireRecoverySettings,
+  patchFireRecoverySettings,
+  type FireRecoveryIncidentApi,
+  type FireRecoverySettingsApi,
+} from "./api/fireRecovery";
+import { FireRecoveryIncidentsPage } from "./pages/FireRecoveryIncidentsPage";
+import { FireRecoveryIncidentDetailPage } from "./pages/FireRecoveryIncidentDetailPage";
+import { FireRecoveryExportPanel } from "./pages/FireRecoveryExportPanel";
 import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
@@ -54,8 +73,6 @@ import {
   DASHBOARD_STATS,
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
-  DISPATCH_PARSING_PREVIEW,
-  INCIDENT_CALLS,
   INCIDENT_CALL_FIELD_OPTIONS,
   INCIDENT_QUEUE_STATS,
   MAIN_MENUS,
@@ -67,6 +84,7 @@ import {
   getSubmenuByPath,
   getSubmenuForPath,
   getVisibleMenus,
+  getIncidentDisplayNumber,
   isPathAdminOnly,
   type DisplayCardOption,
   type IncidentCallSummary,
@@ -81,7 +99,7 @@ import {
 import { isAdminOrHigher, isSuperadmin } from "./roleHierarchy";
 import { SubmenuPlaceholderPage } from "./SubmenuPlaceholderPage";
 import { HydrantsAdminPage } from "./HydrantsAdminPage";
-import { DispatchParsingSettingsPage } from "./pages/DispatchParsingSettingsPage";
+import { DispatchParsingAdminPage } from "./pages/DispatchParsingSettingsPage";
 import {
   getNerisValueOptions,
   getNerisFieldsForSection,
@@ -91,7 +109,14 @@ import {
   type NerisFormValues,
   type NerisValueOption,
 } from "./nerisMetadata";
+import {
+  FIRE_RECOVERY_REQUIREMENT_ROWS,
+  parseRequirementSettings,
+  type FireRecoveryRequirementKey,
+  type RequirementLevel,
+} from "./fireRecovery/billingRequirements";
 import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
+import { PersonnelTradesPage } from "./PersonnelTradesPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
@@ -100,7 +125,21 @@ import {
   NerisFlatSingleOptionSelect,
 } from "./NerisFlatSelects";
 import { NerisGroupedOptionSelect } from "./NerisGroupedOptionSelect";
-import { getRecurrenceIntervalDays, toDateKey } from "./scheduleUtils";
+import {
+  getRecurrenceIntervalDays,
+  parseQualificationColorMap,
+  parseQualificationOverrides,
+  parseRecurrenceWeekdays,
+  QUALIFICATION_COLOR_OPTIONS,
+  recurrenceDisplayLabel,
+  formatMonthDayYear,
+  WEEKDAY_CHOICES,
+  type QualificationOverrideRule,
+  toDateKey,
+} from "./scheduleUtils";
+import { onSessionExpired } from "./api/http";
+import { RolePermissionsPanel } from "./RolePermissionsPanel";
+import { useMyPermissions } from "./useMyPermissions";
 
 interface SessionState {
   isAuthenticated: boolean;
@@ -215,8 +254,6 @@ interface CustomizationPageProps {
   onSaveIncidentDisplaySettings: (nextSettings: IncidentDisplaySettings) => void;
   submenuVisibility: SubmenuVisibilityMap;
   onSaveSubmenuVisibility: (nextVisibility: SubmenuVisibilityMap) => void;
-  nerisExportSettings: NerisExportSettings;
-  onSaveNerisExportSettings: (nextSettings: NerisExportSettings) => void;
 }
 
 interface CustomizationSectionProps {
@@ -245,6 +282,7 @@ interface NerisStoredDraft {
   lastSavedAt: string;
   additionalAidEntries: NerisDraftAidEntry[];
   additionalNonFdAidEntries: NerisDraftNonFdAidEntry[];
+  reportRemoved?: boolean;
 }
 
 interface NerisExportSettings {
@@ -288,6 +326,7 @@ type DepartmentCollectionKey =
   | "shiftInformation"
   | "additionalFields"
   | "overtimeSetup"
+  | "tradesSetup"
   | "personnel"
   | "schedulerPersonnel"
   | "personnelQualifications"
@@ -307,8 +346,96 @@ interface ShiftInformationEntry {
   shiftDuration: number;
   recurrence: ShiftRecurrencePreset;
   recurrenceCustomValue: string;
+  recurrenceCustomMode: "interval" | "weekdays";
+  recurrenceWeekdays: number[];
+  rotationStartsOn: string;
   startTime: string;
   location: string;
+}
+
+const EMPTY_SHIFT_DRAFT: ShiftInformationEntry = {
+  shiftType: "",
+  shiftDuration: 0,
+  recurrence: "Daily",
+  recurrenceCustomValue: "",
+  recurrenceCustomMode: "interval",
+  recurrenceWeekdays: [],
+  rotationStartsOn: "",
+  startTime: "",
+  location: "",
+};
+
+function seatRequirementsForMinimum(requirements: string[], minimum: number): string[] {
+  const next = requirements.slice(0, Math.max(0, minimum));
+  while (next.length < minimum) next.push("");
+  return next;
+}
+
+function filledSeatRequirements(requirements: string[], minimum: number): string[] | null {
+  let next = seatRequirementsForMinimum(requirements, minimum).map((value) => value.trim());
+  const filled = next.filter(Boolean);
+  const unique = [...new Set(filled)];
+  if (unique.length === 1 && filled.length < minimum) {
+    next = Array.from({ length: minimum }, () => unique[0]!);
+  }
+  if (minimum > 0 && next.some((value) => !value)) return null;
+  return next;
+}
+
+function SeatRequirementFields({
+  idPrefix,
+  minimumPersonnel,
+  requirements,
+  qualifications,
+  onChange,
+}: {
+  idPrefix: string;
+  minimumPersonnel: number;
+  requirements: string[];
+  qualifications: string[];
+  onChange: (next: string[]) => void;
+}) {
+  if (minimumPersonnel <= 0) return null;
+  const seats = seatRequirementsForMinimum(requirements, minimumPersonnel);
+  return (
+    <div className="scheduler-apparatus-seats">
+      {seats.map((value, index) => (
+        <label key={`seat-requirement-${index}`}>
+          {`Seat ${index + 1} qualification`}
+          <NerisFlatSingleOptionSelect
+            inputId={`${idPrefix}-seat-${index}`}
+            value={value}
+            options={qualifications.map((qualification) => ({ value: qualification, label: qualification }))}
+            onChange={(nextValue) => {
+              const next = [...seats];
+              next[index] = nextValue;
+              onChange(next);
+            }}
+            placeholder="Choose a qualification"
+            searchPlaceholder="Search qualifications..."
+            allowClear
+            usePortal
+          />
+        </label>
+      ))}
+    </div>
+  );
+}
+
+function normalizeShiftDraft(entry: ShiftInformationEntry): ShiftInformationEntry {
+  const weekdays = Array.isArray(entry.recurrenceWeekdays)
+    ? entry.recurrenceWeekdays.filter((day) => day >= 0 && day <= 6)
+    : [];
+  return {
+    ...EMPTY_SHIFT_DRAFT,
+    ...entry,
+    startTime: entry.startTime || "",
+    recurrenceCustomMode: entry.recurrenceCustomMode === "weekdays" ? "weekdays" : "interval",
+    recurrenceWeekdays: weekdays,
+    rotationStartsOn: /^\d{4}-\d{2}-\d{2}$/.test(String(entry.rotationStartsOn ?? "").trim())
+      ? String(entry.rotationStartsOn).trim()
+      : "",
+  };
 }
 
 type KellyRotationUnit = "Days" | "Shifts";
@@ -385,13 +512,47 @@ interface SchedulerApparatusRecord {
 
 type AdditionalFieldValueMode = "text" | "personnel";
 
+type AdditionalFieldSegmentDisplay = "none" | "info" | "trades";
+
 interface AdditionalFieldRecord {
   id: string;
   fieldName: string;
   numberOfSlots: number;
+  rowsVisible: number;
+  maximumRows: number;
   valueMode: AdditionalFieldValueMode;
   personnelOverride: boolean;
   segmentedModeEnabled: boolean;
+  hidden: boolean;
+  segmentDisplayIn: AdditionalFieldSegmentDisplay;
+}
+
+const PROTECTED_ADDITIONAL_FIELD_IDS = new Set([
+  "support-info",
+  "support-kelly-day",
+  "support-trade",
+  "support-injured",
+]);
+
+const DEFAULT_MAXIMUM_ADDITIONAL_ROWS = 12;
+
+function readAdditionalRowCounts(entry: {
+  numberOfSlots?: unknown;
+  rowsVisible?: unknown;
+  maximumRows?: unknown;
+}): { numberOfSlots: number; rowsVisible: number; maximumRows: number } {
+  const legacySlots = Math.max(1, Math.floor(Number(entry.numberOfSlots ?? 1) || 1));
+  const rowsVisible =
+    entry.rowsVisible === undefined || entry.rowsVisible === null || entry.rowsVisible === ""
+      ? legacySlots
+      : Math.max(0, Math.floor(Number(entry.rowsVisible)) || 0);
+  const maximumRows = Math.max(
+    rowsVisible,
+    entry.maximumRows === undefined || entry.maximumRows === null || entry.maximumRows === ""
+      ? Math.max(legacySlots, DEFAULT_MAXIMUM_ADDITIONAL_ROWS)
+      : Math.max(0, Math.floor(Number(entry.maximumRows)) || 0),
+  );
+  return { rowsVisible, maximumRows, numberOfSlots: maximumRows };
 }
 
 interface DepartmentNerisEntityOption {
@@ -653,14 +814,14 @@ const DEFAULT_USER_TABLE_COLUMN_WIDTHS: Record<UserTableColumnId, number> = {
   userType: 180,
 };
 const DEFAULT_ADDITIONAL_FIELDS: AdditionalFieldRecord[] = [
-  { id: "support-info", fieldName: "Info", numberOfSlots: 4, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false },
-  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 1, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-injured", fieldName: "Injured", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-sick", fieldName: "Sick", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-other", fieldName: "Other", numberOfSlots: 2, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
-  { id: "support-trade", fieldName: "Trade", numberOfSlots: 8, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false },
+  { id: "support-info", fieldName: "Info", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "text", personnelOverride: false, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-chief-on-call", fieldName: "Chief on Call", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-vacation", fieldName: "Vacation", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-kelly-day", fieldName: "Kelly Day", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-injured", fieldName: "Injury", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-sick", fieldName: "Sick", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-other", fieldName: "Other", numberOfSlots: 12, rowsVisible: 2, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
+  { id: "support-trade", fieldName: "Trades", numberOfSlots: 12, rowsVisible: 1, maximumRows: 12, valueMode: "personnel", personnelOverride: true, segmentedModeEnabled: false, hidden: false, segmentDisplayIn: "none" },
 ];
 
 function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
@@ -671,23 +832,43 @@ function normalizeAdditionalFields(raw: unknown): AdditionalFieldRecord[] {
     .map((entry, index): AdditionalFieldRecord | null => {
       if (!entry || typeof entry !== "object") return null;
       const id = String((entry as { id?: unknown }).id ?? `support-custom-${index + 1}`).trim();
-      const fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
+      let fieldName = String((entry as { fieldName?: unknown }).fieldName ?? "").trim();
+      if (id === "support-trade" && fieldName.toLowerCase() === "trade") fieldName = "Trades";
+      if (id === "support-injured" && fieldName.toLowerCase() === "injured") fieldName = "Injury";
       const valueModeRaw = String((entry as { valueMode?: unknown }).valueMode ?? "personnel").trim().toLowerCase();
       const valueMode: AdditionalFieldValueMode = valueModeRaw === "text" ? "text" : "personnel";
-      const numberOfSlots = Math.max(1, Math.floor(Number((entry as { numberOfSlots?: unknown }).numberOfSlots ?? 1) || 1));
+      const { numberOfSlots, rowsVisible, maximumRows } = readAdditionalRowCounts(
+        entry as { numberOfSlots?: unknown; rowsVisible?: unknown; maximumRows?: unknown },
+      );
       const personnelOverride = Boolean((entry as { personnelOverride?: unknown }).personnelOverride);
       const segmentedModeEnabled = Boolean(
         (entry as { segmentedModeEnabled?: unknown }).segmentedModeEnabled,
       );
+      const hidden = Boolean((entry as { hidden?: unknown }).hidden);
+      const displayRaw = String((entry as { segmentDisplayIn?: unknown }).segmentDisplayIn ?? "none");
+      const segmentDisplayIn: AdditionalFieldSegmentDisplay =
+        displayRaw === "info" || displayRaw === "trades" ? displayRaw : "none";
       if (!fieldName) return null;
-      return { id, fieldName, numberOfSlots, valueMode, personnelOverride, segmentedModeEnabled };
+      return {
+        id,
+        fieldName,
+        numberOfSlots,
+        rowsVisible,
+        maximumRows,
+        valueMode,
+        personnelOverride,
+        segmentedModeEnabled,
+        hidden,
+        segmentDisplayIn,
+      };
     })
     .filter((entry): entry is AdditionalFieldRecord => Boolean(entry));
 
-  const hasKelly = parsed.some((entry) => entry.id === "support-kelly-day");
-  if (!hasKelly) {
-    parsed.push(DEFAULT_ADDITIONAL_FIELDS.find((entry) => entry.id === "support-kelly-day")!);
-  }
+  PROTECTED_ADDITIONAL_FIELD_IDS.forEach((requiredId) => {
+    if (parsed.some((entry) => entry.id === requiredId)) return;
+    const fallback = DEFAULT_ADDITIONAL_FIELDS.find((entry) => entry.id === requiredId);
+    if (fallback) parsed.push({ ...fallback });
+  });
   return parsed.length > 0 ? parsed : [...DEFAULT_ADDITIONAL_FIELDS];
 }
 
@@ -832,6 +1013,12 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
     helperText: "",
   },
   {
+    key: "tradesSetup",
+    label: "Trades",
+    editButtonLabel: "Edit Trades",
+    helperText: "",
+  },
+  {
     key: "personnelQualifications",
     label: "Personnel Qualifications",
     editButtonLabel: "Edit Personnel Qualifications",
@@ -907,6 +1094,16 @@ interface IncidentsSetupConfig {
   reportedByOptions: string[];
   requiredFields: Record<IncidentSetupRequiredFieldKey, boolean>;
   visibleFields: Record<IncidentSetupRequiredFieldKey, boolean>;
+}
+
+const DEFAULT_PERSON_AFFILIATION_OPTIONS = ["driver", "passenger", "billing owner", "maintenance"];
+
+function normalizePersonAffiliationOptions(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [...DEFAULT_PERSON_AFFILIATION_OPTIONS];
+  const options = Array.from(
+    new Set(raw.map((value) => String(value ?? "").trim()).filter((value) => value.length > 0)),
+  );
+  return options.length > 0 ? options : [...DEFAULT_PERSON_AFFILIATION_OPTIONS];
 }
 
 const DEFAULT_INCIDENTS_SETUP_CONFIG: IncidentsSetupConfig = {
@@ -1180,10 +1377,6 @@ function readApparatusFromDepartmentDetails(): {
       return { unit, unitId, commonName, unitType };
     })
     .filter((entry) => entry.unit.length > 0);
-}
-
-function getIncidentDisplayNumber(call: IncidentCallSummary): string {
-  return String(call.incident_internal_id ?? call.incidentNumber ?? call.callNumber).trim() || call.callNumber;
 }
 
 function normalizeDepartmentDraft(raw: Record<string, unknown>): Record<string, unknown> {
@@ -1466,13 +1659,6 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "incident_time_call_create",
   "incident_time_call_answered",
   "incident_time_call_arrival",
-  "incident_time_unit_dispatched",
-  "incident_time_unit_enroute",
-  "incident_time_unit_staged",
-  "incident_time_unit_on_scene",
-  "incident_time_unit_canceled",
-  "incident_time_unit_clear",
-  "incident_time_clear",
   "incident_onset_date",
   "incident_onset_time",
   "incident_location_address",
@@ -1483,12 +1669,12 @@ const NERIS_PROXY_MAPPED_FORM_FIELD_IDS = new Set<string>([
   "location_in_use",
   "location_used_as_intended",
   "location_vacancy_cause",
-  "location_state",
+  "incident_location_state",
+  "incident_location_zip",
   "location_country",
   "location_direction_of_travel",
   "location_cross_street_type",
   "location_cross_street_name",
-  "location_postal_code",
   "location_county",
   "dispatch_center_id",
   "dispatch_determinate_code",
@@ -2124,6 +2310,50 @@ function writeSession(session: SessionState): void {
   );
 }
 
+const DEPARTMENT_CACHE_PREFIXES = [
+  "fire-ultimate-department-details",
+  "fire-ultimate-department-logo",
+  "fire-ultimate-neris-drafts",
+  "fire-ultimate-neris-export-settings",
+  "fire-ultimate-neris-export-history",
+  "fire-ultimate-incident-queue",
+  "fire-ultimate-schedule-",
+  "fire-ultimate-trade-requests",
+  "fire-ultimate-session",
+  "stationboss-mimic-session",
+  "stationboss-mimic-neris-",
+];
+
+function clearCachedDepartmentData(): void {
+  if (typeof window === "undefined") return;
+  const keys: string[] = [];
+  for (let index = 0; index < window.localStorage.length; index += 1) {
+    const key = window.localStorage.key(index);
+    if (!key) continue;
+    if (DEPARTMENT_CACHE_PREFIXES.some((prefix) => key === prefix || key.startsWith(prefix))) {
+      keys.push(key);
+    }
+  }
+  for (const key of keys) {
+    window.localStorage.removeItem(key);
+  }
+}
+
+function roleFromServer(role: string): UserRole {
+  const normalized = role.trim().toLowerCase();
+  if (normalized === "superadmin" || normalized === "admin") return normalized;
+  return "user";
+}
+
+function sessionFromServerUser(user: { username?: string; role?: string }, unit = ""): SessionState {
+  return {
+    isAuthenticated: true,
+    username: String(user.username ?? "").trim(),
+    unit,
+    role: roleFromServer(String(user.role ?? "")),
+  };
+}
+
 function readDisplayCardConfig(): DisplayCardConfig {
   if (typeof window === "undefined") {
     return {};
@@ -2543,6 +2773,13 @@ function writeNerisDraft(callNumber: string, draft: NerisStoredDraft): void {
   writeNerisDraftStore(store);
 }
 
+function removeNerisDraft(callNumber: string): void {
+  const store = readNerisDraftStore();
+  if (!Object.prototype.hasOwnProperty.call(store, callNumber)) return;
+  delete store[callNumber];
+  writeNerisDraftStore(store);
+}
+
 /** Normalize API draft payload to NerisStoredDraft for form consumption. */
 function normalizeApiDraftPayload(
   payload: unknown,
@@ -2585,7 +2822,7 @@ function normalizeApiDraftPayload(
         return acc;
       }, [])
     : [];
-  return {
+    return {
     formValues,
     reportStatus:
       typeof candidate.reportStatus === "string"
@@ -2595,6 +2832,7 @@ function normalizeApiDraftPayload(
       typeof candidate.lastSavedAt === "string" ? candidate.lastSavedAt : "Not saved",
     additionalAidEntries,
     additionalNonFdAidEntries,
+    reportRemoved: candidate.reportRemoved === true,
   };
 }
 
@@ -2735,23 +2973,15 @@ function getCallFieldValue(
   }
 }
 
-function getNerisReportStatus(callNumber: string): string {
-  const draftStatus = readNerisDraft(callNumber)?.reportStatus;
-  if (draftStatus) {
-    return draftStatus;
-  }
-  return NERIS_REPORT_STATUS_BY_CALL[callNumber] ?? "Draft";
-}
-
-/** Exports list: successful NERIS submit ⇒ show Exported (matches NERIS queue), not pre-submit workflow e.g. In Review. */
+/** Exports list: a successful NERIS submit shows Exported. Otherwise use the same status as the NERIS queue. */
 function getExportsListReportStatus(
-  callNumber: string,
+  call: IncidentCallSummary,
   latestExport: NerisExportRecord | undefined,
 ): string {
   if (latestExport?.attemptStatus === "success") {
     return "Exported";
   }
-  return getNerisReportStatus(callNumber);
+  return getNerisQueueFieldValue(call, "status");
 }
 
 function getNerisQueueFieldValue(
@@ -2759,19 +2989,13 @@ function getNerisQueueFieldValue(
   fieldId: IncidentCallFieldId,
 ): string {
   if (fieldId === "status") {
+    const localStatus = readNerisDraft(call.callNumber)?.reportStatus?.trim();
+    if (localStatus) return localStatus;
     const serverStatus = call.nerisReportStatus?.trim();
     if (serverStatus) return serverStatus;
-    return getNerisReportStatus(call.callNumber);
+    return "Draft";
   }
   return getCallFieldValue(call, fieldId);
-}
-
-function mapUserTypeToRole(userType: string): UserRole {
-  const normalized = userType.trim().toLowerCase();
-  if (normalized === "super admin" || normalized === "superadmin" || normalized === "super_admin") {
-    return "superadmin";
-  }
-  return normalized.includes("admin") ? "admin" : "user";
 }
 
 function validatePasswordPolicyClient(password: string): string | null {
@@ -2835,6 +3059,68 @@ function applyNameTemplate(template: string, firstName: string, lastName: string
     }
     return base;
   });
+}
+
+function SessionReauthDialog({
+  message,
+  onLogin,
+}: {
+  message: string;
+  onLogin: AuthPageProps["onLogin"];
+}) {
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!username.trim() || !password.trim()) {
+      setErrorMessage("Please provide username and password.");
+      return;
+    }
+    setErrorMessage("");
+    setIsSubmitting(true);
+    const loginError = await onLogin("", username.trim(), password);
+    if (loginError) setErrorMessage(loginError);
+    setIsSubmitting(false);
+  };
+
+  return (
+    <div className="session-reauth-overlay" role="dialog" aria-modal="true" aria-labelledby="session-reauth-title">
+      <form className="auth-form" onSubmit={handleSubmit}>
+        <div className="auth-form-header">
+          <ShieldCheck size={24} />
+          <div>
+            <h2 id="session-reauth-title">{message}</h2>
+            <p>Sign in to continue. What you typed on this screen is still here.</p>
+          </div>
+        </div>
+        <label htmlFor="reauth-username">Username</label>
+        <input
+          id="reauth-username"
+          name="username"
+          type="text"
+          autoComplete="username"
+          value={username}
+          onChange={(event) => setUsername(event.target.value)}
+        />
+        <label htmlFor="reauth-password">Password</label>
+        <input
+          id="reauth-password"
+          name="password"
+          type="password"
+          autoComplete="current-password"
+          value={password}
+          onChange={(event) => setPassword(event.target.value)}
+        />
+        {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
+        <button type="submit" disabled={isSubmitting}>
+          {isSubmitting ? "Signing in…" : "Sign in"}
+        </button>
+      </form>
+    </div>
+  );
 }
 
 function AuthPage({ onLogin }: AuthPageProps) {
@@ -2969,10 +3255,14 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
 
   const location = useLocation();
   const navigate = useNavigate();
-  const visibleMenus = useMemo(
-    () => getVisibleMenus(session.role),
-    [session.role],
-  );
+  const permissionGrants = useMyPermissions();
+  const visibleMenus = useMemo(() => {
+    const menus = getVisibleMenus(session.role);
+    if (permissionGrants && permissionGrants["incidents.view"] === false) {
+      return menus.filter((menu) => menu.id !== "incidentsMapping");
+    }
+    return menus;
+  }, [permissionGrants, session.role]);
   const activeMenu = useMemo(
     () => getMainMenuByPath(location.pathname),
     [location.pathname],
@@ -3367,6 +3657,12 @@ function MenuDisplayCards({
     readDisplayCardConfig(),
   );
 
+  useEffect(() => {
+    const syncCards = () => setDisplayConfig(readDisplayCardConfig());
+    window.addEventListener("department-display-cards-updated", syncCards);
+    return () => window.removeEventListener("department-display-cards-updated", syncCards);
+  }, []);
+
   const defaultCards = useMemo(
     () =>
       menu.submenus.filter(
@@ -3420,7 +3716,7 @@ function MenuDisplayCards({
   ];
 
   const updateMenuCardSelection = (path: string) => {
-    if (defaultPathSet.has(path)) {
+    if (defaultPathSet.has(path) || !isAdminOrHigher(role)) {
       return;
     }
 
@@ -3439,6 +3735,11 @@ function MenuDisplayCards({
       }
 
       writeDisplayCardConfig(normalized);
+      void patchSharedDepartmentSettings({ displayCards: normalized }).catch((error: unknown) => {
+        writeDisplayCardConfig(previous);
+        setDisplayConfig(previous);
+        window.alert(error instanceof Error ? error.message : "Submenu cards were not saved.");
+      });
       return normalized;
     });
   };
@@ -3453,7 +3754,7 @@ function MenuDisplayCards({
           </p>
         </div>
 
-        <div className="edit-display-wrap">
+        {isAdminOrHigher(role) ? <div className="edit-display-wrap">
           <button
             type="button"
             className="edit-display-link"
@@ -3493,7 +3794,7 @@ function MenuDisplayCards({
               </small>
             </div>
           ) : null}
-        </div>
+        </div> : null}
       </div>
 
       {cards.length > 0 ? (
@@ -3573,8 +3874,107 @@ function MenuDisplayCards({
   );
 }
 
+const DASHBOARD_WIDGET_OPTIONS = [
+  { id: "active-calls", label: "Active Calls" },
+  { id: "units-available", label: "Units Available" },
+  { id: "pending-reports", label: "Pending Reports" },
+  { id: "unread-messages", label: "Unread Messages" },
+  { id: "priority-shortcuts", label: "Priority Shortcuts" },
+  { id: "live-alerts", label: "Live Alerts" },
+] as const;
+
+type DashboardWidgetId = (typeof DASHBOARD_WIDGET_OPTIONS)[number]["id"];
+
+const DASHBOARD_WIDGET_IDS = new Set<string>(DASHBOARD_WIDGET_OPTIONS.map((item) => item.id));
+const DASHBOARD_HIDDEN_WIDGETS_KEY = "fire-ultimate-dashboard-hidden-widgets";
+
+function readHiddenDashboardWidgets(): DashboardWidgetId[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = window.localStorage.getItem(DASHBOARD_HIDDEN_WIDGETS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((id): id is DashboardWidgetId => typeof id === "string" && DASHBOARD_WIDGET_IDS.has(id));
+  } catch {
+    return [];
+  }
+}
+
+function writeHiddenDashboardWidgets(hidden: DashboardWidgetId[]): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(DASHBOARD_HIDDEN_WIDGETS_KEY, JSON.stringify(hidden));
+}
+
+function formatAlertDate(value: string): string {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
+  return match ? `${match[2]}-${match[3]}-${match[1].slice(2)}` : value;
+}
+
+function DashboardAttentionAlerts() {
+  const [alerts, setAlerts] = useState<
+    Array<{ id: string; personName: string; apparatus: string; dateKey: string; requiredQualification: string }>
+  >([]);
+  useEffect(() => {
+    let active = true;
+    void fetch("/api/qualification-overrides")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((json: { ok?: boolean; canReview?: boolean; requests?: Array<{ id: string; personName: string; apparatus: string; dateKey: string; requiredQualification: string; status: string }> } | null) => {
+        if (!active || !json?.ok || json.canReview !== true || !Array.isArray(json.requests)) return;
+        setAlerts(json.requests.filter((row) => row.status === "pending"));
+      })
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
+  if (alerts.length === 0) return null;
+  return (
+    <article className="panel dashboard-attention-alerts">
+      <h2>Alerts</h2>
+      <ul>
+        {alerts.map((alert) => (
+          <li key={alert.id}>
+            <NavLink to="/personnel/trades">
+              <strong>
+                {`* ${alert.personName} ${
+                  alert.requiredQualification === "Remove from seat"
+                    ? `request to cancel shift on ${alert.apparatus || "an apparatus"} for ${formatAlertDate(alert.dateKey)}.`
+                    : alert.requiredQualification.startsWith("Partial shift ")
+                      ? `asked to work ${alert.requiredQualification.replace("Partial shift ", "").replace("-", " to ")} on ${alert.apparatus || "an apparatus"} for ${formatAlertDate(alert.dateKey)}.`
+                      : `needs approval to fill the ${alert.requiredQualification} seat on ${alert.apparatus || "an apparatus"} for ${formatAlertDate(alert.dateKey)}.`
+                }`}
+              </strong>
+            </NavLink>
+          </li>
+        ))}
+      </ul>
+    </article>
+  );
+}
+
 function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const dashboardMenu = getMainMenuById("dashboard");
+  const [widgetEditorOpen, setWidgetEditorOpen] = useState(false);
+  const [hiddenWidgets, setHiddenWidgets] = useState<DashboardWidgetId[]>(() =>
+    readHiddenDashboardWidgets(),
+  );
+  const hiddenWidgetSet = useMemo(() => new Set(hiddenWidgets), [hiddenWidgets]);
+  const visibleDashboardStats = DASHBOARD_STATS.filter((stat) => {
+    const match = DASHBOARD_WIDGET_OPTIONS.find((item) => item.label === stat.label);
+    return !match || !hiddenWidgetSet.has(match.id);
+  });
+  const showPriorityShortcuts = !hiddenWidgetSet.has("priority-shortcuts");
+  const showLiveAlerts = !hiddenWidgetSet.has("live-alerts");
+
+  const toggleDashboardWidget = (id: DashboardWidgetId) => {
+    setHiddenWidgets((previous) => {
+      const next = previous.includes(id)
+        ? previous.filter((item) => item !== id)
+        : [...previous, id];
+      writeHiddenDashboardWidgets(next);
+      return next;
+    });
+  };
 
   return (
     <section className="page-section neris-report-page">
@@ -3587,6 +3987,39 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
           </p>
         </div>
         <div className="header-actions">
+          <div className="edit-display-wrap">
+            <button
+              type="button"
+              className="edit-display-link"
+              onClick={() => setWidgetEditorOpen((previous) => !previous)}
+            >
+              Edit display
+            </button>
+            {widgetEditorOpen ? (
+              <div className="edit-display-dropdown">
+                <p>Choose which dashboard boxes to show.</p>
+                <ul>
+                  {DASHBOARD_WIDGET_OPTIONS.map((widget) => (
+                    <li key={widget.id}>
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={!hiddenWidgetSet.has(widget.id)}
+                          onChange={() => toggleDashboardWidget(widget.id)}
+                        />
+                        <span>{widget.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+                <small>
+                  Active Calls, Units Available, Pending Reports, Unread Messages, and Live
+                  Alerts use sample numbers. They are not connected to live incidents yet.
+                  This choice stays on this computer.
+                </small>
+              </div>
+            ) : null}
+          </div>
           <NavLink className="secondary-button button-link" to="/calendar/events">
             Open Calendar
           </NavLink>
@@ -3596,17 +4029,21 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
         </div>
       </header>
 
-      <section className="stat-grid">
-        {DASHBOARD_STATS.map((stat) => (
-          <article key={stat.label} className="stat-card">
-            <p>{stat.label}</p>
-            <strong>{stat.value}</strong>
-            <span className={toToneClass(stat.tone)}>{stat.detail}</span>
-          </article>
-        ))}
-      </section>
+      {visibleDashboardStats.length > 0 ? (
+        <section className="stat-grid">
+          {visibleDashboardStats.map((stat) => (
+            <article key={stat.label} className="stat-card">
+              <p>{stat.label}</p>
+              <strong>{stat.value}</strong>
+              <span className={toToneClass(stat.tone)}>{stat.detail}</span>
+            </article>
+          ))}
+        </section>
+      ) : null}
 
+      {showPriorityShortcuts || showLiveAlerts ? (
       <section className="panel-grid two-column">
+        {showPriorityShortcuts ? (
         <article className="panel">
           <div className="panel-header">
             <h2>Priority Shortcuts</h2>
@@ -3630,7 +4067,9 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
             ))}
           </ul>
         </article>
+        ) : null}
 
+        {showLiveAlerts ? (
         <article className="panel">
           <div className="panel-header">
             <h2>Live Alerts</h2>
@@ -3648,8 +4087,11 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
             ))}
           </ul>
         </article>
+        ) : null}
       </section>
+      ) : null}
 
+      <DashboardAttentionAlerts />
       {dashboardMenu ? (
         <MenuDisplayCards
           menu={dashboardMenu}
@@ -3669,7 +4111,8 @@ function IncidentsListPage({
   onCreateIncidentCall,
 }: IncidentsListPageProps) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
+  const permissionGrants = useMyPermissions();
+  const canCreateIncident = permissionGrants?.["incidents.create"] === true;
   const [isFieldEditorOpen, setIsFieldEditorOpen] = useState(false);
   const [fieldEditorError, setFieldEditorError] = useState("");
   const [dragFieldId, setDragFieldId] = useState<IncidentCallFieldId | null>(null);
@@ -3769,11 +4212,8 @@ function IncidentsListPage({
     navigate(`/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`);
   };
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const resetCreateIncidentDraft = () => {
     setCreateIncidentDraft({
@@ -4067,9 +4507,11 @@ function IncidentsListPage({
               Export Call Queue
             </button>
           ) : null}
-          <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
-            Create Incident
-          </button>
+          {canCreateIncident ? (
+            <button type="button" className="primary-button" onClick={handleOpenCreateIncidentModal}>
+              Create Incident
+            </button>
+          ) : null}
         </div>
       </header>
 
@@ -4182,7 +4624,8 @@ function IncidentsListPage({
                   <tr>
                     <td colSpan={2}>
                       <div className="empty-message">
-                        No incidents yet. Click Create Incident to start a live record.
+                        No incidents yet.
+                        {canCreateIncident ? " Click Create Incident to start a live record." : ""}
                       </div>
                     </td>
                   </tr>
@@ -4758,10 +5201,21 @@ function IncidentCallDetailPage({
           <NavLink className="secondary-button button-link" to="/incidents-mapping/incidents">
             Back to Incidents
           </NavLink>
-          <button type="button" className="primary-button">
+          <button
+            type="button"
+            className="primary-button"
+            onClick={() => navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`)}
+          >
+            Open NERIS report
+          </button>
+          <button type="button" className="secondary-button">
             Add Note
           </button>
         </div>
+        <p className="field-hint">
+          The NERIS list hides a deleted report. Use Open NERIS report on this page, then
+          click Save, to put that report back on the NERIS list.
+        </p>
       </header>
 
       <section className="panel-grid">
@@ -5117,296 +5571,31 @@ function PersonnelSchedulePage() {
   );
 }
 
-type TradeStatus =
-  | "requested"
-  | "counterpart_accepted"
-  | "counterpart_denied"
-  | "captain_approved"
-  | "captain_denied";
-
-interface TradeRequest {
-  id: string;
-  requester: string;
-  counterpart: string;
-  tradeDate: string;
-  receiveDate: string;
-  startTime: string;
-  endTime: string;
-  reason: string;
-  status: TradeStatus;
-  denialReason?: string;
-}
-
-const TRADE_REQUESTS_STORAGE_KEY = "fire-ultimate-trade-requests";
-
-function loadTradeRequests(): TradeRequest[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(TRADE_REQUESTS_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw) as TradeRequest[];
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveTradeRequests(data: TradeRequest[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(TRADE_REQUESTS_STORAGE_KEY, JSON.stringify(data));
-}
-
-function PersonnelTradesPage() {
-  const session = readSession();
-  const currentUser = session.username || "unknown";
-  const [requests, setRequests] = useState<TradeRequest[]>(() => loadTradeRequests());
-  const [draft, setDraft] = useState({
-    counterpart: "",
-    tradeDate: "",
-    receiveDate: "",
-    startTime: "07:00",
-    endTime: "07:00",
-    reason: "",
-  });
-  const [denyReason, setDenyReason] = useState("");
-
-  const addRequest = () => {
-    if (!draft.counterpart.trim() || !draft.tradeDate || !draft.receiveDate) return;
-    const next: TradeRequest = {
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      requester: currentUser,
-      counterpart: draft.counterpart.trim(),
-      tradeDate: draft.tradeDate,
-      receiveDate: draft.receiveDate,
-      startTime: draft.startTime,
-      endTime: draft.endTime,
-      reason: draft.reason.trim(),
-      status: "requested",
-    };
-    const updated = [next, ...requests];
-    setRequests(updated);
-    saveTradeRequests(updated);
-  };
-
-  const updateStatus = (id: string, status: TradeStatus, denialReasonValue = "") => {
-    const updated = requests.map((request) =>
-      request.id === id
-        ? {
-            ...request,
-            status,
-            denialReason:
-              status === "counterpart_denied" || status === "captain_denied"
-                ? denialReasonValue.trim()
-                : undefined,
-          }
-        : request,
-    );
-    setRequests(updated);
-    saveTradeRequests(updated);
-  };
-
-  return (
-    <section className="page-section">
-      <header className="page-header">
-        <h1>Trades</h1>
-        <p>Create shift trade requests. Counterpart accepts/denies, then either captain can approve.</p>
-      </header>
-      <article className="panel">
-        <h3>New Trade Request</h3>
-        <div className="department-edit-grid">
-          <label>
-            Counterpart Username
-            <input
-              type="text"
-              value={draft.counterpart}
-              onChange={(event) =>
-                setDraft((prev) => ({ ...prev, counterpart: event.target.value }))
-              }
-            />
-          </label>
-          <label>
-            Your Assigned Date
-            <input
-              type="date"
-              value={draft.tradeDate}
-              onChange={(event) => setDraft((prev) => ({ ...prev, tradeDate: event.target.value }))}
-            />
-          </label>
-          <label>
-            Date You Work Instead
-            <input
-              type="date"
-              value={draft.receiveDate}
-              onChange={(event) => setDraft((prev) => ({ ...prev, receiveDate: event.target.value }))}
-            />
-          </label>
-          <label>
-            Start Time
-            <input
-              type="time"
-              step={900}
-              value={draft.startTime}
-              onChange={(event) => setDraft((prev) => ({ ...prev, startTime: event.target.value }))}
-            />
-          </label>
-          <label>
-            End Time
-            <input
-              type="time"
-              step={900}
-              value={draft.endTime}
-              onChange={(event) => setDraft((prev) => ({ ...prev, endTime: event.target.value }))}
-            />
-          </label>
-          <label>
-            Reason
-            <input
-              type="text"
-              value={draft.reason}
-              onChange={(event) => setDraft((prev) => ({ ...prev, reason: event.target.value }))}
-            />
-          </label>
-        </div>
-        <button type="button" className="primary-button compact-button" onClick={addRequest}>
-          Submit Trade Request
-        </button>
-      </article>
-      <article className="panel">
-        <h3>Active Requests</h3>
-        {requests.length === 0 ? (
-          <p className="field-hint">No trades yet.</p>
-        ) : (
-          <div className="table-wrapper">
-            <table>
-              <thead>
-                <tr>
-                  <th>Requester</th>
-                  <th>Counterpart</th>
-                  <th>Window</th>
-                  <th>Status</th>
-                  <th>Action</th>
-                </tr>
-              </thead>
-              <tbody>
-                {requests.map((request) => (
-                  <tr key={request.id}>
-                    <td>{request.requester}</td>
-                    <td>{request.counterpart}</td>
-                    <td>
-                      {request.tradeDate} ({request.startTime}-{request.endTime}) {"->"}{" "}
-                      {request.receiveDate}
-                    </td>
-                    <td>{request.status}</td>
-                    <td>
-                      {request.status === "requested" ? (
-                        <>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() => updateStatus(request.id, "counterpart_accepted")}
-                          >
-                            Counterpart Accept
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() => {
-                              if (!denyReason.trim()) return;
-                              updateStatus(request.id, "counterpart_denied", denyReason);
-                            }}
-                          >
-                            Counterpart Deny
-                          </button>
-                        </>
-                      ) : request.status === "counterpart_accepted" ? (
-                        <>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() => updateStatus(request.id, "captain_approved")}
-                          >
-                            Captain Approve
-                          </button>
-                          <button
-                            type="button"
-                            className="secondary-button compact-button"
-                            onClick={() => {
-                              if (!denyReason.trim()) return;
-                              updateStatus(request.id, "captain_denied", denyReason);
-                            }}
-                          >
-                            Captain Deny
-                          </button>
-                        </>
-                      ) : (
-                        request.denialReason || "Closed"
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-        <label style={{ marginTop: "0.75rem", display: "block" }}>
-          Denial Reason (required for deny)
-          <input
-            type="text"
-            value={denyReason}
-            onChange={(event) => setDenyReason(event.target.value)}
-            placeholder="Enter reason"
-          />
-        </label>
-      </article>
-    </section>
-  );
-}
-
-function useIsDemoTenant(): boolean {
-  const [isDemoTenant, setIsDemoTenant] = useState(() =>
-    window.location.hostname.toLowerCase().includes("demo"),
-  );
-
+function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
+  const permissionGrants = useMyPermissions();
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canViewExports = permissionGrants?.["neris.export"] === true;
+  const navigate = useNavigate();
+  const [removedCallNumbers, setRemovedCallNumbers] = useState<Set<string>>(() => new Set());
   useEffect(() => {
-    let isMounted = true;
-
-    const loadTenantContext = async () => {
-      try {
-        const response = await fetch("/api/tenant/context");
-        if (!response.ok || !isMounted) return;
-
-        const payload = (await response.json()) as {
-          ok?: boolean;
-          tenant?: { slug?: string };
-        };
-        const slug = String(payload?.tenant?.slug ?? "").toLowerCase();
-        if (slug) {
-          setIsDemoTenant(slug.includes("demo"));
-        }
-      } catch {
-        // Keep hostname-based default when tenant context cannot be read.
-      }
-    };
-
-    void loadTenantContext();
-
+    let cancelled = false;
+    getRemovedNerisReportCallNumbers()
+      .then((callNumbers) => {
+        if (!cancelled) setRemovedCallNumbers(new Set(callNumbers));
+      })
+      .catch(() => {
+        if (!cancelled) setRemovedCallNumbers(new Set());
+      });
     return () => {
-      isMounted = false;
+      cancelled = true;
     };
   }, []);
-
-  return isDemoTenant;
-}
-
-function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
-  const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
   const queueCalls = useMemo(
     () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+      incidentCalls.filter(
+        (entry) => !isIncidentHiddenFromQueue(entry) && !removedCallNumbers.has(entry.callNumber),
+      ),
+    [incidentCalls, removedCallNumbers],
   );
   const fieldLabelById = useMemo(
     () =>
@@ -5431,9 +5620,19 @@ function NerisReportingPage({ incidentCalls }: NerisQueuePageProps) {
           </p>
         </div>
         <div className="header-actions">
-          <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
-            View Exports
-          </NavLink>
+          {canViewBilling ? (
+            <NavLink
+              className="secondary-button button-link compact-button"
+              to="/reporting/neris/fire-recovery"
+            >
+              Fire Recovery
+            </NavLink>
+          ) : null}
+          {canViewExports ? (
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris/exports">
+              View Exports
+            </NavLink>
+          ) : null}
         </div>
       </header>
 
@@ -5533,6 +5732,7 @@ interface NerisExportDetailsPageProps {
   callNumber: string;
   incidentCalls: IncidentCallSummary[];
   exportHistory?: NerisExportRecord[];
+  role: UserRole;
 }
 
 interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
@@ -5541,13 +5741,14 @@ interface NerisExportsPagePropsWithHistory extends NerisQueuePageProps {
 
 function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPagePropsWithHistory) {
   const navigate = useNavigate();
-  const isDemoTenant = useIsDemoTenant();
+  const permissionGrants = useMyPermissions();
+  const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canViewExports = permissionGrants?.["neris.export"] === true;
+  const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
+
   const queueCalls = useMemo(
-    () =>
-      isDemoTenant
-        ? INCIDENT_CALLS
-        : incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
-    [incidentCalls, isDemoTenant],
+    () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
+    [incidentCalls],
   );
   const latestExportByCall = useMemo(() => {
     const map = new Map<string, NerisExportRecord>();
@@ -5560,9 +5761,53 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
     return map;
   }, [exportHistory]);
 
+  useEffect(() => {
+    if (!canViewBilling) return;
+    let cancelled = false;
+    getFireRecoveryIncidents()
+      .then((list) => {
+        if (cancelled) return;
+        const next = new Map<string, FireRecoveryIncidentApi>();
+        list.forEach((r) => next.set(r.callNumber, r));
+        setFrByCall(next);
+      })
+      .catch(() => {
+        if (!cancelled) setFrByCall(new Map());
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canViewBilling, exportHistory]);
+
   const openExportDetails = (callNumber: string) => {
     navigate(`/reporting/neris/exports/${encodeURIComponent(callNumber)}`);
   };
+
+  if (!permissionGrants) {
+    return (
+      <section className="page-section">
+        <p className="panel-description">Loading…</p>
+      </section>
+    );
+  }
+
+  if (!canViewExports) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Reporting | NERIS</h1>
+            <p>Export history is not shown for this sign-in.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
 
   return (
     <section className="page-section">
@@ -5575,6 +5820,14 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
           </p>
         </div>
         <div className="header-actions">
+          {canViewBilling ? (
+            <NavLink
+              className="secondary-button button-link compact-button"
+              to="/reporting/neris/fire-recovery"
+            >
+              Fire Recovery
+            </NavLink>
+          ) : null}
           <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
             Back to NERIS Queue
           </NavLink>
@@ -5598,11 +5851,13 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                   <th>Validator</th>
                   <th>Report Writer</th>
                   <th>NERIS ID</th>
+                  {canViewBilling ? <th>Fire Recovery</th> : null}
                 </tr>
               </thead>
               <tbody>
                 {queueCalls.map((call) => {
                   const latestExport = latestExportByCall.get(call.callNumber);
+                  const fr = frByCall.get(call.callNumber);
                   return (
                     <tr
                       key={`neris-export-row-${call.callNumber}`}
@@ -5627,11 +5882,11 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                         <span
                           className={toToneClass(
                             toneFromNerisStatus(
-                              getExportsListReportStatus(call.callNumber, latestExport),
+                              getExportsListReportStatus(call, latestExport),
                             ),
                           )}
                         >
-                          {getExportsListReportStatus(call.callNumber, latestExport)}
+                          {getExportsListReportStatus(call, latestExport)}
                         </span>
                       </td>
                       <td>
@@ -5643,12 +5898,23 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                       <td>{latestExport?.validatorName || "--"}</td>
                       <td>{latestExport?.reportWriterName || "--"}</td>
                       <td>{latestExport?.nerisId || "--"}</td>
+                      {canViewBilling ? (
+                        <td
+                          className="fire-recovery-queue-cell"
+                          onClick={(event) => event.stopPropagation()}
+                          onKeyDown={(event) => event.stopPropagation()}
+                        >
+                          <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(fr))}`}>
+                            {fireRecoveryStatusLabel(fr)}
+                          </span>
+                        </td>
+                      ) : null}
                     </tr>
                   );
                 })}
                 {queueCalls.length === 0 ? (
                   <tr>
-                    <td colSpan={8}>
+                    <td colSpan={canViewBilling ? 9 : 8}>
                       <div className="empty-message">
                         No export queue rows are shown for live tenants until incidents are connected.
                       </div>
@@ -5664,8 +5930,10 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   );
 }
 
-function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [] }: NerisExportDetailsPageProps) {
+function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serverExportHistory = [], role }: NerisExportDetailsPageProps) {
   const navigate = useNavigate();
+  const permissionGrants = useMyPermissions();
+  const canViewExports = permissionGrants?.["neris.export"] === true;
   const incident =
     getIncidentCallDetail(callNumber) ??
     (() => {
@@ -5692,6 +5960,32 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
     [callNumber, serverExportHistory],
   );
 
+  if (!permissionGrants) {
+    return (
+      <section className="page-section">
+        <p className="panel-description">Loading…</p>
+      </section>
+    );
+  }
+
+  if (!canViewExports) {
+    return (
+      <section className="page-section">
+        <header className="page-header">
+          <div>
+            <h1>Reporting | NERIS</h1>
+            <p>Export history is not shown for this sign-in.</p>
+          </div>
+          <div className="header-actions">
+            <NavLink className="secondary-button button-link compact-button" to="/reporting/neris">
+              Back to NERIS Queue
+            </NavLink>
+          </div>
+        </header>
+      </section>
+    );
+  }
+
   if (!incident) {
     return (
       <section className="page-section">
@@ -5711,6 +6005,7 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
   }
 
   const latestExport = exportHistory[0] ?? null;
+
   return (
     <section className="page-section">
       <header className="page-header">
@@ -5730,13 +6025,20 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
           </button>
           <button
             type="button"
-            className="primary-button compact-button"
+            className="secondary-button compact-button"
             onClick={() => navigate(`/reporting/neris/${encodeURIComponent(callNumber)}`)}
           >
             Open Report
           </button>
         </div>
       </header>
+
+      <FireRecoveryExportPanel
+        callNumber={callNumber}
+        runNumber={getIncidentDisplayNumber(incident)}
+        role={role}
+        hasNerisExport={exportHistory.some((entry) => entry.attemptStatus === "success")}
+      />
 
       <section className="panel-grid two-column">
         <article className="panel">
@@ -5871,11 +6173,12 @@ interface NerisReportFormRouteProps {
     callNumber: string,
     patch: Partial<IncidentCallSummary>,
   ) => void;
-  onDeleteIncidentCall: (callNumber: string, reason?: string) => void | Promise<void>;
+  onDeleteIncidentCall: (callNumber: string) => void | Promise<void>;
   nerisExportSettings: NerisExportSettings;
   apparatusFromDepartmentDetails: { unit: string; unitId: string; commonName: string; unitType: string }[];
   exportHistory?: NerisExportRecord[];
   onExportRecordAdded?: (record: NerisExportRecord) => Promise<void>;
+  onServerExportRecorded?: () => void | Promise<void>;
   nerisRequiredFieldOverrides: string[];
   narrativeBuilderEnabled?: boolean;
   narrativeTemplates?: NarrativeTemplate[];
@@ -5887,6 +6190,8 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
     undefined,
   );
   const [draftLoadStatus, setDraftLoadStatus] = useState<"loading" | "done">("loading");
+  const draftUpdatedAtRef = useRef("");
+  const draftSaveChainRef = useRef(Promise.resolve());
 
   useEffect(() => {
     if (!callNumber) {
@@ -5901,9 +6206,10 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       if (!cancelled) setDraftLoadStatus("loading");
     });
     getNerisDraft(callNumber)
-      .then((payload) => {
+      .then((record) => {
         if (cancelled) return;
-        const normalized = payload ? normalizeApiDraftPayload(payload, callNumber) : null;
+        draftUpdatedAtRef.current = record?.updatedAt ?? "";
+        const normalized = record ? normalizeApiDraftPayload(record.draft, callNumber) : null;
         setServerDraft(normalized ?? null);
         setDraftLoadStatus("done");
       })
@@ -5929,13 +6235,36 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
   );
 
   const writeNerisDraftForForm = useCallback(
-    (cn: string, draft: NerisStoredDraft) => {
+    (cn: string, draft: NerisStoredDraft, seedFormValues?: Record<string, string>) => {
       writeNerisDraft(cn, draft);
       if (cn === callNumber) setServerDraft(draft);
-      patchNerisDraft(cn, draft).catch(() => {});
+      const run = draftSaveChainRef.current.then(async () => {
+        const saved = await patchNerisDraft(
+          cn,
+          draft,
+          draftUpdatedAtRef.current,
+          seedFormValues,
+        );
+        draftUpdatedAtRef.current = saved.updatedAt;
+      });
+      draftSaveChainRef.current = run.then(
+        () => undefined,
+        () => undefined,
+      );
+      return run;
     },
     [callNumber],
   );
+
+  const unlockNerisDraftForForm = useCallback(async () => {
+    const saved = await unlockNerisDraft(callNumber, draftUpdatedAtRef.current);
+    draftUpdatedAtRef.current = saved.updatedAt;
+    const normalized = normalizeApiDraftPayload(saved.draft, callNumber);
+    if (normalized) {
+      writeNerisDraft(callNumber, normalized);
+      setServerDraft(normalized);
+    }
+  }, [callNumber]);
 
   const getExportHistory = () =>
     props.exportHistory && props.exportHistory.length > 0
@@ -5960,6 +6289,7 @@ function NerisReportFormPage(props: NerisReportFormRouteProps) {
       {...props}
       readNerisDraft={readNerisDraftForForm}
       writeNerisDraft={writeNerisDraftForForm}
+      unlockNerisDraft={unlockNerisDraftForForm}
       appendNerisExportRecord={appendAndSync}
       parseAssignedUnits={parseAssignedUnits}
       inferResourceUnitTypeValue={inferResourceUnitTypeValue}
@@ -6012,7 +6342,9 @@ type DepartmentDetailsAdminModuleId =
   | "operational-details"
   | "incidents-setup"
   | "department-resources"
-  | "department-access";
+  | "department-access"
+  | "neris-configuration"
+  | "fire-recovery";
 type UserSortColumn = "name" | "username" | "userType";
 type PersonnelSortColumn =
   | "name"
@@ -6023,6 +6355,7 @@ type PersonnelSortColumn =
 
 function NerisRequiredFieldsAdminPage() {
   const [overrideIds, setOverrideIds] = useState<Set<string>>(new Set());
+  const [billingLevels, setBillingLevels] = useState<Partial<Record<FireRecoveryRequirementKey, RequirementLevel>>>({});
   const [loadStatus, setLoadStatus] = useState<"idle" | "loading" | "done" | "error">("loading");
   const [saveStatus, setSaveStatus] = useState<string>("");
 
@@ -6036,6 +6369,7 @@ function NerisRequiredFieldsAdminPage() {
           ? (raw as string[]).map((id) => String(id ?? "").trim()).filter(Boolean)
           : [];
         setOverrideIds(new Set(list));
+        setBillingLevels(parseRequirementSettings(data.fireRecoveryFieldRequirements));
         setLoadStatus("done");
       })
       .catch(() => setLoadStatus("error"));
@@ -6056,7 +6390,11 @@ function NerisRequiredFieldsAdminPage() {
       .then((res) => (res.ok ? res.json() : null))
       .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
         const data = json?.data ?? {};
-        const payload = { ...data, nerisRequiredFieldOverrides: Array.from(overrideIds) };
+        const payload = {
+          ...data,
+          nerisRequiredFieldOverrides: Array.from(overrideIds),
+          fireRecoveryFieldRequirements: billingLevels,
+        };
         return fetch("/api/department-details", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -6077,7 +6415,7 @@ function NerisRequiredFieldsAdminPage() {
         }
       })
       .catch(() => setSaveStatus("Save failed."));
-  }, [overrideIds]);
+  }, [overrideIds, billingLevels]);
 
   return (
     <section className="page-section">
@@ -6100,11 +6438,18 @@ function NerisRequiredFieldsAdminPage() {
       {loadStatus === "done" && (
         <div className="panel-grid">
           {NERIS_FORM_SECTIONS.map((section) => {
-            const fields = getNerisFieldsForSection(section.id);
+            const fields = getNerisFieldsForSection(section.id).filter(
+              (field) =>
+                field.id !== "fire_recovery_billing_json" &&
+                field.id !== "location_state" &&
+                field.id !== "location_postal_code",
+            );
             if (fields.length === 0) return null;
             return (
-              <section key={section.id} className="panel">
-                <h2>{section.label}</h2>
+              <details key={section.id} className="panel neris-required-section">
+                <summary>
+                  <h2>{section.label}</h2>
+                </summary>
                 <ul style={{ listStyle: "none", paddingLeft: 0 }}>
                   {fields.map((field) => {
                     const requiredByNeris = isFieldRequiredByNeris(field);
@@ -6146,9 +6491,44 @@ function NerisRequiredFieldsAdminPage() {
                     );
                   })}
                 </ul>
-              </section>
+              </details>
             );
           })}
+          <details className="panel neris-required-section">
+            <summary>
+              <h2>Fire Recovery Billing</h2>
+            </summary>
+            <p className="field-hint">
+              These choices apply to every party. Is Resident stays Recommended until a department sets it to Required.
+            </p>
+            <ul style={{ listStyle: "none", paddingLeft: 0 }}>
+              {FIRE_RECOVERY_REQUIREMENT_ROWS.map((row) => {
+                const selected = billingLevels[row.key] ?? row.defaultLevel;
+                return (
+                  <li key={row.key} style={{ marginBottom: "0.75rem", maxWidth: "28rem" }}>
+                    <label htmlFor={`fr-level-${row.key}`}>{row.label}</label>
+                    <NerisFlatSingleOptionSelect
+                      inputId={`fr-level-${row.key}`}
+                      value={selected}
+                      options={[
+                        { value: "required", label: "Required" },
+                        { value: "recommended", label: "Recommended" },
+                        { value: "optional", label: "Optional" },
+                      ]}
+                      usePortal
+                      onChange={(nextValue) => {
+                        const level: RequirementLevel =
+                          nextValue === "required" || nextValue === "recommended" || nextValue === "optional"
+                            ? nextValue
+                            : row.defaultLevel;
+                        setBillingLevels((previous) => ({ ...previous, [row.key]: level }));
+                      }}
+                    />
+                  </li>
+                );
+              })}
+            </ul>
+          </details>
         </div>
       )}
     </section>
@@ -6196,8 +6576,18 @@ const DEPARTMENT_DETAILS_ADMIN_MODULES: Array<{
   },
   {
     id: "department-access",
-    label: "Department Access",
+    label: "Access/Restrictions",
     path: "/admin-functions/department-details/department-access",
+  },
+  {
+    id: "neris-configuration",
+    label: "NERIS Configuration",
+    path: "/admin-functions/department-details/neris-configuration",
+  },
+  {
+    id: "fire-recovery",
+    label: "Fire Recovery",
+    path: "/admin-functions/department-details/fire-recovery",
   },
 ];
 const AUDIT_LOGS_ADMIN_MODULES = [
@@ -6268,7 +6658,7 @@ function ReportingAdminPage() {
       <section className="neris-report-layout reporting-admin-layout">
         <aside className="panel neris-sidebar reporting-admin-sidebar">
           <div className="neris-sidebar-header">
-            <h2>Reporting</h2>
+            <h2>NERIS Reporting</h2>
             <p>Admin modules</p>
           </div>
           <nav className="neris-section-nav" aria-label="Reporting module navigation">
@@ -6349,11 +6739,44 @@ function AuditLogsAdminPage({
 interface DepartmentDetailsPageProps {
   mode?: DepartmentDetailsPageMode;
   adminModuleId?: DepartmentDetailsAdminModuleId;
+  nerisExportSettings?: NerisExportSettings;
+  onSaveNerisExportSettings?: (nextSettings: NerisExportSettings) => void;
+}
+
+function mergeSchedulerPersonnelWithUsers(
+  users: DepartmentUserRecord[],
+  existing: DepartmentPersonnelRecord[],
+): DepartmentPersonnelRecord[] {
+  const byName = new Map(
+    existing
+      .map((entry) => [entry.name.trim().toLocaleLowerCase(), entry] as const)
+      .filter(([name]) => name.length > 0),
+  );
+  return users
+    .map((user) => {
+      const userName = user.name.trim();
+      if (!userName) return null;
+      const match = byName.get(userName.toLocaleLowerCase());
+      if (match) {
+        return { ...match, name: userName, userType: user.userType || match.userType };
+      }
+      return {
+        name: userName,
+        shift: "",
+        apparatusAssignment: "",
+        station: "",
+        userType: user.userType,
+        qualifications: [],
+      } satisfies DepartmentPersonnelRecord;
+    })
+    .filter((entry): entry is DepartmentPersonnelRecord => entry !== null);
 }
 
 function DepartmentDetailsPage({
   mode = "departmentDetails",
   adminModuleId = "department-profile",
+  nerisExportSettings,
+  onSaveNerisExportSettings,
 }: DepartmentDetailsPageProps) {
   const navigate = useNavigate();
   const initialDepartmentDraft = normalizeDepartmentDraft(readDepartmentDetailsDraft());
@@ -6434,12 +6857,39 @@ function DepartmentDetailsPage({
   const [standardOvertimeSlot, setStandardOvertimeSlot] = useState(
     Math.max(1, Math.floor(Number(initialDepartmentDraft.standardOvertimeSlot ?? 24) || 24)),
   );
+  const [allowScheduledOvertime, setAllowScheduledOvertime] = useState(
+    initialDepartmentDraft.allowScheduledOvertime === false ? false : true,
+  );
+  const [segmentSummaryTarget, setSegmentSummaryTarget] = useState<"info" | "trades">(
+    initialDepartmentDraft.segmentSummaryTarget === "trades" ? "trades" : "info",
+  );
+  const [overtimeSummaryTarget, setOvertimeSummaryTarget] = useState<"info" | "trades">(
+    initialDepartmentDraft.overtimeSummaryTarget === "trades" ? "trades" : "info",
+  );
+  const [tradeAdminApproval, setTradeAdminApproval] = useState(
+    initialDepartmentDraft.tradeAdminApproval === true,
+  );
+  const [tradePaybackRequired, setTradePaybackRequired] = useState(
+    initialDepartmentDraft.tradePaybackRequired === true,
+  );
+  const [tradeCancelApproval, setTradeCancelApproval] = useState(
+    initialDepartmentDraft.tradeCancelApproval !== false,
+  );
+  const [allowPartialShift, setAllowPartialShift] = useState(
+    initialDepartmentDraft.allowPartialShift === true,
+  );
   const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
     normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
   );
   const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
   );
+  const [personnelQualificationColors, setPersonnelQualificationColors] = useState<Record<string, string>>(
+    () => parseQualificationColorMap(initialDepartmentDraft.personnelQualificationColors),
+  );
+  const [personnelQualificationOverrides, setPersonnelQualificationOverrides] = useState<
+    Record<string, QualificationOverrideRule>
+  >(() => parseQualificationOverrides(initialDepartmentDraft.personnelQualificationOverrides));
   const [userTypeValues, setUserTypeValues] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.userTypeValues) && initialDepartmentDraft.userTypeValues.length > 0
       ? (initialDepartmentDraft.userTypeValues as string[])
@@ -6463,6 +6913,9 @@ function DepartmentDetailsPage({
   );
   const [incidentsSetup, setIncidentsSetup] = useState<IncidentsSetupConfig>(() =>
     normalizeIncidentsSetupConfig(initialDepartmentDraft.incidentsSetup),
+  );
+  const [personAffiliationOptions, setPersonAffiliationOptions] = useState<string[]>(() =>
+    normalizePersonAffiliationOptions(initialDepartmentDraft.personAffiliationOptions),
   );
   const [editingIncidentSetupField, setEditingIncidentSetupField] =
     useState<IncidentSetupRequiredFieldKey | null>(null);
@@ -6537,14 +6990,7 @@ function DepartmentDetailsPage({
     personnelRequirements: [],
     station: "",
   });
-  const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>({
-    shiftType: "",
-    shiftDuration: 0,
-    recurrence: "Daily",
-    recurrenceCustomValue: "",
-    startTime: "",
-    location: "",
-  });
+  const [shiftDraft, setShiftDraft] = useState<ShiftInformationEntry>(EMPTY_SHIFT_DRAFT);
   const [personnelDraft, setPersonnelDraft] = useState<DepartmentPersonnelRecord>({
     name: "",
     shift: "",
@@ -6571,10 +7017,14 @@ function DepartmentDetailsPage({
   const [additionalFieldDraft, setAdditionalFieldDraft] = useState<AdditionalFieldRecord>({
     id: "",
     fieldName: "",
-    numberOfSlots: 1,
+    numberOfSlots: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
+    rowsVisible: 1,
+    maximumRows: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
     valueMode: "personnel",
     personnelOverride: true,
     segmentedModeEnabled: false,
+    hidden: false,
+    segmentDisplayIn: "none",
   });
   const [editingAdditionalFieldIndex, setEditingAdditionalFieldIndex] = useState<number | null>(null);
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -6962,10 +7412,7 @@ function DepartmentDetailsPage({
   const shiftOptionValues = useMemo(
     () =>
       shiftInformationEntries.map((entry) => {
-        const recurrenceLabel =
-          entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
-            ? entry.recurrenceCustomValue
-            : entry.recurrence;
+        const recurrenceLabel = recurrenceDisplayLabel(entry);
         return `${entry.shiftType} | ${entry.startTime || "--:--"} | ${entry.shiftDuration} | ${recurrenceLabel}${
           entry.location.trim().length > 0 ? ` | ${entry.location}` : ""
         }`;
@@ -7023,7 +7470,7 @@ function DepartmentDetailsPage({
   );
   const kellySlotCount = useMemo(() => {
     const kellyField = additionalFieldRecords.find((record) => record.id === "support-kelly-day");
-    return Math.max(1, Math.floor(Number(kellyField?.numberOfSlots ?? 2) || 2));
+    return Math.max(1, Math.floor(Number(kellyField?.rowsVisible ?? kellyField?.numberOfSlots ?? 2) || 2));
   }, [additionalFieldRecords]);
   const kellyOccurrencePreview = useMemo(() => {
     if (!kellyMultiAddDraft.startsOn) {
@@ -7037,9 +7484,19 @@ function DepartmentDetailsPage({
       (entry) =>
         entry.shiftType.trim() === kellyMultiAddDraft.shift.trim(),
     );
+    const weekdays = parseRecurrenceWeekdays(shiftEntry);
+    const previewCount = Math.max(1, Math.floor(kellyMultiAddDraft.repeatsEveryValue || 1));
+    if (weekdays) {
+      const found: string[] = [];
+      const cursor = new Date(startDate);
+      for (let guard = 0; found.length < previewCount && guard < 400; guard += 1) {
+        if (weekdays.includes(cursor.getDay())) found.push(toDateKey(cursor));
+        cursor.setDate(cursor.getDate() + 1);
+      }
+      return found;
+    }
     const recurrenceDays = Math.max(1, getRecurrenceIntervalDays(shiftEntry));
     const stepDays = recurrenceDays;
-    const previewCount = Math.max(1, Math.floor(kellyMultiAddDraft.repeatsEveryValue || 1));
     return Array.from({ length: previewCount }, (_, index) => {
       const nextDate = new Date(startDate);
       nextDate.setDate(startDate.getDate() + index * stepDays);
@@ -7169,6 +7626,7 @@ function DepartmentDetailsPage({
     "shiftInformation",
     "additionalFields",
     "overtimeSetup",
+    "tradesSetup",
     "personnelQualifications",
     "schedulerApparatus",
     "schedulerPersonnel",
@@ -7273,10 +7731,17 @@ function DepartmentDetailsPage({
     showDepartmentDetailsSection && adminModuleId === "department-resources";
   const showDepartmentAccessModule =
     showDepartmentDetailsSection && adminModuleId === "department-access";
+  const showNerisConfigurationModule =
+    showDepartmentDetailsSection && adminModuleId === "neris-configuration";
+  const showFireRecoveryModule =
+    showDepartmentDetailsSection && adminModuleId === "fire-recovery";
+  const hideDepartmentHeaderSave =
+    showDepartmentDetailsSection &&
+    (adminModuleId === "neris-configuration" || adminModuleId === "fire-recovery");
   const showSchedulerSettingsSection = mode === "schedulerSettings";
   const showPersonnelManagementSection = mode === "personnelManagement";
   const pageTitle = showDepartmentDetailsSection
-    ? "Admin Functions | Department Details"
+    ? "Admin Functions | Setup/Configuration"
     : showSchedulerSettingsSection
       ? "Admin Functions | Scheduler Settings"
       : "Admin Functions | Personnel Management";
@@ -7289,7 +7754,7 @@ function DepartmentDetailsPage({
     ? "Save Scheduler Settings"
     : showPersonnelManagementSection
       ? "Save Personnel Management"
-      : "Save Department Details";
+      : "Save setup";
   const showSaveButton = true;
 
   const isStationsEditor = activeCollectionEditor === "stations";
@@ -7300,6 +7765,7 @@ function DepartmentDetailsPage({
   const isShiftEditor = activeCollectionEditor === "shiftInformation";
   const isAdditionalFieldsEditor = activeCollectionEditor === "additionalFields";
   const isOvertimeSetupEditor = activeCollectionEditor === "overtimeSetup";
+  const isTradesSetupEditor = activeCollectionEditor === "tradesSetup";
   const isQualificationsEditor = activeCollectionEditor === "personnelQualifications";
   const isKellyRotationEditor = activeCollectionEditor === "kellyRotation";
   const isUserTypeEditor = activeCollectionEditor === "userType";
@@ -7522,16 +7988,19 @@ function DepartmentDetailsPage({
         const usersRes = await fetch("/api/users");
         if (usersRes.ok && isMounted) {
           const usersJson = (await usersRes.json()) as { ok?: boolean; users?: { id: string; username: string; userType: string; name?: string }[] };
+          const savedPersonnel = Array.isArray(d.schedulerPersonnelRecords)
+            ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
+            : [];
           if (usersJson?.ok && Array.isArray(usersJson.users)) {
-            setUserRecords(
-              usersJson.users.map((u) => ({
-                id: u.id,
-                name: String(u.name ?? u.username ?? "").trim(),
-                userType: String(u.userType ?? "User").trim(),
-                username: String(u.username ?? "").trim(),
-                password: "",
-              })),
-            );
+            const loadedUsers = usersJson.users.map((u) => ({
+              id: u.id,
+              name: String(u.name ?? u.username ?? "").trim(),
+              userType: String(u.userType ?? "User").trim(),
+              username: String(u.username ?? "").trim(),
+              password: "",
+            }));
+            setUserRecords(loadedUsers);
+            setPersonnelRecords(mergeSchedulerPersonnelWithUsers(loadedUsers, savedPersonnel));
           } else {
             setUserRecords(
               Array.isArray(d.userRecords)
@@ -7546,6 +8015,7 @@ function DepartmentDetailsPage({
                     .filter((entry) => entry.name.length > 0)
                 : [],
             );
+            setPersonnelRecords(savedPersonnel);
           }
         } else if (isMounted) {
           setUserRecords(
@@ -7561,20 +8031,29 @@ function DepartmentDetailsPage({
                   .filter((entry) => entry.name.length > 0)
               : [],
           );
+          setPersonnelRecords(
+            Array.isArray(d.schedulerPersonnelRecords)
+              ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
+              : [],
+          );
         }
-        setPersonnelRecords(
-          Array.isArray(d.schedulerPersonnelRecords)
-            ? (d.schedulerPersonnelRecords as DepartmentPersonnelRecord[])
-            : [],
-        );
         setSchedulerEnabled(Boolean(d.schedulerEnabled ?? false));
         setStandardOvertimeSlot(
           Math.max(1, Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24)),
         );
+        setAllowScheduledOvertime(d.allowScheduledOvertime === false ? false : true);
+        setSegmentSummaryTarget(d.segmentSummaryTarget === "trades" ? "trades" : "info");
+        setOvertimeSummaryTarget(d.overtimeSummaryTarget === "trades" ? "trades" : "info");
+        setTradeAdminApproval(d.tradeAdminApproval === true);
+        setTradePaybackRequired(d.tradePaybackRequired === true);
+        setTradeCancelApproval(d.tradeCancelApproval !== false);
+        setAllowPartialShift(d.allowPartialShift === true);
         setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
         );
+        setPersonnelQualificationColors(parseQualificationColorMap(d.personnelQualificationColors));
+        setPersonnelQualificationOverrides(parseQualificationOverrides(d.personnelQualificationOverrides));
         setUserTypeValues(
           Array.isArray(d.userTypeValues) && (d.userTypeValues as string[]).length > 0
             ? (d.userTypeValues as string[])
@@ -7582,6 +8061,7 @@ function DepartmentDetailsPage({
         );
         setMutualAidDepartmentSelections(parseMutualAidSelectionsFromDraft(d));
         setIncidentsSetup(normalizeIncidentsSetupConfig(d.incidentsSetup));
+        setPersonAffiliationOptions(normalizePersonAffiliationOptions(d.personAffiliationOptions));
         setKellyRotations(
           Array.isArray(d.kellyRotations) ? (d.kellyRotations as KellyRotationEntry[]) : [],
         );
@@ -7601,6 +8081,10 @@ function DepartmentDetailsPage({
     if (!file) {
       return;
     }
+    if (file.size > 500 * 1024) {
+      window.alert("The department logo must be 500 KB or smaller.");
+      return;
+    }
     const reader = new FileReader();
     reader.onload = () => {
       if (typeof window === "undefined") {
@@ -7609,6 +8093,9 @@ function DepartmentDetailsPage({
       const dataUrl = typeof reader.result === "string" ? reader.result : "";
       window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, dataUrl);
       window.dispatchEvent(new Event("department-logo-updated"));
+      void patchSharedDepartmentSettings({ logoDataUrl: dataUrl }).catch((error: unknown) => {
+        window.alert(error instanceof Error ? error.message : "The department logo was not saved.");
+      });
     };
     reader.readAsDataURL(file);
   };
@@ -7660,10 +8147,14 @@ function DepartmentDetailsPage({
       setAdditionalFieldDraft({
         id: "",
         fieldName: "",
-        numberOfSlots: 1,
+        numberOfSlots: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
+        rowsVisible: 1,
+        maximumRows: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
         valueMode: "personnel",
         personnelOverride: true,
         segmentedModeEnabled: false,
+        hidden: false,
+        segmentDisplayIn: "none",
       });
     }
   };
@@ -7765,6 +8256,7 @@ function DepartmentDetailsPage({
       }
       if (isSchedulerApparatusEditor && schedulerApparatusRecords[index]) {
         setSchedulerApparatusDraft(schedulerApparatusRecords[index]!);
+        return;
       }
       if (isUsersEditor && userRecords[index]) {
         setUserDraft(userRecords[index]!);
@@ -7907,15 +8399,19 @@ function DepartmentDetailsPage({
       setStatusMessage("Max Personnel must be greater than or equal to Min Personnel.");
       return;
     }
-    if (schedulerApparatusDraft.personnelRequirements.length !== minimumPersonnel) {
-      setStatusMessage("Minimum Requirements selection count must match Minimum Personnel.");
+    const personnelRequirements = filledSeatRequirements(
+      schedulerApparatusDraft.personnelRequirements,
+      minimumPersonnel,
+    );
+    if (!personnelRequirements) {
+      setStatusMessage("Choose a qualification for each seat. One qualification is used for every seat.");
       return;
     }
     const normalized: SchedulerApparatusRecord = {
       apparatus: schedulerApparatusDraft.apparatus.trim(),
       minimumPersonnel,
       maximumPersonnel,
-      personnelRequirements: schedulerApparatusDraft.personnelRequirements.filter(Boolean),
+      personnelRequirements,
       station: schedulerApparatusDraft.station.trim(),
     };
     setSchedulerApparatusRecords((previous) => {
@@ -7924,6 +8420,15 @@ function DepartmentDetailsPage({
           ? [...previous, normalized]
           : previous.map((entry, index) => (index === editingIndex ? normalized : entry));
       return normalizeSchedulerStationGrouping(next);
+    });
+    setEditingIndex(null);
+    setSelectedSingleIndex(null);
+    setSchedulerApparatusDraft({
+      apparatus: "",
+      minimumPersonnel: 0,
+      maximumPersonnel: 2,
+      personnelRequirements: [],
+      station: "",
     });
     setIsEntryFormOpen(false);
     setAutoSaveTick((previous) => previous + 1);
@@ -8509,8 +9014,12 @@ function DepartmentDetailsPage({
     if (!/^\d{2}:\d{2}$/.test(shiftDraft.startTime.trim())) {
       return;
     }
-    if (shiftDraft.recurrence === "Custom" && !shiftDraft.recurrenceCustomValue.trim()) {
-      return;
+    if (shiftDraft.recurrence === "Custom") {
+      if (shiftDraft.recurrenceCustomMode === "weekdays") {
+        if (shiftDraft.recurrenceWeekdays.length === 0) return;
+      } else if (!(Number(shiftDraft.recurrenceCustomValue) > 0)) {
+        return;
+      }
     }
     const normalized = {
       ...shiftDraft,
@@ -8519,20 +9028,19 @@ function DepartmentDetailsPage({
       recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
       startTime: shiftDraft.startTime.trim(),
       location: shiftDraft.location.trim(),
+      rotationStartsOn:
+        shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode === "weekdays"
+          ? ""
+          : /^\d{4}-\d{2}-\d{2}$/.test(shiftDraft.rotationStartsOn.trim())
+            ? shiftDraft.rotationStartsOn.trim()
+            : "",
     };
     setShiftInformationEntries((previous) =>
       editingIndex === null
         ? [...previous, normalized]
         : previous.map((entry, index) => (index === editingIndex ? normalized : entry)),
     );
-    setShiftDraft({
-      shiftType: "",
-      shiftDuration: 0,
-      recurrence: "Daily",
-      recurrenceCustomValue: "",
-      startTime: "",
-      location: "",
-    });
+    setShiftDraft(EMPTY_SHIFT_DRAFT);
     setEditingIndex(null);
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
@@ -8566,8 +9074,45 @@ function DepartmentDetailsPage({
             index === editingQualificationIndex ? trimmed : entry,
           ),
     );
+    if (editingQualificationIndex !== null) {
+      const previousName = personnelQualifications[editingQualificationIndex];
+      if (previousName && previousName !== trimmed) {
+        setPersonnelQualificationColors((previous) => {
+          if (!previous[previousName]) return previous;
+          const next = { ...previous, [trimmed]: previous[previousName] };
+          delete next[previousName];
+          return next;
+        });
+      }
+    }
     setQualificationDraft("");
     setEditingQualificationIndex(null);
+    setAutoSaveTick((previous) => previous + 1);
+    setStatusMessage("Auto-saved.");
+  };
+
+  const removeQualification = (index: number) => {
+    const name = personnelQualifications[index];
+    if (!name) return;
+    setPersonnelQualifications((previous) => previous.filter((_, entryIndex) => entryIndex !== index));
+    setPersonnelQualificationColors((previous) => {
+      if (!previous[name]) return previous;
+      const next = { ...previous };
+      delete next[name];
+      return next;
+    });
+    setPersonnelRecords((previous) =>
+      previous.map((person) => ({
+        ...person,
+        qualifications: person.qualifications.filter((qualification) => qualification !== name),
+      })),
+    );
+    if (editingQualificationIndex === index) {
+      setEditingQualificationIndex(null);
+      setQualificationDraft("");
+    } else if (editingQualificationIndex !== null && editingQualificationIndex > index) {
+      setEditingQualificationIndex(editingQualificationIndex - 1);
+    }
     setAutoSaveTick((previous) => previous + 1);
     setStatusMessage("Auto-saved.");
   };
@@ -8576,10 +9121,14 @@ function DepartmentDetailsPage({
     setAdditionalFieldDraft({
       id: "",
       fieldName: "",
-      numberOfSlots: 1,
+      numberOfSlots: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
+      rowsVisible: 1,
+      maximumRows: DEFAULT_MAXIMUM_ADDITIONAL_ROWS,
       valueMode: "personnel",
       personnelOverride: true,
       segmentedModeEnabled: false,
+      hidden: false,
+      segmentDisplayIn: "none",
     });
   }, []);
 
@@ -8588,7 +9137,13 @@ function DepartmentDetailsPage({
     if (!normalizedName) {
       return;
     }
-    const normalizedSlots = Math.max(1, Math.floor(Number(additionalFieldDraft.numberOfSlots) || 1));
+    const parsedVisible = Math.floor(Number(additionalFieldDraft.rowsVisible));
+    const rowsVisible = Number.isFinite(parsedVisible) ? Math.max(0, parsedVisible) : 1;
+    const parsedMaximum = Math.floor(Number(additionalFieldDraft.maximumRows));
+    const maximumRows = Math.max(
+      rowsVisible,
+      Number.isFinite(parsedMaximum) ? Math.max(0, parsedMaximum) : rowsVisible,
+    );
     const normalizedMode: AdditionalFieldValueMode =
       additionalFieldDraft.valueMode === "text" ? "text" : "personnel";
     const normalizedOverride =
@@ -8618,10 +9173,17 @@ function DepartmentDetailsPage({
       const normalizedRow: AdditionalFieldRecord = {
         id: nextId,
         fieldName: normalizedName,
-        numberOfSlots: normalizedSlots,
+        numberOfSlots: maximumRows,
+        rowsVisible,
+        maximumRows,
         valueMode: preserveKellyId ? "personnel" : normalizedMode,
         personnelOverride: preserveKellyId ? true : normalizedOverride,
         segmentedModeEnabled: normalizedSegmented,
+        hidden: Boolean(additionalFieldDraft.hidden),
+        segmentDisplayIn:
+          normalizedMode === "personnel" && normalizedSegmented
+            ? additionalFieldDraft.segmentDisplayIn
+            : "none",
       };
       return editingAdditionalFieldIndex === null
         ? [...previous, normalizedRow]
@@ -8639,8 +9201,8 @@ function DepartmentDetailsPage({
   const removeAdditionalField = (index: number) => {
     const record = additionalFieldRecords[index];
     if (!record) return;
-    if (record.id === "support-kelly-day") {
-      setStatusMessage("Kelly Day is required and cannot be removed.");
+    if (PROTECTED_ADDITIONAL_FIELD_IDS.has(record.id)) {
+      setStatusMessage("Info, Kelly Day, Trades, and Injury can be hidden, but not deleted.");
       return;
     }
     setAdditionalFieldRecords((previous) =>
@@ -8709,13 +9271,23 @@ function DepartmentDetailsPage({
       schedulerApparatusRecords,
       additionalFields: additionalFieldRecords,
       standardOvertimeSlot,
+      allowScheduledOvertime,
+      segmentSummaryTarget,
+      overtimeSummaryTarget,
+      tradeAdminApproval,
+      tradePaybackRequired,
+      tradeCancelApproval,
+      allowPartialShift,
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
+      personnelQualificationColors,
+      personnelQualificationOverrides,
       userTypeValues,
       selectedMutualAidIds,
       mutualAidDepartmentSelections: mutualAidSelectionsToPayload(mutualAidDepartmentSelections),
       incidentsSetup,
+      personAffiliationOptions: normalizePersonAffiliationOptions(personAffiliationOptions),
       kellyRotations,
       schedulerEnabled,
       uiPreferencesByUser: nextUiPreferencesByUser,
@@ -8752,7 +9324,16 @@ function DepartmentDetailsPage({
     kellyRotations,
     additionalFieldRecords,
     standardOvertimeSlot,
+    allowScheduledOvertime,
+    segmentSummaryTarget,
+    overtimeSummaryTarget,
+    tradeAdminApproval,
+    tradePaybackRequired,
+    tradeCancelApproval,
+    allowPartialShift,
     personnelQualifications,
+    personnelQualificationColors,
+    personnelQualificationOverrides,
     personnelRecords,
     schedulerApparatusFieldWidths,
     schedulerApparatusRecords,
@@ -8766,6 +9347,7 @@ function DepartmentDetailsPage({
     selectedMutualAidIds,
     mutualAidDepartmentSelections,
     incidentsSetup,
+    personAffiliationOptions,
     shiftInformationEntries,
     stationRecords,
     userTypeValues,
@@ -8791,7 +9373,7 @@ function DepartmentDetailsPage({
           <h1>{pageTitle}</h1>
           <p>{pageSubtitle}</p>
         </div>
-        {showSaveButton ? (
+        {showSaveButton && !hideDepartmentHeaderSave ? (
           <div className="header-actions">
             <button type="submit" form="department-details-form" className="primary-button">
               {saveButtonLabel}
@@ -8810,7 +9392,7 @@ function DepartmentDetailsPage({
           <section className="neris-report-layout reporting-admin-layout">
             <aside className="panel neris-sidebar reporting-admin-sidebar">
               <div className="neris-sidebar-header">
-                <h2>Department Details</h2>
+                <h2>Setup/Configuration</h2>
                 <p>Admin modules</p>
               </div>
               <nav className="neris-section-nav" aria-label="Department details module navigation">
@@ -9105,8 +9687,9 @@ function DepartmentDetailsPage({
               {showDepartmentAccessModule ? (
                 <article className="panel">
                   <div className="panel-header">
-                    <h2>Department Access</h2>
+                    <h2>Access / Restrictions</h2>
                   </div>
+                  <RolePermissionsPanel />
                   <div className="department-collection-grid">
                     {accessCards.map((definition) => (
                       <div key={definition.key} className="department-collection-card">
@@ -9122,6 +9705,36 @@ function DepartmentDetailsPage({
                   </div>
                 </article>
               ) : null}
+              {showNerisConfigurationModule ? (
+                <article className="panel">
+                  <h2>Person affiliation</h2>
+                  <p className="panel-description">
+                    One choice per line. These are the Affiliation options on a NERIS person.
+                  </p>
+                  <textarea
+                    rows={6}
+                    value={personAffiliationOptions.join("\n")}
+                    onChange={(event) => {
+                      setPersonAffiliationOptions(event.target.value.split("\n"));
+                      setAutoSaveTick((previous) => previous + 1);
+                    }}
+                  />
+                </article>
+              ) : null}
+              {showNerisConfigurationModule && nerisExportSettings && onSaveNerisExportSettings ? (
+                <SetupNerisExportConfigurationPanel
+                  key={JSON.stringify(normalizeNerisExportSettings(nerisExportSettings))}
+                  nerisExportSettings={nerisExportSettings}
+                  onSave={onSaveNerisExportSettings}
+                />
+              ) : null}
+              {showNerisConfigurationModule &&
+              (!nerisExportSettings || !onSaveNerisExportSettings) ? (
+                <article className="panel">
+                  <p className="panel-description">NERIS configuration could not be loaded.</p>
+                </article>
+              ) : null}
+              {showFireRecoveryModule ? <SetupFireRecoveryPanel /> : null}
             </article>
           </section>
         ) : null}
@@ -9163,6 +9776,8 @@ function DepartmentDetailsPage({
                       ? `Total Additional Fields: ${additionalFieldRecords.length}`
                       : definition.key === "overtimeSetup"
                       ? `Standard Overtime Slot: ${standardOvertimeSlot} hour(s)`
+                      : definition.key === "tradesSetup"
+                      ? `Admin approval: ${tradeAdminApproval ? "On" : "Off"} · Payback starts ${tradePaybackRequired ? "required" : "not required"} · Cancel approval: ${tradeCancelApproval ? "On" : "Off"} · Partial shift: ${allowPartialShift ? "On" : "Off"}`
                       : definition.key === "schedulerApparatus"
                       ? `Total Apparatus: ${schedulerApparatusRecords.length}`
                       : definition.key === "schedulerPersonnel"
@@ -9211,12 +9826,31 @@ function DepartmentDetailsPage({
 
       {activeCollectionEditor && activeCollectionDefinition ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
-          <article className="panel department-editor-modal">
+          <article
+            className={`panel department-editor-modal${isUsersEditor || isSchedulerPersonnelEditor || isAdditionalFieldsEditor || isSchedulerApparatusEditor || isShiftEditor || isApparatusEditor || isQualificationsEditor ? " department-editor-modal-wide" : ""}`}
+          >
             <div className="panel-header">
               <h2>{activeCollectionDefinition.label}</h2>
-              <button type="button" className="secondary-button compact-button" onClick={closeCollectionEditor}>
-                Close
-              </button>
+              <div className="department-editor-toolbar-actions">
+                {isQualificationsEditor ? (
+                  <>
+                    {statusMessage ? <span className="save-message">{statusMessage}</span> : null}
+                    <button
+                      type="button"
+                      className="primary-button compact-button"
+                      onClick={() => {
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Saved.");
+                      }}
+                    >
+                      Save
+                    </button>
+                  </>
+                ) : null}
+                <button type="button" className="secondary-button compact-button" onClick={closeCollectionEditor}>
+                  Close
+                </button>
+              </div>
             </div>
 
             {(isStationsEditor || isApparatusEditor || isUsersEditor || isSchedulerPersonnelEditor || isSchedulerApparatusEditor || isAdditionalFieldsEditor) ? (
@@ -9642,7 +10276,85 @@ function DepartmentDetailsPage({
                   </div>
                 ) : isSchedulerApparatusEditor ? (
                   <div className="department-apparatus-list-wrapper">
-                    <div className="department-editor-toolbar-actions" style={{ marginBottom: "0.5rem" }}>
+                    <div className="scheduler-apparatus-form">
+                      <div className="scheduler-apparatus-main-row">
+                        <label>
+                          Apparatus
+                          <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                        </label>
+                        <label>
+                          Min Personnel
+                          <input
+                            type="number"
+                            min={0}
+                            value={schedulerApparatusDraft.minimumPersonnel}
+                            onChange={(event) =>
+                              setSchedulerApparatusDraft((previous) => ({
+                                ...previous,
+                                minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Max Personnel
+                          <input
+                            type="number"
+                            min={1}
+                            value={schedulerApparatusDraft.maximumPersonnel}
+                            onChange={(event) =>
+                              setSchedulerApparatusDraft((previous) => ({
+                                ...previous,
+                                maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                              }))
+                            }
+                          />
+                        </label>
+                        <label>
+                          Station
+                          <NerisFlatSingleOptionSelect
+                            inputId="scheduler-apparatus-station-inline"
+                            value={schedulerApparatusDraft.station}
+                            options={stationNames.map((s) => ({ value: s, label: s }))}
+                            onChange={(nextValue) =>
+                              setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                            }
+                            placeholder="Select station"
+                            searchPlaceholder="Search stations..."
+                            allowClear
+                            usePortal
+                          />
+                        </label>
+                      </div>
+                      <SeatRequirementFields
+                        idPrefix="scheduler-apparatus-inline"
+                        minimumPersonnel={schedulerApparatusDraft.minimumPersonnel}
+                        requirements={schedulerApparatusDraft.personnelRequirements}
+                        qualifications={personnelQualifications}
+                        onChange={(next) =>
+                          setSchedulerApparatusDraft((previous) => ({
+                            ...previous,
+                            personnelRequirements: next,
+                          }))
+                        }
+                      />
+                    </div>
+                    <p className="field-hint" style={{ marginTop: "0.35rem" }}>
+                      Click an apparatus in the list to edit it here. Use Import Apparatus to add trucks from Department Apparatus.
+                    </p>
+                    <div className="department-editor-toolbar-actions">
+                      <button type="button" className="primary-button compact-button" onClick={saveSchedulerApparatusForm}>
+                        {editingIndex === null ? "Save" : "Update"}
+                      </button>
+                      {editingIndex !== null && editingIndex >= 0 ? (
+                        <button
+                          type="button"
+                          className="secondary-button compact-button"
+                          onClick={deleteSchedulerApparatusFormEntry}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
                       <button
                         type="button"
                         className="secondary-button compact-button"
@@ -10114,105 +10826,26 @@ function DepartmentDetailsPage({
 
             {isShiftEditor ? (
               <>
-                <div className="department-editor-toolbar-actions">
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    onClick={() => {
-                      setEditingIndex(null);
-                      setSelectedSingleIndex(null);
-                      setShiftDraft({
-                        shiftType: "",
-                        shiftDuration: 0,
-                        recurrence: "Daily",
-                        recurrenceCustomValue: "",
-                        startTime: "",
-                        location: "",
-                      });
-                    }}
-                  >
-                    Add
-                  </button>
-                </div>
-                <div className="department-apparatus-list-wrapper">
-                  <div className="table-wrapper">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>Shift Type</th>
-                          <th>
-                            <div className="department-shift-grid-line department-shift-grid-header">
-                              <span>Start Time</span>
-                              <span>Duration</span>
-                              <span>Recurrence</span>
-                              <span>Location</span>
-                            </div>
-                          </th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {shiftInformationEntries.length === 0 ? (
-                          <tr>
-                            <td colSpan={2} className="department-apparatus-empty">
-                              No shift entries. Click Add to create one.
-                            </td>
-                          </tr>
-                        ) : (
-                          shiftInformationEntries.map((entry, index) => {
-                            const recurrenceLabel =
-                              entry.recurrence === "Custom" && entry.recurrenceCustomValue.trim().length > 0
-                                ? entry.recurrenceCustomValue
-                                : entry.recurrence;
-                            return (
-                              <tr
-                                key={`shift-row-${index}-${entry.shiftType}`}
-                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
-                                role="button"
-                                tabIndex={0}
-                                onClick={() => {
-                                  setSelectedSingleIndex(index);
-                                  setEditingIndex(index);
-                                  setShiftDraft({
-                                    ...entry,
-                                    startTime: entry.startTime || "",
-                                  });
-                                }}
-                                onKeyDown={(event) => {
-                                  if (event.key === "Enter" || event.key === " ") {
-                                    event.preventDefault();
-                                    setSelectedSingleIndex(index);
-                                    setEditingIndex(index);
-                                    setShiftDraft({
-                                      ...entry,
-                                      startTime: entry.startTime || "",
-                                    });
-                                  }
-                                }}
-                              >
-                                <td>
-                                  <strong className="call-number-text">{entry.shiftType || "—"}</strong>
-                                </td>
-                                <td>
-                                  <div className="dispatch-info-cell">
-                                    <div className="department-shift-grid-line">
-                                      <span className="department-apparatus-field">
-                                        {entry.startTime || "—"}
-                                      </span>
-                                      <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
-                                      <span className="department-apparatus-field">{recurrenceLabel}</span>
-                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
-                                    </div>
-                                  </div>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
                 <div className="department-edit-grid">
+                  <label>
+                    Show segmented shift times in
+                    <select
+                      value={segmentSummaryTarget}
+                      onChange={(event) => {
+                        setSegmentSummaryTarget(event.target.value === "trades" ? "trades" : "info");
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Auto-saved.");
+                      }}
+                    >
+                      <option value="info">Info</option>
+                      <option value="trades">Trades</option>
+                    </select>
+                  </label>
+                </div>
+                <p className="field-hint">
+                  This is only for a normal split shift, such as one person from 08:00 to 15:00. Overtime hours are chosen in Overtime Setup.
+                </p>
+                <div className="shift-information-core-fields">
                   <label>
                     Shift Type
                     <input type="text" value={shiftDraft.shiftType} onChange={(event) => setShiftDraft((previous) => ({ ...previous, shiftType: event.target.value }))} />
@@ -10255,12 +10888,78 @@ function DepartmentDetailsPage({
                       ))}
                     </select>
                   </label>
+                </div>
+                <div className="department-edit-grid">
                   {shiftDraft.recurrence === "Custom" ? (
                     <label>
-                      Custom Recurrence
-                      <input type="text" value={shiftDraft.recurrenceCustomValue} onChange={(event) => setShiftDraft((previous) => ({ ...previous, recurrenceCustomValue: event.target.value }))} />
+                      Custom type
+                      <select
+                        value={shiftDraft.recurrenceCustomMode}
+                        onChange={(event) =>
+                          setShiftDraft((previous) => ({
+                            ...previous,
+                            recurrenceCustomMode: event.target.value === "weekdays" ? "weekdays" : "interval",
+                          }))
+                        }
+                      >
+                        <option value="interval">Every N days</option>
+                        <option value="weekdays">Selected weekdays</option>
+                      </select>
                     </label>
                   ) : null}
+                  {shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode !== "weekdays" ? (
+                    <label>
+                      Every N days
+                      <input
+                        type="number"
+                        min={1}
+                        value={shiftDraft.recurrenceCustomValue}
+                        onChange={(event) => setShiftDraft((previous) => ({ ...previous, recurrenceCustomValue: event.target.value }))}
+                      />
+                    </label>
+                  ) : null}
+                  {shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode === "weekdays" ? (
+                    <div className="weekday-choice-row">
+                      {WEEKDAY_CHOICES.map((choice) => {
+                        const checked = shiftDraft.recurrenceWeekdays.includes(choice.day);
+                        return (
+                          <label key={`weekday-${choice.day}`}>
+                            <input
+                              type="checkbox"
+                              checked={checked}
+                              onChange={() =>
+                                setShiftDraft((previous) => ({
+                                  ...previous,
+                                  recurrenceWeekdays: checked
+                                    ? previous.recurrenceWeekdays.filter((day) => day !== choice.day)
+                                    : [...previous.recurrenceWeekdays, choice.day],
+                                }))
+                              }
+                            />
+                            {choice.label}
+                          </label>
+                        );
+                      })}
+                    </div>
+                  ) : null}
+                  {shiftDraft.recurrence !== "Custom" || shiftDraft.recurrenceCustomMode !== "weekdays" ? (
+                    <label>
+                      Rotation starts on
+                      <input
+                        type="date"
+                        value={shiftDraft.rotationStartsOn}
+                        onChange={(event) =>
+                          setShiftDraft((previous) => ({
+                            ...previous,
+                            rotationStartsOn: event.target.value,
+                          }))
+                        }
+                      />
+                    </label>
+                  ) : null}
+                  <p className="field-hint">
+                    Leave Rotation starts on blank to keep the current start. A shift named A, B, or C still starts from January 2026. A date here is day one for Every other day, Every 2 days, Every 3 days, and Every N days. Selected weekdays do not use it. Daily still shows every day.
+                  </p>
                   <label>
                     Location
                     <NerisFlatSingleOptionSelect
@@ -10281,53 +10980,191 @@ function DepartmentDetailsPage({
                   <button type="button" className="primary-button compact-button" onClick={addShiftInformationEntry}>
                     {editingIndex === null ? "Add Shift Information" : "Save Shift Information"}
                   </button>
+                  {editingIndex !== null ? (
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setShiftInformationEntries((previous) =>
+                          previous.filter((_, index) => index !== editingIndex),
+                        );
+                        setEditingIndex(null);
+                        setSelectedSingleIndex(null);
+                        setShiftDraft(EMPTY_SHIFT_DRAFT);
+                        setAutoSaveTick((previous) => previous + 1);
+                        setStatusMessage("Auto-saved.");
+                      }}
+                    >
+                      Delete
+                    </button>
+                  ) : null}
+                  {editingIndex !== null ? (
+                    <button
+                      type="button"
+                      className="secondary-button compact-button"
+                      onClick={() => {
+                        setEditingIndex(null);
+                        setSelectedSingleIndex(null);
+                        setShiftDraft(EMPTY_SHIFT_DRAFT);
+                      }}
+                    >
+                      Clear
+                    </button>
+                  ) : null}
+                </div>
+                <div className="department-apparatus-list-wrapper">
+                  <div className="table-wrapper">
+                    <table>
+                      <thead>
+                        <tr>
+                          <th>Shift Type</th>
+                          <th>
+                            <div className="department-shift-grid-line department-shift-grid-header">
+                              <span>Start Time</span>
+                              <span>Duration</span>
+                              <span>Recurrence</span>
+                              <span>Location</span>
+                            </div>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {shiftInformationEntries.length === 0 ? (
+                          <tr>
+                            <td colSpan={2} className="department-apparatus-empty">
+                              No shift entries yet. Use the form above to add one.
+                            </td>
+                          </tr>
+                        ) : (
+                          shiftInformationEntries.map((entry, index) => {
+                            const recurrenceLabel = recurrenceDisplayLabel(entry);
+                            const rotationLabel = formatMonthDayYear(entry.rotationStartsOn);
+                            const recurrenceText = rotationLabel ? `${recurrenceLabel} · ${rotationLabel}` : recurrenceLabel;
+                            return (
+                              <tr
+                                key={`shift-row-${index}-${entry.shiftType}`}
+                                className={`clickable-row ${selectedSingleIndex === index ? "clickable-row-selected" : ""}`}
+                                role="button"
+                                tabIndex={0}
+                                onClick={() => {
+                                  setSelectedSingleIndex(index);
+                                  setEditingIndex(index);
+                                  setShiftDraft(normalizeShiftDraft(entry));
+                                }}
+                                onKeyDown={(event) => {
+                                  if (event.key === "Enter" || event.key === " ") {
+                                    event.preventDefault();
+                                    setSelectedSingleIndex(index);
+                                    setEditingIndex(index);
+                                    setShiftDraft(normalizeShiftDraft(entry));
+                                  }
+                                }}
+                              >
+                                <td>
+                                  <strong className="call-number-text">{entry.shiftType || "—"}</strong>
+                                </td>
+                                <td>
+                                  <div className="dispatch-info-cell">
+                                    <div className="department-shift-grid-line">
+                                      <span className="department-apparatus-field">
+                                        {entry.startTime || "—"}
+                                      </span>
+                                      <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
+                                      <span className="department-apparatus-field">{recurrenceText}</span>
+                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
+                                    </div>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </>
             ) : null}
 
             {isAdditionalFieldsEditor ? (
               <>
-                <div className="department-editor-add-row">
-                  <input
-                    type="text"
-                    value={additionalFieldDraft.fieldName}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => ({
-                        ...previous,
-                        fieldName: event.target.value,
-                      }))
-                    }
-                    placeholder="Field Name"
-                  />
-                  <input
-                    type="number"
-                    min={1}
-                    value={additionalFieldDraft.numberOfSlots}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => ({
-                        ...previous,
-                        numberOfSlots: Math.max(1, Number.parseInt(event.target.value, 10) || 1),
-                      }))
-                    }
-                    placeholder="Number of Slots"
-                  />
-                  <select
-                    value={additionalFieldDraft.valueMode}
-                    onChange={(event) =>
-                      setAdditionalFieldDraft((previous) => ({
-                        ...previous,
-                        valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
-                        personnelOverride:
-                          event.target.value === "text" ? false : previous.personnelOverride,
-                        segmentedModeEnabled:
-                          event.target.value === "text" ? false : previous.segmentedModeEnabled,
-                      }))
-                    }
-                  >
-                    <option value="text">Text</option>
-                    <option value="personnel">Personnel</option>
-                  </select>
-                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                <div className="additional-field-form">
+                  <label>
+                    Field name
+                    <input
+                      type="text"
+                      value={additionalFieldDraft.fieldName}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          fieldName: event.target.value,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Rows visible
+                    <input
+                      type="number"
+                      min={0}
+                      value={additionalFieldDraft.rowsVisible}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => {
+                          const parsed = Number.parseInt(event.target.value, 10);
+                          const rowsVisible = Number.isFinite(parsed) ? Math.max(0, parsed) : 0;
+                          return {
+                            ...previous,
+                            rowsVisible,
+                            maximumRows: Math.max(rowsVisible, previous.maximumRows),
+                            numberOfSlots: Math.max(rowsVisible, previous.maximumRows),
+                          };
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Maximum rows
+                    <input
+                      type="number"
+                      min={1}
+                      value={additionalFieldDraft.maximumRows}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => {
+                          const maximumRows = Math.max(1, Number.parseInt(event.target.value, 10) || 1);
+                          const rowsVisible = Math.min(previous.rowsVisible, maximumRows);
+                          return {
+                            ...previous,
+                            rowsVisible,
+                            maximumRows,
+                            numberOfSlots: maximumRows,
+                          };
+                        })
+                      }
+                    />
+                  </label>
+                  <label>
+                    Type
+                    <select
+                      value={additionalFieldDraft.valueMode}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          valueMode: (event.target.value as AdditionalFieldValueMode) || "personnel",
+                          personnelOverride:
+                            event.target.value === "text" ? false : previous.personnelOverride,
+                          segmentedModeEnabled:
+                            event.target.value === "text" ? false : previous.segmentedModeEnabled,
+                          segmentDisplayIn:
+                            event.target.value === "text" ? "none" : previous.segmentDisplayIn,
+                        }))
+                      }
+                    >
+                      <option value="text">Text</option>
+                      <option value="personnel">Personnel</option>
+                    </select>
+                  </label>
+                  <div className="additional-field-checks">
+                  <label className="field-hint additional-field-check" title="When checked, a person placed here is taken off the apparatus for those hours. The apparatus keeps them only for the hours outside this row.">
                     <input
                       type="checkbox"
                       checked={
@@ -10344,7 +11181,7 @@ function DepartmentDetailsPage({
                     />
                     Apparatus override
                   </label>
-                  <label className="field-hint" style={{ display: "flex", alignItems: "center", gap: "0.35rem" }}>
+                  <label className="field-hint additional-field-check" title="Lets this personnel row be split into timed pieces, such as part of a shift, instead of the whole shift.">
                     <input
                       type="checkbox"
                       checked={
@@ -10356,11 +11193,48 @@ function DepartmentDetailsPage({
                         setAdditionalFieldDraft((previous) => ({
                           ...previous,
                           segmentedModeEnabled: event.target.checked,
+                          segmentDisplayIn: event.target.checked ? previous.segmentDisplayIn : "none",
                         }))
                       }
                     />
-                    Segmented Mode
+                    Segmented mode
                   </label>
+                  {additionalFieldDraft.valueMode === "personnel" &&
+                  additionalFieldDraft.segmentedModeEnabled ? (
+                  <label>
+                    Show times in
+                      <select
+                        value={additionalFieldDraft.segmentDisplayIn}
+                        onChange={(event) =>
+                          setAdditionalFieldDraft((previous) => ({
+                            ...previous,
+                            segmentDisplayIn:
+                              event.target.value === "info" || event.target.value === "trades"
+                                ? event.target.value
+                                : "none",
+                          }))
+                        }
+                      >
+                        <option value="none">Does not</option>
+                        <option value="info">Info</option>
+                        <option value="trades">Trades</option>
+                      </select>
+                    </label>
+                  ) : null}
+                  <label className="field-hint additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={additionalFieldDraft.hidden}
+                      onChange={(event) =>
+                        setAdditionalFieldDraft((previous) => ({
+                          ...previous,
+                          hidden: event.target.checked,
+                        }))
+                      }
+                    />
+                    Hidden on the schedule
+                  </label>
+                  </div>
                   <button
                     type="button"
                     className="primary-button compact-button"
@@ -10370,26 +11244,29 @@ function DepartmentDetailsPage({
                   </button>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                  `Text` behaves like the Info row. `Personnel` allows slot assignments in Personnel Schedule.
+                  Rows visible is how many empty rows start on the schedule. The usual value is 1. Use 0 when that field should not offer a blank row to type in. Maximum rows is the most a day can open. Info, Kelly Day, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule.
                 </p>
                 <div className="department-qualifications-list-wrapper">
                   <div className="table-wrapper">
-                    <table>
+                    <table className="additional-fields-table">
                       <thead>
                         <tr>
                           <th style={{ width: "32px" }} aria-label="Drag to reorder" />
-                          <th>Field Name</th>
-                          <th style={{ width: "110px" }}>Slots</th>
-                          <th style={{ width: "120px" }}>Type</th>
-                          <th style={{ width: "160px" }}>Apparatus override</th>
-                          <th style={{ width: "140px" }}>Segmented Mode</th>
-                          <th style={{ width: "90px" }}>Action</th>
+                          <th>Field name</th>
+                          <th>Rows visible</th>
+                          <th>Maximum rows</th>
+                          <th>Type</th>
+                          <th>Apparatus override</th>
+                          <th>Segmented mode</th>
+                          <th>Show times in</th>
+                          <th>On schedule</th>
+                          <th>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {additionalFieldRecords.length === 0 ? (
                           <tr>
-                            <td colSpan={7} className="department-apparatus-empty">
+                            <td colSpan={10} className="department-apparatus-empty">
                               No additional fields. Add one above.
                             </td>
                           </tr>
@@ -10431,28 +11308,57 @@ function DepartmentDetailsPage({
                               </td>
                               <td>
                                 <strong className="call-number-text">{entry.fieldName || "—"}</strong>
-                                {entry.id === "support-kelly-day" ? (
+                                {PROTECTED_ADDITIONAL_FIELD_IDS.has(entry.id) ? (
                                   <small className="field-hint" style={{ marginLeft: "0.45rem" }}>
                                     Required
                                   </small>
                                 ) : null}
                               </td>
-                              <td>{entry.numberOfSlots}</td>
+                              <td>{entry.rowsVisible}</td>
+                              <td>{entry.maximumRows}</td>
                               <td>{entry.valueMode === "text" ? "Text" : "Personnel"}</td>
                               <td>{entry.valueMode === "personnel" && entry.personnelOverride ? "Yes" : "No"}</td>
                               <td>{entry.valueMode === "personnel" && entry.segmentedModeEnabled ? "Yes" : "No"}</td>
                               <td>
-                                <button
-                                  type="button"
-                                  className="secondary-button compact-button"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    removeAdditionalField(index);
-                                  }}
-                                  disabled={entry.id === "support-kelly-day"}
-                                >
-                                  Remove
-                                </button>
+                                {entry.segmentDisplayIn === "info"
+                                  ? "Info"
+                                  : entry.segmentDisplayIn === "trades"
+                                    ? "Trades"
+                                    : "Does not"}
+                              </td>
+                              <td>{entry.hidden ? "Hidden" : "Shown"}</td>
+                              <td>
+                                {PROTECTED_ADDITIONAL_FIELD_IDS.has(entry.id) ? (
+                                  <button
+                                    type="button"
+                                    className="secondary-button compact-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      setAdditionalFieldRecords((previous) =>
+                                        previous.map((field, fieldIndex) =>
+                                          fieldIndex === index
+                                            ? { ...field, hidden: !field.hidden }
+                                            : field,
+                                        ),
+                                      );
+                                      setAutoSaveTick((tick) => tick + 1);
+                                      setStatusMessage("Auto-saved.");
+                                    }}
+                                  >
+                                    {entry.hidden ? "Show" : "Hide"}
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    className="secondary-button compact-button"
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      removeAdditionalField(index);
+                                    }}
+                                  >
+                                    Remove
+                                  </button>
+                                )}
                               </td>
                             </tr>
                           ))
@@ -10466,24 +11372,49 @@ function DepartmentDetailsPage({
 
             {isOvertimeSetupEditor ? (
               <>
-                <div className="department-edit-grid">
-                  <label>
-                    Standard Overtime Slot (hours)
+                <div className="overtime-setup-fields">
+                  <label className="additional-field-check">
                     <input
-                      type="number"
-                      min={1}
-                      value={standardOvertimeSlot}
-                      onChange={(event) =>
-                        setStandardOvertimeSlot(
-                          Math.max(1, Number.parseInt(event.target.value, 10) || 1),
-                        )
-                      }
+                      type="checkbox"
+                      checked={allowScheduledOvertime}
+                      onChange={(event) => setAllowScheduledOvertime(event.target.checked)}
                     />
+                    Allow Scheduled Overtime
                   </label>
+                  <div className="overtime-setup-fields-row">
+                    <label className={allowScheduledOvertime ? undefined : "department-field-disabled"}>
+                      Standard Overtime Slot (hours)
+                      <input
+                        type="number"
+                        min={1}
+                        value={standardOvertimeSlot}
+                        disabled={!allowScheduledOvertime}
+                        onChange={(event) =>
+                          setStandardOvertimeSlot(
+                            Math.max(1, Number.parseInt(event.target.value, 10) || 1),
+                          )
+                        }
+                      />
+                    </label>
+                    <label className={allowScheduledOvertime ? undefined : "department-field-disabled"}>
+                      Show overtime times in
+                      <select
+                        value={overtimeSummaryTarget}
+                        disabled={!allowScheduledOvertime}
+                        onChange={(event) =>
+                          setOvertimeSummaryTarget(event.target.value === "trades" ? "trades" : "info")
+                        }
+                      >
+                        <option value="info">Info</option>
+                        <option value="trades">Trades</option>
+                      </select>
+                    </label>
+                  </div>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem" }}>
-                  Minimum apparatus slots can be overtime-split in day block view. Example: 12 =&gt; 2 personnel in one
-                  slot, 8 =&gt; 3 personnel in one slot.
+                  Allow Scheduled Overtime keeps the OT checkbox on each split piece. Uncheck it to hide that checkbox.
+                  Show overtime times in chooses where a piece marked OT is listed. A normal split shift is chosen in Shift Information.
+                  An empty split piece says OPEN in red. It says HIRE only when that piece’s OT box is checked.
                 </p>
                 <div className="department-editor-toolbar-actions">
                   <button
@@ -10496,6 +11427,69 @@ function DepartmentDetailsPage({
                   >
                     Save
                   </button>
+                </div>
+              </>
+            ) : null}
+
+            {isTradesSetupEditor ? (
+              <>
+                <div className="trades-settings-fields">
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={tradeAdminApproval}
+                      onChange={(event) => {
+                        setTradeAdminApproval(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Admin approval for trades
+                  </label>
+                  <p className="field-hint">
+                    When this is on, the other person still has to accept. A sub admin, admin, or super admin must approve before the trade is final.
+                  </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={tradePaybackRequired}
+                      onChange={(event) => {
+                        setTradePaybackRequired(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Payback required
+                  </label>
+                  <p className="field-hint">
+                    New trade requests start with Payback required checked. The person sending the request can still turn it off for one request.
+                  </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={tradeCancelApproval}
+                      onChange={(event) => {
+                        setTradeCancelApproval(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Require approval before cancelling a trade
+                  </label>
+                  <p className="field-hint">
+                    When this is on, cancelling an accepted trade needs an administrator's approval before the schedule goes back.
+                  </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={allowPartialShift}
+                      onChange={(event) => {
+                        setAllowPartialShift(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Allow for partial shift
+                  </label>
+                  <p className="field-hint">
+                    When this is on, a user filling an open seat can ask to work part of the shift. A sub admin must approve those hours before they are added.
+                  </p>
                 </div>
               </>
             ) : null}
@@ -10527,13 +11521,16 @@ function DepartmentDetailsPage({
                         <tr>
                           <th style={{ width: "32px" }} aria-label="Drag to reorder" />
                           <th>Qualification</th>
+                          <th>Admin override</th>
+                          <th>Color</th>
                           <th style={{ width: "80px" }}>Order</th>
+                          <th style={{ width: "90px" }}>Action</th>
                         </tr>
                       </thead>
                       <tbody>
                         {personnelQualifications.length === 0 ? (
                           <tr>
-                            <td colSpan={3} className="department-apparatus-empty">
+                            <td colSpan={6} className="department-apparatus-empty">
                               No qualifications. Add one above.
                             </td>
                           </tr>
@@ -10590,8 +11587,98 @@ function DepartmentDetailsPage({
                               <td>
                                 <strong className="call-number-text">{qualification || "—"}</strong>
                               </td>
+                              <td className="qualification-override-cell" onClick={(event) => event.stopPropagation()}>
+                                <label className="additional-field-check">
+                                  <input
+                                    type="checkbox"
+                                    checked={personnelQualificationOverrides[qualification]?.enabled === true}
+                                    onChange={(event) => {
+                                      const enabled = event.target.checked;
+                                      setPersonnelQualificationOverrides((previous) => {
+                                        const next = { ...previous };
+                                        if (!enabled) {
+                                          delete next[qualification];
+                                          return next;
+                                        }
+                                        next[qualification] = {
+                                          enabled: true,
+                                          lowerQualification: previous[qualification]?.lowerQualification ?? "",
+                                        };
+                                        return next;
+                                      });
+                                      setAutoSaveTick((previous) => previous + 1);
+                                      setStatusMessage("Saved.");
+                                    }}
+                                  />
+                                  Allow
+                                </label>
+                                {personnelQualificationOverrides[qualification]?.enabled ? (
+                                  <select
+                                    className="qualification-override-select"
+                                    value={personnelQualificationOverrides[qualification]?.lowerQualification ?? ""}
+                                    onChange={(event) => {
+                                      const lowerQualification = event.target.value;
+                                      setPersonnelQualificationOverrides((previous) => ({
+                                        ...previous,
+                                        [qualification]: { enabled: true, lowerQualification },
+                                      }));
+                                      setAutoSaveTick((previous) => previous + 1);
+                                      setStatusMessage("Saved.");
+                                    }}
+                                  >
+                                    <option value="">Lower qualification</option>
+                                    {personnelQualifications
+                                      .filter((candidate, candidateIndex) => candidateIndex > index && candidate !== qualification)
+                                      .map((candidate) => (
+                                        <option key={`${qualification}-lower-${candidate}`} value={candidate}>
+                                          {candidate}
+                                        </option>
+                                      ))}
+                                  </select>
+                                ) : null}
+                              </td>
+                              <td onClick={(event) => event.stopPropagation()}>
+                                <div className="qualification-color-choices" role="group" aria-label={`Color for ${qualification}`}>
+                                  {QUALIFICATION_COLOR_OPTIONS.map((choice) => {
+                                    const selected = personnelQualificationColors[qualification] === choice.id;
+                                    return (
+                                      <button
+                                        key={`${qualification}-${choice.id}`}
+                                        type="button"
+                                        className={`qualification-color-swatch${selected ? " qualification-color-swatch-selected" : ""}`}
+                                        style={{ backgroundColor: choice.hex }}
+                                        aria-label={`${choice.label}${selected ? ", selected" : ""}`}
+                                        aria-pressed={selected}
+                                        title={choice.label}
+                                        onClick={() => {
+                                          setPersonnelQualificationColors((previous) => {
+                                            const next = { ...previous };
+                                            if (selected) delete next[qualification];
+                                            else next[qualification] = choice.id;
+                                            return next;
+                                          });
+                                          setAutoSaveTick((previous) => previous + 1);
+                                          setStatusMessage("Auto-saved.");
+                                        }}
+                                      />
+                                    );
+                                  })}
+                                </div>
+                              </td>
                               <td style={{ color: "#64748b", fontSize: "0.82rem" }}>
                                 {index + 1}
+                              </td>
+                              <td>
+                                <button
+                                  type="button"
+                                  className="secondary-button compact-button"
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    removeQualification(index);
+                                  }}
+                                >
+                                  Remove
+                                </button>
                               </td>
                             </tr>
                           ))
@@ -11283,7 +12370,9 @@ function DepartmentDetailsPage({
 
       {isEntryFormOpen ? (
         <div className="department-editor-backdrop" role="dialog" aria-modal="true">
-          <article className="panel department-editor-modal">
+          <article
+            className={`panel department-editor-modal${isSchedulerPersonnelEditor ? " department-editor-modal-wide" : ""}`}
+          >
             <div className="panel-header">
               <h2>
                 {isUsersEditor
@@ -11375,79 +12464,68 @@ function DepartmentDetailsPage({
             ) : null}
 
             {isSchedulerApparatusEditor ? (
-              <div className="department-edit-grid">
-                <label>
-                  Apparatus
-                  <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
-                </label>
-                <label>
-                  Min Personnel
-                  <input
-                    type="number"
-                    min={0}
-                    value={schedulerApparatusDraft.minimumPersonnel}
-                    onChange={(event) =>
-                      setSchedulerApparatusDraft((previous) => ({
-                        ...previous,
-                        minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Max Personnel
-                  <input
-                    type="number"
-                    min={1}
-                    value={schedulerApparatusDraft.maximumPersonnel}
-                    onChange={(event) =>
-                      setSchedulerApparatusDraft((previous) => ({
-                        ...previous,
-                        maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
-                      }))
-                    }
-                  />
-                </label>
-                <label>
-                  Minimum Requirements (select all that apply)
-                  <NerisFlatMultiOptionSelect
-                    inputId="scheduler-apparatus-personnel-requirements"
-                    value={schedulerApparatusDraft.personnelRequirements.join(",")}
-                    options={personnelQualifications.map((q) => ({ value: q, label: q }))}
-                    onChange={(nextValue) =>
-                      setSchedulerApparatusDraft((previous) => ({
-                        ...previous,
-                        personnelRequirements: nextValue
-                          .split(",")
-                          .map((s) => s.trim())
-                          .filter(Boolean),
-                      }))
-                    }
-                    placeholder="Select minimum requirement(s)"
-                    searchPlaceholder="Search qualifications..."
-                    maxSelections={
-                      schedulerApparatusDraft.minimumPersonnel > 0
-                        ? schedulerApparatusDraft.minimumPersonnel
-                        : undefined
-                    }
-                    usePortal
-                  />
-                </label>
-                <label>
-                  Station
-                  <NerisFlatSingleOptionSelect
-                    inputId="scheduler-apparatus-station"
-                    value={schedulerApparatusDraft.station}
-                    options={stationNames.map((s) => ({ value: s, label: s }))}
-                    onChange={(nextValue) =>
-                      setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
-                    }
-                    placeholder="Select station"
-                    searchPlaceholder="Search stations..."
-                    allowClear
-                    usePortal
-                  />
-                </label>
+              <div className="scheduler-apparatus-form">
+                <div className="scheduler-apparatus-main-row">
+                  <label>
+                    Apparatus
+                    <input type="text" value={schedulerApparatusDraft.apparatus} readOnly />
+                  </label>
+                  <label>
+                    Min Personnel
+                    <input
+                      type="number"
+                      min={0}
+                      value={schedulerApparatusDraft.minimumPersonnel}
+                      onChange={(event) =>
+                        setSchedulerApparatusDraft((previous) => ({
+                          ...previous,
+                          minimumPersonnel: Number.parseInt(event.target.value, 10) || 0,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Max Personnel
+                    <input
+                      type="number"
+                      min={1}
+                      value={schedulerApparatusDraft.maximumPersonnel}
+                      onChange={(event) =>
+                        setSchedulerApparatusDraft((previous) => ({
+                          ...previous,
+                          maximumPersonnel: Number.parseInt(event.target.value, 10) || 1,
+                        }))
+                      }
+                    />
+                  </label>
+                  <label>
+                    Station
+                    <NerisFlatSingleOptionSelect
+                      inputId="scheduler-apparatus-station"
+                      value={schedulerApparatusDraft.station}
+                      options={stationNames.map((s) => ({ value: s, label: s }))}
+                      onChange={(nextValue) =>
+                        setSchedulerApparatusDraft((previous) => ({ ...previous, station: nextValue }))
+                      }
+                      placeholder="Select station"
+                      searchPlaceholder="Search stations..."
+                      allowClear
+                      usePortal
+                    />
+                  </label>
+                </div>
+                <SeatRequirementFields
+                  idPrefix="scheduler-apparatus"
+                  minimumPersonnel={schedulerApparatusDraft.minimumPersonnel}
+                  requirements={schedulerApparatusDraft.personnelRequirements}
+                  qualifications={personnelQualifications}
+                  onChange={(next) =>
+                    setSchedulerApparatusDraft((previous) => ({
+                      ...previous,
+                      personnelRequirements: next,
+                    }))
+                  }
+                />
               </div>
             ) : null}
 
@@ -11683,6 +12761,286 @@ function DepartmentDetailsPage({
   );
 }
 
+function SetupNerisExportConfigurationPanel({
+  nerisExportSettings,
+  onSave,
+}: {
+  nerisExportSettings: NerisExportSettings;
+  onSave: (next: NerisExportSettings) => void;
+}) {
+  const [draft, setDraft] = useState<NerisExportSettings>(() => ({
+    ...nerisExportSettings,
+  }));
+
+  const update = (field: keyof NerisExportSettings, value: string) => {
+    setDraft((previous) => ({ ...previous, [field]: value }));
+  };
+
+  const handleSave = () => {
+    const normalized = normalizeNerisExportSettings(draft);
+    onSave(normalized);
+    setDraft(normalized);
+  };
+
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <h2>NERIS Export Configuration</h2>
+      </div>
+      <div className="settings-form">
+        <p className="field-hint">
+          Values used by the Export action on NERIS reports. Stored per tenant when logged in; local
+          browser copy is kept in sync for offline testing.
+        </p>
+
+        <label htmlFor="setup-neris-export-url">Export URL (endpoint)</label>
+        <input
+          id="setup-neris-export-url"
+          type="text"
+          placeholder="https://..."
+          value={draft.exportUrl}
+          onChange={(event) => update("exportUrl", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-vendor-code">NERIS Entity ID</label>
+        <input
+          id="setup-neris-vendor-code"
+          type="text"
+          placeholder="ex: FD24160543"
+          value={draft.vendorCode}
+          onChange={(event) => update("vendorCode", event.target.value)}
+        />
+        <small className="field-hint">
+          OpenAPI format is usually <code>FD########</code> or <code>VN########</code> (for example:
+          FD24160543).
+        </small>
+
+        <label htmlFor="setup-neris-vendor-header">Entity ID header name</label>
+        <input
+          id="setup-neris-vendor-header"
+          type="text"
+          value={draft.vendorHeaderName}
+          onChange={(event) => update("vendorHeaderName", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-secret-key">Secret key / API token (direct mode only)</label>
+        <input
+          id="setup-neris-secret-key"
+          type="password"
+          value={draft.secretKey}
+          onChange={(event) => update("secretKey", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-auth-header">Auth header name (default from OpenAPI)</label>
+        <input
+          id="setup-neris-auth-header"
+          type="text"
+          value={draft.authHeaderName}
+          onChange={(event) => update("authHeaderName", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-auth-scheme">Auth scheme prefix (default from OpenAPI)</label>
+        <input
+          id="setup-neris-auth-scheme"
+          type="text"
+          placeholder="Bearer"
+          value={draft.authScheme}
+          onChange={(event) => update("authScheme", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-content-type">Content-Type (default from OpenAPI)</label>
+        <input
+          id="setup-neris-content-type"
+          type="text"
+          value={draft.contentType}
+          onChange={(event) => update("contentType", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-version-header">API version header name (optional)</label>
+        <input
+          id="setup-neris-version-header"
+          type="text"
+          value={draft.apiVersionHeaderName}
+          onChange={(event) => update("apiVersionHeaderName", event.target.value)}
+        />
+
+        <label htmlFor="setup-neris-version-value">API version header value (optional)</label>
+        <input
+          id="setup-neris-version-value"
+          type="text"
+          value={draft.apiVersionHeaderValue}
+          onChange={(event) => update("apiVersionHeaderValue", event.target.value)}
+        />
+
+        <small className="field-hint">
+          Security note: production secrets should be on the server in <code>.env.server</code> when
+          using proxy mode.
+        </small>
+
+        <button type="button" className="primary-button" onClick={handleSave}>
+          Save NERIS configuration
+        </button>
+      </div>
+    </article>
+  );
+}
+
+function SetupFireRecoveryPanel() {
+  const [departmentName, setDepartmentName] = useState("");
+  const [apiUsername, setApiUsername] = useState("");
+  const [apiPasswordInput, setApiPasswordInput] = useState("");
+  const [passwordIsSet, setPasswordIsSet] = useState(false);
+  const [serverMode, setServerMode] = useState<FireRecoverySettingsApi["mode"] | "">("");
+  const [serverDepartmentId, setServerDepartmentId] = useState("");
+  const [serverBanner, setServerBanner] = useState("");
+  const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const applyFireRecoverySettings = (d: FireRecoverySettingsApi) => {
+    setDepartmentName(d.departmentName);
+    setApiUsername(d.apiUsername ?? "");
+    setPasswordIsSet(d.passwordIsSet);
+    setServerMode(d.mode);
+    setServerDepartmentId(d.departmentId ?? "");
+    setServerBanner(d.banner ?? "");
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        const d = await getFireRecoverySettings();
+        if (!cancelled) applyFireRecoverySettings(d);
+      } catch {
+        // leave empty
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleSave = () => {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    const payload: {
+      fireRecoveryDepartmentName: string;
+      fireRecoveryApiUsername: string;
+      fireRecoveryApiPassword?: string;
+    } = {
+      fireRecoveryDepartmentName: departmentName.trim(),
+      fireRecoveryApiUsername: apiUsername.trim(),
+    };
+    if (apiPasswordInput.trim()) {
+      payload.fireRecoveryApiPassword = apiPasswordInput.trim();
+    }
+    patchFireRecoverySettings(payload)
+      .then((d) => {
+        applyFireRecoverySettings(d);
+        setApiPasswordInput("");
+        setMessage("Fire Recovery settings saved.");
+      })
+      .catch((e: Error) => {
+        setError(e?.message ?? "Could not save Fire Recovery settings.");
+      })
+      .finally(() => setSaving(false));
+  };
+
+  const handleClearPassword = () => {
+    setSaving(true);
+    setMessage("");
+    setError("");
+    patchFireRecoverySettings({ fireRecoveryApiPassword: "" })
+      .then((d) => {
+        applyFireRecoverySettings(d);
+        setApiPasswordInput("");
+        setMessage("Saved Fire Recovery API password removed.");
+      })
+      .catch((e: Error) => {
+        setError(e?.message ?? "Could not clear password.");
+      })
+      .finally(() => setSaving(false));
+  };
+
+  return (
+    <article className="panel">
+      <div className="panel-header">
+        <h2>Fire Recovery</h2>
+      </div>
+      <div className="settings-form">
+        {serverBanner ? (
+          <p className="field-hint" id="fire-recovery-mode-banner">
+            <strong>{serverBanner}</strong>
+            {serverDepartmentId
+              ? ` Department ID that will be sent: ${serverDepartmentId}.`
+              : serverMode === "live"
+                ? " No department ID will be sent. Live mode needs this department's NERIS Entity ID, and FD12345678 is refused."
+                : ""}
+          </p>
+        ) : null}
+        <p className="field-hint">
+          <strong>Username</strong> and <strong>password</strong> here are required for Fire Recovery API
+          calls (JWT for <strong>Add NERIS Incident for Billing</strong> and billing status). The server
+          does not use <code>.env.server</code> for Fire Recovery login—only these tenant fields. The
+          line above comes from the server setting <code>FIRE_RECOVERY_MODE</code>. It is not saved with
+          these fields. Optional: <code>FIRE_RECOVERY_BASE_URL</code> on the server may point at another host.
+        </p>
+
+        <label htmlFor="setup-fr-username">Username</label>
+        <input
+          id="setup-fr-username"
+          type="text"
+          autoComplete="off"
+          value={apiUsername}
+          onChange={(event) => setApiUsername(event.target.value)}
+        />
+
+        <label htmlFor="setup-fr-password">Password</label>
+        <input
+          id="setup-fr-password"
+          type="password"
+          autoComplete="new-password"
+          placeholder={passwordIsSet ? "Leave blank to keep saved password" : "Password"}
+          value={apiPasswordInput}
+          onChange={(event) => setApiPasswordInput(event.target.value)}
+        />
+        {passwordIsSet ? (
+          <p className="field-hint">A password is saved for this tenant.</p>
+        ) : null}
+
+        <label htmlFor="setup-fr-dept-name">Department name</label>
+        <input
+          id="setup-fr-dept-name"
+          type="text"
+          placeholder="e.g. Crescent-Iroquois Fire Protection District"
+          value={departmentName}
+          onChange={(event) => setDepartmentName(event.target.value)}
+        />
+
+        {message ? <p className="save-message">{message}</p> : null}
+        {error ? <p className="auth-error">{error}</p> : null}
+
+        <button type="button" className="primary-button" disabled={saving} onClick={handleSave}>
+          {saving ? "Saving…" : "Save Fire Recovery"}
+        </button>
+        {passwordIsSet ? (
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={saving}
+            onClick={handleClearPassword}
+            style={{ marginLeft: "0.5rem" }}
+          >
+            Remove saved password
+          </button>
+        ) : null}
+      </div>
+    </article>
+  );
+}
+
 function CustomizationSection({
   title,
   children,
@@ -11720,13 +13078,7 @@ function CustomizationPage({
   onSaveIncidentDisplaySettings,
   submenuVisibility,
   onSaveSubmenuVisibility,
-  nerisExportSettings,
-  onSaveNerisExportSettings,
 }: CustomizationPageProps) {
-  const [organizationName, setOrganizationName] = useState("CIFPD");
-  const [primaryColor, setPrimaryColor] = useState("#1d4ed8");
-  const [accentColor, setAccentColor] = useState("#0891b2");
-  const [logoFileName, setLogoFileName] = useState("No file selected");
   const [workflowDraft, setWorkflowDraft] = useState<string[]>(() => [...workflowStates]);
   const [newState, setNewState] = useState("");
   const [incidentSettingsDraft, setIncidentSettingsDraft] =
@@ -11736,12 +13088,6 @@ function CustomizationPage({
     }));
   const [submenuVisibilityDraft, setSubmenuVisibilityDraft] =
     useState<SubmenuVisibilityMap>(() => ({ ...submenuVisibility }));
-  const [nerisExportSettingsDraft, setNerisExportSettingsDraft] = useState<NerisExportSettings>(
-    () => ({ ...nerisExportSettings }),
-  );
-  const [selectedParsingCall, setSelectedParsingCall] = useState(
-    DISPATCH_PARSING_PREVIEW[0]?.callNumber ?? "",
-  );
   const [savedMessage, setSavedMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
@@ -11750,10 +13096,6 @@ function CustomizationPage({
       VALID_CALL_FIELD_IDS.has(fieldId),
     ),
   );
-
-  const parsingRow =
-    DISPATCH_PARSING_PREVIEW.find((row) => row.callNumber === selectedParsingCall) ??
-    DISPATCH_PARSING_PREVIEW[0];
 
   const updateWorkflowState = (index: number, value: string) => {
     setWorkflowDraft((previous) =>
@@ -11841,16 +13183,6 @@ function CustomizationPage({
     }));
   };
 
-  const updateNerisExportSetting = (
-    field: keyof NerisExportSettings,
-    value: string,
-  ) => {
-    setNerisExportSettingsDraft((previous) => ({
-      ...previous,
-      [field]: value,
-    }));
-  };
-
   const handleSave = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
@@ -11883,21 +13215,16 @@ function CustomizationPage({
       ...getDefaultSubmenuVisibilityMap(),
       ...submenuVisibilityDraft,
     };
-    const normalizedNerisExportSettings = normalizeNerisExportSettings(
-      nerisExportSettingsDraft,
-    );
 
     onSaveWorkflowStates(normalizedStates);
     onSaveIncidentDisplaySettings(normalizedIncidentSettings);
     onSaveSubmenuVisibility(normalizedSubmenuVisibility);
-    onSaveNerisExportSettings(normalizedNerisExportSettings);
 
     setIncidentSettingsDraft(normalizedIncidentSettings);
     setSubmenuVisibilityDraft(normalizedSubmenuVisibility);
-    setNerisExportSettingsDraft(normalizedNerisExportSettings);
     setErrorMessage("");
     setSavedMessage(
-      "Customization saved. Incident display, submenu visibility, workflow states, and NERIS export settings updated.",
+      "Customization saved. Incident display, submenu visibility, and workflow states updated.",
     );
   };
 
@@ -11908,8 +13235,7 @@ function CustomizationPage({
           <div>
             <h1>Admin Functions | Customization</h1>
             <p>
-              Configure branding, incident display controls, submenu visibility,
-              parsing setup, and NERIS export settings.
+              Configure dispatch workflow states, incident display controls, and submenu visibility.
             </p>
             {savedMessage ? <p className="save-message">{savedMessage}</p> : null}
             {errorMessage ? <p className="auth-error">{errorMessage}</p> : null}
@@ -11921,45 +13247,6 @@ function CustomizationPage({
           </div>
         </header>
 
-        <CustomizationSection title="Branding Controls">
-          <div className="settings-form">
-            <label htmlFor="org-name">Organization Name</label>
-            <input
-              id="org-name"
-              type="text"
-              value={organizationName}
-              onChange={(event) => setOrganizationName(event.target.value)}
-            />
-
-            <label htmlFor="logo-upload">Organization Logo</label>
-            <input
-              id="logo-upload"
-              type="file"
-              accept="image/*"
-              onChange={(event) =>
-                setLogoFileName(event.target.files?.[0]?.name ?? "No file selected")
-              }
-            />
-            <p className="field-hint">Selected file: {logoFileName}</p>
-
-            <label htmlFor="primary-color">Primary Color</label>
-            <input
-              id="primary-color"
-              type="color"
-              value={primaryColor}
-              onChange={(event) => setPrimaryColor(event.target.value)}
-            />
-
-            <label htmlFor="accent-color">Accent Color</label>
-            <input
-              id="accent-color"
-              type="color"
-              value={accentColor}
-              onChange={(event) => setAccentColor(event.target.value)}
-            />
-          </div>
-        </CustomizationSection>
-
         <CustomizationSection
           title="Dispatch Workflow States"
           action={
@@ -11970,7 +13257,7 @@ function CustomizationPage({
         >
           <div className="settings-form">
             {workflowDraft.map((state, index) => (
-              <div key={`${state}-${index}`} className="state-edit-row">
+              <div key={index} className="state-edit-row">
                 <input
                   type="text"
                   value={state}
@@ -12103,196 +13390,6 @@ function CustomizationPage({
                 </ul>
               </div>
             ))}
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="NERIS Export Configuration">
-          <div className="settings-form">
-            <p className="field-hint">
-              Enter the API values needed for the Export button on NERIS reports.
-              These settings are stored in this browser only. In proxy mode,
-              credentials should be set on the server in <code>.env.server</code>.
-            </p>
-
-            <label htmlFor="neris-export-url">Export URL (endpoint)</label>
-            <input
-              id="neris-export-url"
-              type="text"
-              placeholder="https://..."
-              value={nerisExportSettingsDraft.exportUrl}
-              onChange={(event) =>
-                updateNerisExportSetting("exportUrl", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-vendor-code">NERIS Entity ID</label>
-            <input
-              id="neris-vendor-code"
-              type="text"
-              placeholder="ex: FD24160543"
-              value={nerisExportSettingsDraft.vendorCode}
-              onChange={(event) =>
-                updateNerisExportSetting("vendorCode", event.target.value)
-              }
-            />
-            <small className="field-hint">
-              OpenAPI format is usually <code>FD########</code> or{" "}
-              <code>VN########</code> (for example: FD24160543).
-            </small>
-
-            <label htmlFor="neris-vendor-header">Entity ID header name</label>
-            <input
-              id="neris-vendor-header"
-              type="text"
-              value={nerisExportSettingsDraft.vendorHeaderName}
-              onChange={(event) =>
-                updateNerisExportSetting("vendorHeaderName", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-secret-key">Secret key / API token (direct mode only)</label>
-            <input
-              id="neris-secret-key"
-              type="password"
-              value={nerisExportSettingsDraft.secretKey}
-              onChange={(event) =>
-                updateNerisExportSetting("secretKey", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-auth-header">Auth header name (default from OpenAPI)</label>
-            <input
-              id="neris-auth-header"
-              type="text"
-              value={nerisExportSettingsDraft.authHeaderName}
-              onChange={(event) =>
-                updateNerisExportSetting("authHeaderName", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-auth-scheme">Auth scheme prefix (default from OpenAPI)</label>
-            <input
-              id="neris-auth-scheme"
-              type="text"
-              placeholder="Bearer"
-              value={nerisExportSettingsDraft.authScheme}
-              onChange={(event) =>
-                updateNerisExportSetting("authScheme", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-content-type">Content-Type (default from OpenAPI)</label>
-            <input
-              id="neris-content-type"
-              type="text"
-              value={nerisExportSettingsDraft.contentType}
-              onChange={(event) =>
-                updateNerisExportSetting("contentType", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-version-header">API version header name (optional)</label>
-            <input
-              id="neris-version-header"
-              type="text"
-              value={nerisExportSettingsDraft.apiVersionHeaderName}
-              onChange={(event) =>
-                updateNerisExportSetting("apiVersionHeaderName", event.target.value)
-              }
-            />
-
-            <label htmlFor="neris-version-value">API version header value (optional)</label>
-            <input
-              id="neris-version-value"
-              type="text"
-              value={nerisExportSettingsDraft.apiVersionHeaderValue}
-              onChange={(event) =>
-                updateNerisExportSetting("apiVersionHeaderValue", event.target.value)
-              }
-            />
-
-            <small className="field-hint">
-              Security note: these values are local browser settings for prototype
-              testing. Production keys should be kept on a backend server.
-            </small>
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="Parsing Setup">
-          <div className="settings-form">
-            <label htmlFor="parsing-call-select">Dispatch feed preview call</label>
-            <select
-              id="parsing-call-select"
-              value={selectedParsingCall}
-              onChange={(event) => setSelectedParsingCall(event.target.value)}
-            >
-              {DISPATCH_PARSING_PREVIEW.map((row) => (
-                <option key={row.callNumber} value={row.callNumber}>
-                  {row.callNumber}
-                </option>
-              ))}
-            </select>
-
-            {parsingRow ? (
-              <div className="parsing-preview">
-                <p>
-                  <strong>Received:</strong> {parsingRow.receivedAt}
-                </p>
-                <p>
-                  <strong>Parsed:</strong> {parsingRow.parsedSummary}
-                </p>
-                <p>
-                  <strong>Raw:</strong>
-                </p>
-                <pre>{parsingRow.rawMessage}</pre>
-              </div>
-            ) : null}
-
-            <label>Incoming calls from dispatch</label>
-            <div className="table-wrapper">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Received</th>
-                    <th>Call #</th>
-                    <th>Parsed Summary</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {DISPATCH_PARSING_PREVIEW.map((row) => (
-                    <tr key={`parse-${row.callNumber}`}>
-                      <td>{row.receivedAt}</td>
-                      <td>{row.callNumber}</td>
-                      <td>{row.parsedSummary}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </div>
-        </CustomizationSection>
-
-        <CustomizationSection title="Preview">
-          <div className="branding-preview">
-            <div
-              className="branding-preview-banner"
-              style={{
-                background: `linear-gradient(120deg, ${primaryColor} 0%, ${accentColor} 100%)`,
-              }}
-            >
-              <span>{organizationName || "Organization Name"}</span>
-            </div>
-            <p>
-              Branding preview only. Future backend integration will persist
-              these choices per organization.
-            </p>
-            <ul className="workflow-chip-list">
-              {workflowDraft.map((state) => (
-                <li key={`preview-${state}`} className="workflow-chip">
-                  {state}
-                </li>
-              ))}
-            </ul>
           </div>
         </CustomizationSection>
       </form>
@@ -12757,11 +13854,22 @@ function RouteResolver({
     content = <Navigate to={`/reporting/neris/${encodeURIComponent(legacyReportId)}`} replace />;
   } else if (path === "/reporting/neris") {
     content = <NerisReportingPage incidentCalls={incidentCalls} />;
+  } else if (path === "/reporting/neris/fire-recovery") {
+    content = <FireRecoveryIncidentsPage incidentCalls={incidentCalls} />;
+  } else if (path.startsWith("/reporting/neris/fire-recovery/")) {
+    const frCallNumber = decodeURIComponent(path.replace("/reporting/neris/fire-recovery/", ""));
+    content = (
+      <FireRecoveryIncidentDetailPage
+        key={frCallNumber}
+        callNumber={frCallNumber}
+        incidentCalls={incidentCalls}
+      />
+    );
   } else if (path === "/reporting/neris/exports") {
     content = <NerisExportsPage incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
   } else if (path.startsWith("/reporting/neris/exports/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/exports/", ""));
-    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} />;
+    content = <NerisExportDetailsPage callNumber={callNumber} incidentCalls={incidentCalls} exportHistory={nerisExportHistory} role={role} />;
   } else if (path.startsWith("/reporting/neris/")) {
     const callNumber = decodeURIComponent(path.replace("/reporting/neris/", ""));
     content = (
@@ -12772,14 +13880,20 @@ function RouteResolver({
         username={username}
         incidentCalls={incidentCalls}
         onUpdateIncidentCall={onUpdateIncidentCall}
-        onDeleteIncidentCall={(targetCallNumber: string, reason?: string) =>
-          onSetIncidentDeleted(targetCallNumber, true, reason ?? "Deleted from NERIS report form.")
-        }
+        onDeleteIncidentCall={async (targetCallNumber: string) => {
+          await deleteNerisDraft(targetCallNumber);
+          removeNerisDraft(targetCallNumber);
+        }}
         nerisExportSettings={nerisExportSettings}
         apparatusFromDepartmentDetails={apparatusFromDepartmentDetails}
         exportHistory={nerisExportHistory}
         onExportRecordAdded={async (record) => {
+          if (record.attemptStatus !== "failed") return;
           await postNerisExportRecord(record);
+          const list = await getNerisExportHistory();
+          setNerisExportHistory(list);
+        }}
+        onServerExportRecorded={async () => {
           const list = await getNerisExportHistory();
           setNerisExportHistory(list);
         }}
@@ -12799,6 +13913,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-profile"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/department-logo-image") {
@@ -12806,6 +13922,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-logo-image"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/contact-info") {
@@ -12813,6 +13931,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="contact-info"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/operational-details") {
@@ -12820,6 +13940,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="operational-details"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/incident-audit-log") {
@@ -12829,6 +13951,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="incidents-setup"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/department-resources") {
@@ -12836,6 +13960,8 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-resources"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/department-details/department-access") {
@@ -12843,6 +13969,26 @@ function RouteResolver({
       <DepartmentDetailsPage
         mode="departmentDetails"
         adminModuleId="department-access"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
+      />
+    );
+  } else if (path === "/admin-functions/department-details/neris-configuration") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="neris-configuration"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
+      />
+    );
+  } else if (path === "/admin-functions/department-details/fire-recovery") {
+    content = (
+      <DepartmentDetailsPage
+        mode="departmentDetails"
+        adminModuleId="fire-recovery"
+        nerisExportSettings={nerisExportSettings}
+        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/audit-logs") {
@@ -12879,12 +14025,19 @@ function RouteResolver({
         onSaveIncidentDisplaySettings={onSaveIncidentDisplaySettings}
         submenuVisibility={submenuVisibility}
         onSaveSubmenuVisibility={onSaveSubmenuVisibility}
-        nerisExportSettings={nerisExportSettings}
-        onSaveNerisExportSettings={onSaveNerisExportSettings}
       />
     );
   } else if (path === "/admin-functions/dispatch-parsing-settings") {
-    content = <DispatchParsingSettingsPage />;
+    content = (
+      <Navigate to="/admin-functions/dispatch-parsing-settings/raw-email" replace />
+    );
+  } else if (
+    path === "/admin-functions/dispatch-parsing-settings/allowed-senders" ||
+    path === "/admin-functions/dispatch-parsing-settings/raw-email" ||
+    path === "/admin-functions/dispatch-parsing-settings/message-parsing" ||
+    path === "/admin-functions/dispatch-parsing-settings/incident-parsing"
+  ) {
+    content = <DispatchParsingAdminPage />;
   } else {
     const menu = getMainMenuByPath(path);
     if (menu && path === menu.path) {
@@ -12915,10 +14068,46 @@ function RouteResolver({
 }
 
 function App() {
-  const [session, setSession] = useState<SessionState>(() => readSession());
+  const [session, setSession] = useState<SessionState>(EMPTY_SESSION);
+  const [sessionReady, setSessionReady] = useState(false);
+  const [reauthMessage, setReauthMessage] = useState("");
+  const sessionRef = useRef(session);
+  useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
   const [incidentCalls, setIncidentCalls] = useState<IncidentCallSummary[]>(() =>
     readIncidentQueue(),
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/auth/session")
+      .then(async (response) => (response.ok ? response.json() : null))
+      .then((json: { ok?: boolean; user?: { username?: string; role?: string } } | null) => {
+        if (cancelled) return;
+        if (json?.ok && json.user?.username) {
+          const nextSession = sessionFromServerUser(json.user);
+          writeSession(nextSession);
+          setSession(nextSession);
+        } else {
+          writeSession(EMPTY_SESSION);
+          setSession(EMPTY_SESSION);
+        }
+        setSessionReady(true);
+      })
+      .catch(() => {
+        if (!cancelled) setSessionReady(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => onSessionExpired(() => {
+    if (sessionRef.current.isAuthenticated) {
+      setReauthMessage("Your session expired");
+    }
+  }), []);
 
   useEffect(() => {
     if (!session.isAuthenticated) return;
@@ -12975,6 +14164,73 @@ function App() {
     () => readSubmenuVisibility(),
   );
 
+  useEffect(() => {
+    if (!session.isAuthenticated || typeof window === "undefined") return;
+    let cancelled = false;
+    fetch("/api/department-details")
+      .then((res) => (res.ok ? res.json() : null))
+      .then((json: { ok?: boolean; data?: Record<string, unknown> } | null) => {
+        if (cancelled || !json?.ok || !json.data) return;
+        const raw = json.data.sharedDepartmentSettings;
+        const shared =
+          raw && typeof raw === "object" && !Array.isArray(raw)
+            ? (raw as Record<string, unknown>)
+            : {};
+        if (typeof shared.logoDataUrl === "string") {
+          window.localStorage.setItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY, shared.logoDataUrl);
+          window.dispatchEvent(new Event("department-logo-updated"));
+        }
+        if (Array.isArray(shared.workflowStates)) {
+          const states = dedupeAndCleanStrings(
+            shared.workflowStates.filter((item): item is string => typeof item === "string"),
+          );
+          if (states.length) {
+            writeWorkflowStates(states);
+            setWorkflowStates(states);
+          }
+        }
+        if (shared.submenuVisibility && typeof shared.submenuVisibility === "object") {
+          const source = shared.submenuVisibility as Record<string, unknown>;
+          const next = getDefaultSubmenuVisibilityMap();
+          for (const path of ALL_SUBMENU_PATHS) {
+            if (typeof source[path] === "boolean") next[path] = source[path];
+          }
+          writeSubmenuVisibility(next);
+          setSubmenuVisibility(next);
+        }
+        if (shared.displayCards && typeof shared.displayCards === "object" && !Array.isArray(shared.displayCards)) {
+          writeDisplayCardConfig(shared.displayCards as DisplayCardConfig);
+          window.dispatchEvent(new Event("department-display-cards-updated"));
+        }
+        if (!isAdminOrHigher(session.role)) return;
+        const seed: {
+          workflowStates?: string[];
+          submenuVisibility?: SubmenuVisibilityMap;
+          displayCards?: Record<string, string[]>;
+        } = {};
+        if (!Array.isArray(shared.workflowStates)) seed.workflowStates = readWorkflowStates();
+        if (!shared.submenuVisibility || typeof shared.submenuVisibility !== "object") {
+          seed.submenuVisibility = readSubmenuVisibility();
+        }
+        if (!shared.displayCards || typeof shared.displayCards !== "object") {
+          seed.displayCards = readDisplayCardConfig();
+        }
+        if (Object.keys(seed).length > 0) {
+          void patchSharedDepartmentSettings(seed).catch(() => {});
+        }
+        if (typeof shared.logoDataUrl !== "string") {
+          const localLogo = window.localStorage.getItem(DEPARTMENT_LOGO_DATA_URL_STORAGE_KEY) ?? "";
+          if (localLogo.startsWith("data:image/") && localLogo.length < 680_000) {
+            void patchSharedDepartmentSettings({ logoDataUrl: localLogo }).catch(() => {});
+          }
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [session.isAuthenticated, session.role]);
+
   const apparatusFromDepartmentDetails = useMemo(
     () => readApparatusFromDepartmentDetails(),
     [],
@@ -12994,20 +14250,19 @@ function App() {
       const json = (await response.json()) as {
         ok?: boolean;
         message?: string;
-        user?: { name?: string; userType?: string; username?: string };
+        user?: { name?: string; username?: string; role?: string };
       };
       if (!response.ok || !json?.ok || !json.user) {
         return json?.message ?? "Login failed.";
       }
-      const nextSession: SessionState = {
-        isAuthenticated: true,
-        username: String(json.user.username ?? username).trim(),
-        unit: department || "",
-        role: mapUserTypeToRole(String(json.user.userType ?? "")),
-      };
+      const nextSession = sessionFromServerUser(
+        json.user,
+        department || sessionRef.current.unit,
+      );
+      writeSession(nextSession);
       setSession(nextSession);
       setIncidentDisplaySettings(readIncidentDisplaySettings(nextSession.username));
-      writeSession(nextSession);
+      setReauthMessage("");
       return null;
     } catch {
       return "Unable to reach login service.";
@@ -13015,7 +14270,16 @@ function App() {
   };
 
   const handleLogout = () => {
+    void fetch("/api/auth/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    }).catch(() => {});
+    clearCachedDepartmentData();
     setSession(EMPTY_SESSION);
+    setReauthMessage("");
+    setIncidentCalls([]);
+    setNerisExportHistory([]);
     setIncidentDisplaySettings(readIncidentDisplaySettings(""));
     writeSession(EMPTY_SESSION);
   };
@@ -13027,6 +14291,9 @@ function App() {
     }
     setWorkflowStates(normalized);
     writeWorkflowStates(normalized);
+    void patchSharedDepartmentSettings({ workflowStates: normalized }).catch((error: unknown) => {
+      window.alert(error instanceof Error ? error.message : "Workflow states were not saved.");
+    });
   };
 
   const handleSaveIncidentDisplaySettings = (
@@ -13050,6 +14317,9 @@ function App() {
     };
     setSubmenuVisibility(normalized);
     writeSubmenuVisibility(normalized);
+    void patchSharedDepartmentSettings({ submenuVisibility: normalized }).catch((error: unknown) => {
+      window.alert(error instanceof Error ? error.message : "Submenu visibility was not saved.");
+    });
   };
 
   const handleSaveNerisExportSettings = (nextSettings: NerisExportSettings) => {
@@ -13126,37 +14396,17 @@ function App() {
         dispatchInfo: patch.dispatchInfo,
       };
       try {
-        const updated = await updateIncident(callNumber, apiPatch);
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) =>
-            entry.callNumber === callNumber ? updated : entry,
-          );
-          writeIncidentQueue(next);
-          return next;
-        });
-      } catch {
-        const patchEntries = Object.entries(patch) as Array<[keyof IncidentCallSummary, unknown]>;
-        setIncidentCalls((previous) => {
-          let didChange = false;
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            const hasRealChange = patchEntries.some(
-              ([key, value]) => value !== undefined && !Object.is(entry[key], value),
-            );
-            if (!hasRealChange) return entry;
-            didChange = true;
-            return {
-              ...entry,
-              ...patch,
-              callNumber: entry.callNumber,
-              lastUpdated: "Just now",
-            };
-          });
-          if (!didChange) return previous;
-          writeIncidentQueue(next);
-          return next;
-        });
-      }
+      const updated = await updateIncident(callNumber, apiPatch);
+      setIncidentCalls((previous) => {
+        const next = previous.map((entry) =>
+          entry.callNumber === callNumber ? updated : entry,
+        );
+        writeIncidentQueue(next);
+        return next;
+      });
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : "The incident was not updated.");
+    }
     },
     [],
   );
@@ -13170,11 +14420,9 @@ function App() {
     if (deleted) {
       try {
         const draft = await getNerisDraft(callNumber);
-        const status = draft?.reportStatus?.trim();
+        const status = draft?.draft.reportStatus?.trim();
         if (status === "In Review" || status === "Exported") {
-          alert(
-            "This incident cannot be deleted because the NERIS report is In Review or Exported. Protect the report for compliance.",
-          );
+          alert("This report is locked. Unlock it before deleting.");
           return;
         }
       } catch {
@@ -13196,22 +14444,8 @@ function App() {
           writeIncidentQueue(next);
           return next;
         });
-      } catch {
-        const nowIso = new Date().toISOString();
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            return {
-              ...entry,
-              deletedAt: nowIso,
-              deletedBy: actor,
-              deletedReason: reason?.trim() || "Deleted by user.",
-              lastUpdated: "Just now",
-            };
-          });
-          writeIncidentQueue(next);
-          return next;
-        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The incident was not deleted.");
       }
     } else {
       try {
@@ -13225,27 +14459,21 @@ function App() {
           writeIncidentQueue(next);
           return next;
         });
-      } catch {
-        setIncidentCalls((previous) => {
-          const next = previous.map((entry) => {
-            if (entry.callNumber !== callNumber) return entry;
-            return {
-              ...entry,
-              deletedAt: undefined,
-              deletedBy: undefined,
-              deletedReason: undefined,
-              lastUpdated: "Just now",
-            };
-          });
-          writeIncidentQueue(next);
-          return next;
-        });
+      } catch (error) {
+        window.alert(error instanceof Error ? error.message : "The incident was not restored.");
       }
     }
   };
 
+  if (!sessionReady) {
+    return <div className="session-checking">Checking sign-in…</div>;
+  }
+
   return (
     <BrowserRouter>
+      {reauthMessage && session.isAuthenticated ? (
+        <SessionReauthDialog message={reauthMessage} onLogin={handleLogin} />
+      ) : null}
       <Routes>
         <Route
           path="/auth"

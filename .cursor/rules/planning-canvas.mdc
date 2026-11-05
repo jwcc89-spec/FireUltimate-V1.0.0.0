@@ -1,0 +1,21 @@
+---
+description: Canvas plans are the standard planning format for FireUltimate
+alwaysApply: true
+---
+
+# Planning Canvases (standard)
+
+Multi-step work is planned and tracked in a **Cursor canvas plan**, not in a new markdown plan. Canvas plans are listed in `docs/plans/canvases/README.md`.
+
+## At session start
+- Open the active canvas plan listed in `docs/plans/canvases/README.md` (read it with the canvas link, or read the repo copy if the link is unavailable).
+- Start from the step marked **Next**. Follow the plan's **Data safety** tab.
+
+## While working
+- When a step finishes, a decision is made, or a finding changes the plan, update the canvas: step status (`Done`, `Next`, `Updated`, `New`), the **Decided** and **Still open** tables, and the "Updated" line at the top.
+- Use the user's existing canvas link when it can be saved in place; never create a second copy of the same plan without telling the user.
+- After every canvas update, copy the full canvas source into the repo copy (`docs/plans/canvases/<plan-name>.canvas.tsx`) and commit it, so the repo and the canvas always match.
+
+## New plans
+- Use the same layout as `docs/plans/canvases/repair-plan.canvas.tsx`: plain-language stages and steps (what is wrong, why it matters, the fix, who, done when), Decisions, Data safety, and Parked & future tabs.
+- Add each new plan to `docs/plans/canvases/README.md` with its canvas link.

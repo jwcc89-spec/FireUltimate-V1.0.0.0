@@ -1347,6 +1347,27 @@ tbody tr:last-of-type td {
   color: #475569;
 }
 
+.cad-email-worker-precopy {
+  margin-bottom: 1rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.cad-email-precopy-lead {
+  margin-bottom: 0.65rem;
+}
+
+.cad-email-copy-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.cad-email-copy-actions .secondary-button {
+  font-size: 0.82rem;
+}
+
 .cad-email-raw-label {
   display: block;
   font-size: 0.78rem;
@@ -1367,6 +1388,575 @@ tbody tr:last-of-type td {
   max-height: 20rem;
   overflow-y: auto;
   border: 1px solid #e2e8f0;
+}
+
+/* Dispatch Parsing — Incident Parsing (Batch F) */
+.cad-dispatch-incident-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 0.5rem;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-incident-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-incident-card {
+  margin: 0;
+}
+
+.cad-dispatch-rules-textarea {
+  width: 100%;
+  box-sizing: border-box;
+  margin-top: 0.5rem;
+  padding: 0.65rem 0.75rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  resize: vertical;
+  min-height: 6rem;
+}
+
+.cad-dispatch-incident-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.65rem;
+}
+
+.cad-allowlist-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.cad-allowlist-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.75rem;
+}
+
+.cad-allowlist-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.cad-allowlist-enabled {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.84rem;
+  font-weight: 700;
+  padding-bottom: 0.45rem;
+}
+
+.cad-dispatch-preview-pre {
+  margin: 0.5rem 0 0;
+  padding: 0.75rem;
+  background: #f8fafc;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 22rem;
+  overflow-y: auto;
+  border: 1px solid #e2e8f0;
+}
+
+.cad-dispatch-checkbox-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  font-size: 0.88rem;
+  line-height: 1.45;
+  color: #334155;
+  cursor: pointer;
+  margin: 0;
+}
+
+.cad-dispatch-checkbox-label input {
+  margin-top: 0.2rem;
+}
+
+.cad-dispatch-save-ok {
+  margin: 0.5rem 0 0;
+  font-size: 0.85rem;
+  color: #15803d;
+}
+
+/* Dispatch Parsing — Batch H: rules on top + email rail + side-by-side preview */
+.cad-dispatch-h-top {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 0.5rem;
+}
+
+.cad-dispatch-h-lower {
+  display: grid;
+  grid-template-columns: minmax(11rem, 15rem) 1fr;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 1rem;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-h-lower {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-email-rail {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.65rem 0.5rem;
+  background: #fafafa;
+  max-height: 28rem;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.cad-dispatch-email-rail-header {
+  margin: 0 0 0.35rem;
+  padding: 0 0.35rem;
+}
+
+.cad-dispatch-email-rail-header h2 {
+  font-size: 0.95rem;
+  margin: 0;
+}
+
+.cad-dispatch-email-rail-sub {
+  margin: 0.25rem 0 0;
+  font-size: 0.78rem;
+}
+
+.cad-dispatch-email-rail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.cad-dispatch-email-rail-list li {
+  margin: 0;
+  padding: 0;
+}
+
+.cad-dispatch-email-rail-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  margin-bottom: 0.25rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  font: inherit;
+  color: #334155;
+}
+
+.cad-dispatch-email-rail-item:hover {
+  border-color: #cbd5e1;
+}
+
+.cad-dispatch-email-rail-item.active {
+  border-color: #3b82f6;
+  background: #eff6ff;
+}
+
+.cad-dispatch-email-rail-date {
+  font-size: 0.72rem;
+  color: #64748b;
+}
+
+.cad-dispatch-email-rail-from {
+  font-size: 0.8rem;
+  word-break: break-word;
+}
+
+.cad-dispatch-h-right {
+  min-width: 0;
+}
+
+.cad-dispatch-h-split {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-h-split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-h-preview-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  min-width: 0;
+}
+
+.cad-dispatch-stored-ingest .cad-dispatch-stored-pre {
+  max-height: 10rem;
+}
+
+/* Message Parsing — all-visible batch preview */
+.cad-dispatch-message-batch-section {
+  margin-top: 1rem;
+}
+
+.cad-dispatch-message-batch-header {
+  margin-bottom: 0.75rem;
+}
+
+.cad-dispatch-message-batch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  max-height: min(70vh, 42rem);
+  overflow-y: auto;
+  padding-right: 0.25rem;
+}
+
+.cad-dispatch-message-row-card {
+  margin: 0;
+}
+
+.cad-dispatch-message-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-bottom: 0.65rem;
+  font-size: 0.82rem;
+  color: #475569;
+}
+
+.cad-dispatch-message-row-date {
+  font-weight: 600;
+}
+
+.cad-dispatch-message-row-from {
+  word-break: break-word;
+}
+
+.cad-dispatch-message-row-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .cad-dispatch-message-row-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-dispatch-message-row-h {
+  font-size: 0.82rem;
+  margin: 0 0 0.35rem;
+  color: #0f172a;
+}
+
+.cad-dispatch-message-row-h-sub {
+  font-size: 0.75rem;
+  margin: 0.5rem 0 0.25rem;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.cad-dispatch-preview-plain {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  max-height: 14rem;
+  overflow-y: auto;
+}
+
+.cad-dispatch-slots-pre {
+  max-height: 8rem;
+  margin-top: 0.35rem;
+}
+
+.cad-dispatch-message-row-col-stored .cad-dispatch-stored-pre {
+  max-height: 10rem;
+}
+
+.cad-dispatch-preview-single-box {
+  background: #fdf2f8;
+  border-color: #fbcfe8;
+}
+
+.cad-rule-pipeline-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.cad-rule-pipeline-add-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  min-width: min(100%, 22rem);
+}
+
+.cad-rule-pipeline-add-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.cad-rule-pipeline-select {
+  width: 100%;
+  max-width: 28rem;
+  padding: 0.45rem 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #cbd5e1;
+  font: inherit;
+  background: #fff;
+}
+
+.cad-rule-pipeline-empty {
+  margin: 0.5rem 0 0;
+}
+
+.cad-rule-pipeline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.65rem;
+}
+
+.cad-rule-pipeline-item {
+  margin: 0;
+}
+
+.cad-rule-pipeline-item-inner {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.5rem;
+  align-items: start;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.cad-rule-pipeline-grip {
+  color: #94a3b8;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  user-select: none;
+  padding-top: 0.15rem;
+}
+
+.cad-rule-pipeline-rule-body {
+  min-width: 0;
+}
+
+.cad-rule-pipeline-item-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.cad-rule-pipeline-icon-btn {
+  min-width: 2rem;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+  cursor: pointer;
+  color: #475569;
+}
+
+.cad-rule-pipeline-icon-btn:hover:not(:disabled) {
+  background: #f1f5f9;
+}
+
+.cad-rule-pipeline-icon-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.cad-rule-pipeline-remove {
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
+.cad-rule-sentence {
+  margin: 0;
+  font-size: 0.88rem;
+  line-height: 1.55;
+  color: #0f172a;
+}
+
+.cad-rule-inline-input {
+  min-width: 4rem;
+  max-width: 100%;
+  padding: 0.2rem 0.4rem;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+}
+
+.cad-rule-inline-input.narrow {
+  width: 3.25rem;
+}
+
+.cad-rule-inline-input.cad-rule-regex-wide {
+  min-width: 8rem;
+  flex: 1;
+}
+
+.cad-rule-inline-select {
+  padding: 0.2rem 0.35rem;
+  font: inherit;
+  font-size: 0.85rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #fff;
+}
+
+.cad-dispatch-field-map-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.cad-dispatch-field-map-header .small-button {
+  font-size: 0.82rem;
+  padding: 0.35rem 0.65rem;
+}
+
+.cad-dispatch-merge-key-label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-width: 24rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #334155;
+}
+
+.cad-dispatch-merge-key-input {
+  width: 100%;
+  max-width: 24rem;
+  padding: 0.45rem 0.5rem;
+  font: inherit;
+  font-size: 0.88rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+}
+
+.cad-incident-field-map-table-wrap {
+  overflow-x: auto;
+}
+
+.cad-incident-field-map-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.cad-incident-field-map-table th,
+.cad-incident-field-map-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.45rem 0.5rem;
+  text-align: left;
+  vertical-align: middle;
+}
+
+.cad-incident-field-map-table th {
+  background: #f8fafc;
+  font-weight: 600;
+}
+
+.cad-dispatch-incident-save-row {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.cad-dispatch-incident-preview-card {
+  margin: 0;
+}
+
+.cad-incident-preview-body {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.cad-incident-preview-block {
+  min-width: 0;
+}
+
+.cad-incident-slot-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.cad-incident-slot-table th {
+  width: 9rem;
+  text-align: left;
+  font-weight: 600;
+  color: #334155;
+  border: 1px solid #e2e8f0;
+  padding: 0.35rem 0.5rem;
+  background: #f8fafc;
+  vertical-align: top;
+}
+
+.cad-incident-slot-table td {
+  border: 1px solid #e2e8f0;
+  padding: 0.35rem 0.5rem;
+  word-break: break-word;
+}
+
+.cad-incident-merge-key-value {
+  margin: 0;
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #0f172a;
 }
 
 .dashboard-shortcut-list,
@@ -1631,6 +2221,124 @@ tbody tr:last-of-type td {
   gap: 0.7rem;
 }
 
+.department-editor-modal-wide {
+  width: min(1040px, 96vw);
+}
+
+.weekday-choice-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  align-items: center;
+}
+
+.weekday-choice-row label {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.8rem;
+}
+
+.trade-request-top-row {
+  display: grid;
+  grid-template-columns: 0.85fr 1fr 1fr;
+  gap: 0.55rem;
+  margin-bottom: 0.55rem;
+}
+
+.trade-request-top-row label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.trade-request-top-row input,
+.trade-request-top-row select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.trades-override-row {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: #fff7ed;
+  font-weight: 700;
+}
+
+.dashboard-attention-alerts ul {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.self-fill-times {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.55rem;
+  width: 100%;
+}
+
+.self-fill-times label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: #334155;
+}
+
+.self-fill-times input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 0.45rem 0.55rem;
+  font-size: 0.9rem;
+}
+
+.schedule-notice-actions {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+}
+
+.neris-required-section > summary {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.neris-required-section > summary::-webkit-details-marker {
+  display: none;
+}
+
+.neris-required-section > summary::before {
+  content: "";
+  width: 0.38rem;
+  height: 0.38rem;
+  border-right: 2px solid #334155;
+  border-bottom: 2px solid #334155;
+  transform: rotate(-45deg);
+  flex: 0 0 auto;
+}
+
+.neris-required-section[open] > summary::before {
+  transform: rotate(45deg);
+}
+
+.neris-required-section > summary h2 {
+  margin: 0;
+}
+
 /* DD-M/DD-S dropdown panels in department editor: render in portal to avoid clipping and box expansion */
 
 .department-qualifications-field-label {
@@ -1653,6 +2361,65 @@ tbody tr:last-of-type td {
   color: #0f172a;
   padding: 0.56rem 0.65rem;
   font-size: 0.84rem;
+}
+
+.additional-field-form {
+  display: grid;
+  grid-template-columns: 1.5fr 0.5fr 0.5fr 1.5fr;
+  gap: 0.75rem 1rem;
+  align-items: end;
+}
+
+.additional-field-form label {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.82rem;
+  font-weight: 650;
+  color: #334155;
+}
+
+.additional-field-checks {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.65rem 1.25rem;
+  align-items: center;
+}
+
+.additional-field-form > button {
+  justify-self: start;
+}
+
+.additional-field-form input,
+.additional-field-form select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 10px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.56rem 0.65rem;
+  font-size: 0.84rem;
+  font-weight: 500;
+}
+
+.additional-field-check {
+  display: inline-flex !important;
+  flex-direction: row;
+  align-items: center;
+  width: auto;
+  gap: 0.35rem;
+  font-weight: 600;
+}
+
+.additional-field-check input {
+  width: auto;
+  margin: 0;
+  padding: 0;
+}
+
+.additional-fields-table th,
+.additional-fields-table td {
+  white-space: nowrap;
 }
 
 .kelly-rotation-editor-row {
@@ -1954,8 +2721,8 @@ tbody tr:last-of-type td {
 }
 
 .department-qualifications-list-wrapper .table-wrapper {
-  max-height: 280px;
-  overflow-y: auto;
+  max-height: 420px;
+  overflow: auto;
 }
 
 .department-qualifications-list-wrapper {
@@ -2010,6 +2777,90 @@ tbody tr:last-of-type td {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.55rem;
+}
+
+.shift-information-core-fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.shift-information-core-fields label,
+.overtime-setup-fields label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.shift-information-core-fields input,
+.shift-information-core-fields select,
+.overtime-setup-fields input,
+.overtime-setup-fields select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.overtime-setup-fields {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.overtime-setup-fields-row {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+}
+
+.department-field-disabled {
+  opacity: 0.45;
+}
+
+.trades-active-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.trades-active-header label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.trades-action-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.trades-action-cell input {
+  width: 10rem;
+}
+
+.trades-settings-fields {
+  display: grid;
+  gap: 0.35rem;
+  max-width: 40rem;
+}
+
+.trades-settings-fields .field-hint {
+  margin: 0 0 0.65rem 1.5rem;
+}
+
+.department-field-disabled input,
+.department-field-disabled select {
+  background-color: #f1f5f9;
+  color: #64748b;
 }
 
 .department-edit-grid label {
@@ -3104,6 +3955,161 @@ body.resource-personnel-modal-open {
   opacity: 0.92;
 }
 
+.fr-bill-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 0.65rem;
+}
+
+.fr-bill-bar-required {
+  border-left: 3px solid #b91c1c;
+  padding-left: 0.45rem;
+}
+
+.fr-bill-bar-recommended {
+  border-left: 3px solid #d97706;
+  padding-left: 0.45rem;
+}
+
+.fr-bill-swatch {
+  display: inline-block;
+  width: 0.7rem;
+  height: 0.7rem;
+  margin-right: 0.25rem;
+  vertical-align: middle;
+}
+
+.fr-bill-swatch-required {
+  background: #b91c1c;
+}
+
+.fr-bill-swatch-recommended {
+  background: #d97706;
+}
+
+.fr-bill-ready {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.fr-bill-missing {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.fr-run-type,
+.fr-party-actions,
+.fr-location-row,
+.fr-call-grid,
+.fr-party-columns {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.fr-call-grid,
+.fr-location-row,
+.fr-party-columns {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fr-location-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.fr-run-type {
+  grid-template-columns: 10% 10%;
+  justify-content: start;
+}
+
+.fr-run-type button {
+  width: 100%;
+  min-width: 0;
+  white-space: normal;
+  line-height: 1.2;
+  padding-left: 0.2rem;
+  padding-right: 0.2rem;
+}
+
+.fr-add-party {
+  width: 25%;
+  justify-self: start;
+}
+
+.fr-party-card {
+  background: #f3f4f6;
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 0.8rem;
+  margin-bottom: 0.8rem;
+}
+
+.fr-party-heading {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.6rem;
+}
+
+.fr-party-heading-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+.fr-party-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-width: 0;
+  margin: 0;
+  padding: 0.15rem 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  text-align: left;
+  cursor: pointer;
+}
+
+.fr-party-chevron {
+  width: 0.8rem;
+  flex-shrink: 0;
+}
+
+.fr-party-summary {
+  font-weight: 500;
+  color: #475569;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fr-party-card.is-collapsed {
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+
+.fr-party-card.is-collapsed .fr-party-heading {
+  margin-bottom: 0;
+}
+
+.fr-delete-party {
+  color: #b91c1c;
+}
+
+@media (max-width: 800px) {
+  .fr-call-grid,
+  .fr-location-row,
+  .fr-party-columns {
+    grid-template-columns: 1fr;
+  }
+}
+
 .neris-report-layout {
   display: grid;
   grid-template-columns: minmax(210px, 260px) minmax(0, 1fr);
@@ -3476,6 +4482,72 @@ body.resource-personnel-modal-open {
   font-size: 0.84rem;
   line-height: 1.45;
   padding: 0.56rem 0.65rem;
+}
+
+.neris-location-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  margin-bottom: 0.28rem;
+}
+
+.neris-location-toggle {
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.neris-location-locked {
+  background-color: #f1f5f9;
+  color: #334155;
+}
+
+.fr-preview-modal {
+  width: min(760px, 94vw);
+}
+
+.fr-preview-banner {
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  font-weight: 700;
+}
+
+.fr-preview-banner.is-sandbox {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.fr-preview-banner.is-live {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.fr-preview-banner.is-off {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.fr-preview-parties {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.fr-preview-party {
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.45rem 0.6rem;
+}
+
+.fr-preview-party h3,
+.fr-preview-party p {
+  margin: 0;
+}
+
+.fr-resolve-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.4rem;
 }
 
 .neris-location-add-links {
@@ -4780,7 +5852,7 @@ body.printing-neris .neris-print-root {
 
 .personnel-schedule-header-row-day .personnel-schedule-date-col,
 .personnel-schedule-header-row-date .personnel-schedule-date-col {
-  min-width: 64px;
+  min-width: 7.125rem;
   text-align: center;
   color: #b91c1c;
   font-weight: 700;
@@ -4807,7 +5879,7 @@ body.printing-neris .neris-print-root {
 }
 
 .personnel-schedule-day-block {
-  min-width: 80px;
+  min-width: 7.125rem;
   min-height: 2.2rem;
   cursor: pointer;
   padding: 0.15rem;
@@ -4863,6 +5935,114 @@ body.printing-neris .neris-print-root {
   text-overflow: ellipsis;
 }
 
+.personnel-schedule-coverage-info {
+  display: grid;
+  gap: 0.12rem;
+  font-size: clamp(0.5rem, 0.7vw, 0.68rem);
+  line-height: 1.25;
+  color: #0f172a;
+  white-space: nowrap;
+}
+
+.qualification-color-choices {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.28rem;
+}
+
+.qualification-override-cell {
+  white-space: nowrap;
+}
+
+.qualification-override-cell .additional-field-check,
+.qualification-override-select {
+  display: inline-flex;
+  vertical-align: middle;
+}
+
+.qualification-override-select {
+  width: 9rem;
+  max-width: 9rem;
+  margin-left: 0.45rem;
+}
+
+.qualification-override-deny-input {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 0.5rem 0.6rem;
+  font-size: 0.9rem;
+}
+
+.scheduler-apparatus-form {
+  display: grid;
+  gap: 0.55rem;
+}
+
+.scheduler-apparatus-main-row {
+  display: grid;
+  grid-template-columns: 1.5fr 0.7fr 0.7fr 1.3fr;
+  gap: 0.55rem;
+}
+
+.scheduler-apparatus-main-row label,
+.scheduler-apparatus-seats label {
+  display: grid;
+  gap: 0.2rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.scheduler-apparatus-main-row input,
+.scheduler-apparatus-main-row select {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+}
+
+.scheduler-apparatus-seats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
+.scheduler-apparatus-seats label {
+  flex: 0 0 15rem;
+  width: 15rem;
+  max-width: 50%;
+}
+
+.trades-override-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.trades-override-actions button {
+  font-size: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  white-space: nowrap;
+}
+
+.qualification-color-swatch {
+  width: 1.05rem;
+  height: 1.05rem;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  padding: 0;
+  cursor: pointer;
+}
+
+.qualification-color-swatch-selected {
+  border-color: #0f172a;
+}
+
 .personnel-schedule-slot-required-empty {
   background-color: #fef2f2;
   border-color: #fecaca;
@@ -4872,7 +6052,10 @@ body.printing-neris .neris-print-root {
 .personnel-schedule-slot-required-invalid {
   background-color: #fef2f2;
   border-color: #fecaca;
-  color: #991b1b;
+}
+
+.personnel-schedule-slot-name-unqualified {
+  color: #b91c1c;
   font-weight: 700;
 }
 
@@ -4882,6 +6065,51 @@ body.printing-neris .neris-print-root {
 
 .personnel-schedule-slot-name-off-shift {
   color: #991b1b;
+  font-weight: 700;
+}
+
+.personnel-schedule-hire-token {
+  color: #b91c1c;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.personnel-schedule-open-token {
+  color: #b91c1c;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.schedule-notice-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  background-color: rgba(15, 23, 42, 0.52);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.schedule-notice {
+  width: min(28rem, 92vw);
+  background: #ffffff;
+  border-radius: 12px;
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  padding: 1.1rem 1.15rem 1rem;
+  display: grid;
+  gap: 0.9rem;
+  justify-items: start;
+}
+
+.schedule-notice p {
+  margin: 0;
+  color: #0f172a;
+  font-size: 0.95rem;
+  line-height: 1.45;
+}
+
+.personnel-schedule-overtime-name {
+  color: #b91c1c;
   font-weight: 700;
 }
 
@@ -5521,4 +6749,22 @@ body.printing-neris .neris-print-root {
   .dispatch-grid-line {
     grid-template-columns: minmax(0, 1fr);
   }
+}
+
+.session-checking {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  color: #334155;
+  font-weight: 600;
+}
+
+.session-reauth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.55);
 }

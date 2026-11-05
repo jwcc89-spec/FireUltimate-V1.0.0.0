@@ -1,5 +1,38 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useLocation, useNavigate } from "react-router-dom";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
+import {
+  getDispatchPlainTextFromRawBody,
+  tryDecodeRawBody,
+} from "../cadDispatch/extractDispatchPlainText.ts";
+import { DispatchParsingAllowedSendersPanel } from "./DispatchParsingAllowedSendersPanel.tsx";
+import { DispatchParsingIncidentPanel } from "./DispatchParsingIncidentPanel.tsx";
+import { DispatchParsingMessagePanel } from "./DispatchParsingMessagePanel.tsx";
+
+export const DISPATCH_PARSING_ADMIN_MODULES = [
+  {
+    id: "allowed-senders",
+    label: "Allowed Senders",
+    path: "/admin-functions/dispatch-parsing-settings/allowed-senders",
+  },
+  {
+    id: "message-parsing",
+    label: "Message Parsing",
+    path: "/admin-functions/dispatch-parsing-settings/message-parsing",
+  },
+  {
+    id: "incident-parsing",
+    label: "Incident Parsing",
+    path: "/admin-functions/dispatch-parsing-settings/incident-parsing",
+  },
+  {
+    id: "raw-email",
+    label: "Raw Email",
+    path: "/admin-functions/dispatch-parsing-settings/raw-email",
+  },
+] as const;
+
+export type DispatchParsingModuleId = (typeof DISPATCH_PARSING_ADMIN_MODULES)[number]["id"];
 
 function formatDate(iso: string): string {
   if (!iso) return "—";
@@ -14,46 +47,127 @@ function formatDate(iso: string): string {
   }
 }
 
-/** Try to decode base64 raw body from the ingest worker; returns decoded string or null if not base64. */
-function tryDecodeRawBody(rawBody: string): string | null {
-  if (!rawBody || typeof rawBody !== "string") return null;
-  const trimmed = rawBody.trim();
-  const withoutSuffix = trimmed.endsWith("[TRUNCATED]")
-    ? trimmed.slice(0, -"[TRUNCATED]".length).trim()
-    : trimmed;
-  if (!withoutSuffix.length) return null;
-  try {
-    const decoded = atob(withoutSuffix);
-    return decoded;
-  } catch {
-    return null;
-  }
+/** Same shape the Worker POSTs to `/api/cad/inbound-email` (before message/incident parsing). */
+function buildCadInboundReplayJson(row: CadEmailIngestRow): string {
+  const headers =
+    row.headersJson && typeof row.headersJson === "object" && !Array.isArray(row.headersJson)
+      ? (row.headersJson as Record<string, unknown>)
+      : {};
+  return JSON.stringify(
+    {
+      from: row.fromAddress,
+      to: row.toAddress,
+      raw: row.rawBody,
+      headers,
+    },
+    null,
+    2,
+  );
 }
 
-/**
- * Extract the first base64-encoded text/plain part from decoded MIME (e.g. CAD dispatch body).
- * Returns decoded plain text suitable for parsing, or null if none found.
- */
-function extractPlainTextFromMime(decodedMime: string): string | null {
-  if (!decodedMime || typeof decodedMime !== "string") return null;
-  const idx = decodedMime.search(/Content-Transfer-Encoding:\s*base64/i);
-  if (idx === -1) return null;
-  const afterHeader = decodedMime.slice(idx);
-  const blankMatch = afterHeader.match(/\n\s*\n/);
-  const bodyStart = blankMatch ? afterHeader.indexOf(blankMatch[0]) + blankMatch[0].length : 0;
-  let block = afterHeader.slice(bodyStart);
-  const boundaryIdx = block.search(/\n--/);
-  if (boundaryIdx !== -1) block = block.slice(0, boundaryIdx);
-  const base64Only = block.replace(/\s/g, "").replace(/\[TRUNCATED\]/gi, "");
-  if (!base64Only.length || !/^[A-Za-z0-9+/=]*$/.test(base64Only)) return null;
-  try {
-    return atob(base64Only);
-  } catch {
-    return null;
-  }
+function RawEmailExpandedBody({ row }: { row: CadEmailIngestRow }) {
+  const [copyHint, setCopyHint] = useState<string | null>(null);
+
+  const flash = useCallback((msg: string) => {
+    setCopyHint(msg);
+    window.setTimeout(() => setCopyHint(null), 2800);
+  }, []);
+
+  const copyText = useCallback(
+    async (text: string, okMsg: string) => {
+      try {
+        await navigator.clipboard.writeText(text);
+        flash(okMsg);
+      } catch {
+        flash("Copy failed — select text manually or try another browser.");
+      }
+    },
+    [flash],
+  );
+
+  const decoded = tryDecodeRawBody(row.rawBody ?? "");
+  const plainText =
+    decoded !== null ? getDispatchPlainTextFromRawBody(row.rawBody ?? "") : "";
+
+  return (
+    <>
+      <div className="cad-email-meta">
+        <div>
+          <strong>From:</strong> {row.fromAddress || "—"}
+        </div>
+        <div>
+          <strong>To:</strong> {row.toAddress || "—"}
+        </div>
+        <div>
+          <strong>Received:</strong> {formatDate(row.createdAt)}
+        </div>
+      </div>
+
+      <div className="cad-email-worker-precopy">
+        <p className="panel-description cad-email-precopy-lead">
+          <strong>Before any parsing:</strong> the Worker sent <code>from</code>, <code>to</code>,{" "}
+          <code>headers</code>, and <code>raw</code> (base64 of the full message). What ICOMM actually sent is
+          represented by the <strong>decoded email</strong> below — same bytes, before Message/Incident rules run.
+        </p>
+        <div className="cad-email-copy-actions">
+          <button
+            type="button"
+            className="secondary-button"
+            disabled={decoded === null}
+            onClick={() => decoded !== null && void copyText(decoded, "Decoded full email (MIME) copied.")}
+          >
+            Copy decoded email (full MIME)
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void copyText(buildCadInboundReplayJson(row), "JSON payload copied — use for curl/API replay.")}
+          >
+            Copy JSON payload (replay POST)
+          </button>
+          <button
+            type="button"
+            className="secondary-button"
+            onClick={() => void copyText(row.rawBody || "", "Raw base64 copied.")}
+          >
+            Copy raw (base64)
+          </button>
+        </div>
+        {copyHint ? (
+          <p className="cad-dispatch-save-ok" role="status">
+            {copyHint}
+          </p>
+        ) : null}
+      </div>
+
+      {decoded !== null ? (
+        <>
+          {plainText ? (
+            <>
+              <label className="cad-email-raw-label">Dispatch content (for parsing)</label>
+              <pre className="cad-email-raw-body cad-email-dispatch-content">{plainText}</pre>
+            </>
+          ) : null}
+          <details className="cad-email-raw-details">
+            <summary>{plainText ? "Show full MIME source" : "Show decoded MIME body"}</summary>
+            <pre className="cad-email-raw-body cad-email-decoded">{decoded}</pre>
+          </details>
+          <details className="cad-email-raw-details">
+            <summary>Show raw base64</summary>
+            <pre className="cad-email-raw-body">{row.rawBody || "(empty)"}</pre>
+          </details>
+        </>
+      ) : (
+        <>
+          <label className="cad-email-raw-label">Raw body (stored)</label>
+          <pre className="cad-email-raw-body">{row.rawBody || "(empty)"}</pre>
+        </>
+      )}
+    </>
+  );
 }
 
-export function DispatchParsingSettingsPage() {
+function DispatchParsingRawEmailPanel() {
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -77,14 +191,15 @@ export function DispatchParsingSettingsPage() {
   }, []);
 
   return (
-    <section className="page-section">
-      <header className="page-header">
+    <>
+      <header className="page-header dispatch-parsing-module-header">
         <div>
-          <h1>Admin Functions | Dispatch Parsing Settings</h1>
+          <h1>Raw Email</h1>
           <p>
             View incoming CAD dispatch emails sent to your department address (e.g.
-            cifpdil@cad.fireultimate.app). Parsing rules and auto-create incidents
-            will be added in a later update.
+            cifpdil@cad.fireultimate.app). Expand a row to copy the <strong>decoded email as received</strong> (before
+            parsing) or the <strong>JSON payload</strong> to replay a test POST. Dispatch content and MIME details are
+            below; parsing rules are under Message Parsing and Incident Parsing.
           </p>
         </div>
       </header>
@@ -128,65 +243,68 @@ export function DispatchParsingSettingsPage() {
                   </button>
                   {expandedId === row.id ? (
                     <div className="cad-email-body-panel">
-                      <div className="cad-email-meta">
-                        <div>
-                          <strong>From:</strong> {row.fromAddress || "—"}
-                        </div>
-                        <div>
-                          <strong>To:</strong> {row.toAddress || "—"}
-                        </div>
-                        <div>
-                          <strong>Received:</strong> {formatDate(row.createdAt)}
-                        </div>
-                      </div>
-                      {(() => {
-                        const decoded = tryDecodeRawBody(row.rawBody ?? "");
-                        if (decoded !== null) {
-                          const plainText = extractPlainTextFromMime(decoded);
-                          return (
-                            <>
-                              {plainText ? (
-                                <>
-                                  <label className="cad-email-raw-label">
-                                    Dispatch content (for parsing)
-                                  </label>
-                                  <pre className="cad-email-raw-body cad-email-dispatch-content">
-                                    {plainText}
-                                  </pre>
-                                </>
-                              ) : null}
-                              <details className="cad-email-raw-details">
-                                <summary>
-                                  {plainText ? "Show full MIME source" : "Show decoded MIME body"}
-                                </summary>
-                                <pre className="cad-email-raw-body cad-email-decoded">
-                                  {decoded}
-                                </pre>
-                              </details>
-                              <details className="cad-email-raw-details">
-                                <summary>Show raw base64</summary>
-                                <pre className="cad-email-raw-body">
-                                  {row.rawBody || "(empty)"}
-                                </pre>
-                              </details>
-                            </>
-                          );
-                        }
-                        return (
-                          <>
-                            <label className="cad-email-raw-label">Raw body (for parsing)</label>
-                            <pre className="cad-email-raw-body">
-                              {row.rawBody || "(empty)"}
-                            </pre>
-                          </>
-                        );
-                      })()}
+                      <RawEmailExpandedBody row={row} />
                     </div>
                   ) : null}
                 </div>
               ))}
             </div>
           )}
+        </article>
+      </section>
+    </>
+  );
+}
+
+function normalizePath(pathname: string): string {
+  if (pathname === "/") return pathname;
+  return pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+}
+
+/**
+ * Dispatch Parsing Settings: sidebar plus one module at a time.
+ * Routed paths: …/allowed-senders, …/raw-email, …/message-parsing, …/incident-parsing.
+ */
+export function DispatchParsingAdminPage() {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const path = normalizePath(location.pathname);
+
+  const activeModuleId: DispatchParsingModuleId =
+    path === "/admin-functions/dispatch-parsing-settings/allowed-senders"
+      ? "allowed-senders"
+      : path === "/admin-functions/dispatch-parsing-settings/message-parsing"
+        ? "message-parsing"
+        : path === "/admin-functions/dispatch-parsing-settings/incident-parsing"
+          ? "incident-parsing"
+          : "raw-email";
+
+  return (
+    <section className="page-section reporting-admin-root">
+      <section className="neris-report-layout reporting-admin-layout">
+        <aside className="panel neris-sidebar reporting-admin-sidebar">
+          <div className="neris-sidebar-header">
+            <h2>Dispatch Parsing</h2>
+            <p>Admin modules</p>
+          </div>
+          <nav className="neris-section-nav" aria-label="Dispatch parsing module navigation">
+            {DISPATCH_PARSING_ADMIN_MODULES.map((mod) => (
+              <button
+                key={mod.id}
+                type="button"
+                className={mod.id === activeModuleId ? "active" : ""}
+                onClick={() => navigate(mod.path)}
+              >
+                {mod.label}
+              </button>
+            ))}
+          </nav>
+        </aside>
+        <article className="panel neris-form-panel reporting-admin-content">
+          {activeModuleId === "allowed-senders" ? <DispatchParsingAllowedSendersPanel /> : null}
+          {activeModuleId === "raw-email" ? <DispatchParsingRawEmailPanel /> : null}
+          {activeModuleId === "message-parsing" ? <DispatchParsingMessagePanel /> : null}
+          {activeModuleId === "incident-parsing" ? <DispatchParsingIncidentPanel /> : null}
         </article>
       </section>
     </section>

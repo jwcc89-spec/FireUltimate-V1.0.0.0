@@ -1,5 +1,6 @@
 /**
- * NERIS export history API. Persists export history on the server for cross-browser visibility.
+ * NERIS export history API. The server writes a record after NERIS replies.
+ * The browser may post only a failed attempt, for errors that never reached NERIS.
  */
 
 export interface NerisExportRecordApi {
