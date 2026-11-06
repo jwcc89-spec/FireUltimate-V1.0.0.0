@@ -2776,8 +2776,82 @@ tbody tr:last-of-type td {
 
 .shift-information-core-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.55rem;
+}
+
+.shift-segment-target-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.shift-segment-target-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.shift-segment-help-button {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #0f172a;
+  background: #ffffff;
+  color: #0f172a;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  cursor: help;
+}
+
+.shift-segment-help-mark {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.shift-segment-help-bubble {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  width: 280px;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 5;
+}
+
+.shift-segment-help-button:hover .shift-segment-help-bubble,
+.shift-segment-help-button:focus-visible .shift-segment-help-bubble {
+  display: block;
+}
+
+.shift-segment-target-row select {
+  width: 25%;
+  min-width: 7.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .shift-information-core-fields label,
