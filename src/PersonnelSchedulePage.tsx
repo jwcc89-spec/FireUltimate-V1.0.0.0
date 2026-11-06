@@ -46,6 +46,8 @@ import {
   getDatesForMonth,
   getDatesForWeekContaining,
   getRecurrenceIntervalDays,
+  hideKellyDayWhenRotationOff,
+  kellyRotationEnabledFromDraft,
   parseQualificationOverrides,
   parseRecurrenceWeekdays,
   shiftOccursOnDate,
@@ -529,7 +531,10 @@ export function PersonnelSchedulePage({
             const apparatus = Array.isArray(d.schedulerApparatusRecords)
               ? (d.schedulerApparatusRecords as PersonnelScheduleData["apparatus"])
               : [];
-            const additionalFields = normalizeAdditionalFields(d.additionalFields);
+            const additionalFields = hideKellyDayWhenRotationOff(
+              normalizeAdditionalFields(d.additionalFields),
+              kellyRotationEnabledFromDraft(d.kellyRotationEnabled),
+            );
             const standardOvertimeSlot = Math.max(
               1,
               Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
@@ -2922,7 +2927,7 @@ export function PersonnelSchedulePage({
           <h1>Personnel Schedule</h1>
           <p>
             Schedule calculations are blocked until this shift has a Start Time.
-            Go to Admin Functions {"->"} Scheduler Settings {"->"} Shift Information and set
+            Go to Admin Functions {"->"} Schedule Settings {"->"} Shift Information and set
             a 24-hour Start Time for <strong>{effectiveShift || "the active shift"}</strong>.
           </p>
         </header>

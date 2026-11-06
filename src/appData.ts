@@ -455,7 +455,7 @@ export const MAIN_MENUS: MainMenu[] = [
         adminOnly: true,
       },
       {
-        label: "Scheduler Settings",
+        label: "Schedule Settings",
         path: "/admin-functions/scheduler-settings",
         summary:
           "Configure scheduler shift rules, apparatus settings, additional fields, and qualifications.",

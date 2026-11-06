@@ -328,6 +328,23 @@ export const SCHEDULE_ROW_ICON_OPTIONS: Array<{ id: ScheduleRowIconId; label: st
   { id: "sick", label: "Injury / Sick" },
 ];
 
+export const KELLY_DAY_ADDITIONAL_FIELD_ID = "support-kelly-day";
+
+/** Missing values stay on so existing departments keep Kelly Rotation until an admin turns it off. */
+export function kellyRotationEnabledFromDraft(value: unknown): boolean {
+  return value !== false;
+}
+
+export function hideKellyDayWhenRotationOff<T extends { id: string; hidden: boolean }>(
+  fields: T[],
+  kellyRotationEnabled: boolean,
+): T[] {
+  if (kellyRotationEnabled) return fields;
+  return fields.map((field) =>
+    field.id === KELLY_DAY_ADDITIONAL_FIELD_ID ? { ...field, hidden: true } : field,
+  );
+}
+
 const SCHEDULE_ROW_ICON_IDS = new Set<string>(SCHEDULE_ROW_ICON_OPTIONS.map((choice) => choice.id));
 const SCHEDULE_ROW_COLOR_IDS = new Set<string>(QUALIFICATION_COLOR_OPTIONS.map((choice) => choice.id));
 

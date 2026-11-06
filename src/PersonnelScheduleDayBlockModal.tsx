@@ -40,7 +40,7 @@ interface PersonnelScheduleDayBlockModalProps {
   scheduleRows: ModalScheduleRow[];
   shiftPersonnel: ModalPersonnel[];
   allPersonnel: ModalPersonnel[];
-  /** OT segment dropdown: personnel with shift set in Scheduler Settings (excludes incomplete records). */
+  /** OT segment dropdown: personnel with shift set in Schedule Settings (excludes incomplete records). */
   overtimeRosterPersonnel: ModalPersonnel[];
   personnelQualificationOrder: string[];
   personnelQualificationColors: Record<string, string>;

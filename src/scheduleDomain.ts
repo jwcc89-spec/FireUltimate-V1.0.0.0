@@ -1,4 +1,9 @@
-import { parseQualificationColorMap, parseQualificationOverrides } from "./scheduleUtils";
+import {
+  hideKellyDayWhenRotationOff,
+  kellyRotationEnabledFromDraft,
+  parseQualificationColorMap,
+  parseQualificationOverrides,
+} from "./scheduleUtils";
 
 export type ScheduleSupportValueMode = "text" | "personnel";
 
@@ -123,7 +128,10 @@ export function loadPersonnelScheduleData({
   const apparatus = Array.isArray(d.schedulerApparatusRecords)
     ? (d.schedulerApparatusRecords as PersonnelScheduleData["apparatus"])
     : [];
-  const additionalFields = normalizeAdditionalFields(d.additionalFields);
+  const additionalFields = hideKellyDayWhenRotationOff(
+    normalizeAdditionalFields(d.additionalFields),
+    kellyRotationEnabledFromDraft(d.kellyRotationEnabled),
+  );
   const standardOvertimeSlot = Math.max(
     1,
     Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),

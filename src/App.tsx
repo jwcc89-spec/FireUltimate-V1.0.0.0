@@ -133,6 +133,9 @@ import {
   SCHEDULE_ROW_ICON_OPTIONS,
   parseScheduleRowColor,
   parseScheduleRowIcon,
+  KELLY_DAY_ADDITIONAL_FIELD_ID,
+  kellyRotationEnabledFromDraft,
+  hideKellyDayWhenRotationOff,
   recurrenceDisplayLabel,
   formatMonthDayYear,
   WEEKDAY_CHOICES,
@@ -367,6 +370,27 @@ const EMPTY_SHIFT_DRAFT: ShiftInformationEntry = {
   startTime: "",
   location: "",
 };
+
+/** Turns 0700, 700, or 07:00 into 07:00. Returns "" when the time is not valid. */
+function normalizeShiftStartTime(value: string): string {
+  const digits = value.replace(/\D/g, "");
+  if (!digits) return "";
+  const padded = digits.length <= 2 ? `${digits.padStart(2, "0")}00` : digits.padStart(4, "0").slice(0, 4);
+  const hours = Number(padded.slice(0, 2));
+  const minutes = Number(padded.slice(2, 4));
+  if (hours > 23 || minutes > 59) return "";
+  return `${padded.slice(0, 2)}:${padded.slice(2, 4)}`;
+}
+
+function shiftStartTimeFieldValue(value: string): string {
+  const match = /^(\d{2}):(\d{2})$/.exec(value.trim());
+  if (match) return `${match[1]}${match[2]}`;
+  return value.replace(/\D/g, "").slice(0, 4);
+}
+
+function formatShiftStartTime(value: string): string {
+  return shiftStartTimeFieldValue(value) || "—";
+}
 
 function seatRequirementsForMinimum(requirements: string[], minimum: number): string[] {
   const next = requirements.slice(0, Math.max(0, minimum));
@@ -1029,8 +1053,8 @@ const DEPARTMENT_COLLECTION_DEFINITIONS: DepartmentCollectionDefinition[] = [
   },
   {
     key: "tradesSetup",
-    label: "Trades",
-    editButtonLabel: "Edit Trades",
+    label: "Schedule Setup",
+    editButtonLabel: "Edit Schedule Setup",
     helperText: "",
   },
   {
@@ -1352,7 +1376,7 @@ function readNarrativeTemplatesFromDraft(): NarrativeTemplate[] {
     }));
 }
 
-/** Whether Scheduler Settings is enabled for this tenant. */
+/** Whether Schedule Settings is enabled for this tenant. */
 function readSchedulerEnabledFromDraft(): boolean {
   const draft = readDepartmentDetailsDraft();
   const v = draft.schedulerEnabled;
@@ -3523,7 +3547,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                           <span
                             key={submenu.path}
                             className="submenu-link submenu-link-beta"
-                            title="Disabled — Scheduler Settings is off"
+                            title="Disabled — Schedule Settings is off"
                           >
                             {submenu.label}
                             <span className="beta-label-inline"> Disabled</span>
@@ -3850,7 +3874,7 @@ function MenuDisplayCards({
                 <div
                   key={`${menu.id}-${card.path}`}
                   className="submenu-card submenu-card-beta"
-                  title="Disabled — Scheduler Settings is off"
+                  title="Disabled — Schedule Settings is off"
                 >
                   <div className="submenu-card-header">
                     <h2>{card.label}</h2>
@@ -6909,8 +6933,14 @@ function DepartmentDetailsPage({
   const [allowPartialShift, setAllowPartialShift] = useState(
     initialDepartmentDraft.allowPartialShift === true,
   );
-  const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(
-    normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
+  const [kellyRotationEnabled, setKellyRotationEnabled] = useState(
+    kellyRotationEnabledFromDraft(initialDepartmentDraft.kellyRotationEnabled),
+  );
+  const [additionalFieldRecords, setAdditionalFieldRecords] = useState<AdditionalFieldRecord[]>(() =>
+    hideKellyDayWhenRotationOff(
+      normalizeAdditionalFields(initialDepartmentDraft.additionalFields),
+      kellyRotationEnabledFromDraft(initialDepartmentDraft.kellyRotationEnabled),
+    ),
   );
   const [personnelQualifications, setPersonnelQualifications] = useState<string[]>(
     Array.isArray(initialDepartmentDraft.personnelQualifications) ? (initialDepartmentDraft.personnelQualifications as string[]) : [],
@@ -7650,10 +7680,10 @@ function DepartmentDetailsPage({
     "apparatus",
   ];
   const schedulerSettingsCardOrder: DepartmentCollectionKey[] = [
+    "tradesSetup",
     "shiftInformation",
     "additionalFields",
     "overtimeSetup",
-    "tradesSetup",
     "personnelQualifications",
     "schedulerApparatus",
     "schedulerPersonnel",
@@ -7667,6 +7697,11 @@ function DepartmentDetailsPage({
       Boolean(definition),
     );
   const schedulerSettingsCards = schedulerSettingsCardOrder
+    .filter((key) => {
+      if (key === "kellyRotation") return kellyRotationEnabled;
+      if (key === "overtimeSetup") return allowScheduledOvertime;
+      return true;
+    })
     .map((key) =>
       DEPARTMENT_COLLECTION_DEFINITIONS.find((definition) => definition.key === key),
     )
@@ -7770,7 +7805,7 @@ function DepartmentDetailsPage({
   const pageTitle = showDepartmentDetailsSection
     ? "Admin Functions | Setup/Configuration"
     : showSchedulerSettingsSection
-      ? "Admin Functions | Scheduler Settings"
+      ? "Admin Functions | Schedule Settings"
       : "Admin Functions | Personnel Management";
   const pageSubtitle = showDepartmentDetailsSection
     ? "Department setup and configuration values used throughout the system."
@@ -7778,7 +7813,7 @@ function DepartmentDetailsPage({
       ? "Scheduler configuration and staffing control settings."
       : "Manage users and personnel access settings.";
   const saveButtonLabel = showSchedulerSettingsSection
-    ? "Save Scheduler Settings"
+    ? "Save Schedule Settings"
     : showPersonnelManagementSection
       ? "Save Personnel Management"
       : "Save setup";
@@ -8075,7 +8110,14 @@ function DepartmentDetailsPage({
         setTradePaybackRequired(d.tradePaybackRequired === true);
         setTradeCancelApproval(d.tradeCancelApproval !== false);
         setAllowPartialShift(d.allowPartialShift === true);
-        setAdditionalFieldRecords(normalizeAdditionalFields(d.additionalFields));
+        const savedKellyRotationEnabled = kellyRotationEnabledFromDraft(d.kellyRotationEnabled);
+        setKellyRotationEnabled(savedKellyRotationEnabled);
+        setAdditionalFieldRecords(
+          hideKellyDayWhenRotationOff(
+            normalizeAdditionalFields(d.additionalFields),
+            savedKellyRotationEnabled,
+          ),
+        );
         setPersonnelQualifications(
           Array.isArray(d.personnelQualifications) ? (d.personnelQualifications as string[]) : [],
         );
@@ -8482,7 +8524,7 @@ function DepartmentDetailsPage({
     });
     setIsImportApparatusModalOpen(false);
     setAutoSaveTick((previous) => previous + 1);
-    setStatusMessage("Imported apparatus into Scheduler Settings.");
+    setStatusMessage("Imported apparatus into Schedule Settings.");
   };
 
   const handleSchedulerApparatusDrop = (targetIndex: number) => {
@@ -9022,10 +9064,11 @@ function DepartmentDetailsPage({
   };
 
   const addShiftInformationEntry = () => {
+    const startTime = normalizeShiftStartTime(shiftDraft.startTime);
     if (!shiftDraft.shiftType.trim() || shiftDraft.shiftDuration <= 0) {
       return;
     }
-    if (!/^\d{2}:\d{2}$/.test(shiftDraft.startTime.trim())) {
+    if (!startTime) {
       return;
     }
     if (shiftDraft.recurrence === "Custom") {
@@ -9040,7 +9083,8 @@ function DepartmentDetailsPage({
       shiftType: shiftDraft.shiftType.trim(),
       shiftDuration: shiftDraft.shiftDuration,
       recurrenceCustomValue: shiftDraft.recurrenceCustomValue.trim(),
-      startTime: shiftDraft.startTime.trim(),
+      startTime,
+      // Location is hidden in Shift Information. Keep the saved value until we know where the schedule should use it.
       location: shiftDraft.location.trim(),
       rotationStartsOn:
         shiftDraft.recurrence === "Custom" && shiftDraft.recurrenceCustomMode === "weekdays"
@@ -9292,6 +9336,7 @@ function DepartmentDetailsPage({
       tradePaybackRequired,
       tradeCancelApproval,
       allowPartialShift,
+      kellyRotationEnabled,
       shiftInformationEntries,
       schedulerPersonnelRecords: personnelRecords,
       personnelQualifications,
@@ -9345,6 +9390,7 @@ function DepartmentDetailsPage({
     tradePaybackRequired,
     tradeCancelApproval,
     allowPartialShift,
+    kellyRotationEnabled,
     personnelQualifications,
     personnelQualificationColors,
     personnelQualificationOverrides,
@@ -9758,7 +9804,7 @@ function DepartmentDetailsPage({
           style={{ display: showSchedulerSettingsSection ? undefined : "none" }}
         >
           <div className="panel-header">
-            <h2>Scheduler Settings</h2>
+            <h2>Schedule Settings</h2>
             <label className="field-hint" style={{ marginLeft: "auto" }}>
               <input
                 type="checkbox"
@@ -9770,7 +9816,7 @@ function DepartmentDetailsPage({
                 }}
                 style={{ marginRight: "0.35rem" }}
               />
-              Enable Scheduler Settings
+              Enable Schedule
             </label>
           </div>
           {schedulerEnabled ? (
@@ -9787,11 +9833,16 @@ function DepartmentDetailsPage({
                     {definition.key === "shiftInformation"
                       ? `Total Shift Information Entries: ${shiftInformationEntries.length}`
                       : definition.key === "additionalFields"
-                      ? `Total Additional Fields: ${additionalFieldRecords.length}`
+                      ? `Total Additional Fields: ${
+                          additionalFieldRecords.filter(
+                            (field) =>
+                              kellyRotationEnabled || field.id !== KELLY_DAY_ADDITIONAL_FIELD_ID,
+                          ).length
+                        }`
                       : definition.key === "overtimeSetup"
                       ? `Standard Overtime Slot: ${standardOvertimeSlot} hour(s)`
                       : definition.key === "tradesSetup"
-                      ? `Admin approval: ${tradeAdminApproval ? "On" : "Off"} · Payback starts ${tradePaybackRequired ? "required" : "not required"} · Cancel approval: ${tradeCancelApproval ? "On" : "Off"} · Partial shift: ${allowPartialShift ? "On" : "Off"}`
+                      ? `Kelly rotation: ${kellyRotationEnabled ? "On" : "Off"} · Scheduled overtime: ${allowScheduledOvertime ? "On" : "Off"} · Admin approval: ${tradeAdminApproval ? "On" : "Off"} · Payback starts ${tradePaybackRequired ? "required" : "not required"} · Cancel approval: ${tradeCancelApproval ? "On" : "Off"} · Partial shift: ${allowPartialShift ? "On" : "Off"}`
                       : definition.key === "schedulerApparatus"
                       ? `Total Apparatus: ${schedulerApparatusRecords.length}`
                       : definition.key === "schedulerPersonnel"
@@ -10893,41 +10944,57 @@ function DepartmentDetailsPage({
 
             {isShiftEditor ? (
               <>
-                <div className="department-edit-grid">
-                  <label>
+                <div className="shift-segment-target-row">
+                  <span className="shift-segment-target-label">
                     Show segmented shift times in
-                    <select
-                      value={segmentSummaryTarget}
-                      onChange={(event) => {
-                        setSegmentSummaryTarget(event.target.value === "trades" ? "trades" : "info");
-                        setAutoSaveTick((previous) => previous + 1);
-                        setStatusMessage("Auto-saved.");
-                      }}
+                    <button
+                      type="button"
+                      className="shift-segment-help-button"
+                      aria-label="This is only for a normal split shift, such as one person from 08:00 to 15:00. Overtime hours are chosen in Overtime Setup."
                     >
-                      <option value="info">Info</option>
-                      <option value="trades">Trades</option>
-                    </select>
-                  </label>
+                      <span className="shift-segment-help-mark" aria-hidden="true">i</span>
+                      <span className="shift-segment-help-bubble" role="tooltip">
+                        This is only for a normal split shift, such as one person from 08:00 to 15:00. Overtime hours are chosen in Overtime Setup.
+                      </span>
+                    </button>
+                  </span>
+                  <select
+                    aria-label="Show segmented shift times in"
+                    value={segmentSummaryTarget}
+                    onChange={(event) => {
+                      setSegmentSummaryTarget(event.target.value === "trades" ? "trades" : "info");
+                      setAutoSaveTick((previous) => previous + 1);
+                      setStatusMessage("Auto-saved.");
+                    }}
+                  >
+                    <option value="info">Info</option>
+                    <option value="trades">Trades</option>
+                  </select>
                 </div>
-                <p className="field-hint">
-                  This is only for a normal split shift, such as one person from 08:00 to 15:00. Overtime hours are chosen in Overtime Setup.
-                </p>
                 <div className="shift-information-core-fields">
                   <label>
-                    Shift Type
+                    Shift Name
                     <input type="text" value={shiftDraft.shiftType} onChange={(event) => setShiftDraft((previous) => ({ ...previous, shiftType: event.target.value }))} />
                   </label>
                   <label>
-                    Start Time (24-hour)
+                    Start Time
                     <input
-                      type="time"
-                      step={900}
-                      value={shiftDraft.startTime}
+                      type="text"
+                      inputMode="numeric"
+                      placeholder="0700"
+                      maxLength={4}
+                      value={shiftStartTimeFieldValue(shiftDraft.startTime)}
                       onChange={(event) =>
                         setShiftDraft((previous) => ({
                           ...previous,
-                          startTime: event.target.value,
+                          startTime: event.target.value.replace(/\D/g, "").slice(0, 4),
                         }))
+                      }
+                      onBlur={() =>
+                        setShiftDraft((previous) => {
+                          const startTime = normalizeShiftStartTime(previous.startTime);
+                          return startTime ? { ...previous, startTime } : previous;
+                        })
                       }
                     />
                   </label>
@@ -10954,6 +11021,19 @@ function DepartmentDetailsPage({
                         </option>
                       ))}
                     </select>
+                  </label>
+                  <label>
+                    Rotation Starts On
+                    <input
+                      type="date"
+                      value={shiftDraft.rotationStartsOn}
+                      onChange={(event) =>
+                        setShiftDraft((previous) => ({
+                          ...previous,
+                          rotationStartsOn: event.target.value,
+                        }))
+                      }
+                    />
                   </label>
                 </div>
                 <div className="department-edit-grid">
@@ -11009,39 +11089,6 @@ function DepartmentDetailsPage({
                       })}
                     </div>
                   ) : null}
-                  {shiftDraft.recurrence !== "Custom" || shiftDraft.recurrenceCustomMode !== "weekdays" ? (
-                    <label>
-                      Rotation starts on
-                      <input
-                        type="date"
-                        value={shiftDraft.rotationStartsOn}
-                        onChange={(event) =>
-                          setShiftDraft((previous) => ({
-                            ...previous,
-                            rotationStartsOn: event.target.value,
-                          }))
-                        }
-                      />
-                    </label>
-                  ) : null}
-                  <p className="field-hint">
-                    Leave Rotation starts on blank to keep the current start. A shift named A, B, or C still starts from January 2026. A date here is day one for Every other day, Every 2 days, Every 3 days, and Every N days. Selected weekdays do not use it. Daily still shows every day.
-                  </p>
-                  <label>
-                    Location
-                    <NerisFlatSingleOptionSelect
-                      inputId="shift-location"
-                      value={shiftDraft.location}
-                      options={stationNames.map((s) => ({ value: s, label: s }))}
-                      onChange={(nextValue) =>
-                        setShiftDraft((previous) => ({ ...previous, location: nextValue }))
-                      }
-                      placeholder="Select station (optional)"
-                      searchPlaceholder="Search stations..."
-                      allowClear
-                      usePortal
-                    />
-                  </label>
                 </div>
                 <div className="department-editor-toolbar-actions">
                   <button type="button" className="primary-button compact-button" onClick={addShiftInformationEntry}>
@@ -11084,13 +11131,12 @@ function DepartmentDetailsPage({
                     <table>
                       <thead>
                         <tr>
-                          <th>Shift Type</th>
+                          <th>Shift Name</th>
                           <th>
                             <div className="department-shift-grid-line department-shift-grid-header">
                               <span>Start Time</span>
                               <span>Duration</span>
                               <span>Recurrence</span>
-                              <span>Location</span>
                             </div>
                           </th>
                         </tr>
@@ -11134,11 +11180,10 @@ function DepartmentDetailsPage({
                                   <div className="dispatch-info-cell">
                                     <div className="department-shift-grid-line">
                                       <span className="department-apparatus-field">
-                                        {entry.startTime || "—"}
+                                        {formatShiftStartTime(entry.startTime)}
                                       </span>
                                       <span className="department-apparatus-field">{String(entry.shiftDuration)}</span>
                                       <span className="department-apparatus-field">{recurrenceText}</span>
-                                      <span className="department-apparatus-field">{entry.location || "—"}</span>
                                     </div>
                                   </div>
                                 </td>
@@ -11170,7 +11215,26 @@ function DepartmentDetailsPage({
                     />
                   </label>
                   <label>
-                    Rows visible
+                    <span className="shift-segment-target-label">
+                      Rows visible
+                      <button
+                        type="button"
+                        className="shift-segment-help-button"
+                        aria-label={`Rows visible is how many empty rows start on the schedule. The usual value is 1. Use 0 when that field should not offer a blank row to type in. Maximum rows is the most a day can open. Info, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule. ${
+                          kellyRotationEnabled
+                            ? "Kelly Day stays in this list while Enable Kelly Rotation is on."
+                            : "Kelly Day is hidden until Enable Kelly Rotation is turned on in Schedule Setup."
+                        }`}
+                      >
+                        <span className="shift-segment-help-mark" aria-hidden="true">i</span>
+                        <span className="shift-segment-help-bubble" role="tooltip">
+                          Rows visible is how many empty rows start on the schedule. The usual value is 1. Use 0 when that field should not offer a blank row to type in. Maximum rows is the most a day can open. Info, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule.
+                          {kellyRotationEnabled
+                            ? " Kelly Day stays in this list while Enable Kelly Rotation is on."
+                            : " Kelly Day is hidden until Enable Kelly Rotation is turned on in Schedule Setup."}
+                        </span>
+                      </button>
+                    </span>
                     <input
                       type="number"
                       min={0}
@@ -11310,9 +11374,6 @@ function DepartmentDetailsPage({
                     {editingAdditionalFieldIndex === null ? "Add" : "Update"}
                   </button>
                 </div>
-                <p className="field-hint" style={{ marginTop: "0.5rem", marginBottom: "0.25rem" }}>
-                  Rows visible is how many empty rows start on the schedule. The usual value is 1. Use 0 when that field should not offer a blank row to type in. Maximum rows is the most a day can open. Info, Kelly Day, Trades, and Injury stay in this list. Hide them if you do not want them on the schedule.
-                </p>
                 <div className="department-qualifications-list-wrapper">
                   <div className="table-wrapper">
                     <table className="additional-fields-table">
@@ -11339,6 +11400,9 @@ function DepartmentDetailsPage({
                           </tr>
                         ) : (
                           additionalFieldRecords.map((entry, index) => (
+                            !kellyRotationEnabled && entry.id === KELLY_DAY_ADDITIONAL_FIELD_ID
+                              ? null
+                              : (
                             <tr
                               key={`additional-field-${entry.id}-${index}`}
                               className={`clickable-row ${
@@ -11428,6 +11492,7 @@ function DepartmentDetailsPage({
                                 )}
                               </td>
                             </tr>
+                              )
                           ))
                         )}
                       </tbody>
@@ -11440,14 +11505,6 @@ function DepartmentDetailsPage({
             {isOvertimeSetupEditor ? (
               <>
                 <div className="overtime-setup-fields">
-                  <label className="additional-field-check">
-                    <input
-                      type="checkbox"
-                      checked={allowScheduledOvertime}
-                      onChange={(event) => setAllowScheduledOvertime(event.target.checked)}
-                    />
-                    Allow Scheduled Overtime
-                  </label>
                   <div className="overtime-setup-fields-row">
                     <label className={allowScheduledOvertime ? undefined : "department-field-disabled"}>
                       Standard Overtime Slot (hours)
@@ -11479,7 +11536,7 @@ function DepartmentDetailsPage({
                   </div>
                 </div>
                 <p className="field-hint" style={{ marginTop: "0.5rem" }}>
-                  Allow Scheduled Overtime keeps the OT checkbox on each split piece. Uncheck it to hide that checkbox.
+                  Allow Scheduled Overtime is in Schedule Setup. It keeps the OT checkbox on each split piece.
                   Show overtime times in chooses where a piece marked OT is listed. A normal split shift is chosen in Shift Information.
                   An empty split piece says OPEN in red. It says HIRE only when that piece’s OT box is checked.
                 </p>
@@ -11501,6 +11558,42 @@ function DepartmentDetailsPage({
             {isTradesSetupEditor ? (
               <>
                 <div className="trades-settings-fields">
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={kellyRotationEnabled}
+                      onChange={(event) => {
+                        const enabled = event.target.checked;
+                        setKellyRotationEnabled(enabled);
+                        setAdditionalFieldRecords((previous) =>
+                          previous.map((field) =>
+                            field.id === KELLY_DAY_ADDITIONAL_FIELD_ID
+                              ? { ...field, hidden: !enabled }
+                              : field,
+                          ),
+                        );
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Enable Kelly Rotation
+                  </label>
+                  <p className="field-hint">
+                    When this is on, Kelly Rotation appears in Schedule Settings and Kelly Day appears in Additional Fields. When it is off, both stay hidden and Kelly Day is hidden on the schedule.
+                  </p>
+                  <label className="additional-field-check">
+                    <input
+                      type="checkbox"
+                      checked={allowScheduledOvertime}
+                      onChange={(event) => {
+                        setAllowScheduledOvertime(event.target.checked);
+                        setAutoSaveTick((previous) => previous + 1);
+                      }}
+                    />
+                    Allow Scheduled Overtime
+                  </label>
+                  <p className="field-hint">
+                    When this is on, Overtime Setup appears in Schedule Settings and each split piece can be marked OT. When it is off, Overtime Setup stays hidden.
+                  </p>
                   <label className="additional-field-check">
                     <input
                       type="checkbox"
@@ -12840,7 +12933,7 @@ function DepartmentDetailsPage({
               </button>
             </div>
             <p className="field-hint">
-              Continue will import all Apparatus Common Names from Department Details into Scheduler Settings.
+              Continue will import all Apparatus Common Names from Department Details into Schedule Settings.
             </p>
             <div className="table-wrapper">
               <table>
