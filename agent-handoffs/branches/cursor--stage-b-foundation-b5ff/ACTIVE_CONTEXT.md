@@ -1,5 +1,7 @@
 # Active Context Snapshot (cursor/stage-b-foundation-b5ff)
 
+**Superseded 2026-11-13.** Live work is on `submenu/neris-golive-cifpd` and production `main`. Read `agent-handoffs/branches/submenu--neris-golive-cifpd/ACTIVE_CONTEXT.md` and `sessions/2026-11-13-wave8-session.md`. Do not treat the “wait for Fire Recovery” lines below as current.
+
 ## System overview (read this first)
 - **Platform:** FireUltimate — multi-tenant fire department operations.
 - **Architecture:** React frontend (Vite), Node Express backend (`server/neris-proxy.mjs`), PostgreSQL via Prisma 7.10.1. Do not upgrade Prisma.

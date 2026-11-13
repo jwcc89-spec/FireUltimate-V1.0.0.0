@@ -702,7 +702,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 2, 2026, 12:29 p.m. Chicago · Wave 7 sandbox bill accepted · Tracking ID c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418 · Waiting on Fire Recovery USA · Do not start Wave 8 or Wave 5b · Production is not updated · Do not merge to main · Live canvas was not republished with this copy</Text>
+        <Text size="small" tone="tertiary">Updated November 13, 2026 · Wave 8 production bill sent · Tracking ID 412c2d90-6489-4b63-9fa0-6570adf33bb2 · Recovery Hub shows Draft · Wave 5b still parked · Live canvas was not republished with this copy</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B is on Crescent staging (November 1, 2026)">
