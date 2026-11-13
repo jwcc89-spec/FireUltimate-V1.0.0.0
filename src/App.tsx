@@ -3037,7 +3037,11 @@ function nerisPrimaryIncidentTypeLabel(call: IncidentCallSummary): string {
     .split(/\s*(?:\|\||:)\s*/)
     .map((part) => part.trim())
     .filter((part) => part.length > 0);
-  return parts.at(-1) ?? raw;
+  const last = parts.at(-1) ?? raw;
+  return last
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
 function getNerisQueueFieldValue(
