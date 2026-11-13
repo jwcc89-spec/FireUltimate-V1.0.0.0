@@ -2863,15 +2863,21 @@ function NerisReportFormPage({
     if (result && typeof result.then === "function") {
       void result.catch((error: unknown) => {
         const message = error instanceof Error ? error.message : "The report was not saved.";
-        setSaveMessage("");
         if (
           message ===
           "Someone else saved this report while you were editing. Reload to see their changes before saving again."
         ) {
+          // Successful NERIS export marks Exported on the server first. A follow-up browser
+          // save can hit a revision conflict; keep the local Exported status and do not block the user.
+          if (draft.reportStatus === "Exported") {
+            return;
+          }
+          setSaveMessage("");
           setErrorMessage("");
           setConflictDialogOpen(true);
           return;
         }
+        setSaveMessage("");
         setErrorMessage(message);
       });
     }
@@ -3884,15 +3890,9 @@ function NerisReportFormPage({
     requestConfig: ExportRequestConfig,
   ): Promise<ExportExecutionResult> => {
     const isProxyRequest = requestConfig.isProxyRequest;
-    const serializedAidEntries = buildStoredAdditionalAidEntries();
-    const serializedNonFdAidEntries = buildStoredAdditionalNonFdAidEntries();
-    persistNerisDraft({
-      formValues,
-      reportStatus,
-      lastSavedAt,
-      additionalAidEntries: serializedAidEntries,
-      additionalNonFdAidEntries: serializedNonFdAidEntries,
-    });
+    // Do not re-save the draft here. A mid-export save of "In Review" raced the post-export
+    // "Exported" stamp and left non-admins stuck on In Review after NERIS already accepted the send.
+    // The server now marks the report Exported when it stores a successful export receipt.
 
     const requestController = new AbortController();
     const timeoutId = window.setTimeout(() => requestController.abort(), 20_000);
