@@ -3,7 +3,16 @@
 ## Current branch
 - `submenu/neris-golive-cifpd`
 
-## Current focus (2026-04-09 — session end)
+## Current focus (2026-11-13 — session end)
+- **Branch:** stay on `submenu/neris-golive-cifpd` unless the user says to switch. Production `main` is at `b60eb44` (merge of this branch). Do not create branches unless asked.
+- **Wave 8 production release happened.** Neon backup `backup-2026-11-13-wave8-fire-recovery` (63 incidents). Production migrations were already applied. Crescent allowed sender `dispatch@co.iroquois.il.us` (id `allow-cifpdil-dispatch-20261101`) was inserted before the code release. PR #44 merged staging into `main`. Operator set production Fire Recovery to live and sent one real bill. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2` (run `2026-006`). Recovery Hub shows it as a **Draft**. Fire Ultimate status is **Sent**.
+- **Do not start Wave 5b** or Fire Recovery email items 5, 6, and 8 until asked. Those still wait on Fire Recovery’s development team.
+- **Follow-ups from the live bill (not fixed in code yet):** Recovery Hub left Time Call Cleared blank even though we sent `ClearedDateTime` `2025-11-11T13:59:45` (24-hour ISO, same shape as Alarm). Is Resident **No** was sent as `Isresident: false` and did not show in their UI. A later YES test was not finished. Ask Fire Recovery before changing those mappings.
+- **Shipped after the bill:** Filed By uses the person’s full name (`42d0718` / `main` `69cd69a`). A successful NERIS export marks the saved report **Exported** on the server (`6d13157` / `main` `9733211`). NERIS Reporting **Incident Type** shows the last primary-type segment as words, for example **Motor Vehicle Collision** (`22b366d` / `main` `b60eb44`).
+- **CAD hold from 2026-04-09 still stands.** Do not start Batch J/K until the user lifts it.
+- **Handoff:** `sessions/2026-11-13-wave8-session.md` and `conversations/2026-11-13-session-summary.md`.
+
+## Earlier focus (2026-04-09 — kept as history)
 - **HOLD:** User asked to **pause the rest of the CAD dispatch roadmap** for now. Do **not** start **Batch J / K** or other plan slices until the user **lifts the hold**. Bugfixes or small follow-ups they request are still in scope.
 - **CAD — last ship this session:** **Raw Email** expanded rows: copy **decoded MIME** (pre-rules), **replay JSON** for `POST /api/cad/inbound-email`, **base64 raw** — commit **`3fa8683`**, files `DispatchParsingSettingsPage.tsx`, `App.css`. See **`conversations/2026-04-09-session-summary.md`**.
 - **When hold lifts:** **`docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md`** — next planned work is **Batch J** (split create vs update — **requires explicit Prisma/schema approval**) → **Batch K** (user-friendly parsing UX). Confirm with user before migrations.

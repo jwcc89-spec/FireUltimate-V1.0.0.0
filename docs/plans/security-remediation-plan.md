@@ -6,15 +6,15 @@
 
 ---
 
-## Current status (2026-11-02, America/Chicago)
+## Current status (2026-11-13, America/Chicago)
 
 - **Stage B on staging:** done. Crescent click test on `https://cifpdil.staging.fireultimate.app` passed ~2:09 p.m. America/Chicago on 2026-11-01.
-- **Fire Recovery on staging:** pull request 34 merged the practice branch into `submenu/neris-golive-cifpd` at `4c80de8` (2026-11-02, 11:30). The sandbox bill passed at 12:21. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. The practice branch is two commits ahead (`746ed5e`, `286051c`). Do not push those unless the operator asks.
-- **Production (`main`):** still the pre-Stage-B program plus the Fix 15 one-line hotfix only. Do not merge to `main`. Wave 8 waits on Fire Recovery's reply to the November 1 email.
+- **Fire Recovery on staging:** sandbox bill passed 2026-11-02. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. Vendor confirmed import without errors on 2026-11-13.
+- **Production (`main`):** Wave 8 released 2026-11-13 (PR #44, then follow-up merges through `b60eb44`). Backup `backup-2026-11-13-wave8-fire-recovery` (63 incidents). Crescent allowed sender is on production. Operator set Fire Recovery live and sent one real bill, tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2`. Do not send another live bill unless asked.
 - **Part 0 / fix 15:** done on staging (PR #32) and production (PR #33). Do not rebuild.
 - **Parts 1–2 / fixes 1–4 and 8–14:** on staging (practice click checks + Crescent staging click test). Do not rebuild. Details in the [archive](../completed/SECURITY_REMEDIATION_ARCHIVE_2026-11.md).
-- **Part 3 / fixes 5–7:** on staging; **not** cleared for production Fire Recovery use until Stage C below.
-- **Allowed Senders:** on staging at Admin Functions → Dispatch Parsing Settings → Allowed Senders. Crescent row `dispatch@co.iroquois.il.us` (exact, enabled, id `allow-cifpdil-dispatch-20261101`) — do not delete. Empty list rejects mail.
+- **Part 3 / fixes 5–7:** on staging and on production. The first live bill was sent 2026-11-13. Do not send another unless asked.
+- **Allowed Senders:** Crescent row `dispatch@co.iroquois.il.us` (exact, enabled, id `allow-cifpdil-dispatch-20261101`) is on staging and on production. Do not delete. Empty list rejects mail.
 - **CAD mailbox (To):** `cifpdil@cad.fireultimate.app`. Prefer Raw Email / Neon over Render log search for proof.
 - **Staging Neon backup:** `backup-2026-11-01-before-stage-b` (22 incidents). Leave alone. Do not connect Render to it.
 - **Staging API build command:** `npm ci --engine-strict=false && npm run build`. Do not add a dashboard `NODE_ENV` variable. Do not upgrade Node or Prisma for the engine warning.
@@ -38,9 +38,9 @@
 
 ## Next actions (do now)
 
-1. **Promote Stage B staging → production** using Part 5 production steps below (and `RELEASE_CHECKLIST.md`). Production must get Crescent’s allowed sender **before** code that rejects empty allowlists goes live.
-2. Keep **Fire Recovery production locked down** until Stage C (fixes 5–7 live in production, then password save).
-3. Do **not** create `FIRE_RECOVERY_CREDENTIAL_KEY` in a coding session. Operator creates it on Render at Stage C release.
+1. Production promote for Stage B and Fire Recovery is done (2026-11-13). Do not rebuild it.
+2. Remaining checks not recorded this session: a production CAD test email, and unsigned `/api/users` returning 401 on production.
+3. Do **not** print or recreate `FIRE_RECOVERY_CREDENTIAL_KEY`.
 4. Do **not** rebuild Part 0 or fixes 1–14.
 
 ---
@@ -88,20 +88,13 @@ Keep the 15-minute lock after five failures. No code change for Stage B. If some
 
 See [archive Part 5](../completed/SECURITY_REMEDIATION_ARCHIVE_2026-11.md) for the completed backup, allowlist, migrate, promote, and Crescent click-test record.
 
-### Promote staging to production (`main`) — open
+### Promote staging to production (`main`) — done 2026-11-13
 
-1. Production migration list (reviewed 2026-11-02): production has 10 migrations through `20260411190000_fire_recovery_tenant_api_credentials`. At Wave 8 apply four newer ones, already on staging: Session (`20261029180000_add_session`); RolePermission + AccountAuditLog (`20261029200000_add_role_permission_and_account_audit`); NerisReportChange (`20261030180000_add_neris_report_change`); Fire Recovery submit status (`20261102140000_fire_recovery_submit_status`). Do not apply them until the operator gives a written yes after a fresh production backup.
-2. Readable-text passwords: reset if any. Production `admin` already changed (Part 1).
-3. Neon backup of `fireultimate-prod`.
-4. Apply this branch’s database changes to production.
-5. Add `dispatch@co.iroquois.il.us` to Crescent’s allowed-sender list in **production** (exact SQL in the release session). **Must happen before step 6**, or real dispatch email is rejected and lost.
-6. Deploy code with `NODE_ENV=production` (do **not** add a Render dashboard `NODE_ENV` variable — it breaks install).
-7. Send a test dispatch email; confirm arrival. Confirm unsigned `/api/users` → 401; `/API/users` and `/API/admin/tenants` (no key) do not return data or succeed.
-8. Fire Recovery production restriction (Part 3) stays in force until Stage C.
+Backup, allowed sender, migrations (already present), and the `main` deploy are done. A production CAD test email and the unsigned `/api/users` check were not recorded in this session.
 
-### Stage C — open
+### Stage C — first live bill sent
 
-Fixes 5–7 are on staging. The staging sandbox bill passed on 2026-11-02. Production still waits for Fire Recovery to say whether the Welcome login works for real bills. Do not save a Fire Recovery password in production before that answer and the release checklist. Fix 16 (5a/5b) is Wave 5b and is not started. Do not start it while waiting.
+Welcome login works for real bills. Production Fire Recovery is live. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2`. Recovery Hub shows Draft. Fix 16 / Wave 5b is not started. Do not start it unless asked.
 
 ---
 
