@@ -8,7 +8,7 @@
 **Branch:** staging work on `cursor/wave8-export-stamp-to-staging` → `submenu/neris-golive-cifpd`. Practice history: `cursor/stage-b-foundation-b5ff`. Production: `main`.
 
 **Still open after vendor reply (2026-11-13):**
-1. ~~Merge foundation-only commits onto staging~~ — in progress via cherry-pick PR (`746ed5e`, `286051c`, `b4009ee` + vendor-answer plan updates). Then into production with Wave 8.
+1. ~~Merge foundation-only commits onto staging~~ — done 2026-11-13 via PR #43 (`898c92d`). Operator re-tests export/billable on staging, then production with Wave 8.
 2. Wave 5b — older-incident NERIS re-export check (operator asks first).
 3. Wave 8 — production release + one real bill (§11.3), only after the operator says go.
 4. Park vendor follow-ups that are still waiting on Fire Recovery’s development team (email items 5, 6, and 8).
