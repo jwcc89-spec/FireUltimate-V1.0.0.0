@@ -542,28 +542,6 @@ body.resizing-shell-sidebar {
   font-weight: 600;
 }
 
-.search-field {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 320px;
-  border: 1px solid #d4dbe7;
-  border-radius: 10px;
-  background-color: #f8fafc;
-  color: #64748b;
-  padding: 0.45rem 0.62rem;
-}
-
-.search-field input {
-  border: 0;
-  outline: none;
-  width: 100%;
-  min-width: 0;
-  background: transparent;
-  color: #0f172a;
-  font-size: 0.88rem;
-}
-
 .icon-button {
   border: 1px solid #d6dde8;
   background-color: #fff;
@@ -584,27 +562,36 @@ body.resizing-shell-sidebar {
   display: none;
 }
 
-.user-pill {
+.topbar-account-button {
   display: inline-flex;
   align-items: center;
-  gap: 0.5rem;
-  border: 1px solid #d6dde8;
-  border-radius: 10px;
-  background-color: #f8fafc;
-  padding: 0.35rem 0.55rem;
+  gap: 0.2rem;
+  border: 0;
+  background: transparent;
+  padding: 0.1rem 0.15rem;
+  color: #334155;
+  cursor: pointer;
 }
 
-.user-pill strong {
-  display: block;
-  font-size: 0.82rem;
-  color: #0f172a;
+.topbar-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 99px;
+  background: #1e293b;
+  color: #e2e8f0;
+  display: grid;
+  place-items: center;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
 }
 
-.user-pill span {
-  display: block;
-  font-size: 0.72rem;
-  color: #64748b;
-  line-height: 1.25;
+.topbar-account-chevron {
+  transition: transform 140ms ease;
+}
+
+.topbar-account-button[aria-expanded="true"] .topbar-account-chevron {
+  transform: rotate(180deg);
 }
 
 .role-badge {
@@ -2789,8 +2776,82 @@ tbody tr:last-of-type td {
 
 .shift-information-core-fields {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 0.55rem;
+}
+
+.shift-segment-target-row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  margin-bottom: 0.35rem;
+  font-size: 0.8rem;
+  color: #334155;
+  font-weight: 700;
+}
+
+.shift-segment-target-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.shift-segment-help-button {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1.5px solid #0f172a;
+  background: #ffffff;
+  color: #0f172a;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  cursor: help;
+}
+
+.shift-segment-help-mark {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 700;
+  font-size: 0.85rem;
+  line-height: 1;
+}
+
+.shift-segment-help-bubble {
+  display: none;
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  left: 0;
+  width: 280px;
+  padding: 0.55rem 0.65rem;
+  border: 1px solid #dbe2ec;
+  border-radius: 8px;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 600;
+  line-height: 1.35;
+  text-align: left;
+  box-shadow: 0 12px 24px rgba(15, 23, 42, 0.12);
+  z-index: 5;
+}
+
+.shift-segment-help-button:hover .shift-segment-help-bubble,
+.shift-segment-help-button:focus-visible .shift-segment-help-bubble {
+  display: block;
+}
+
+.shift-segment-target-row select {
+  width: 25%;
+  min-width: 7.5rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background-color: #ffffff;
+  color: #0f172a;
+  padding: 0.52rem 0.6rem;
+  font-size: 0.82rem;
+  font-weight: 600;
 }
 
 .shift-information-core-fields label,
@@ -6138,9 +6199,20 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   color: #1e3a8a;
 }
 
+.personnel-schedule-row-label--ambulance .personnel-schedule-row-label-pill {
+  background-color: #f8fafc;
+  color: #0f172a;
+  border: 1px solid #cbd5e1;
+}
+
+.personnel-schedule-row-label--maltese .personnel-schedule-row-label-pill {
+  background-color: #fee2e2;
+  color: #991b1b;
+}
+
 .personnel-schedule-row-label--medic .personnel-schedule-row-label-pill {
-  background-color: #d1fae5;
-  color: #065f46;
+  background-color: #dbeafe;
+  color: #1e3a8a;
 }
 
 .personnel-schedule-row-label--info .personnel-schedule-row-label-pill {
@@ -6211,7 +6283,8 @@ button.personnel-schedule-kpi-card-action:focus-visible {
 .personnel-schedule-slots {
   display: flex;
   flex-direction: column;
-  gap: 0.1rem;
+  /* B3: match mockup cell-stack gap (was 0.1rem; first Step 7 try was reverted). */
+  gap: 0.28rem;
 }
 
 .personnel-schedule-slot {
@@ -6239,6 +6312,12 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   padding: 0.08rem 0.2rem;
 }
 
+.personnel-schedule-slot-leave-red {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+}
+
 .personnel-schedule-slot-highlighted {
   background-color: #fef9c3;
   border-color: #facc15;
@@ -6254,6 +6333,65 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+/* Info / text slots: match sidebar Info pill (light gray + black text), no nested box. */
+.personnel-schedule-slot-text {
+  background-color: #e2e8f0;
+  border-color: #e2e8f0;
+  color: #0f172a;
+}
+
+.personnel-schedule-slot-text .personnel-schedule-info-input {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  font-size: inherit;
+  line-height: inherit;
+  padding: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.personnel-schedule-slot-text .personnel-schedule-info-input::placeholder {
+  color: #64748b;
+  font-weight: 600;
+}
+
+.personnel-schedule-slot-text .personnel-schedule-info-input:focus {
+  outline: none;
+}
+
+.personnel-schedule-modal-slot-text {
+  background-color: #e2e8f0;
+  border-color: #e2e8f0;
+  color: #0f172a;
+  border-radius: 999px;
+  cursor: text;
+}
+
+.personnel-schedule-modal-slot-text:hover {
+  background-color: #e2e8f0;
+}
+
+.personnel-schedule-modal-slot-text .personnel-schedule-info-input {
+  border: none;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-weight: 700;
+  padding: 0;
+  border-radius: 0;
+  outline: none;
+  box-shadow: none;
+}
+
+.personnel-schedule-modal-slot-text .personnel-schedule-info-input::placeholder {
+  color: #64748b;
+  font-weight: 600;
 }
 
 .personnel-schedule-coverage-info {
@@ -6338,6 +6476,42 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   max-width: 50%;
 }
 
+.scheduler-apparatus-look-row {
+  display: grid;
+  gap: 0.7rem;
+}
+
+.scheduler-apparatus-look-group {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.scheduler-apparatus-icon-choices {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.scheduler-apparatus-icon-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  background: #ffffff;
+  color: #0f172a;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.scheduler-apparatus-icon-choice-selected {
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.18);
+  background: #eff6ff;
+}
+
 .trades-override-actions {
   display: flex;
   flex-wrap: nowrap;
@@ -6389,6 +6563,87 @@ button.personnel-schedule-kpi-card-action:focus-visible {
   font-weight: 700;
 }
 
+/* B4: split seat = separate mini-pills with name + 24h time (not "BAIK / WICJ"). */
+.personnel-schedule-slot-split {
+  display: block;
+  padding: 0;
+  border: none;
+  background: transparent;
+  border-radius: 0;
+  min-height: 0;
+  overflow: visible;
+  white-space: normal;
+  text-align: left;
+}
+
+.personnel-schedule-slot-split.personnel-schedule-slot-highlighted,
+.personnel-schedule-slot-split.personnel-schedule-slot-required-invalid,
+.personnel-schedule-slot-split.personnel-schedule-slot-required-empty {
+  padding: 0.15rem;
+  border-radius: 10px;
+}
+
+.personnel-schedule-split-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.28rem;
+  width: 100%;
+}
+
+.personnel-schedule-segment-pill {
+  display: block;
+  flex: 1 1 calc(50% - 0.14rem);
+  min-width: 2.85rem;
+  box-sizing: border-box;
+  border-radius: 10px;
+  padding: 0.28rem 0.35rem;
+  font-size: 0.66rem;
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  border: 1px solid #e2e8f0;
+  background-color: #ffffff;
+  color: #0f172a;
+  overflow: hidden;
+}
+
+.personnel-schedule-segment-pill-name {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.personnel-schedule-segment-pill-time {
+  display: block;
+  margin-top: 0.06rem;
+  font-weight: 650;
+  opacity: 0.9;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.personnel-schedule-segment-pill-open,
+.personnel-schedule-segment-pill-hire {
+  background-color: #fee2e2;
+  border-color: #fecaca;
+  color: #991b1b;
+  text-transform: uppercase;
+}
+
+.personnel-schedule-segment-pill-unqualified,
+.personnel-schedule-segment-pill-off-shift {
+  color: #991b1b;
+}
+
+button.personnel-schedule-segment-pill-claim,
+.personnel-schedule-segment-pill-self {
+  appearance: none;
+  font: inherit;
+  cursor: pointer;
+}
+
 .personnel-schedule-hire-token,
 .personnel-schedule-open-token {
   color: #991b1b;
@@ -6408,10 +6663,10 @@ button.personnel-schedule-open-token-claim {
   cursor: pointer;
 }
 
-.personnel-schedule-slot:has(.personnel-schedule-open-token):not(
+.personnel-schedule-slot:not(.personnel-schedule-slot-split):has(.personnel-schedule-open-token):not(
     .personnel-schedule-slot-highlighted
   ):not(.personnel-schedule-slot-required-invalid),
-.personnel-schedule-slot:has(.personnel-schedule-hire-token):not(
+.personnel-schedule-slot:not(.personnel-schedule-slot-split):has(.personnel-schedule-hire-token):not(
     .personnel-schedule-slot-highlighted
   ):not(.personnel-schedule-slot-required-invalid) {
   background-color: #fee2e2;
@@ -6455,7 +6710,7 @@ button.personnel-schedule-open-token-claim {
 .personnel-schedule-modal-backdrop {
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.4);
+  background-color: rgba(15, 23, 42, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -6463,9 +6718,10 @@ button.personnel-schedule-open-token-claim {
 }
 
 .personnel-schedule-modal {
-  background: #fff;
-  border-radius: 8px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 16px;
+  box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
   max-width: 900px;
   width: 90%;
   max-height: 85vh;
@@ -6478,21 +6734,59 @@ button.personnel-schedule-open-token-claim {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem 1.25rem;
+  gap: 0.75rem;
+  padding: 0.9rem 1.15rem;
   border-bottom: 1px solid #e2e8f0;
+  background: linear-gradient(180deg, #f8fafc 0%, #ffffff 100%);
+}
+
+.personnel-schedule-modal-title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  min-width: 0;
 }
 
 .personnel-schedule-modal-header h2 {
   margin: 0;
-  font-size: 1.1rem;
+  font-size: 1.05rem;
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.personnel-schedule-modal-date-chip {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.4rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 10px;
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  line-height: 1.1;
+}
+
+.personnel-schedule-modal-date-dow {
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #1d4ed8;
+}
+
+.personnel-schedule-modal-date-md {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #1e3a8a;
 }
 
 .personnel-schedule-modal-body {
   display: grid;
   grid-template-columns: 1.3fr 1fr;
-  gap: 1.5rem;
-  padding: 1.25rem;
+  gap: 1.25rem;
+  padding: 1.1rem 1.15rem 1.25rem;
   overflow: auto;
+  background: #f8fafc;
 }
 
 .personnel-schedule-modal-day-block {
@@ -6520,23 +6814,35 @@ button.personnel-schedule-open-token-claim {
 .personnel-schedule-modal-day-block h3,
 .personnel-schedule-modal-personnel h3 {
   margin: 0 0 0.75rem;
-  font-size: 0.95rem;
+  font-size: 0.92rem;
+  color: #334155;
+  font-weight: 700;
 }
 
 .personnel-schedule-modal-apparatus {
-  margin-bottom: 0.75rem;
+  margin-bottom: 0.85rem;
+  padding: 0.65rem 0.7rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #ffffff;
 }
 
 .personnel-schedule-modal-apparatus strong {
-  display: block;
-  margin-bottom: 0.25rem;
-  font-size: 0.9rem;
+  display: inline-flex;
+  align-items: center;
+  margin-bottom: 0.4rem;
+  padding: 0.28rem 0.55rem;
+  border-radius: 10px;
+  background: #e2e8f0;
+  color: #0f172a;
+  font-size: 0.78rem;
+  font-weight: 700;
 }
 
 .personnel-schedule-modal-slots {
   display: flex;
   flex-direction: column;
-  gap: 0.2rem;
+  gap: 0.28rem;
 }
 
 .personnel-schedule-modal-slot-row {
@@ -6544,6 +6850,7 @@ button.personnel-schedule-open-token-claim {
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 0.35rem;
+  min-width: 0;
 }
 
 .personnel-schedule-modal-ot-toggle {
@@ -6559,54 +6866,82 @@ button.personnel-schedule-open-token-claim {
 }
 
 .personnel-schedule-modal-slot {
-  padding: 0.2rem 0.4rem;
-  border-radius: 4px;
+  padding: 0.32rem 0.58rem;
+  border-radius: 999px;
   font-size: 0.74rem;
-  line-height: 1.1;
+  font-weight: 700;
+  line-height: 1.2;
   border: 1px solid #e2e8f0;
+  background: #ffffff;
+  color: #0f172a;
   cursor: pointer;
   min-height: 1.35rem;
+  text-align: center;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .personnel-schedule-modal-slot:hover {
-  background-color: #f8fafc;
+  background-color: #f1f5f9;
+}
+
+/* Segmented seats need a rectangular tray, not a pill — cards must stay inside. */
+.personnel-schedule-modal-slot-segmented {
+  width: 100%;
+  border-radius: 12px;
+  padding: 0.4rem;
+  text-align: left;
+  overflow: hidden;
+  background: #f8fafc;
+  cursor: default;
+}
+
+.personnel-schedule-modal-slot-segmented:hover {
+  background: #f8fafc;
 }
 
 .personnel-schedule-modal-segments {
   display: flex;
   flex-direction: column;
-  gap: 0.3rem;
+  gap: 0.28rem;
+  min-width: 0;
+  width: 100%;
 }
 
 .personnel-schedule-modal-segments-wrap {
-  display: flex;
-  flex-direction: row;
-  flex-wrap: wrap;
-  align-items: flex-start;
-  gap: 0.4rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 0.35rem;
   width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .personnel-schedule-modal-segments--horizontal {
   flex: 1 1 0;
   min-width: 0;
+  max-width: 100%;
   flex-direction: row;
   flex-wrap: wrap;
 }
 
 .personnel-schedule-modal-segment-card {
   position: relative;
-  flex: 1 1 140px;
-  min-width: 128px;
-  max-width: 220px;
-  padding: 1.65rem 0.4rem 0.4rem;
+  flex: 1 1 calc(50% - 0.14rem);
+  min-width: 0;
+  max-width: 100%;
+  padding: 1.55rem 0.45rem 0.45rem;
   border: 1px solid #e2e8f0;
-  border-radius: 6px;
-  background: #fff;
+  border-radius: 10px;
+  background: #ffffff;
   display: flex;
   flex-direction: column;
-  gap: 0.25rem;
+  gap: 0.28rem;
   color: #0f172a;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  box-sizing: border-box;
 }
 
 .personnel-schedule-modal-segment-card:not(.personnel-schedule-modal-segment-card--ot)
@@ -6825,18 +7160,22 @@ button.personnel-schedule-open-token-claim {
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
-  padding: 0.28rem 0.42rem;
-  margin-bottom: 0.25rem;
+  padding: 0.35rem 0.6rem;
+  margin-bottom: 0.28rem;
   border: 1px solid #e2e8f0;
-  border-radius: 4px;
+  border-radius: 999px;
+  background: #ffffff;
   cursor: grab;
-  font-size: 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 650;
+  color: #0f172a;
 }
 
 .personnel-schedule-modal-personnel-qualification {
   color: #64748b;
-  font-size: 0.72rem;
+  font-size: 0.7rem;
   white-space: nowrap;
+  font-weight: 600;
 }
 
 .personnel-schedule-modal-personnel-item:active {
@@ -6844,8 +7183,10 @@ button.personnel-schedule-open-token-claim {
 }
 
 .personnel-schedule-personnel-assigned {
-  opacity: 0.7;
-  background-color: #f0fdf4;
+  opacity: 0.85;
+  background-color: #dcfce7;
+  border-color: #bbf7d0;
+  color: #166534;
 }
 
 .personnel-schedule-empty {
@@ -6855,10 +7196,6 @@ button.personnel-schedule-open-token-claim {
 }
 
 @media (max-width: 1200px) {
-  .search-field {
-    min-width: 245px;
-  }
-
   .topbar-right {
     gap: 0.5rem;
   }
@@ -6897,14 +7234,6 @@ button.personnel-schedule-open-token-claim {
 
   .mobile-nav-toggle {
     display: inline-grid;
-  }
-
-  .search-field {
-    min-width: 160px;
-  }
-
-  .user-pill {
-    display: none;
   }
 
   .role-badge {
@@ -7004,11 +7333,6 @@ button.personnel-schedule-open-token-claim {
   .ghost-button {
     width: 100%;
     justify-content: center;
-  }
-
-  .search-field {
-    min-width: 0;
-    flex: 1;
   }
 
   .neris-imported-address-sync-button {

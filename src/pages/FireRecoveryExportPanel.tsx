@@ -4,6 +4,7 @@ import {
   fireRecoveryStatusLabel,
   fireRecoveryStatusTone,
   getFireRecoveryIncident,
+  getFireRecoverySettings,
   postFireRecoveryBillingStatus,
   postFireRecoveryPreview,
   postFireRecoveryResolveReview,
@@ -207,6 +208,9 @@ export function FireRecoveryExportPanel({
   const canViewBilling = permissionGrants?.["billing.view"] === true;
   const canSubmitBilling = canViewBilling && permissionGrants?.["billing.submit"] === true;
   const [row, setRow] = useState<FireRecoveryIncidentApi | null>(null);
+  const [banner, setBanner] = useState("");
+  const [bannerMode, setBannerMode] = useState("");
+  const [departmentId, setDepartmentId] = useState("");
   const [preview, setPreview] = useState<FireRecoveryPreviewApi | null>(null);
   const [message, setMessage] = useState("");
   const [previewError, setPreviewError] = useState("");
@@ -221,6 +225,20 @@ export function FireRecoveryExportPanel({
   useEffect(() => {
     if (!canViewBilling) return;
     let cancelled = false;
+    getFireRecoverySettings()
+      .then((settings) => {
+        if (cancelled) return;
+        setBanner(settings.banner);
+        setBannerMode(settings.mode);
+        setDepartmentId(settings.departmentId);
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setBanner("");
+          setBannerMode("");
+          setDepartmentId("");
+        }
+      });
     getFireRecoveryIncident(callNumber)
       .then((data) => {
         if (!cancelled) setRow(data);
@@ -308,6 +326,16 @@ export function FireRecoveryExportPanel({
       <p>
         <span className={`neris-status-pill ${fireRecoveryStatusTone(statusLabel)}`}>{statusLabel}</span>
       </p>
+      {banner ? (
+        <p className={`fr-preview-banner ${bannerMode === "live" ? "is-live" : bannerMode === "sandbox" ? "is-sandbox" : "is-off"}`}>
+          {banner}
+        </p>
+      ) : null}
+      {departmentId ? (
+        <p>
+          Department ID that will be sent: <strong>{departmentId}</strong>
+        </p>
+      ) : null}
       <dl className="detail-grid">
         <div>
           <dt>Tracking ID</dt>

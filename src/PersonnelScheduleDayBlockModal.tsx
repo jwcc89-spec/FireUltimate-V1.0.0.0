@@ -40,7 +40,7 @@ interface PersonnelScheduleDayBlockModalProps {
   scheduleRows: ModalScheduleRow[];
   shiftPersonnel: ModalPersonnel[];
   allPersonnel: ModalPersonnel[];
-  /** OT segment dropdown: personnel with shift set in Scheduler Settings (excludes incomplete records). */
+  /** OT segment dropdown: personnel with shift set in Schedule Settings (excludes incomplete records). */
   overtimeRosterPersonnel: ModalPersonnel[];
   personnelQualificationOrder: string[];
   personnelQualificationColors: Record<string, string>;
@@ -656,15 +656,22 @@ export function PersonnelScheduleDayBlockModal({
     >
       <div className="personnel-schedule-modal">
         <div className="personnel-schedule-modal-header">
-          <h2>
-            Assign Personnel -{" "}
-            {date.toLocaleDateString("en-US", {
+          <div className="personnel-schedule-modal-title-row">
+            <h2>Assign Personnel</h2>
+            <div className="personnel-schedule-modal-date-chip" aria-label={date.toLocaleDateString("en-US", {
               weekday: "long",
-              month: "short",
+              month: "long",
               day: "numeric",
               year: "numeric",
-            })}
-          </h2>
+            })}>
+              <span className="personnel-schedule-modal-date-dow">
+                {date.toLocaleDateString("en-US", { weekday: "short" }).toUpperCase()}
+              </span>
+              <span className="personnel-schedule-modal-date-md">
+                {`${date.toLocaleDateString("en-US", { month: "short" }).toUpperCase()} ${date.getDate()}`}
+              </span>
+            </div>
+          </div>
           <button
             type="button"
             className="secondary-button compact-button"
@@ -811,10 +818,14 @@ export function PersonnelScheduleDayBlockModal({
                             <span className="personnel-schedule-modal-ot-spacer" />
                           )}
                           <div
-                            className={`personnel-schedule-modal-slot ${isRed ? "personnel-schedule-slot-required-empty" : ""} ${
+                            className={`personnel-schedule-modal-slot${
+                              isTextRow ? " personnel-schedule-modal-slot-text" : ""
+                            }${
+                              isSegmentModeAtSlot ? " personnel-schedule-modal-slot-segmented" : ""
+                            }${isRed ? " personnel-schedule-slot-required-empty" : ""}${
                               dragOverSlot?.unitId === row.unitId &&
                               dragOverSlot?.slotIndex === slotIdx
-                                ? "personnel-schedule-slot-drag-over"
+                                ? " personnel-schedule-slot-drag-over"
                                 : ""
                             }`}
                             onDragOver={

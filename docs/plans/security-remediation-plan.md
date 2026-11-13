@@ -6,10 +6,11 @@
 
 ---
 
-## Current status (2026-11-01, America/Chicago)
+## Current status (2026-11-02, America/Chicago)
 
-- **Stage B on staging:** done. Crescent click test on `https://cifpdil.staging.fireultimate.app` passed ~2:09 p.m. America/Chicago. Staging tip is `d4bbaee` on `submenu/neris-golive-cifpd`. Later commits on the practice branch are documentation only — do not fast-forward staging to them.
-- **Production (`main`):** still the pre-Stage-B program plus the Fix 15 one-line hotfix only. Do not merge Stage B until Part 5 production steps below are ready.
+- **Stage B on staging:** done. Crescent click test on `https://cifpdil.staging.fireultimate.app` passed ~2:09 p.m. America/Chicago on 2026-11-01.
+- **Fire Recovery on staging:** pull request 34 merged the practice branch into `submenu/neris-golive-cifpd` at `4c80de8` (2026-11-02, 11:30). The sandbox bill passed at 12:21. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. The practice branch is two commits ahead (`746ed5e`, `286051c`). Do not push those unless the operator asks.
+- **Production (`main`):** still the pre-Stage-B program plus the Fix 15 one-line hotfix only. Do not merge to `main`. Wave 8 waits on Fire Recovery's reply to the November 1 email.
 - **Part 0 / fix 15:** done on staging (PR #32) and production (PR #33). Do not rebuild.
 - **Parts 1–2 / fixes 1–4 and 8–14:** on staging (practice click checks + Crescent staging click test). Do not rebuild. Details in the [archive](../completed/SECURITY_REMEDIATION_ARCHIVE_2026-11.md).
 - **Part 3 / fixes 5–7:** on staging; **not** cleared for production Fire Recovery use until Stage C below.
@@ -89,7 +90,7 @@ See [archive Part 5](../completed/SECURITY_REMEDIATION_ARCHIVE_2026-11.md) for t
 
 ### Promote staging to production (`main`) — open
 
-1. Production migration list (reviewed 2026-10-31): production has 10 migrations through `20260411190000_fire_recovery_tenant_api_credentials`. At release apply only the three newer ones: Session; RolePermission + AccountAuditLog; NerisReportChange.
+1. Production migration list (reviewed 2026-11-02): production has 10 migrations through `20260411190000_fire_recovery_tenant_api_credentials`. At Wave 8 apply four newer ones, already on staging: Session (`20261029180000_add_session`); RolePermission + AccountAuditLog (`20261029200000_add_role_permission_and_account_audit`); NerisReportChange (`20261030180000_add_neris_report_change`); Fire Recovery submit status (`20261102140000_fire_recovery_submit_status`). Do not apply them until the operator gives a written yes after a fresh production backup.
 2. Readable-text passwords: reset if any. Production `admin` already changed (Part 1).
 3. Neon backup of `fireultimate-prod`.
 4. Apply this branch’s database changes to production.
@@ -100,7 +101,7 @@ See [archive Part 5](../completed/SECURITY_REMEDIATION_ARCHIVE_2026-11.md) for t
 
 ### Stage C — open
 
-Fixes 5–7 already on staging → Fire Recovery changes any old password if needed → staging confirmation → production → only then save Fire Recovery password in production. Then fix 16 (5a/5b) as approved.
+Fixes 5–7 are on staging. The staging sandbox bill passed on 2026-11-02. Production still waits for Fire Recovery to say whether the Welcome login works for real bills. Do not save a Fire Recovery password in production before that answer and the release checklist. Fix 16 (5a/5b) is Wave 5b and is not started. Do not start it while waiting.
 
 ---
 

@@ -36,13 +36,18 @@ import {
   formatScheduleWeekNavLabel,
   formatSegmentCoverageLines,
   getHighestQualificationLabel,
+  guessScheduleRowIconFromName,
   parseQualificationColorMap,
+  parseScheduleRowColor,
+  parseScheduleRowIcon,
   qualificationColorHex,
   qualificationColorSoftStyle,
   getBestQualificationRankForPerson,
   getDatesForMonth,
   getDatesForWeekContaining,
   getRecurrenceIntervalDays,
+  hideKellyDayWhenRotationOff,
+  kellyRotationEnabledFromDraft,
   parseQualificationOverrides,
   parseRecurrenceWeekdays,
   shiftOccursOnDate,
@@ -53,9 +58,11 @@ import {
   toDateKey,
   visibleAdditionalRowCount,
   withNextAdditionalRow,
+  type ScheduleRowIconId,
 } from "./scheduleUtils";
 import { PersonnelScheduleDayBlockModal } from "./PersonnelScheduleDayBlockModal";
 import { ScheduleNoticeDialog } from "./ScheduleNoticeDialog";
+import { ScheduleRowLabelIcon } from "./scheduleRowLabels";
 
 type QualificationOverrideRow = {
   id: string;
@@ -304,27 +311,16 @@ function computeCrossApparatusOverlapMessage(params: {
 }
 
 type ScheduleRowLabelTone =
-  | "engine"
-  | "medic"
-  | "info"
+  | ScheduleRowIconId
   | "kelly"
-  | "sick"
-  | "trades"
   | "vacation"
   | "support";
 
 function getScheduleRowLabelTone(row: PersonnelScheduleRow): ScheduleRowLabelTone {
   if (row.rowType === "apparatus") {
-    const label = row.label.toLowerCase();
-    if (
-      label.includes("medic") ||
-      label.includes("ambulance") ||
-      label.includes("ems") ||
-      label.includes("rescue")
-    ) {
-      return "medic";
-    }
-    return "engine";
+    const chosen = parseScheduleRowIcon(row.scheduleLabelIcon);
+    if (chosen) return chosen;
+    return guessScheduleRowIconFromName(row.label);
   }
   const id = row.id.toLowerCase();
   const label = row.label.toLowerCase();
@@ -337,35 +333,7 @@ function getScheduleRowLabelTone(row: PersonnelScheduleRow): ScheduleRowLabelTon
   return "support";
 }
 
-function ScheduleRowLabelIcon({ tone }: { tone: ScheduleRowLabelTone }) {
-  if (tone === "engine") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <rect x="2" y="7" width="10" height="5" rx="1" fill="#dc2626" />
-        <rect x="8" y="4" width="4" height="3" rx="0.5" fill="#b91c1c" />
-        <circle cx="5" cy="12" r="1.4" fill="#1e293b" />
-        <circle cx="11" cy="12" r="1.4" fill="#1e293b" />
-      </svg>
-    );
-  }
-  if (tone === "medic") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <rect x="2" y="3" width="12" height="10" rx="2" fill="#059669" />
-        <rect x="7" y="5" width="2" height="6" fill="#ffffff" />
-        <rect x="5" y="7" width="6" height="2" fill="#ffffff" />
-      </svg>
-    );
-  }
-  if (tone === "info") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <circle cx="8" cy="8" r="6" fill="none" stroke="#0f172a" strokeWidth="1.5" />
-        <circle cx="8" cy="5" r="1" fill="#0f172a" />
-        <rect x="7.2" y="7" width="1.6" height="5" rx="0.6" fill="#0f172a" />
-      </svg>
-    );
-  }
+function ScheduleRowLabelIconForTone({ tone }: { tone: ScheduleRowLabelTone }) {
   if (tone === "kelly" || tone === "vacation") {
     return (
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
@@ -374,34 +342,14 @@ function ScheduleRowLabelIcon({ tone }: { tone: ScheduleRowLabelTone }) {
       </svg>
     );
   }
-  if (tone === "sick") {
+  if (tone === "support") {
     return (
       <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <rect x="3" y="3" width="10" height="10" rx="2" fill="#dc2626" />
-        <rect x="7" y="5" width="2" height="6" fill="#ffffff" />
-        <rect x="5" y="7" width="6" height="2" fill="#ffffff" />
+        <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
       </svg>
     );
   }
-  if (tone === "trades") {
-    return (
-      <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-        <path
-          d="M3 6h8M9 4l2 2-2 2M13 10H5M7 8l-2 2 2 2"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-        />
-      </svg>
-    );
-  }
-  return (
-    <svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true">
-      <circle cx="8" cy="8" r="5" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
+  return <ScheduleRowLabelIcon icon={tone} />;
 }
 
 interface PersonnelSchedulePageProps {
@@ -469,7 +417,9 @@ export function PersonnelSchedulePage({
   const [viewerIsReviewer, setViewerIsReviewer] = useState(false);
   const [viewerIsAdmin, setViewerIsAdmin] = useState(false);
   const navigate = useNavigate();
-  const limitedScheduleEditor = canEditSchedule && !viewerIsReviewer;
+  /** Day block and changing other people. Self-fill and own-name cancellation stay available without this. */
+  const canManageSchedule = canEditSchedule && viewerIsReviewer;
+  const limitedScheduleEditor = !canManageSchedule;
   const limitedEditorRef = useRef(false);
   limitedEditorRef.current = limitedScheduleEditor;
   const scheduleNoticeRef = useRef<(message: string) => void>(() => undefined);
@@ -581,7 +531,10 @@ export function PersonnelSchedulePage({
             const apparatus = Array.isArray(d.schedulerApparatusRecords)
               ? (d.schedulerApparatusRecords as PersonnelScheduleData["apparatus"])
               : [];
-            const additionalFields = normalizeAdditionalFields(d.additionalFields);
+            const additionalFields = hideKellyDayWhenRotationOff(
+              normalizeAdditionalFields(d.additionalFields),
+              kellyRotationEnabledFromDraft(d.kellyRotationEnabled),
+            );
             const standardOvertimeSlot = Math.max(
               1,
               Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
@@ -669,7 +622,10 @@ export function PersonnelSchedulePage({
   }, [normalizeAdditionalFields, normalizeDepartmentDraft]);
 
   useEffect(() => {
-    if (!hasLoadedRemoteSchedule || !canEditSchedule) {
+    if (!hasLoadedRemoteSchedule) {
+      return;
+    }
+    if (!canEditSchedule && viewerName.trim().length === 0) {
       return;
     }
     const timeout = window.setTimeout(() => {
@@ -692,7 +648,7 @@ export function PersonnelSchedulePage({
         });
     }, 250);
     return () => window.clearTimeout(timeout);
-  }, [scheduleAssignments, scheduleOvertimeSplit, scheduleSlotSegments, hasLoadedRemoteSchedule, canEditSchedule]);
+  }, [scheduleAssignments, scheduleOvertimeSplit, scheduleSlotSegments, hasLoadedRemoteSchedule, canEditSchedule, viewerName]);
 
   const shiftOptions = useMemo(() => {
     const ordered = [...departmentData.shiftEntries].sort((a, b) => {
@@ -766,6 +722,8 @@ export function PersonnelSchedulePage({
           ? app.personnelRequirements.filter(Boolean)
           : [],
         stationName: app.station ?? "",
+        scheduleLabelIcon: parseScheduleRowIcon(app.scheduleLabelIcon) || undefined,
+        scheduleLabelColor: parseScheduleRowColor(app.scheduleLabelColor) || undefined,
       });
     });
 
@@ -2303,6 +2261,36 @@ export function PersonnelSchedulePage({
     ],
   );
 
+  const promptSelfCancellation = useCallback(
+    (dateKey: string, unitId: string, slotIndex: number) => {
+      const personName = viewerName.trim();
+      if (!personName) return;
+      const alreadyPending = pendingOverrides.some(
+        (item) =>
+          item.status === "pending" &&
+          item.requiredQualification === SEAT_REMOVAL &&
+          item.dateKey === dateKey &&
+          item.unitId === unitId &&
+          item.slotIndex === slotIndex &&
+          item.personName.trim().toLowerCase() === personName.toLowerCase(),
+      );
+      if (alreadyPending) {
+        openScheduleNotice("Your cancellation is already waiting for a sub admin.");
+        return;
+      }
+      setNoticeAction({
+        label: "Request cancellation",
+        run: () => {
+          void requestSeatRemoval(dateKey, unitId, slotIndex, personName);
+        },
+      });
+      setScheduleNotice(
+        "Taking yourself off this seat needs a sub admin to approve. You stay on the schedule until then.",
+      );
+    },
+    [openScheduleNotice, pendingOverrides, requestSeatRemoval, viewerName],
+  );
+
   const clearSlotValue = useCallback(
     (dateKey: string, unitId: string, slotIndex: number) => {
       if (limitedScheduleEditor) {
@@ -2316,15 +2304,7 @@ export function PersonnelSchedulePage({
           openScheduleNotice("You cannot remove someone else from the schedule.");
           return;
         }
-        setNoticeAction({
-          label: "Request cancellation",
-          run: () => {
-            void requestSeatRemoval(dateKey, unitId, slotIndex, names[0] ?? viewerName);
-          },
-        });
-        setScheduleNotice(
-          "Taking yourself off this seat needs a sub admin to approve. You stay on the schedule until then.",
-        );
+        promptSelfCancellation(dateKey, unitId, slotIndex);
         return;
       }
       pushUndoSnapshot("Clear slot");
@@ -2365,7 +2345,7 @@ export function PersonnelSchedulePage({
       viewerName,
       getAssignmentsForDay,
       openScheduleNotice,
-      requestSeatRemoval,
+      promptSelfCancellation,
     ],
   );
 
@@ -2947,7 +2927,7 @@ export function PersonnelSchedulePage({
           <h1>Personnel Schedule</h1>
           <p>
             Schedule calculations are blocked until this shift has a Start Time.
-            Go to Admin Functions {"->"} Scheduler Settings {"->"} Shift Information and set
+            Go to Admin Functions {"->"} Schedule Settings {"->"} Shift Information and set
             a 24-hour Start Time for <strong>{effectiveShift || "the active shift"}</strong>.
           </p>
         </header>
@@ -3237,6 +3217,10 @@ export function PersonnelSchedulePage({
             ) : (
               scheduleRows.map((row) => {
                 const rowLabelTone = getScheduleRowLabelTone(row);
+                const customLabelColor =
+                  row.rowType === "apparatus"
+                    ? qualificationColorSoftStyle(parseScheduleRowColor(row.scheduleLabelColor))
+                    : undefined;
                 return (
                 <tr
                   key={row.id}
@@ -3251,11 +3235,23 @@ export function PersonnelSchedulePage({
                   }
                 >
                   <td
-                    className={`personnel-schedule-row-label personnel-schedule-row-label--${rowLabelTone}`}
+                    className={`personnel-schedule-row-label${
+                      customLabelColor ? "" : ` personnel-schedule-row-label--${rowLabelTone}`
+                    }`}
                   >
-                    <span className="personnel-schedule-row-label-pill">
+                    <span
+                      className="personnel-schedule-row-label-pill"
+                      style={
+                        customLabelColor
+                          ? {
+                              backgroundColor: customLabelColor.backgroundColor,
+                              color: customLabelColor.color,
+                            }
+                          : undefined
+                      }
+                    >
                       <span className="personnel-schedule-row-label-icon">
-                        <ScheduleRowLabelIcon tone={rowLabelTone} />
+                        <ScheduleRowLabelIconForTone tone={rowLabelTone} />
                       </span>
                       <span className="personnel-schedule-row-label-text">{row.label}</span>
                     </span>
@@ -3540,14 +3536,24 @@ export function PersonnelSchedulePage({
                                 !unqualifiedNames.has(entry.trim())
                               );
                             });
+                            const leaveRowOverridesPersonColor =
+                              row.rowType === "support" && rowLabelTone === "sick";
+                            const isSplitSeatDisplay = displaySegmentsForUi.length > 1;
                             const softPillStyle =
                               !isTextRow &&
+                              !isSplitSeatDisplay &&
                               !isActiveInlineSelect &&
                               !isRed &&
                               !isHighlighted &&
                               !isRequiredInvalid &&
                               fillPersonName
-                                ? softStyleForPersonnelName(fillPersonName)
+                                ? leaveRowOverridesPersonColor
+                                  ? {
+                                      backgroundColor: "#fee2e2",
+                                      borderColor: "#fecaca",
+                                      color: "#991b1b",
+                                    }
+                                  : softStyleForPersonnelName(fillPersonName)
                                 : undefined;
                             const eligiblePeople = getEligibleShiftPersonnelForSlot(
                               dateKey,
@@ -3558,22 +3564,30 @@ export function PersonnelSchedulePage({
                             return (
                               <div
                                 key={slotIdx}
-                                className={`personnel-schedule-slot ${
+                                className={`personnel-schedule-slot${
+                                  isTextRow ? " personnel-schedule-slot-text" : ""
+                                }${
+                                  isSplitSeatDisplay ? " personnel-schedule-slot-split" : ""
+                                }${
                                   isRed
-                                    ? "personnel-schedule-slot-required-empty"
+                                    ? " personnel-schedule-slot-required-empty"
                                     : ""
-                                } ${
+                                }${
                                   isHighlighted
-                                    ? "personnel-schedule-slot-highlighted"
+                                    ? " personnel-schedule-slot-highlighted"
                                     : ""
-                                } ${
+                                }${
                                   isRequiredInvalid
-                                    ? "personnel-schedule-slot-required-invalid"
+                                    ? " personnel-schedule-slot-required-invalid"
+                                    : ""
+                                }${
+                                  leaveRowOverridesPersonColor && softPillStyle
+                                    ? " personnel-schedule-slot-leave-red"
                                     : ""
                                 }`}
                                 style={softPillStyle}
                                 onClick={(event) => {
-                                  if (!canEditSchedule || isTextRow) return;
+                                  if (isTextRow) return;
                                   event.stopPropagation();
                                   const heldPartial = pendingOverrides.find(
                                     (item) =>
@@ -3614,6 +3628,14 @@ export function PersonnelSchedulePage({
                                     const self = viewerName.trim().toLowerCase();
                                     if (occupied.length === 1 && occupied[0]?.toLowerCase() === self) {
                                       clearSlotValue(dateKey, row.unitId, slotIdx);
+                                      return;
+                                    }
+                                    if (
+                                      isSplitSeatDisplay &&
+                                      self &&
+                                      occupied.some((entryName) => entryName.toLowerCase() === self)
+                                    ) {
+                                      promptSelfCancellation(dateKey, row.unitId, slotIdx);
                                       return;
                                     }
                                     openScheduleNotice("You can only add yourself to an open seat.");
@@ -3682,7 +3704,13 @@ export function PersonnelSchedulePage({
                                     ))}
                                   </select>
                                 ) : shownSlotNames.length > 0 ? (
-                                  <span className="personnel-schedule-slot-name-list">
+                                  <span
+                                    className={
+                                      isSplitSeatDisplay
+                                        ? "personnel-schedule-split-row"
+                                        : "personnel-schedule-slot-name-list"
+                                    }
+                                  >
                                     {(displaySegmentsForUi.length > 0
                                       ? displaySegmentsForUi
                                       : shownSlotNames.map((n) => ({
@@ -3742,9 +3770,21 @@ export function PersonnelSchedulePage({
                                         ? overtimeChecked
                                           ? "HIRE"
                                           : "OPEN"
-                                        : slotNames.length > 1
-                                          ? formatScheduleSegmentToken(entry)
-                                          : formatSchedulePersonnelDisplayName(entry);
+                                        : isSplitSeatDisplay
+                                          ? formatSchedulePersonnelDisplayName(entry)
+                                          : slotNames.length > 1
+                                            ? formatScheduleSegmentToken(entry)
+                                            : formatSchedulePersonnelDisplayName(entry);
+                                      const timeLabel =
+                                        isSplitSeatDisplay && seg.endMinutes > seg.startMinutes
+                                          ? `${minutesToTimeValue(seg.startMinutes)}–${minutesToTimeValue(seg.endMinutes)}`
+                                          : "";
+                                      const statusSuffix =
+                                        isPendingSeat || isPartialPending
+                                          ? " (Pending)"
+                                          : isCancelPending
+                                            ? " (Cancel pending)"
+                                            : "";
                                       const isUnqualified = unqualifiedNames.has(entry.trim());
                                       const openBlockHasSomeoneElse = displaySegmentsForUi.some((other) => {
                                         const otherName = other.personnelName.trim();
@@ -3761,6 +3801,104 @@ export function PersonnelSchedulePage({
                                         !overtimeChecked &&
                                         seg.endMinutes > seg.startMinutes &&
                                         openBlockHasSomeoneElse;
+                                      const segmentSoftStyle =
+                                        isSplitSeatDisplay &&
+                                        !isUnfilledSegment &&
+                                        !isUnqualified &&
+                                        !isHighlighted &&
+                                        !isRequiredInvalid
+                                          ? leaveRowOverridesPersonColor
+                                            ? {
+                                                backgroundColor: "#fee2e2",
+                                                borderColor: "#fecaca",
+                                                color: "#991b1b",
+                                              }
+                                            : softStyleForPersonnelName(entry)
+                                          : undefined;
+                                      if (isSplitSeatDisplay) {
+                                        const splitClassName = [
+                                          "personnel-schedule-segment-pill",
+                                          isUnfilledSegment && overtimeChecked
+                                            ? "personnel-schedule-segment-pill-hire"
+                                            : "",
+                                          isUnfilledSegment && !overtimeChecked
+                                            ? "personnel-schedule-segment-pill-open"
+                                            : "",
+                                          isUnqualified ? "personnel-schedule-segment-pill-unqualified" : "",
+                                          isOffShiftInOtSlot ? "personnel-schedule-segment-pill-off-shift" : "",
+                                          canClaimOpenBlock ? "personnel-schedule-segment-pill-claim" : "",
+                                        ]
+                                          .filter(Boolean)
+                                          .join(" ");
+                                        const splitBody = (
+                                          <>
+                                            <span className="personnel-schedule-segment-pill-name">
+                                              {`${shownName}${statusSuffix}`}
+                                            </span>
+                                            {timeLabel ? (
+                                              <span className="personnel-schedule-segment-pill-time">
+                                                {timeLabel}
+                                              </span>
+                                            ) : null}
+                                          </>
+                                        );
+                                        const selfName = viewerName.trim().toLowerCase();
+                                        const isOwnSegment =
+                                          !isUnfilledSegment &&
+                                          selfName.length > 0 &&
+                                          entry.trim().toLowerCase() === selfName;
+                                        return canClaimOpenBlock ? (
+                                          <button
+                                            type="button"
+                                            key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
+                                            className={splitClassName}
+                                            style={segmentSoftStyle}
+                                            title="Add yourself to this open time"
+                                            onClick={(event) => {
+                                              event.stopPropagation();
+                                              claimOpenTimeBlock(
+                                                dateKey,
+                                                row.unitId,
+                                                slotIdx,
+                                                seg.startMinutes,
+                                                seg.endMinutes,
+                                              );
+                                            }}
+                                          >
+                                            {splitBody}
+                                          </button>
+                                        ) : (
+                                          <span
+                                            key={`${entry}-${nameIndex}-${seg.id ?? nameIndex}`}
+                                            className={`${splitClassName}${
+                                              limitedScheduleEditor && isOwnSegment
+                                                ? " personnel-schedule-segment-pill-self"
+                                                : ""
+                                            }`}
+                                            style={segmentSoftStyle}
+                                            onClick={
+                                              limitedScheduleEditor && !isUnfilledSegment
+                                                ? (event) => {
+                                                    event.stopPropagation();
+                                                    if (isOwnSegment) {
+                                                      promptSelfCancellation(
+                                                        dateKey,
+                                                        row.unitId,
+                                                        slotIdx,
+                                                      );
+                                                      return;
+                                                    }
+                                                    openScheduleNotice(
+                                                      "You cannot remove someone else from the schedule.",
+                                                    );
+                                                  }
+                                                : undefined
+                                            }
+                                          >
+                                            {splitBody}
+                                          </span>
+                                        );
+                                      }
                                       return canClaimOpenBlock ? (
                                         <button
                                           type="button"
@@ -3805,11 +3943,7 @@ export function PersonnelSchedulePage({
                                                 : undefined
                                           }
                                         >
-                                          {isPendingSeat || isPartialPending
-                                            ? `${shownName} (Pending)`
-                                            : isCancelPending
-                                              ? `${shownName} (Cancel pending)`
-                                              : shownName}
+                                          {`${shownName}${statusSuffix}`}
                                           {nameIndex < slotNames.length - 1 ? " / " : ""}
                                         </span>
                                       );

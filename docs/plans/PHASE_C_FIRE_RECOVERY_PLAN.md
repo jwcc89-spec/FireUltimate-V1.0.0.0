@@ -1,9 +1,17 @@
 # Phase C — Fire Recovery billing go-live plan
 
-**Status:** Wave 6 is done on the practice branch. Next is the operator's Wave 7 staging sandbox test, after this branch is merged to staging. Wave 5b still waits. Q5 (vendor) still waits. Render, Neon, and production were not changed.
-**Updated:** 2026-11-02, late morning America/Chicago. Incident 12345 NERIS export succeeded (201 Created, 11:14:04). Wave 6 fake-vendor tests passed (44 tests). Staging promote and Wave 7 clicks are not done.
-**Target:** one real Crescent motor-vehicle-incident bill submitted from production on **Monday, November 2, 2026**.
-**Branch:** `cursor/stage-b-foundation-b5ff` (practice). Staging branch: `submenu/neris-golive-cifpd`. Production: `main`.
+**Status:** Wave 7 sandbox bill is done on Crescent staging. Fire Recovery confirmed the test was imported without errors. Vendor email answers arrived 2026-11-13 (recorded in §13). Q5 is closed: the Welcome login works for Crescent real bills. Export-stamp fix and plan updates are being merged to staging (`submenu/neris-golive-cifpd`) for operator re-test. Wave 8 still needs an explicit operator go-ahead. Wave 5b still waits. Production is not updated.
+**Updated:** 2026-11-13, morning America/Chicago. Vendor answers recorded. Foundation commits cherry-picked to staging PR branch.
+
+**Next agent:** after staging merge + operator export/billable re-test, wait for a written yes before Wave 8 production. Do not click Confirm and send on this Mac against production. Do not touch production without a written yes and a fresh backup.
+**Target:** one real Crescent motor-vehicle-incident bill submitted from production (date moves when the operator starts Wave 8).
+**Branch:** staging work on `cursor/wave8-export-stamp-to-staging` → `submenu/neris-golive-cifpd`. Practice history: `cursor/stage-b-foundation-b5ff`. Production: `main`.
+
+**Still open after vendor reply (2026-11-13):**
+1. ~~Merge foundation-only commits onto staging~~ — done 2026-11-13 via PR #43 (`898c92d`). Operator re-tests export/billable on staging, then production with Wave 8.
+2. Wave 5b — older-incident NERIS re-export check (operator asks first).
+3. Wave 8 — production release + one real bill (§11.3), only after the operator says go.
+4. Park vendor follow-ups that are still waiting on Fire Recovery’s development team (email items 5, 6, and 8).
 
 > **When this plan is complete:** move this file to `docs/plans/completed/PHASE_C_FIRE_RECOVERY_PLAN.md` (create the folder if it does not exist) using `git mv`. Then update every link to it (`agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`, `docs/task-2-multitenant-domain-plan.md`, the latest session note) and commit. "Complete" means §12's done list is fully checked and one real production bill has a tracking ID.
 
@@ -484,6 +492,7 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 ### Wave 5b — Older incidents (§7.6)
 - [ ] Staging check of NERIS re-export behaviour (operator with agent), recorded in `docs/plans/security-remediation-plan.md` under fix 5b.
 - [ ] Re-export-then-bill button, only if the re-export updates cleanly.
+- **Blocked on:** operator asking to start it. Not required to finish Wave 8.
 
 ### Wave 6 — Fake-vendor tests
 - [x] New `server/fireRecovery.test.mjs`, added to the `npm test` script in `package.json`.
@@ -493,11 +502,18 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
 - **Done when:** `npm test` passes against local `fu_session_test` only. This also closes Wave 4's "done when" proof.
 
 ### Wave 7 — Staging sandbox test (operator, §11.2)
-- [ ] Render settings on staging, login entered, two-party sandbox bill, billing status checked, double click checked, results recorded in §15.
+- [x] Render settings on staging, login entered, two-party sandbox bill, billing status checked, results recorded in §15. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. A second Confirm and send closed the window. One Sent row is stored.
+- [x] Fire Recovery confirmed 2026-11-13: sandbox import “successfully imported without errors.”
 
 ### Wave 8 — Production release and first real bill (§11.3)
-- [ ] Release checklist, settings, login, permissions, one real bill, results recorded.
+- [ ] Merge foundation export-stamp commit (`746ed5e`) into staging, then production, so the next NERIS export can save the NERIS id while marking Exported.
+- [ ] Release checklist on production (fresh backup, migrations, Crescent sender, code release).
+- [ ] §11.1 on **fireultimate-api-prod** with `FIRE_RECOVERY_MODE=live` and a new credential key.
+- [ ] Enter Crescent’s Fire Recovery login on production (Welcome login is allowed for real bills — Q5 closed).
+- [ ] Grant officers billing permissions; set Is Resident? to Required for Crescent.
+- [ ] One real motor-vehicle incident: Preview shows red LIVE banner and Crescent’s real NERIS entity ID (never `FD12345678`); Confirm; record tracking ID; check Recovery Hub.
 - [ ] Then follow the "When this plan is complete" note at the top.
+- **Blocked on:** explicit operator go-ahead. Do not start without a written yes.
 
 ---
 
@@ -541,6 +557,15 @@ Repeat this separately for staging and production. Each gets its **own** key.
 
 ### 11.2 Staging sandbox test (Wave 7)
 
+Apply the billing-status columns to the staging database before the clicks. `npx prisma migrate deploy` by itself fails because Prisma does not load `.env.server`. From the repo folder:
+
+```
+cd /Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0
+node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy
+```
+
+This Mac's `.env.server` points at the staging database. Do not run `npm run db:seed`.
+
 1. Sign in at `https://cifpdil.staging.fireultimate.app` as an admin.
 2. Go to **Admin Functions → Setup/Configuration → Fire Recovery**.
    - Enter the department name "Crescent Iroquois Fire Protection District".
@@ -551,9 +576,11 @@ Repeat this separately for staging and production. Each gets its **own** key.
    - On **Fire Recovery Billing**, add two parties: one insured, one with Uninsured checked. Use made-up names.
 4. Export the report to NERIS.
 5. Go to **Reporting → NERIS → View Exports**, open the incident, and look at the **Fire Recovery panel**.
-   - Expect: yellow SANDBOX banner and department ID `FD12345678`.
-6. Click **Preview & Send**. Check every value. Click **Confirm and send** twice quickly.
+   - Before the first successful send, Tracking ID, Invoice status, Amount due, Amount paid, and Last updated stay blank, and **Update billing status** stays gray. That is expected.
+   - On the site as of November 2, the yellow SANDBOX banner and department ID `FD12345678` are inside the window that opens after **Preview & Send**. After the next staging deploy they also show on the panel itself.
+6. Click **Preview & Send**. Check every value, including the yellow banner and `FD12345678`. Click **Confirm and send** twice quickly.
    - Expect: status **Sent**, one tracking ID, no error.
+   - If the window says "Fire Recovery is switched off on this server," stop. The Render sandbox setting is not live.
 7. Click **Update billing status**. Expect a reply or a clear "not available yet" message. Write down what you see.
 8. Try **Preview & Send** again. Expect it to refuse ("Already sent…").
 9. Tell the agent the tracking ID and any messages. The agent records them in §15 and adds them to the vendor email.
@@ -578,8 +605,8 @@ Then:
 
 ## 12. Definition of done
 
-- [ ] Staging: a two-party sandbox bill returned a tracking ID; double click sent one bill; resend refused.
-- [ ] Tests: the Wave 6 cases pass in `npm test` and GitHub Actions.
+- [x] Staging: a two-party sandbox bill returned tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. One Sent row is stored. Invoice status Unassigned. Vendor confirmed import without errors.
+- [x] Tests: the Wave 6 cases pass in `npm test` (44 tests on the practice branch against local `fu_session_test`).
 - [ ] Production: Stage B + C released per the checklist; `FIRE_RECOVERY_MODE=live`; one real Crescent bill has a tracking ID, visible in Recovery Hub.
 - [ ] Docs: this plan's §15 is filled in; the canvas copy, task-2 plan, API reference and handoff files are updated.
 - [ ] Plan moved to `docs/plans/completed/` (see the top note).
@@ -592,11 +619,11 @@ Then:
 >
 > Hello,
 >
-> We are finishing Fire Ultimate's connection to Add NERIS Incident for Billing for Crescent Iroquois Fire Protection District, and will test with sandbox department ID FD12345678 first. Could you help with these questions?
+> We are finishing Fire Ultimate's connection to Add NERIS Incident for Billing for Crescent Iroquois Fire Protection District. On November 2, 2026 we sent one sandbox bill with department ID FD12345678. Fire Recovery accepted it. Tracking ID: c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418. Billing status came back as Unassigned, with no amount due and no amount paid. Could you help with these questions?
 >
 > 1. Login: is the RH public API login in our Welcome email for the sandbox only, or also for Crescent's real bills?
 > 2. Sandbox: please confirm that submissions with FD12345678 are never billed. Can sandbox incidents be cleared after testing?
-> 3. Party role: the API has InvolvementType and InvolTypeDescript fields. We plan to leave them blank. Is that okay?
+> 3. Party role: the API has InvolvementType and InvolTypeDescript fields. We plan to leave them blank. Is that okay? If not, what is expected for these data fields?
 > 4. NERIS code: should IncidentType and PrincipleIncidentType hold the full NERIS incident type value (for example MEDICAL||INJURY||MOTOR_VEHICLE_COLLISION)? Which format matches the NERIS Code dropdown in Recovery Hub?
 > 5. Commercial trucking: how do we mark a Commercial Trucking Incident through the API — CommercialVehicle on the party's vehicle, or something else?
 > 6. Lost tracking ID: if our request times out, how do we find the tracking ID? Get Incident Tracking Id still lists a SubscriptionKey, and we do not have one.
@@ -612,7 +639,20 @@ Then:
 > Thank you,
 > Jeremy Wichtner, Fire Ultimate
 
-When answers arrive, update §3/§4 and the API reference, and adjust the mapping if needed.
+**Vendor answers received 2026-11-13** (Fire Recovery reply, pasted by the operator):
+
+| Email # | Topic | Answer | What we do |
+|---|---|---|---|
+| 1 | Welcome login for real bills? | Yes — usable for Crescent’s real bills as well. | **Q5 closed.** Wave 8 may use that login. |
+| 2 | Sandbox bills / FD12345678 | Never submitted for billing; can be cleared on request. | Keep staging on sandbox. No change required. |
+| 3 | Party InvolvementType / InvolTypeDescript | Not required; leave blank (context only, e.g. driver/passenger). | Keep sending blank (already coded). |
+| 4 | NERIS incident type format | Same as NERIS schema, e.g. `MEDICAL\|\|INJURY\|\|MOTOR_VEHICLE_COLLISION`. | Keep sending the full code (already coded on the main payload). |
+| 5 | Commercial trucking mark | No API mark yet; they will add fields later and notify. | **Park.** No code until they send field names. |
+| 6 | Lost tracking ID after timeout | Waiting on their development team. | **Park.** Keep Needs review + admin resolve for now. |
+| 7 | Corrections | Re-submit via API if never edited in Recovery Hub; if already edited/submitted there, fix in Recovery Hub. | Document; no Correct/Resubmit auto-update for edited runs. |
+| 8 | Billing status timing / poll rate | Waiting on their development team. | **Park.** Keep manual Update billing status. |
+
+Sandbox import confirmation (same reply thread): staging test “successfully imported without errors.” Tracking ID remains `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`.
 
 ---
 
@@ -624,7 +664,7 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 | Q2 | ~~Approve permission-map changes for the new routes?~~ **Approved 2026-11-01 (operator):** `POST /api/fire-recovery/preview` and `POST /api/fire-recovery/submit` = `billing.submit`; `POST /api/fire-recovery/resolve-review` = admin only. Add the tests listed in Wave 4 | — | — |
 | Q3 | ~~Which report time is "Time Alarm Received"?~~ **Answered 2026-11-01:** call arrival at dispatch (`incident_time_call_arrival`) | — | — |
 | Q4 | ~~Is "Run Number" Crescent's incident number?~~ **Answered 2026-11-01:** yes (`incident_internal_id`, e.g. `26-079`) | — | — |
-| Q5 | Is the Welcome login also for real bills? | Wave 8 | Vendor email Q1 |
+| Q5 | ~~Is the Welcome login also for real bills?~~ **Answered 2026-11-13 (vendor):** yes, usable for Crescent’s real bills | — | — |
 
 ---
 
@@ -642,6 +682,11 @@ When answers arrive, update §3/§4 and the API reference, and adjust the mappin
 - 2026-11-02 — Wave 5 done on the same branch. Export Details has a Fire Recovery panel, a preview window, and an admin resolve-review window. The queue, the Fire Recovery list, and the detail page show Not sent, Submitting, Sent, Failed, or Needs review. Update billing status shows the server's error, including a time-limit failure. The Core dispatch and incident lines are locked and built from the street, city, state, and ZIP fields, which collapse with an arrow and sit on two lines. Same as dispatch sits beside the Incident location label. Not deployed. Do not click Confirm and send on this Mac. Next is Wave 6 on this Mac, or Wave 5b only with the operator on staging.
 - 2026-11-02 — Location follow-up on the same branch. Incident location keeps one state and one ZIP. Country and county sit in that section. Country defaults to US. The separate State/Territory and Postal code fields are hidden; the NERIS payload still sends state, postal code, country, and county. The Motor Vehicle Collision NERIS code box is hidden and the bill uses the Core primary incident type. The NERIS Entity ID screen is Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Incident 12345 then exported successfully: Exported, 201 Created at 11:14:04 America/Chicago. Not deployed. Do not start Wave 5b or Wave 6 until the operator says so.
 - 2026-11-02 — Wave 6 done on the same branch. `server/fireRecovery.test.mjs` talks to a local pretend Fire Recovery server. One incident can be billed once. A clear refusal is Failed and can be fixed. A timeout, HTTP 500, or a reply without Status 1 is Needs review and cannot be resent. Sandbox sends FD12345678. Live sends the department NERIS ID and refuses FD12345678. Unset refuses before any vendor call. A missing required field is refused. Another department's call number is refused. `npm test` passed 44 tests against local `fu_session_test` only. Not deployed. Wave 7 is the operator's staging sandbox test. Do not click Confirm and send on this Mac.
+- 2026-11-02 — Wave 7 sandbox bill on Crescent staging. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. Invoice status Unassigned. Second send stayed one Sent row. Export-stamp fix `746ed5e` stayed on the practice branch only.
+- 2026-11-13 — Fire Recovery replied to the §13 email. Q5 closed (Welcome login works for real bills). Sandbox import confirmed without errors. Commercial mark, lost-tracking-ID recovery, and billing-status poll timing remain parked until Fire Recovery’s development team answers. Wave 8 still waits for an explicit operator go-ahead.
+- 2026-11-02 — Wave 7 click stopped at Preview & Send. The Crescent test report had a NERIS 201 receipt, but the saved report stayed In Review because the export stamp also writes the NERIS id and the locked-report save rejected that change. Preview then said "Export this report to NERIS first." That one saved report was set to Exported so Preview & Send can open without another deploy. The yellow banner and FD12345678 are inside that window on the current site. Tracking ID and Update billing status stay empty until Confirm and send. The practice branch now lets the export stamp save, treats a successful receipt plus In Review as ready to preview, and shows the banner on the panel after the next deploy. Do not start Wave 5b. Do not click Confirm and send on this Mac.
+- 2026-11-02 — Wave 7 sandbox bill accepted on cifpdil staging at 12:21 p.m. America/Chicago. Yellow SANDBOX banner and FD12345678 were in the preview. Party, run number, incident type, alarm, cleared time, location, and personnel looked correct. Status Sent. Tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`. A second Confirm and send closed the window. One Sent row is stored. Update billing status at 12:22 p.m. said "Billing status updated." Invoice status Unassigned. Amount due and amount paid were blank. Last updated changed to that time. Do not start Wave 5b. Production is not updated.
+- 2026-11-02 — Handoff. The operator sent the Fire Recovery email the night of 2026-11-01 and is waiting. Q5 blocks Wave 8. Do not start Wave 8, Wave 5b, or production until the vendor answers and the operator says to go ahead. Staging is pull request 34 at `4c80de8`. The practice branch is two commits ahead (`746ed5e`, `286051c`). Those two are not deployed. The next agent starts at `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-02-wave-7-handoff.md`.
 
 ---
 

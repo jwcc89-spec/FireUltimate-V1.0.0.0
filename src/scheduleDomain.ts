@@ -1,4 +1,9 @@
-import { parseQualificationColorMap, parseQualificationOverrides } from "./scheduleUtils";
+import {
+  hideKellyDayWhenRotationOff,
+  kellyRotationEnabledFromDraft,
+  parseQualificationColorMap,
+  parseQualificationOverrides,
+} from "./scheduleUtils";
 
 export type ScheduleSupportValueMode = "text" | "personnel";
 
@@ -22,6 +27,10 @@ export interface PersonnelScheduleRow {
   supportSegmentedMode?: boolean;
   /** Where timed pieces from this additional field are copied: none, info, or trades. */
   segmentDisplayIn?: "none" | "info" | "trades";
+  /** Apparatus only: Admin-chosen schedule label icon. */
+  scheduleLabelIcon?: string;
+  /** Apparatus only: Admin-chosen schedule label color id. */
+  scheduleLabelColor?: string;
 }
 
 export interface PersonnelScheduleData {
@@ -39,6 +48,10 @@ export interface PersonnelScheduleData {
     maximumPersonnel: number;
     personnelRequirements: string[];
     station: string;
+    /** Schedule left-label icon: engine, ambulance, maltese, medic, info, trades, sick. */
+    scheduleLabelIcon?: string;
+    /** Schedule left-label soft color id from Admin color swatches. */
+    scheduleLabelColor?: string;
   }>;
   additionalFields: Array<{
     id: string;
@@ -115,7 +128,10 @@ export function loadPersonnelScheduleData({
   const apparatus = Array.isArray(d.schedulerApparatusRecords)
     ? (d.schedulerApparatusRecords as PersonnelScheduleData["apparatus"])
     : [];
-  const additionalFields = normalizeAdditionalFields(d.additionalFields);
+  const additionalFields = hideKellyDayWhenRotationOff(
+    normalizeAdditionalFields(d.additionalFields),
+    kellyRotationEnabledFromDraft(d.kellyRotationEnabled),
+  );
   const standardOvertimeSlot = Math.max(
     1,
     Math.floor(Number(d.standardOvertimeSlot ?? 24) || 24),
