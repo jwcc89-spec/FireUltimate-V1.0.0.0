@@ -3040,6 +3040,50 @@ async function resolveExportReportWriterName(tenantId, auth, requestBody) {
   return displayNameFromUsernameMap(fullNameMap, fromBody || fromAuth).slice(0, 200);
 }
 
+/**
+ * After NERIS accepts an export, mark the saved report Exported on the server.
+ * Do not rely on the browser finishing a follow-up draft save (timeouts and races left status on In Review).
+ */
+async function markNerisDraftExportedAfterSuccess(tenantId, callNumber, nerisId, auth) {
+  const trimmedCall = trimValue(callNumber);
+  if (!tenantId || !trimmedCall) return;
+  const existing = await prisma.nerisDraft.findUnique({
+    where: { tenantId_callNumber: { tenantId, callNumber: trimmedCall } },
+  });
+  if (!existing || isReportRemoved(existing.payload)) return;
+  const previous =
+    existing.payload && typeof existing.payload === "object" && !Array.isArray(existing.payload)
+      ? existing.payload
+      : {};
+  if (reportStatusOf(previous) === "Exported") {
+    const prevForm =
+      previous.formValues && typeof previous.formValues === "object" && !Array.isArray(previous.formValues)
+        ? previous.formValues
+        : {};
+    const alreadyHasId = trimValue(prevForm.incident_neris_id);
+    const nextId = trimValue(nerisId);
+    if (!nextId || alreadyHasId === nextId) return;
+  }
+  const previousForm =
+    previous.formValues && typeof previous.formValues === "object" && !Array.isArray(previous.formValues)
+      ? previous.formValues
+      : {};
+  const nextForm = { ...previousForm };
+  const nextNerisId = trimValue(nerisId);
+  if (nextNerisId) nextForm.incident_neris_id = nextNerisId;
+  const nextPayload = {
+    ...previous,
+    reportRemoved: false,
+    reportStatus: "Exported",
+    formValues: nextForm,
+  };
+  await prisma.nerisDraft.update({
+    where: { tenantId_callNumber: { tenantId, callNumber: trimmedCall } },
+    data: { payload: nextPayload },
+  });
+  await recordReportChange(tenantId, trimmedCall, auth, ["reportStatus"]);
+}
+
 async function writeNerisExportReceipt({
   tenantId,
   auth,
@@ -3071,10 +3115,12 @@ async function writeNerisExportReceipt({
     preview = "";
   }
   const reportWriterName = await resolveExportReportWriterName(tenantId, auth, body);
-  return prisma.nerisExportHistory.create({
+  const callNumber = trimValue(body.callNumber) ?? "";
+  const nerisId = nerisIdFromReply(responseBody, fallback);
+  const row = await prisma.nerisExportHistory.create({
     data: {
       tenantId,
-      callNumber: trimValue(body.callNumber) ?? "",
+      callNumber,
       incidentType: trimValue(snapshot.incidentType) || trimValue(formValues.primary_incident_type) || "",
       address: trimValue(snapshot.address) || trimValue(formValues.incident_location_address) || "",
       exportedAtIso: now.toISOString(),
@@ -3089,12 +3135,23 @@ async function writeNerisExportReceipt({
       submittedEntityId: trimValue(entityId) ?? "",
       submittedDepartmentNerisId:
         trimValue(payload?.base?.department_neris_id) || trimValue(formValues.fd_neris_id) || "",
-      nerisId: nerisIdFromReply(responseBody, fallback),
+      nerisId,
       responseSummary: summary.slice(0, 2000),
       responseDetail: stampServerExportDetail(detailSource),
       submittedPayloadPreview: preview.slice(0, 200000),
     },
   });
+  if (succeeded) {
+    try {
+      await markNerisDraftExportedAfterSuccess(tenantId, callNumber, nerisId, auth);
+    } catch (error) {
+      console.error("[NERIS export] Could not mark the report as Exported after a successful send.", {
+        callNumber: callNumber.slice(0, 80),
+        message: error instanceof Error ? error.message : "unknown",
+      });
+    }
+  }
+  return row;
 }
 
 function nerisExportHistoryRowToApi(row) {
