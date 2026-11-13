@@ -156,7 +156,7 @@ const stages: StageDef[] = [
       { n: "18", title: "Release Fire Recovery to production", status: "Updated",
         problem: "Production does not have this feature yet. Releasing also brings the CAD Batches A–I code and four database additions that production has never received.",
         why: "Release only after every earlier step passes, including Stage B.",
-        fix: "Manual backup, rehearse the four database additions and the release on a copy of production, release, then submit one controlled real incident. CAD automation stays switched off for Crescent until Stage D. November 1: target is one real Crescent vehicle-accident bill from production by Monday, November 2. The operator is free Sunday evening and all day Monday. If the staging sandbox test has not passed in time, go-live moves later; untested billing is not released.",
+        fix: "Manual backup, rehearse the four database additions and the release on a copy of production, release, then submit one controlled real incident. CAD automation stays switched off for Crescent until Stage D. November 2: the staging sandbox bill passed. Do not start production until Fire Recovery answers whether the Welcome login works for real bills. The operator sent that email the night of November 1 and is waiting.",
         who: "Both of us.",
         done: "One verified production billing submission, and Crescent's existing data unchanged." },
     ],
@@ -321,7 +321,9 @@ const decided = [
   ["November 2, 2026", "Fire Recovery", "Dispatch location and Incident location on Core are locked. Each line is built from the street, city, state, and ZIP under it. An arrow hides those four fields. They use two rows, and street is half a row. Same as dispatch sits beside the Incident location label.", "15"],
   ["November 2, 2026", "Fire Recovery", "Wave 5 is on the practice branch only. Export Details uses Preview & Send instead of an instant send. An admin can resolve Needs review. The queue and Fire Recovery list show Not sent, Submitting, Sent, Failed, or Needs review. Do not click Confirm and send from this Mac.", "15"],
   ["November 2, 2026", "NERIS", "Incident location keeps one state and one ZIP. Country and county sit in that section, and country defaults to US. State/Territory and Postal code are no longer separate fields. The export still sends state, postal code, country, and county. The Motor Vehicle Collision NERIS code box is hidden and uses the Core primary incident type. The NERIS Entity ID is set at Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Incident 12345 exported 201 Created at 11:14:04.", "15"],
-  ["November 2, 2026", "Fire Recovery", "Wave 6 is on the practice branch. A pretend Fire Recovery server proves one bill per incident, Failed versus Needs review, sandbox FD12345678, live department ID, and a refusal when Fire Recovery is switched off. Not on staging. Wave 7 is the operator's staging sandbox test. Do not click Confirm and send from this Mac.", "15"],
+  ["November 2, 2026", "Fire Recovery", "Wave 6 is on the practice branch. A pretend Fire Recovery server proves one bill per incident, Failed versus Needs review, sandbox FD12345678, live department ID, and a refusal when Fire Recovery is switched off. Wave 7 is the operator's staging sandbox test. Do not click Confirm and send from this Mac.", "15"],
+  ["November 2, 2026", "Fire Recovery", "The first Wave 7 Preview & Send said Export this report to NERIS first. NERIS had already returned 201, but the saved report stayed In Review because saving the NERIS id was rejected. That one Crescent report was set to Exported.", "17"],
+  ["November 2, 2026", "Fire Recovery", "Crescent staging accepted one sandbox bill at 12:21 p.m. Chicago. Tracking ID c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418. Department ID FD12345678. Update billing status returned Unassigned, with no amount due and no amount paid. One Sent row is stored. Production is not updated.", "17"],
   ["November 1, 2026", "Fire Recovery", "Is Resident is required for Crescent because a local ordinance bars billing residents directly. Recovery Hub itself marks it recommended. Only an admin adds missing billing info after export: unlock, edit, export to NERIS again.", "5, 15"],
   ["November 1, 2026", "Fire Recovery", "Send the narrative and responding units, as Fire Recovery's documentation asks. The full vendor documentation is saved in docs/procedures/vendor/.", "15"],
   ["November 1, 2026", "Fire Recovery", "An unclear vendor reply shows 'Needs review: check Recovery Hub' and blocks resending until an admin clears it.", "12, 14"],
@@ -330,9 +332,8 @@ const decided = [
 ];
 
 const decisions = [
-  ["Fire Recovery", "Reply to Fire Recovery with the account email for the sandbox Welcome Message. Their reply mentions support@fireultimatehq.com as the existing account; confirm whether to use it."],
-  ["Fire Recovery", "Wave 5 is on the practice branch. Check the Core location arrows, the locked dispatch and incident lines, and Export Details → Preview & Send. Do not click Confirm and send on this Mac. Wave 5b needs a staging NERIS re-export check before that button is built."],
-  ["Fire Recovery", "Before Monday: confirm Fire Recovery's Welcome Message (sandbox API login) arrived, whether FIRE_RECOVERY_CREDENTIAL_KEY exists on staging and production Render, and whether Crescent's billing agreement and fee schedule are set up with Fire Recovery."],
+  ["Fire Recovery", "Wait for Fire Recovery USA to answer the November 1 email. The open question is whether the Welcome login can create Crescent's real bills. That answer blocks Wave 8. Do not start Wave 8, Wave 5b, or a production release while waiting."],
+  ["Fire Recovery", "Sandbox bill is done. Tracking ID c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418. Invoice status Unassigned. One Sent row on cifpdil. Do not click Confirm and send on this Mac."],
 ];
 
 const fireRecoveryEmail = [
@@ -343,7 +344,7 @@ const fireRecoveryEmail = [
   ["NERIS code", "Should IncidentType and PrincipleIncidentType hold the full NERIS incident type value? Which format matches the NERIS Code dropdown in Recovery Hub?"],
   ["Commercial trucking", "How is a Commercial Trucking Incident marked through the API?"],
   ["Sandbox", "Confirm that submissions using FD12345678 are never billed, and whether sandbox incidents can be cleared after testing."],
-  ["Test results", "Summary of the sandbox submissions and any errors returned (added after Step 17)."],
+  ["Test results", "November 2, 2026 sandbox bill accepted. Department ID FD12345678. Tracking ID c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418. Billing status Unassigned, with no amount due and no amount paid."],
 ];
 
 function StepCard({ s }: { s: Step }) {
@@ -701,7 +702,7 @@ export default function Plan() {
   return (
     <Stack gap={18} style={{ maxWidth: 1080, margin: "0 auto", padding: "28px 24px 64px", background: theme.bg.editor }}>
       <Stack gap={6}>
-        <Text size="small" tone="tertiary">Updated November 2, 2026, Chicago · Wave 6 fake-vendor tests passed on the practice branch · Wave 7 staging sandbox test is next and needs the operator · Do not start Wave 5b · Stage B is on staging · Production is not updated · Do not merge to main · Live canvas was not republished with this copy</Text>
+        <Text size="small" tone="tertiary">Updated November 2, 2026, 12:29 p.m. Chicago · Wave 7 sandbox bill accepted · Tracking ID c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418 · Waiting on Fire Recovery USA · Do not start Wave 8 or Wave 5b · Production is not updated · Do not merge to main · Live canvas was not republished with this copy</Text>
         <H1>Fire Ultimate — step-by-step repair plan</H1>
       </Stack>
       <Callout tone="success" title="Stage B is on Crescent staging (November 1, 2026)">
