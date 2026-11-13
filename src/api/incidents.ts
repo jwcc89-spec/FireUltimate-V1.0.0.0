@@ -29,6 +29,7 @@ export interface IncidentApiResponse {
   deletedBy?: string;
   deletedReason?: string;
   nerisReportStatus?: string;
+  nerisPrimaryIncidentType?: string;
 }
 
 function mapApiToSummary(data: IncidentApiResponse): IncidentCallSummary {
@@ -57,6 +58,7 @@ function mapApiToSummary(data: IncidentApiResponse): IncidentCallSummary {
     receivedAt: data.receivedAt ?? "",
     dispatchInfo: data.dispatchInfo ?? "",
     nerisReportStatus: data.nerisReportStatus ?? undefined,
+    nerisPrimaryIncidentType: data.nerisPrimaryIncidentType ?? undefined,
   };
 }
 

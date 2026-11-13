@@ -2541,6 +2541,8 @@ function normalizeIncidentSummary(candidate: unknown): IncidentCallSummary | nul
     deletedBy: String(source.deletedBy ?? "").trim() || undefined,
     deletedReason: String(source.deletedReason ?? "").trim() || undefined,
     incidentType: String(source.incidentType ?? "").trim() || "Unknown",
+    nerisReportStatus: String(source.nerisReportStatus ?? "").trim() || undefined,
+    nerisPrimaryIncidentType: String(source.nerisPrimaryIncidentType ?? "").trim() || undefined,
     priority: String(source.priority ?? "").trim() || "3",
     address: String(source.address ?? "").trim() || "Unknown",
     stillDistrict: String(source.stillDistrict ?? "").trim() || "Unknown",
@@ -3027,6 +3029,17 @@ function getExportsListReportStatus(
   return getNerisQueueFieldValue(call, "status");
 }
 
+function nerisPrimaryIncidentTypeLabel(call: IncidentCallSummary): string {
+  const local = readNerisDraft(call.callNumber)?.formValues?.primary_incident_type?.trim() ?? "";
+  const raw = local || call.nerisPrimaryIncidentType?.trim() || "";
+  if (!raw) return "—";
+  const parts = raw
+    .split(/\s*(?:\|\||:)\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  return parts.at(-1) ?? raw;
+}
+
 function getNerisQueueFieldValue(
   call: IncidentCallSummary,
   fieldId: IncidentCallFieldId,
@@ -3037,6 +3050,9 @@ function getNerisQueueFieldValue(
     const serverStatus = call.nerisReportStatus?.trim();
     if (serverStatus) return serverStatus;
     return "Draft";
+  }
+  if (fieldId === "incidentType") {
+    return nerisPrimaryIncidentTypeLabel(call);
   }
   return getCallFieldValue(call, fieldId);
 }
@@ -5932,7 +5948,7 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                           {getIncidentDisplayNumber(call)}
                         </strong>
                       </td>
-                      <td>{call.incidentType}</td>
+                      <td>{nerisPrimaryIncidentTypeLabel(call)}</td>
                       <td>
                         <span
                           className={toToneClass(

@@ -2776,6 +2776,7 @@ app.get("/api/incidents", async (request, response) => {
           })
         : [];
     const reportStatusByCall = new Map();
+    const primaryIncidentTypeByCall = new Map();
     for (const d of drafts) {
       const payload = d.payload && typeof d.payload === "object" ? d.payload : {};
       if (payload.reportRemoved === true) continue;
@@ -2784,10 +2785,17 @@ app.get("/api/incidents", async (request, response) => {
           ? payload.reportStatus.trim()
           : "Draft";
       reportStatusByCall.set(d.callNumber, status);
+      const formValues =
+        payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+          ? payload.formValues
+          : {};
+      const primaryType = trimValue(formValues.primary_incident_type);
+      if (primaryType) primaryIncidentTypeByCall.set(d.callNumber, primaryType);
     }
     const data = rows.map((row) => {
       const api = incidentRowToApi(row);
       api.nerisReportStatus = reportStatusByCall.get(row.id) ?? "Draft";
+      api.nerisPrimaryIncidentType = primaryIncidentTypeByCall.get(row.id) ?? "";
       return api;
     });
     response.json({ ok: true, data });
