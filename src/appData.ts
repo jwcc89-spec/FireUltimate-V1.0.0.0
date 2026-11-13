@@ -110,6 +110,8 @@ export interface IncidentCallSummary {
   initialDispatchCode?: string;
   /** NERIS report status from server (Draft, In Review, Exported). */
   nerisReportStatus?: string;
+  /** NERIS report primary incident type (not the incident-create type). */
+  nerisPrimaryIncidentType?: string;
 }
 
 /** Display incident # (internal id, or incident number, or call id). */
