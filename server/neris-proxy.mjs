@@ -3024,6 +3024,22 @@ function nerisIdFromReply(responseBody, fallback) {
   return trimValue(fallback?.usedIncidentNerisId);
 }
 
+/** Prefer department full name when the stored value is a sign-in username. */
+function displayNameFromUsernameMap(fullNameMap, usernameOrName) {
+  const raw = trimValue(usernameOrName);
+  if (!raw) return "";
+  const mapped = trimValue(fullNameMap?.[raw.toLowerCase()]);
+  return mapped || raw;
+}
+
+async function resolveExportReportWriterName(tenantId, auth, requestBody) {
+  const body = requestBody && typeof requestBody === "object" ? requestBody : {};
+  const fullNameMap = await getTenantUserFullNameMap(tenantId);
+  const fromBody = trimValue(body.reportWriterName);
+  const fromAuth = trimValue(auth?.username);
+  return displayNameFromUsernameMap(fullNameMap, fromBody || fromAuth).slice(0, 200);
+}
+
 async function writeNerisExportReceipt({
   tenantId,
   auth,
@@ -3054,6 +3070,7 @@ async function writeNerisExportReceipt({
   } catch {
     preview = "";
   }
+  const reportWriterName = await resolveExportReportWriterName(tenantId, auth, body);
   return prisma.nerisExportHistory.create({
     data: {
       tenantId,
@@ -3068,7 +3085,7 @@ async function writeNerisExportReceipt({
       statusLabel: `${httpStatus} ${httpStatusText}`.trim(),
       reportStatusAtExport: succeeded ? "Exported" : trimValue(body.reportStatus) || "Draft",
       validatorName: "",
-      reportWriterName: String(auth?.username ?? "").slice(0, 200),
+      reportWriterName,
       submittedEntityId: trimValue(entityId) ?? "",
       submittedDepartmentNerisId:
         trimValue(payload?.base?.department_neris_id) || trimValue(formValues.fd_neris_id) || "",
@@ -4180,11 +4197,13 @@ async function prepareFireRecoveryBill(request) {
     departmentDetails?.payloadJson && typeof departmentDetails.payloadJson === "object"
       ? departmentDetails.payloadJson.fireRecoveryFieldRequirements
       : null;
-  const missing = missingFireRecoveryFields(formValues, requirementSettings, latestOk.reportWriterName);
+  const fullNameMap = await getTenantUserFullNameMap(tenantId);
+  const reportWriterName = displayNameFromUsernameMap(fullNameMap, latestOk.reportWriterName);
+  const missing = missingFireRecoveryFields(formValues, requirementSettings, reportWriterName);
   const departmentId = department.ok ? department.departmentId : "";
   const payload = buildFireRecoveryPayload(
     formValues,
-    { nerisId, reportWriterName: latestOk.reportWriterName, callNumber },
+    { nerisId, reportWriterName, callNumber },
     { departmentId, departmentName: dept },
     { submittedAt: chicagoLocalStamp(new Date()) },
   );
