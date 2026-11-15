@@ -1,6 +1,6 @@
 # FireUltimate documentation
 
-- **Architecture and specs:** `system_architecture.md`, `data_model.md`, `integrations.md`, `task-2-multitenant-domain-plan.md`, `incident-lifecycle.md`, `department-details-field-reference.md`, `seed-and-tenant-reference.md`, `admin-api-beginner-guide.md`, `agent-execution-contract.md`, `wave-6-domain-routing-runbook.md`.
+- **Architecture and specs:** `system_architecture.md`, `data_model.md`, `integrations.md`, `plans/task-2-multitenant-domain-plan.md`, `incident-lifecycle.md`, `department-details-field-reference.md`, `seed-and-tenant-reference.md`, `procedures/admin-api-beginner-guide.md`, `agent-execution-contract.md`. The Wave 6 domain runbook is finished and lives in `completed/wave-6-domain-routing-runbook.md`.
 - **Deferred / future work:** `later-changes-backlog.md` (menu-organized backlog).
 - **Prioritization:** **`PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md`** — consolidated list of everything stated as needing to be completed (go-live blocker, backlog, later tasks, admin/platform). Use it to prioritize next work.
 

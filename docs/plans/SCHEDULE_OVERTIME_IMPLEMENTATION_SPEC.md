@@ -1,6 +1,6 @@
 # Schedule Overtime Implementation Spec
 
-This document is the **source of truth** for schedule segmentation, overtime (OT), dynamic HIRE, additional fields, and related UI. It supersedes informal notes when there is a conflict. Tenant isolation and persistence via `assignmentsJson` / schedule APIs remain as in `docs/task-2-multitenant-domain-plan.md`.
+This document is the **source of truth** for schedule segmentation, overtime (OT), dynamic HIRE, additional fields, and related UI. It supersedes informal notes when there is a conflict. Tenant isolation and persistence via `assignmentsJson` / schedule APIs remain as in `docs/plans/task-2-multitenant-domain-plan.md`.
 
 ---
 

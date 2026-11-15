@@ -171,7 +171,7 @@ Future architecture may introduce a relational Incident table. **Agents must not
 - **NERIS connection:** Departments do not log in to NERIS. FireUltimate keeps one vendor client id and secret on the server. Each department exports only under the NERIS Entity ID an admin sets in Admin Functions → Setup/Configuration → NERIS Configuration → NERIS Export Configuration. Saving that ID updates the ID export uses. Export refuses any other ID.
 - **Convention:** All domain entities that belong to a tenant have a `tenantId` column and an index on `tenantId`. No cross-tenant data access.
 
-For detailed multi-tenant and domain setup, see `docs/task-2-multitenant-domain-plan.md`.
+For detailed multi-tenant and domain setup, see `docs/plans/task-2-multitenant-domain-plan.md`.
 
 ---
 

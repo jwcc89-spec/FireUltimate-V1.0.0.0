@@ -117,5 +117,5 @@ Again: if the key is correct, you get a success response; if not, you get 403.
 
 ## See also
 
-- **Task 2 plan:** `docs/task-2-multitenant-domain-plan.md` (Operator Runbook) for the short version and endpoint reference.
+- **Task 2 plan:** `docs/plans/task-2-multitenant-domain-plan.md` (Operator Runbook) for the short version and endpoint reference.
 - **Creating a tenant from the command line (no API):** use `npm run tenant:create -- --slug ... --name "..." ...` as in the Operator Runbook; no `.env.server` key or curl needed for that.

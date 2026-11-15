@@ -14,7 +14,7 @@
 4. Park vendor follow-ups that are still waiting on Fire Recovery’s development team (email items 5, 6, and 8).
 5. Ask Fire Recovery why `ClearedDateTime` did not fill Time Call Cleared, and how `Isresident: false` should show as No. Do not change those mappings until they answer.
 
-> **When this plan is complete:** move this file to `docs/plans/completed/PHASE_C_FIRE_RECOVERY_PLAN.md` (create the folder if it does not exist) using `git mv`. Then update every link to it (`agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`, `docs/task-2-multitenant-domain-plan.md`, the latest session note) and commit. "Complete" means §12's done list is fully checked and one real production bill has a tracking ID.
+> **When this plan is complete:** move this file to `docs/plans/completed/PHASE_C_FIRE_RECOVERY_PLAN.md` (create the folder if it does not exist) using `git mv`. Then update every link to it (`agent-handoffs/branches/cursor--stage-b-foundation-b5ff/ACTIVE_CONTEXT.md`, `docs/plans/task-2-multitenant-domain-plan.md`, the latest session note) and commit. "Complete" means §12's done list is fully checked and one real production bill has a tracking ID.
 
 ---
 
@@ -32,7 +32,7 @@
    - Tick the wave's boxes here.
    - Add a line to §15 (Progress log).
    - Commit and push.
-3. When a decision changes, update §3 in this file, then record it in the repair-plan canvas copy (`docs/plans/canvases/repair-plan.canvas.tsx`, Stage C steps 10–18 and the Decisions table) and in `docs/task-2-multitenant-domain-plan.md`.
+3. When a decision changes, update §3 in this file, then record it in the repair-plan canvas copy (`docs/plans/canvases/repair-plan.canvas.tsx`, Stage C steps 10–18 and the Decisions table) and in `docs/plans/task-2-multitenant-domain-plan.md`.
 4. **Never:**
    - Submit to Fire Recovery from staging with any department ID other than `FD12345678`.
    - Put Fire Recovery usernames or passwords in chat, docs, code, tests, or `DepartmentDetails.payloadJson`.
@@ -532,7 +532,7 @@ Each wave: lint + build + test, commit, push, add a line to §15. Promote to sta
   - `src/App.tsx` (Export Details panel, required-fields admin group, queue column)
   - `src/pages/FireRecoveryIncidentsPage.tsx`, `src/pages/FireRecoveryIncidentDetailPage.tsx`, `src/api/fireRecovery.ts`
 - **Schema (only if §14 Q1 = A):** `prisma/schema.prisma`, plus a new add-only migration folder.
-- **Docs:** this plan, `docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md`, `docs/plans/canvases/repair-plan.canvas.tsx`, `docs/task-2-multitenant-domain-plan.md`, `docs/procedures/RELEASE_CHECKLIST.md` (Fire Recovery steps), handoff files.
+- **Docs:** this plan, `docs/procedures/FIRE_RECOVERY_USA_API_REFERENCE.md`, `docs/plans/canvases/repair-plan.canvas.tsx`, `docs/plans/task-2-multitenant-domain-plan.md`, `docs/procedures/RELEASE_CHECKLIST.md` (Fire Recovery steps), handoff files.
 
 ---
 

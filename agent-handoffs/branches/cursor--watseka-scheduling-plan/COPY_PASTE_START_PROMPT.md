@@ -24,7 +24,7 @@ Before doing any feature work, understand the Branch Rules:
    - shared plan: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/07bcb2d0-f8d5-448e-9b16-a5473b749ecc (republish to this same canvas id; do not put a password in it)
 4) Read and follow before any edits:
    - docs/agent-execution-contract.md
-   - docs/task-2-multitenant-domain-plan.md
+   - docs/plans/task-2-multitenant-domain-plan.md
    - docs/system_architecture.md and docs/data_model.md when touching data
 5) This test uses the throwaway database on this Mac only (~/fu-local-db, port 5433, database fu_local). Never run npm run proxy for it. Never touch staging, production, or Crescent. Do not reset the admin password.
 6) Before coding, summarize:

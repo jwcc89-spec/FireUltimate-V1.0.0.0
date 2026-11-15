@@ -3,6 +3,14 @@
 ## Current branch
 - `submenu/neris-golive-cifpd`
 
+## Current focus (2026-11-13 — evening review)
+- **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from after the plan review. Do not start a new build until the operator names the item.
+- **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
+- **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank. Do not change the mapping until the operator says to try `HH:MM` or Fire Recovery answers.
+- **Is Resident:** Yes shows on their site. The email about No has not been sent.
+- **CAD:** every Stage D item is still open. Do not start coding until the operator names the first CAD step.
+- **File moves:** Task 2 plan is `docs/plans/task-2-multitenant-domain-plan.md`. Wave 6 runbook is `docs/completed/wave-6-domain-routing-runbook.md`. Admin API guide is `docs/procedures/admin-api-beginner-guide.md`.
+
 ## Current focus (2026-11-13 — session end)
 - **Branch:** stay on `submenu/neris-golive-cifpd` unless the user says to switch. Production `main` is at `b60eb44` (merge of this branch). Do not create branches unless asked.
 - **Wave 8 production release happened.** Neon backup `backup-2026-11-13-wave8-fire-recovery` (63 incidents). Production migrations were already applied. Crescent allowed sender `dispatch@co.iroquois.il.us` (id `allow-cifpdil-dispatch-20261101`) was inserted before the code release. PR #44 merged staging into `main`. Operator set production Fire Recovery to live and sent one real bill. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2` (run `2026-006`). Recovery Hub shows it as a **Draft**. Fire Ultimate status is **Sent**.
@@ -153,5 +161,5 @@
 2. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present) and this file (**ACTIVE_CONTEXT.md**).
 3. Read **sessions/2026-04-09-session.md** and **conversations/2026-04-09-session-summary.md** for the latest CAD + hold + `3fa8683` details.
 4. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
-5. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
+5. Read **docs/agent-execution-contract.md**, **docs/plans/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
 6. **If CAD hold is still on:** do not start **Batch J/K** unless the user explicitly lifts the hold and names the next task. Otherwise continue from the user’s stated priority only. Do not redo completed work.

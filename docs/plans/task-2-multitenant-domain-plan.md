@@ -211,7 +211,7 @@ Script creates: tenant, primary domain, empty DepartmentDetails, admin user (bcr
 
 **What the Admin API is:** HTTP endpoints that only work when you send a secret key. They let you create tenants and add domains over the network (e.g. from another machine or a future UI) instead of running the CLI script on the server.
 
-**Beginner guide:** If you are new to coding, use **docs/admin-api-beginner-guide.md**. It explains from scratch: what `.env.server` is, what a "header" is, what "restart the proxy" means, and exactly where to type each command and what you’ll see.
+**Beginner guide:** If you are new to coding, use **docs/procedures/admin-api-beginner-guide.md**. It explains from scratch: what `.env.server` is, what a "header" is, what "restart the proxy" means, and exactly where to type each command and what you’ll see.
 
 **Step-by-step: How to use the Admin API**
 
@@ -475,7 +475,7 @@ Current `.env.server` NERIS values are global and useful for early/local testing
 26. Verify:
     - `crescent.<domain>` resolves and loads
     - `demo.<domain>` resolves and loads
-27. Use runbook: `docs/wave-6-domain-routing-runbook.md` for exact DNS/SSL/verification steps.
+27. Use runbook: `docs/completed/wave-6-domain-routing-runbook.md` for exact DNS/SSL/verification steps. Wave 6 is complete; the runbook is kept for reference.
 
 **Exit criteria:**
 - Tenant URLs work via domain-based routing.

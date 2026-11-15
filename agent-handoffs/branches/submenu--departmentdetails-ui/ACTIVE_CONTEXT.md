@@ -60,7 +60,7 @@
 - `94dab6e` Added full conversation
 
 ## Next agent should do this first
-1. Read `cursoragent-context.md`, this file, `docs/agent-execution-contract.md`, `docs/task-2-multitenant-domain-plan.md`, and the latest session note.
+1. Read `cursoragent-context.md`, this file, `docs/agent-execution-contract.md`, `docs/plans/task-2-multitenant-domain-plan.md`, and the latest session note.
 2. Treat Task 2 (Wave 3-8 core scope) as complete unless user explicitly reopens a phase.
 3. For UI follow-ups, continue in small batches and keep User Type under Department Details -> Department Access.
 4. For scheduler OT behavior, preserve:
