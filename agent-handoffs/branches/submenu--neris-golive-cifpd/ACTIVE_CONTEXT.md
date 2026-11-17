@@ -4,7 +4,7 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus (2026-11-13 — evening review)
-- **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from after the plan review. Do not start a new build until the operator names the item.
+- **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from. Reorganized 2026-11-17 by topic (NERIS, Fire Recovery, Incidents/dashboard, UI, roles/security, Scheduling, CAD). Click-checks are folded into each group. Do not start a new build until the operator names the item. Added 2026-11-15: N13 NERIS 2.0 field comparison, N14 Resources in Narrative Builder, N15 admin Validate/Export button.
 - **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
 - **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank. Do not change the mapping until the operator says to try `HH:MM` or Fire Recovery answers.
 - **Is Resident:** Yes shows on their site. The email about No has not been sent.
