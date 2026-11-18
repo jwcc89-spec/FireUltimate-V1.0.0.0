@@ -5,8 +5,15 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { ChevronDown, ChevronUp, Pencil, Trash2 } from "lucide-react";
-import { NERIS_FORM_FIELDS } from "../nerisMetadata";
-import type { NarrativeSegment, NarrativeTemplate } from "../narrativeBuilder";
+import type { NerisSectionId } from "../nerisMetadata";
+import {
+  narrativeFieldLabel,
+  narrativeFieldSection,
+  narrativePickerFields,
+  narrativePickerSections,
+  type NarrativeSegment,
+  type NarrativeTemplate,
+} from "../narrativeBuilder";
 
 const DEPARTMENT_DETAILS_STORAGE_KEY = "fire-ultimate-department-details";
 
@@ -33,8 +40,13 @@ function generateId(): string {
 }
 
 function getNerisFieldLabel(fieldId: string): string {
-  const field = NERIS_FORM_FIELDS.find((f) => f.id === fieldId);
-  return field?.label ?? fieldId;
+  return narrativeFieldLabel(fieldId);
+}
+
+function fieldsForExistingSegment(fieldId: string): Array<{ id: string; label: string }> {
+  const fields = narrativePickerFields(narrativeFieldSection(fieldId));
+  if (fields.some((field) => field.id === fieldId)) return fields;
+  return [{ id: fieldId, label: narrativeFieldLabel(fieldId) }, ...fields];
 }
 
 /** Build preview text for admin: human-readable labels for NERIS, placeholder for user fillable */
@@ -385,6 +397,7 @@ function SegmentBuilder({
     "fillable",
   );
   const [fillableText, setFillableText] = useState("");
+  const [nerisSectionId, setNerisSectionId] = useState<NerisSectionId>("core");
   const [nerisFieldId, setNerisFieldId] = useState("");
   const [userHint, setUserHint] = useState("");
   const [questionText, setQuestionText] = useState("");
@@ -466,13 +479,28 @@ function SegmentBuilder({
         {addKind === "neris" && (
           <>
             <select
+              aria-label="NERIS section"
+              value={nerisSectionId}
+              onChange={(e) => {
+                setNerisSectionId(e.target.value as NerisSectionId);
+                setNerisFieldId("");
+              }}
+            >
+              {narrativePickerSections().map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label="NERIS field"
               value={nerisFieldId}
               onChange={(e) => setNerisFieldId(e.target.value)}
             >
               <option value="">Select NERIS field</option>
-              {NERIS_FORM_FIELDS.map((f) => (
-                <option key={f.id} value={f.id}>
-                  {f.label}
+              {narrativePickerFields(nerisSectionId).map((field) => (
+                <option key={field.id} value={field.id}>
+                  {field.label}
                 </option>
               ))}
             </select>
@@ -603,14 +631,34 @@ function SegmentBuilder({
                 <>
                   <span className="segment-tag neris">NERIS</span>
                   <select
+                    aria-label="NERIS section"
+                    value={narrativeFieldSection(seg.fieldId)}
+                    onChange={(e) => {
+                      const nextSection = e.target.value as NerisSectionId;
+                      const nextFields = narrativePickerFields(nextSection);
+                      const keep = nextFields.some((field) => field.id === seg.fieldId);
+                      onUpdateSegment(index, {
+                        type: "neris",
+                        fieldId: keep ? seg.fieldId : (nextFields[0]?.id ?? seg.fieldId),
+                      });
+                    }}
+                  >
+                    {narrativePickerSections().map((section) => (
+                      <option key={section.id} value={section.id}>
+                        {section.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    aria-label="NERIS field"
                     value={seg.fieldId}
                     onChange={(e) =>
                       onUpdateSegment(index, { type: "neris", fieldId: e.target.value })
                     }
                   >
-                    {NERIS_FORM_FIELDS.map((f) => (
-                      <option key={f.id} value={f.id}>
-                        {f.label}
+                    {fieldsForExistingSegment(seg.fieldId).map((field) => (
+                      <option key={field.id} value={field.id}>
+                        {field.label}
                       </option>
                     ))}
                   </select>

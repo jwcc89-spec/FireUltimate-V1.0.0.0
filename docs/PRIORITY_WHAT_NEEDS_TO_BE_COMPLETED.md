@@ -1,8 +1,8 @@
 # What needs to be completed
 
-**Updated:** 2026-11-17, morning, America/Chicago.  
+**Updated:** 2026-11-17, late morning America/Chicago (N14, N15, and N16 ready for click checks).  
 **Branch:** `submenu/neris-golive-cifpd`.  
-**How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Verify** need a click-check before they are called done. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
+**How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/Click by Click Checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
 **Group order:** NERIS → Fire Recovery → Incidents and dashboard → UI and layout → Roles, admin, and security → Scheduling → CAD → Waiting on Fire Recovery → Much later → Not scheduled → Marked done.
 
@@ -15,7 +15,7 @@
 | E1 | Open | Conditional required fields: one shared rule for platform defaults and department rules, with an admin screen under NERIS Required Fields. Fire Recovery already has its own requirement levels; this item is the wider NERIS rule engine, not the billing tab alone. |
 | E11 | Open | Each department’s NERIS settings (for example entity ID and export configuration) live in the database and load per request. The NERIS web address stays one setting per environment. |
 | F1 | Open | Recover Reports: on Reporting → NERIS, next to Fire Recovery and View Exports, restore a deleted NERIS report with every typed answer. The incident stays on Incidents. Do not build until named. |
-| F5 | Verify | **Dispatched and canceled en route** fills times. Open a NERIS report that has a call arrival time under Incident Times → Resources → check **Dispatched and canceled en route**. Dispatch Time, Canceled Time, and Clear Time should fill with that call arrival time. If they stay empty, move this back to Open. |
+| F5 | Waiting on click check | **Dispatched and canceled en route** fills times. Open a NERIS report that has a call arrival time under Incident Times → Resources → check **Dispatched and canceled en route**. Dispatch Time, Canceled Time, and Clear Time should fill with that call arrival time. If they stay empty, move this back to Open. |
 | N3 | Open | Reporting → NERIS needs a **Configure Table** button with the same drag-and-drop column layout as Incidents. |
 | N4 | Open | NERIS dropdowns are cut off at the bottom of a short window. The open list must stay fully visible and scrollable (portal or similar), including fields such as primary incident type. |
 | N5 | Open | After a primary incident type is chosen, the form should show only the last name (for example Motor Vehicle Collision), not the full path. Keep sending the full NERIS code. The reporting table already shows the last segment; the form field still shows the full path. |
@@ -24,9 +24,10 @@
 | N8 | Open | Add Person needs a **Save** button at the top and the bottom, so Close is not the only choice when an address is missing. |
 | N9 | Open | On the Motor Vehicle Collision tab, hide the call fields that are copied from earlier sections: run date, time alarm received, time call cleared, run number, total personnel on scene, law enforcement agency report number, street, city, state, and ZIP. Keep sending them. Do not remove the mapping. |
 | N10 | Open | Hazards **Save**, **Back**, and **Next** are oblong. Match the buttons used on the rest of the NERIS report. |
-| N13 | Open | Compare our NERIS fields with the current NERIS 2.0 documentation and list what they have added or changed. Do not change our form until the operator reviews that list. |
-| N14 | Open | Narrative Builder already lets an admin insert a single NERIS field. The Resources section is not in that picker. Add Resources so a template can insert values from the report, including the number of personnel on scene and the apparatus that responded. |
-| N15 | Open | Admins get one **Validate/Export** button on the NERIS report. It validates the report, and when validation passes it exports the report. Keep role limits: only people allowed to export may use the export half of this control. |
+| N13 | Review findings | Live schema is **1.5.x** (OpenAPI `1.5.3`), not 2.0. Version 2 is still planned for later. Our form matches pre–1.5 lists. Findings: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. Do not change the form until you pick which 1.5 fields Crescent needs. |
+| N14 | Waiting on click check | Narrative Builder: pick a NERIS section, then a field in that section. Resources now includes the unit-card values that were missing from the old one-list picker: apparatus that responded, personnel on scene, staffing, response and transport mode, each unit time, canceled en route, report writer, unit narrative, and one line with every value for a unit. |
+| N15 | Waiting on click check | Admins and above see **Validate/Export** next to the existing **Export** button. Validate/Export checks the report and exports only when validation passes. Export alone stays, so a report that is already validated can be exported without running validation again. |
+| N16 | Waiting on click check | **Import** and **Get Incident (Test)** on the NERIS report are visible only to superadmin. Import is still disabled (“not implemented”). Get Incident (Test) loads an already-exported incident from NERIS by its NERIS ID so the response can be compared with the form. After this click check, decide whether these were only original test tools and whether they should stay. |
 
 ---
 
@@ -34,10 +35,10 @@
 
 | ID | Status | Item |
 |----|--------|------|
-| A2 | Open / waiting | Time Call Cleared stayed blank in Recovery Hub on the live bill. Their website only accepts `HH:MM`. We sent seconds (`2025-11-11T13:59:45`), same shape as Alarm. Do not change the mapping until the operator says to try `HH:MM`, or Fire Recovery answers. |
-| A3 | Open | Send the email asking why Is Resident **No** (`Isresident: false`) did not show. **Yes** does show on their website when resident is true. Do not change the mapping until they answer. |
-| G2 | Verify | Billing uses the server NERIS receipt and a preview. On an exported motor-vehicle report, open View Exports → Fire Recovery. **Preview & Send** should open only after NERIS accepted the export. Confirm is a second click. Nothing is billed automatically. |
-| G3 | Verify | A second send does not create a second bill. On staging, open an incident already marked Sent and click **Confirm and send** again. The screen should refuse it and keep the same tracking ID. Do not send another live production bill for this check. |
+| A2 | Open / Waiting on Email Reply | Time Call Cleared stayed blank in Recovery Hub on the live bill. Their website only accepts `HH:MM`. We sent seconds (`2025-11-11T13:59:45`), same shape as Alarm. Follow-up email sent 2026-11-17. Do not change the mapping until Fire Recovery answers. |
+| A3 | Open / Waiting on Email Reply | Is Resident **No** (`Isresident: false`) did not show in Recovery Hub. **Yes** does show when resident is true. Follow-up email sent 2026-11-17. Do not change the mapping until they answer. |
+| G2 | Waiting on click check | Billing uses the server NERIS receipt and a preview. On an exported motor-vehicle report, open View Exports → Fire Recovery. **Preview & Send** should open only after NERIS accepted the export. Confirm is a second click. Nothing is billed automatically. |
+| G3 | Waiting on click check | A second send does not create a second bill. On staging, open an incident already marked Sent and click **Confirm and send** again. The screen should refuse it and keep the same tracking ID. Do not send another live production bill for this check. |
 | G9 | Open | Finish any pieces of the April Fire Recovery billing screens that are still missing. Phase C already shipped preview, Sent / Failed / Needs review, the billing list, and Update billing status (replacing the old “DataSent” label). Still confirm amount due, amount paid, and tracking ID on the list, and a manual send from the incident queue. The View Exports side box is N12. |
 | N12 | Open | In View Exports, the gray **Not Sent** box on the far right should do the same thing as **View and Send** when the incident can be billed. If it cannot be billed, show a gray circle with a dash instead. |
 
@@ -71,15 +72,15 @@
 | B3 | Open | Clear report and incident data from the browser when the sign-in expires. On a shared station PC, people should not keep seeing the previous person’s data. Needs an approved clearing rule before coding. |
 | B4 | Open | Remove the old readable-text password check on the server, after both databases stay at zero readable-text passwords. Safe only while that count stays zero. |
 | B6 | Open | An unknown username must not get a faster sign-in reply than a real username (compare against a stand-in password hash when the username does not exist). |
-| E2 | Verify | Department role permissions work. Admin Functions → Department Details → Access / Restrictions → **Who can do what**. Change one action to a lower role, save, and sign in as that role. The four roles are User, Subadmin, Admin, and Superadmin. A department cannot yet invent a new role name such as secretary. If those four roles and the saved choice behave as expected, mark done. |
+| E2 | Waiting on click check | Department role permissions work. Admin Functions → Department Details → Access / Restrictions → **Who can do what**. Change one action to a lower role, save, and sign in as that role. The four roles are User, Subadmin, Admin, and Superadmin. A department cannot yet invent a new role name such as secretary. If those four roles and the saved choice behave as expected, mark done. |
 | E3 | Open | Find any leftover checks that look for the exact word `admin` and use “admin and up,” so superadmin is included. Numbered role levels already exist in code. |
 | E8 | Open | Super admin stays out of the normal user-type dropdown and is assigned another way (for example a production script or platform tool). |
 | E9 | Open | An admin can enter a show/hide mode and click fields and menus to show or hide them by user type. Persist and apply those choices. |
-| E12 | Verify | Reset password is an in-app form. Admin Functions → Department Details → Access / Restrictions → open users → **Reset Password**. You should see new-password fields and **Save Reset Password**, not a browser prompt. If you see the in-app form, mark done. |
+| E12 | Waiting on click check | Reset password is an in-app form. Admin Functions → Department Details → Access / Restrictions → open users → **Reset Password**. You should see new-password fields and **Save Reset Password**, not a browser prompt. If you see the in-app form, mark done. |
 | E13 | Open | Extra login slowdown or rate limit beyond the 15-minute lock that already exists after five wrong passwords. |
 | E14 | Open | A clear record of who reset or changed a password, and when. Access / Restrictions already lists recent account changes. If a password reset already appears there with who/when/target, this item is done. |
 | E15 | Open | Search and filter on large personnel and user lists. |
-| E16 | Verify | The staging website is its own Render service. In the Render dashboard, confirm a frontend service whose site is the staging address, separate from the production website. If you see that split, mark done. |
+| E16 | Waiting on click check | The staging website is its own Render service. In the Render dashboard, confirm a frontend service whose site is the staging address, separate from the production website. If you see that split, mark done. |
 
 ---
 
@@ -89,7 +90,7 @@ D9 (schedule save erasing days missing from an open tab) is done. D1 needs a cli
 
 | ID | Status | Item |
 |----|--------|------|
-| D1 | Verify | Watseka weekday 12-hour schedule on staging. Sign in at `watsekademo.staging.fireultimate.app` and open that schedule. Crescent’s 24/48 schedule on its own site should be unchanged. Work lived on branch `cursor/watseka-scheduling-plan`. If the trial is there and Crescent is unchanged, mark done. |
+| D1 | Waiting on click check | Watseka weekday 12-hour schedule on staging. Sign in at `watsekademo.staging.fireultimate.app` and open that schedule. Crescent’s 24/48 schedule on its own site should be unchanged. Work lived on branch `cursor/watseka-scheduling-plan`. If the trial is there and Crescent is unchanged, mark done. |
 | D2 | Open / parked | Phone schedule. Parked until you ask to start it. Pick the layout first (day-first list recommended), then the phone header, one-day list, week and month pickers, and the day-block editor. Desktop week and month stay unchanged. Plan: `docs/plans/canvases/schedule-mobile-plan.canvas.tsx`. |
 | D3 | Open | Scheduler Settings: Standard or Custom mode for each extra field. Not built yet. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. |
 | D4 | Open | Hour ledger: per-person and per-position hours, including the sick-time rule (for example remaining hours after a short sick day must be placed elsewhere). |
@@ -127,14 +128,14 @@ Every CAD item below is still open. Do not start coding until the operator names
 
 ## Waiting on Fire Recovery
 
-Do not change code for these until they answer, except A2 if the operator says to try `HH:MM`.
+Follow-up email sent to Fire Recovery on **2026-11-17** (cleared time, Is Resident No, commercial trucking, lost tracking ID, billing status timing). Do not change code until they reply.
 
 | ID | Status | Item |
 |----|--------|------|
-| A4 | Waiting | How to mark a commercial trucking incident through the API. They said they will add fields later and notify. Park until they send field names. |
-| A5 | Waiting | How to find a tracking ID after a timeout. Get Incident Tracking Id still lists a SubscriptionKey we do not have. Keep Needs review plus admin resolve until they answer. |
-| A6 | Waiting | How soon billing status is available after submit, and how often we may check it. Keep manual **Update billing status** until then. |
-| A11 | Waiting | Archive the Phase C plan (`docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`) only after A2, A3, A4, A5, and A6 are closed and the operator says the Recovery Hub follow-ups are finished. |
+| A4 | Open / Waiting on Email Reply | How to mark a commercial trucking incident through the API. They said they will add fields later and notify. Asked again in the 2026-11-17 email. Park until they send field names. |
+| A5 | Open / Waiting on Email Reply | How to find a tracking ID after a timeout. Get Incident Tracking Id still lists a SubscriptionKey we do not have. Asked again in the 2026-11-17 email. Keep Needs review plus admin resolve until they answer. |
+| A6 | Open / Waiting on Email Reply | How soon billing status is available after submit, and how often we may check it. Asked again in the 2026-11-17 email. Keep manual **Update billing status** until then. |
+| A11 | Open / Waiting on Email Reply | Archive the Phase C plan (`docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`) only after A2, A3, A4, A5, and A6 are closed and the operator says the Recovery Hub follow-ups are finished. |
 
 ---
 
@@ -185,7 +186,7 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Verify first:** F5, G2, G3, E2, E12, E16, D1 — click-check, then mark done or move back to Open.
-- **Waiting:** A4, A5, A6, A11 (and A2 until you say to try `HH:MM` or the vendor answers).
+- **Waiting on click check:** D1, E2, E12, E16, F5, G2, G3, N14, N15, N16. Steps are in `docs/Click by Click Checks.md`. After a pass, mark Done. After a fail, move back to Open. N16’s keep-or-remove decision stays open after the visibility check passes.
+- **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

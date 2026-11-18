@@ -4,10 +4,13 @@
 - `submenu/neris-golive-cifpd`
 
 ## Current focus (2026-11-13 — evening review)
-- **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from. Reorganized 2026-11-17 by topic (NERIS, Fire Recovery, Incidents/dashboard, UI, roles/security, Scheduling, CAD). Click-checks are folded into each group. Do not start a new build until the operator names the item. Added 2026-11-15: N13 NERIS 2.0 field comparison, N14 Resources in Narrative Builder, N15 admin Validate/Export button.
+- **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from. Reorganized 2026-11-17 by topic. Do not start a new build until the operator names the item.
+- **N13 (2026-11-17):** Live NERIS schema is **1.5.x** (OpenAPI **1.5.3**). “NERIS 2.0” is still future. Our form is pre–1.5. Gap list: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. No form changes until the operator picks which 1.5 fields to add.
+- **N14 / N15 / N16 (2026-11-17):** Narrative Builder filters NERIS fields by section and can insert Resources unit-card values. Admins have **Validate/Export** beside **Export**. **Import** and **Get Incident (Test)** are superadmin-only. Status is **Waiting on click check**. N16 still needs a keep-or-remove decision after that check. Steps: `docs/Click by Click Checks.md`.
 - **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
-- **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank. Do not change the mapping until the operator says to try `HH:MM` or Fire Recovery answers.
-- **Is Resident:** Yes shows on their site. The email about No has not been sent.
+- **Fire Recovery email (2026-11-17):** Follow-up sent covering A2 cleared time, A3 Is Resident No, A4 commercial trucking, A5 lost tracking ID, A6 billing status timing. Status: **Open / Waiting on Email Reply**. Do not change mappings until they answer.
+- **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank.
+- **Is Resident:** Yes shows on their site. No did not show when sent as `Isresident: false`.
 - **CAD:** every Stage D item is still open. Do not start coding until the operator names the first CAD step.
 - **File moves:** Task 2 plan is `docs/plans/task-2-multitenant-domain-plan.md`. Wave 6 runbook is `docs/completed/wave-6-domain-routing-runbook.md`. Admin API guide is `docs/procedures/admin-api-beginner-guide.md`.
 

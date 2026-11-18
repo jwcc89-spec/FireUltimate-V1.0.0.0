@@ -14,7 +14,7 @@ import {
   type IncidentCallSummary,
   type UserRole,
 } from "../appData";
-import { isAdminOrHigher } from "../roleHierarchy";
+import { isAdminOrHigher, isSuperadmin } from "../roleHierarchy";
 import { getNerisDraftHistory, type NerisReportChangeEntry } from "../api/nerisDrafts";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
@@ -3180,7 +3180,8 @@ function NerisReportFormPage({
     return fromHistory?.nerisId ?? "";
   };
 
-  const buildExportRequestConfig = (): ExportRequestConfig => {
+  const buildExportRequestConfig = (sourceValues?: NerisFormValues): ExportRequestConfig => {
+    const values = sourceValues ?? formValues;
     const defaultExportSettings = getDefaultNerisExportSettings();
     const exportUrl =
       nerisExportSettings.exportUrl.trim() ||
@@ -3219,7 +3220,7 @@ function NerisReportFormPage({
     }
 
     const timezoneSourceDate = (() => {
-      const dispatchTime = (formValues.incident_time_call_create ?? "").trim();
+      const dispatchTime = (values.incident_time_call_create ?? "").trim();
       if (!dispatchTime) {
         return new Date();
       }
@@ -3236,7 +3237,7 @@ function NerisReportFormPage({
       reportStatus,
       exportedAt: new Date().toISOString(),
       source: "Fire Ultimate Prototype",
-      formValues,
+      formValues: values,
       incidentSnapshot: {
         incidentType: detailForSideEffects.incidentType,
         address: detailForSideEffects.address,
@@ -4146,13 +4147,13 @@ function NerisReportFormPage({
     });
   };
 
-  const handleExportReport = async () => {
+  const handleExportReport = async (sourceValues?: NerisFormValues) => {
     setValidationModal(null);
     setErrorMessage("");
     setSaveMessage("Export in progress...");
     setIsExporting(true);
     try {
-      const requestConfig = buildExportRequestConfig();
+      const requestConfig = buildExportRequestConfig(sourceValues);
       const exportResult = await executeExport(requestConfig);
       if (exportResult.recordedByServer) {
         await onServerExportRecorded?.();
@@ -4161,11 +4162,16 @@ function NerisReportFormPage({
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
           : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`;
-      const formValuesOverride =
-        exportResult.nerisId?.trim()
-          ? { incident_neris_id: exportResult.nerisId.trim() }
-          : undefined;
-      stampSavedAt("manual", "Exported", successMessage, formValuesOverride);
+      const formValuesOverride: Partial<NerisFormValues> = { ...(sourceValues ?? {}) };
+      if (exportResult.nerisId?.trim()) {
+        formValuesOverride.incident_neris_id = exportResult.nerisId.trim();
+      }
+      stampSavedAt(
+        "manual",
+        "Exported",
+        successMessage,
+        Object.keys(formValuesOverride).length > 0 ? formValuesOverride : undefined,
+      );
       setSaveMessage(successMessage);
     } catch (error) {
       const recordedByServer = Boolean(
@@ -4184,6 +4190,23 @@ function NerisReportFormPage({
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleValidateAndExport = async () => {
+    const { mergedErrors, issueLabels, syncedValues } = buildValidationSnapshot();
+    setFormValues(syncedValues);
+    setSectionErrors(mergedErrors);
+    setValidationIssues(issueLabels);
+
+    if (issueLabels.length > 0) {
+      applyValidationFailure(issueLabels, syncedValues);
+      return;
+    }
+
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    await handleExportReport(syncedValues);
   };
 
   const handleGetIncidentTest = async () => {
@@ -5565,7 +5588,7 @@ function NerisReportFormPage({
               ) : null}
             </section>
           ) : null}
-          {incidentTestResponseDetail ? (
+          {isSuperadmin(role) && incidentTestResponseDetail ? (
             <details className="neris-incident-test-response">
               <summary>Get Incident test response</summary>
               <pre className="export-attempt-json">{incidentTestResponseDetail}</pre>
@@ -5573,7 +5596,7 @@ function NerisReportFormPage({
           ) : null}
         </div>
         <div className="header-actions">
-          {isAdminOrHigher(role) ? (
+          {isSuperadmin(role) ? (
             <>
               <button
                 type="button"
@@ -5591,6 +5614,10 @@ function NerisReportFormPage({
               >
                 {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
               </button>
+            </>
+          ) : null}
+          {isAdminOrHigher(role) ? (
+            <>
               <button
                 type="button"
                 className="secondary-button compact-button"
@@ -5621,7 +5648,15 @@ function NerisReportFormPage({
               <button
                 type="button"
                 className="primary-button compact-button"
-                onClick={handleExportReport}
+                onClick={() => void handleValidateAndExport()}
+                disabled={isExporting || !canEdit}
+              >
+                {isExporting ? "Exporting..." : "Validate/Export"}
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={() => void handleExportReport()}
                 disabled={isExporting}
               >
                 {isExporting ? "Exporting..." : "Export"}
