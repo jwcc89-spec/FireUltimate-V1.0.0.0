@@ -1,6 +1,6 @@
 # What needs to be completed
 
-**Updated:** 2026-11-17, evening America/Chicago (G2 preview size and N12 Not Sent behavior waiting on click check).  
+**Updated:** 2026-11-17, evening America/Chicago (N12 Not sent passed).  
 **Branch:** `submenu/neris-golive-cifpd`.  
 **How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
@@ -34,10 +34,7 @@
 |----|--------|------|
 | A2 | Open / Waiting on Email Reply | Time Call Cleared stayed blank in Recovery Hub on the live bill. Their website only accepts `HH:MM`. We sent seconds (`2025-11-11T13:59:45`), same shape as Alarm. Follow-up email sent 2026-11-17. Do not change the mapping until Fire Recovery answers. |
 | A3 | Open / Waiting on Email Reply | Is Resident **No** (`Isresident: false`) did not show in Recovery Hub. **Yes** does show when resident is true. Follow-up email sent 2026-11-17. Do not change the mapping until they answer. |
-| G2 | Waiting on click check | Billing uses the server NERIS receipt and a preview. On an exported motor-vehicle report, open View Exports and click **Preview & Send**. The preview should be wide enough that Incident Type and Alarm fit without sideways or up-and-down scrolling. Confirm is a second click. Nothing is billed automatically. |
-| G3 | Waiting on click check | A second send does not create a second bill. On staging, open an incident already marked Sent and click **Confirm and send** again. The screen should refuse it and keep the same tracking ID. Do not send another live production bill for this check. |
-| G9 | Open | Finish any pieces of the April Fire Recovery billing screens that are still missing. Phase C already shipped preview, Sent / Failed / Needs review, the billing list, and Update billing status (replacing the old “DataSent” label). Still confirm amount due, amount paid, and tracking ID on the list, and a manual send from the incident queue. The View Exports side box is N12. |
-| N12 | Waiting on click check | In View Exports, **Not sent** on a billable motor-vehicle call opens the same preview as **Preview & Send**. **Confirm and send** is still a second click. A call that is not billable shows a grey long dash and cannot be clicked. |
+| G9 | Open | Finish any pieces of the April Fire Recovery billing screens that are still missing. Phase C already shipped preview, Sent / Failed / Needs review, the billing list, and Update billing status (replacing the old “DataSent” label). The View Exports **Not sent** box is done. Still confirm amount due, amount paid, and tracking ID on the list, and a manual send from the incident queue. |
 
 ---
 
@@ -171,9 +168,12 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 | E10 | NERIS Export Configuration is saved for the department, not only in one browser. |
 | F3 | Incidents → Configure Table drag-and-drop works. |
 | G1 | The server writes the NERIS success receipt. |
+| G2 | The Fire Recovery preview opens after NERIS accepted the export. Incident type and Alarm fit without scrolling, and **Confirm and send** is a second click. |
+| G3 | A second **Confirm and send** does not create a second bill. The tracking ID and the export date stay the same. |
 | G4 | The Fire Recovery password is encrypted, and sandbox versus live department ID is in place. |
 | G5 | The Motor Vehicle Collision billing section and its required party fields are in place. |
 | G8 | The production release and the one real bill are done. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2`. |
+| N12 | On View Exports, **Not sent** opens the bill preview for a billable motor-vehicle call. **Confirm and send** is a second click. A call that is not billable shows a grey long dash and cannot be clicked. |
 | N14 | Narrative Builder can insert NERIS fields by section, including Resources unit-card values and the people selected on each unit. |
 | N15 | Admins have **Validate/Export** beside **Export**. **Export** stays washed out until the report is **In Review** or **Exported**. Print and Delete stay visible. |
 | N16 | **Import** and **Get Incident (Test)** stay, and only a superadmin sees them. |
@@ -188,7 +188,7 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Waiting on click check:** E2, G2, G3, N12. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
+- **Waiting on click check:** E2. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
 - **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

@@ -13,7 +13,9 @@
 - **E12 (2026-11-17 evening):** Done. Reset password opens an in-app form with **Save Reset Password**.
 - **E16 (2026-11-17 evening):** Done. Staging and production are two separate Render services.
 - **F5 (2026-11-17 evening):** Done. Dispatched and canceled en route fills Dispatch, Canceled, and Clear with the call arrival time.
-- **G2 / N12 (2026-11-17 evening):** Local, waiting on click check after the next deploy. The Fire Recovery preview is wider, and Incident Type and Alarm wrap. On View Exports, **Not sent** opens that preview for a billable motor-vehicle call. A non-billable call shows a grey long dash and is not clickable.
+- **G2 (2026-11-17 evening):** Done. The Fire Recovery preview opens after NERIS accepted the export. Incident type and Alarm fit without scrolling, and **Confirm and send** is a second click.
+- **N12 (2026-11-17 evening):** Done. On View Exports, **Not sent** opens the bill preview for a billable motor-vehicle call. **Confirm and send** is a second click. A non-billable call shows a grey long dash and is not clickable.
+- **G3 (2026-11-17 evening):** Done. A second **Confirm and send** does not create a second bill. The tracking ID and the export date stay the same.
 - **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
 - **Fire Recovery email (2026-11-17):** Follow-up sent covering A2 cleared time, A3 Is Resident No, A4 commercial trucking, A5 lost tracking ID, A6 billing status timing. Status: **Open / Waiting on Email Reply**. Do not change mappings until they answer.
 - **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank.
