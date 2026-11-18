@@ -3,7 +3,6 @@
  * Used by admin page and NERIS report form.
  */
 
-import { onScenePersonnel } from "./fireRecovery/billingRequirements";
 import {
   getNerisValueOptions,
   NERIS_FORM_FIELDS,
@@ -165,10 +164,75 @@ type ResourceUnitCard = {
   canceledTime?: string;
   clearTime?: string;
   isCanceledEnroute?: boolean;
-  personnel?: string;
+  personnel?: unknown;
   reportWriter?: string;
   unitNarrative?: string;
 };
+
+export type NarrativePersonnelOption = { value: string; label: string };
+
+export type NarrativeBuildContext = {
+  personnelOptions?: NarrativePersonnelOption[];
+};
+
+function normalizePersonnelToken(value: string): string {
+  return value
+    .trim()
+    .replace(/\s+/g, "_")
+    .replace(/\//g, "_")
+    .toUpperCase()
+    .replace(/[^A-Z0-9_|]/g, "");
+}
+
+/** The unit card stores personnel as comma-separated usernames, or sometimes as a list. */
+function personnelTokens(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw.flatMap((entry) => personnelTokens(entry));
+  }
+  if (raw && typeof raw === "object") {
+    const row = raw as Record<string, unknown>;
+    return personnelTokens(row.value ?? row.username ?? row.name ?? row.label ?? "");
+  }
+  const text = String(raw ?? "").trim();
+  if (!text) return [];
+  return text
+    .split(",")
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0);
+}
+
+function personnelDisplayNames(raw: unknown, options: NarrativePersonnelOption[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const token of personnelTokens(raw)) {
+    const normalized = normalizePersonnelToken(token);
+    const match = options.find(
+      (option) =>
+        option.value === token || normalizePersonnelToken(option.value) === normalized,
+    );
+    const label = (match?.label || token).trim();
+    const key = label.toLowerCase();
+    if (!label || seen.has(key)) continue;
+    seen.add(key);
+    names.push(label);
+  }
+  return names;
+}
+
+function onScenePersonnelNames(units: ResourceUnitCard[], options: NarrativePersonnelOption[]): string[] {
+  const seen = new Set<string>();
+  const names: string[] = [];
+  for (const unit of units) {
+    if (unit.isCanceledEnroute === true) continue;
+    for (const name of personnelDisplayNames(unit.personnel, options)) {
+      const key = name.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      names.push(name);
+    }
+  }
+  return names;
+}
 
 function parseResourceUnitCards(formValues: Record<string, string>): ResourceUnitCard[] {
   const raw = (formValues.resource_units_json ?? "").trim();
@@ -210,7 +274,11 @@ function joinUnitValues(
     .join("; ");
 }
 
-function formatUnitDetails(unit: ResourceUnitCard, index: number): string {
+function formatUnitDetails(
+  unit: ResourceUnitCard,
+  index: number,
+  options: NarrativePersonnelOption[],
+): string {
   const parts: string[] = [unitLabel(unit, index)];
   const type = formatNerisValueForNarrative("resource_primary_unit_type", unit.unitType ?? "");
   if (type) parts.push(type);
@@ -226,7 +294,7 @@ function formatUnitDetails(unit: ResourceUnitCard, index: number): string {
     unit.transportMode ?? "",
   );
   if (transport) parts.push(`transport ${transport}`);
-  const personnel = (unit.personnel ?? "").trim();
+  const personnel = personnelDisplayNames(unit.personnel, options).join(", ");
   if (personnel) parts.push(`personnel ${personnel}`);
   const times: Array<[string, string | undefined]> = [
     ["dispatch", unit.dispatchTime],
@@ -242,7 +310,7 @@ function formatUnitDetails(unit: ResourceUnitCard, index: number): string {
     if (formatted) parts.push(`${label} ${formatted}`);
   }
   if (unit.isCanceledEnroute) parts.push("dispatched and canceled en route");
-  const writer = (unit.reportWriter ?? "").trim();
+  const writer = personnelDisplayNames(unit.reportWriter, options).join(", ");
   if (writer) parts.push(`report writer ${writer}`);
   const narrative = (unit.unitNarrative ?? "").trim();
   if (narrative) parts.push(narrative);
@@ -253,18 +321,20 @@ function formatUnitDetails(unit: ResourceUnitCard, index: number): string {
 export function formatNarrativeResourceValue(
   fieldId: string,
   formValues: Record<string, string>,
+  context?: NarrativeBuildContext,
 ): string | null {
   if (!NARRATIVE_RESOURCE_FIELD_IDS.has(fieldId)) return null;
   const units = parseResourceUnitCards(formValues);
+  const personnelOptions = context?.personnelOptions ?? [];
   if (
     fieldId === "narrative_resource_personnel_count" ||
     fieldId === "narrative_resource_personnel_names"
   ) {
-    const onScene = onScenePersonnel(formValues.resource_units_json ?? "");
+    const names = onScenePersonnelNames(units, personnelOptions);
     if (fieldId === "narrative_resource_personnel_count") {
-      return units.length === 0 ? "" : String(onScene.count);
+      return units.length === 0 ? "" : String(names.length);
     }
-    return onScene.names.join(", ");
+    return names.join(", ");
   }
   if (units.length === 0) return "";
   if (fieldId === "narrative_resource_units") {
@@ -274,7 +344,7 @@ export function formatNarrativeResourceValue(
       .join(", ");
   }
   if (fieldId === "narrative_resource_unit_details") {
-    return units.map((unit, index) => formatUnitDetails(unit, index)).join("; ");
+    return units.map((unit, index) => formatUnitDetails(unit, index, personnelOptions)).join("; ");
   }
   if (fieldId === "narrative_resource_unit_types") {
     return joinUnitValues(units, (unit) =>
@@ -295,7 +365,7 @@ export function formatNarrativeResourceValue(
     );
   }
   if (fieldId === "narrative_resource_unit_personnel") {
-    return joinUnitValues(units, (unit) => unit.personnel ?? "");
+    return joinUnitValues(units, (unit) => personnelDisplayNames(unit.personnel, personnelOptions).join(", "));
   }
   if (fieldId === "narrative_resource_dispatch_times") {
     return joinUnitValues(units, (unit) => formatResourceClock(unit.dispatchTime));
@@ -322,7 +392,9 @@ export function formatNarrativeResourceValue(
     return joinUnitValues(units, (unit) => (unit.isCanceledEnroute ? "Yes" : "No"));
   }
   if (fieldId === "narrative_resource_report_writers") {
-    return joinUnitValues(units, (unit) => unit.reportWriter ?? "");
+    return joinUnitValues(units, (unit) =>
+      personnelDisplayNames(unit.reportWriter, personnelOptions).join(", "),
+    );
   }
   if (fieldId === "narrative_resource_unit_narratives") {
     return joinUnitValues(units, (unit) => unit.unitNarrative ?? "");
@@ -336,13 +408,14 @@ export function buildNarrativeFromTemplate(
   formValues: Record<string, string>,
   userFillableValues: string[],
   questionAnswerValues: string[],
+  context?: NarrativeBuildContext,
 ): string {
   let userIndex = 0;
   let questionIndex = 0;
   const parts = template.segments.map((seg) => {
     if (seg.type === "fillable") return seg.text.trim();
     if (seg.type === "neris") {
-      const resourceValue = formatNarrativeResourceValue(seg.fieldId, formValues);
+      const resourceValue = formatNarrativeResourceValue(seg.fieldId, formValues, context);
       if (resourceValue !== null) return resourceValue;
       return formatNerisValueForNarrative(seg.fieldId, formValues[seg.fieldId] ?? "");
     }

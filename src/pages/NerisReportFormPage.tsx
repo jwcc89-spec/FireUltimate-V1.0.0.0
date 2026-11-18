@@ -45,6 +45,7 @@ import {
 import { FireRecoveryBillingSection } from "./FireRecoveryBillingSection";
 import {
   buildNarrativeFromTemplate,
+  formatNarrativeResourceValue,
   formatNerisValueForNarrative,
   type NarrativeTemplate,
 } from "../narrativeBuilder";
@@ -4147,7 +4148,24 @@ function NerisReportFormPage({
     });
   };
 
-  const handleExportReport = async (sourceValues?: NerisFormValues) => {
+  const reportIsValidated = reportStatus === "In Review" || reportStatus === "Exported";
+
+  const narrativeFormValues = (): Record<string, string> => ({
+    ...formValues,
+    resource_units_json: JSON.stringify(resourceUnits),
+  });
+  const narrativeBuildContext = {
+    personnelOptions: effectivePersonnelOptions,
+  };
+
+  const handleExportReport = async (
+    sourceValues?: NerisFormValues,
+    options?: { alreadyValidated?: boolean },
+  ) => {
+    if (!options?.alreadyValidated && !reportIsValidated) {
+      setErrorMessage("Validate the report before exporting.");
+      return;
+    }
     setValidationModal(null);
     setErrorMessage("");
     setSaveMessage("Export in progress...");
@@ -4206,7 +4224,7 @@ function NerisReportFormPage({
     setErrorMessage("");
     setValidationIssues([]);
     setValidationModal(null);
-    await handleExportReport(syncedValues);
+    await handleExportReport(syncedValues, { alreadyValidated: true });
   };
 
   const handleGetIncidentTest = async () => {
@@ -5657,7 +5675,12 @@ function NerisReportFormPage({
                 type="button"
                 className="primary-button compact-button"
                 onClick={() => void handleExportReport()}
-                disabled={isExporting}
+                disabled={isExporting || !reportIsValidated}
+                title={
+                  reportIsValidated
+                    ? "Export this validated report"
+                    : "Validate the report before exporting"
+                }
               >
                 {isExporting ? "Exporting..." : "Export"}
               </button>
@@ -8239,7 +8262,14 @@ function NerisReportFormPage({
                         {seg.type === "neris" ? (
                           <span>
                             {(() => {
-                              const rawValue = (formValues[seg.fieldId] ?? "").trim();
+                              const narrativeValues = narrativeFormValues();
+                              const resourceValue = formatNarrativeResourceValue(
+                                seg.fieldId,
+                                narrativeValues,
+                                narrativeBuildContext,
+                              );
+                              if (resourceValue !== null) return resourceValue || "—";
+                              const rawValue = (narrativeValues[seg.fieldId] ?? "").trim();
                               const displayValue = formatNerisValueForNarrative(
                                 seg.fieldId,
                                 rawValue,
@@ -8330,9 +8360,10 @@ function NerisReportFormPage({
                       onClick={() => {
                         const built = buildNarrativeFromTemplate(
                           selected,
-                          formValues,
+                          narrativeFormValues(),
                           narrativeBuilderUserValues,
                           narrativeBuilderQuestionAnswers,
+                          narrativeBuildContext,
                         );
                         updateFieldValue("narrative_outcome", built);
                         setNarrativeBuilderModalOpen(false);

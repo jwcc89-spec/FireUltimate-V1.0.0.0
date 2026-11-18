@@ -1,6 +1,6 @@
 # What needs to be completed
 
-**Updated:** 2026-11-17, late morning America/Chicago (N14, N15, and N16 ready for click checks).  
+**Updated:** 2026-11-17, evening America/Chicago (N14 personnel names and N15 Export lock ready for another click check).  
 **Branch:** `submenu/neris-golive-cifpd`.  
 **How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/Click by Click Checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
@@ -25,9 +25,9 @@
 | N9 | Open | On the Motor Vehicle Collision tab, hide the call fields that are copied from earlier sections: run date, time alarm received, time call cleared, run number, total personnel on scene, law enforcement agency report number, street, city, state, and ZIP. Keep sending them. Do not remove the mapping. |
 | N10 | Open | Hazards **Save**, **Back**, and **Next** are oblong. Match the buttons used on the rest of the NERIS report. |
 | N13 | Review findings | Live schema is **1.5.x** (OpenAPI `1.5.3`), not 2.0. Version 2 is still planned for later. Our form matches pre–1.5 lists. Findings: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. Do not change the form until you pick which 1.5 fields Crescent needs. |
-| N14 | Waiting on click check | Narrative Builder: pick a NERIS section, then a field in that section. Resources now includes the unit-card values that were missing from the old one-list picker: apparatus that responded, personnel on scene, staffing, response and transport mode, each unit time, canceled en route, report writer, unit narrative, and one line with every value for a unit. |
-| N15 | Waiting on click check | Admins and above see **Validate/Export** next to the existing **Export** button. Validate/Export checks the report and exports only when validation passes. Export alone stays, so a report that is already validated can be exported without running validation again. |
-| N16 | Waiting on click check | **Import** and **Get Incident (Test)** on the NERIS report are visible only to superadmin. Import is still disabled (“not implemented”). Get Incident (Test) loads an already-exported incident from NERIS by its NERIS ID so the response can be compared with the form. After this click check, decide whether these were only original test tools and whether they should stay. |
+| N14 | Waiting on click check | Narrative Builder: pick a NERIS section, then a field. Resources unit-card values are available. Personnel count, personnel on scene, and personnel by unit read the people selected on each unit card and show their names. Retest after the 2026-11-17 evening fix: those three were 0 or blank while apparatus and each-unit lines were right. |
+| N15 | Waiting on click check | Admins and above see **Validate/Export** next to **Export**. Validate/Export checks the report and exports only when the check passes. **Export** stays, and it stays washed out until the report has passed validation (status **In Review** or **Exported**). Editing the report returns it to **Draft** and washes Export out again. |
+| N16 | Done | **Import** and **Get Incident (Test)** stay, and they are visible only to superadmin. Import is still disabled. Get Incident (Test) loads an already-exported incident from NERIS by its NERIS ID. Click check passed 2026-11-17. |
 
 ---
 
@@ -186,7 +186,7 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Waiting on click check:** D1, E2, E12, E16, F5, G2, G3, N14, N15, N16. Steps are in `docs/Click by Click Checks.md`. After a pass, mark Done. After a fail, move back to Open. N16’s keep-or-remove decision stays open after the visibility check passes.
+- **Waiting on click check:** D1, E2, E12, E16, F5, G2, G3, N14, N15. Steps are in `docs/Click by Click Checks.md`. After a pass, mark Done. After a fail, move back to Open. N16 passed: Import and Get Incident (Test) stay for superadmin only.
 - **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.
