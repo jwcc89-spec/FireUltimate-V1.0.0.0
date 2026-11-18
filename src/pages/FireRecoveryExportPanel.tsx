@@ -16,6 +16,29 @@ import type { UserRole } from "../appData";
 import { isAdminOrHigher } from "../roleHierarchy";
 import { useMyPermissions } from "../useMyPermissions";
 
+function previewIncidentType(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const parts = raw
+    .split(/\s*(?:\|\||:)\s*/)
+    .map((part) => part.trim())
+    .filter((part) => part.length > 0);
+  const last = parts.at(-1) ?? raw;
+  return last
+    .toLowerCase()
+    .replace(/_/g, " ")
+    .replace(/\b\w/g, (character) => character.toUpperCase());
+}
+
+function previewDateTime(value: string | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "—";
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})/);
+  if (!match) return raw;
+  const [, year, month, day, hour, minute] = match;
+  return `${month}/${day}/${year.slice(2)} ${hour}:${minute}`;
+}
+
 function errorMessage(error: unknown, fallback: string): string {
   const message = error instanceof Error && error.message ? error.message : fallback;
   if (message === "Not found.") {
@@ -59,15 +82,15 @@ function PreviewModal({
           </div>
           <div>
             <dt>Incident type</dt>
-            <dd>{incident?.IncidentType || "—"}</dd>
+            <dd title={incident?.IncidentType || undefined}>{previewIncidentType(incident?.IncidentType)}</dd>
           </div>
           <div>
             <dt>Alarm</dt>
-            <dd>{incident?.AlarmDateTime || "—"}</dd>
+            <dd title={incident?.AlarmDateTime || undefined}>{previewDateTime(incident?.AlarmDateTime)}</dd>
           </div>
           <div>
             <dt>Cleared</dt>
-            <dd>{incident?.ClearedDateTime || "—"}</dd>
+            <dd title={incident?.ClearedDateTime || undefined}>{previewDateTime(incident?.ClearedDateTime)}</dd>
           </div>
           <div>
             <dt>Location</dt>
@@ -406,5 +429,93 @@ export function FireRecoveryExportPanel({
         />
       ) : null}
     </article>
+  );
+}
+
+export function FireRecoveryQuickPreview({
+  callNumber,
+  hasNerisExport,
+  onClose,
+  onSent,
+}: {
+  callNumber: string;
+  hasNerisExport: boolean;
+  onClose: () => void;
+  onSent: (row: FireRecoveryIncidentApi) => void;
+}) {
+  const permissionGrants = useMyPermissions();
+  const canSubmitBilling = permissionGrants?.["billing.submit"] === true;
+  const [preview, setPreview] = useState<FireRecoveryPreviewApi | null>(null);
+  const [message, setMessage] = useState("");
+  const [previewError, setPreviewError] = useState("");
+  const [loading, setLoading] = useState(hasNerisExport);
+  const [sending, setSending] = useState(false);
+  const sendingRef = useRef(false);
+  const notExportedMessage = hasNerisExport
+    ? ""
+    : "This incident has not been exported to NERIS, so there is no bill to preview. Export the report, then open it from View Exports.";
+
+  useEffect(() => {
+    if (!hasNerisExport) return;
+    let cancelled = false;
+    postFireRecoveryPreview(callNumber)
+      .then((data) => {
+        if (!cancelled) setPreview(data);
+      })
+      .catch((error: unknown) => {
+        if (!cancelled) setMessage(errorMessage(error, "Preview failed."));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [callNumber, hasNerisExport]);
+
+  const confirmSend = () => {
+    if (!preview || !canSubmitBilling || sendingRef.current) return;
+    sendingRef.current = true;
+    setSending(true);
+    setPreviewError("");
+    postFireRecoverySubmit(callNumber, preview.previewHash)
+      .then((data) => {
+        onSent(data);
+        onClose();
+      })
+      .catch((error: unknown) => setPreviewError(errorMessage(error, "Send failed.")))
+      .finally(() => {
+        sendingRef.current = false;
+        setSending(false);
+      });
+  };
+
+  if (!preview) {
+    return (
+      <div className="validation-modal-backdrop" role="presentation">
+        <div className="panel validation-modal fr-preview-modal" role="dialog" aria-modal="true" aria-labelledby="fr-quick-preview-title">
+          <h2 id="fr-quick-preview-title">Preview Fire Recovery bill</h2>
+          <p role="status">{notExportedMessage || message || (loading ? "Preparing preview…" : "Preview is not ready.")}</p>
+          <div className="validation-modal-actions">
+            <button type="button" className="secondary-button compact-button" onClick={onClose}>
+              Close
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <PreviewModal
+      preview={preview}
+      sending={sending}
+      error={previewError}
+      onCancel={() => {
+        if (sending) return;
+        onClose();
+      }}
+      onConfirm={confirmSend}
+    />
   );
 }

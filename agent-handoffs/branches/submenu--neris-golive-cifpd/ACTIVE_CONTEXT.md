@@ -8,7 +8,12 @@
 - **N13 (2026-11-17):** Live NERIS schema is **1.5.x** (OpenAPI **1.5.3**). “NERIS 2.0” is still future. Our form is pre–1.5. Gap list: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. No form changes until the operator picks which 1.5 fields to add.
 - **N14 / N15 / N16 (2026-11-17 evening):** Done. Narrative Builder Resources values, Validate/Export, and the washed-out Export button passed. Import and Get Incident (Test) stay for superadmin only.
 - **N17:** The primary responding unit is the first unit in the Resources list, not the earliest on-scene unit. Do not change that until named. Preferred rule is earliest on-scene time.
-- **N18:** Complete and Collapse saves a valid Resources unit. Waiting on click check. Steps: `docs/click_by_click_checks.md`.
+- **N18 (2026-11-17 evening):** Done. Complete and Collapse saves a valid Resources unit, and the personnel and times remain after reload.
+- **D1 (2026-11-17 evening):** Done. Watseka staging has the weekday 12-hour schedule. Crescent’s 24/48 schedule is unchanged.
+- **E12 (2026-11-17 evening):** Done. Reset password opens an in-app form with **Save Reset Password**.
+- **E16 (2026-11-17 evening):** Done. Staging and production are two separate Render services.
+- **F5 (2026-11-17 evening):** Done. Dispatched and canceled en route fills Dispatch, Canceled, and Clear with the call arrival time.
+- **G2 / N12 (2026-11-17 evening):** Local, waiting on click check after the next deploy. The Fire Recovery preview is wider, and Incident Type and Alarm wrap. On View Exports, **Not sent** opens that preview for a billable motor-vehicle call. A non-billable call shows a grey long dash and is not clickable.
 - **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
 - **Fire Recovery email (2026-11-17):** Follow-up sent covering A2 cleared time, A3 Is Resident No, A4 commercial trucking, A5 lost tracking ID, A6 billing status timing. Status: **Open / Waiting on Email Reply**. Do not change mappings until they answer.
 - **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank.

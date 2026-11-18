@@ -64,7 +64,8 @@ import {
 } from "./api/fireRecovery";
 import { FireRecoveryIncidentsPage } from "./pages/FireRecoveryIncidentsPage";
 import { FireRecoveryIncidentDetailPage } from "./pages/FireRecoveryIncidentDetailPage";
-import { FireRecoveryExportPanel } from "./pages/FireRecoveryExportPanel";
+import { FireRecoveryExportPanel, FireRecoveryQuickPreview } from "./pages/FireRecoveryExportPanel";
+import { isFireRecoveryBillable } from "./fireRecovery/billingRequirements";
 import {
   ALL_SUBMENU_PATHS,
   DASHBOARD_ALERTS,
@@ -3029,6 +3030,14 @@ function getExportsListReportStatus(
   return getNerisQueueFieldValue(call, "status");
 }
 
+function callIsFireRecoveryBillable(call: IncidentCallSummary): boolean {
+  const draft = readNerisDraft(call.callNumber);
+  const primary =
+    draft?.formValues?.primary_incident_type?.trim() || call.nerisPrimaryIncidentType?.trim() || "";
+  const additional = draft?.formValues?.additional_incident_types?.trim() || "";
+  return isFireRecoveryBillable(primary, additional);
+}
+
 function nerisPrimaryIncidentTypeLabel(call: IncidentCallSummary): string {
   const local = readNerisDraft(call.callNumber)?.formValues?.primary_incident_type?.trim() ?? "";
   const raw = local || call.nerisPrimaryIncidentType?.trim() || "";
@@ -5818,8 +5827,10 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
   const navigate = useNavigate();
   const permissionGrants = useMyPermissions();
   const canViewBilling = permissionGrants?.["billing.view"] === true;
+  const canSubmitBilling = canViewBilling && permissionGrants?.["billing.submit"] === true;
   const canViewExports = permissionGrants?.["neris.export"] === true;
   const [frByCall, setFrByCall] = useState<Map<string, FireRecoveryIncidentApi>>(new Map());
+  const [previewCallNumber, setPreviewCallNumber] = useState<string | null>(null);
 
   const queueCalls = useMemo(
     () => incidentCalls.filter((entry) => !isIncidentHiddenFromQueue(entry)),
@@ -5979,9 +5990,23 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
                           onClick={(event) => event.stopPropagation()}
                           onKeyDown={(event) => event.stopPropagation()}
                         >
-                          <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(fr))}`}>
-                            {fireRecoveryStatusLabel(fr)}
-                          </span>
+                          {fireRecoveryStatusLabel(fr) === "Not sent" && !callIsFireRecoveryBillable(call) ? (
+                            <span className="fire-recovery-not-billable" title="Not a billable incident">
+                              —
+                            </span>
+                          ) : fireRecoveryStatusLabel(fr) === "Not sent" && canSubmitBilling ? (
+                            <button
+                              type="button"
+                              className="neris-status-pill tone tone-neutral fire-recovery-not-sent-button"
+                              onClick={() => setPreviewCallNumber(call.callNumber)}
+                            >
+                              Not sent
+                            </button>
+                          ) : (
+                            <span className={`neris-status-pill ${fireRecoveryStatusTone(fireRecoveryStatusLabel(fr))}`}>
+                              {fireRecoveryStatusLabel(fr)}
+                            </span>
+                          )}
                         </td>
                       ) : null}
                     </tr>
@@ -6001,6 +6026,21 @@ function NerisExportsPage({ incidentCalls, exportHistory = [] }: NerisExportsPag
           </div>
         </article>
       </section>
+      {previewCallNumber ? (
+        <FireRecoveryQuickPreview
+          key={previewCallNumber}
+          callNumber={previewCallNumber}
+          hasNerisExport={latestExportByCall.get(previewCallNumber)?.attemptStatus === "success"}
+          onClose={() => setPreviewCallNumber(null)}
+          onSent={(row) => {
+            setFrByCall((previous) => {
+              const next = new Map(previous);
+              next.set(row.callNumber, row);
+              return next;
+            });
+          }}
+        />
+      ) : null}
     </section>
   );
 }

@@ -1,6 +1,6 @@
 # What needs to be completed
 
-**Updated:** 2026-11-17, evening America/Chicago (N14–N16 done; N17 primary unit recorded).  
+**Updated:** 2026-11-17, evening America/Chicago (G2 preview size and N12 Not Sent behavior waiting on click check).  
 **Branch:** `submenu/neris-golive-cifpd`.  
 **How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
@@ -15,7 +15,6 @@
 | E1 | Open | Conditional required fields: one shared rule for platform defaults and department rules, with an admin screen under NERIS Required Fields. Fire Recovery already has its own requirement levels; this item is the wider NERIS rule engine, not the billing tab alone. |
 | E11 | Open | Each department’s NERIS settings (for example entity ID and export configuration) live in the database and load per request. The NERIS web address stays one setting per environment. |
 | F1 | Open | Recover Reports: on Reporting → NERIS, next to Fire Recovery and View Exports, restore a deleted NERIS report with every typed answer. The incident stays on Incidents. Do not build until named. |
-| F5 | Waiting on click check | **Dispatched and canceled en route** fills times. Open a NERIS report that has a call arrival time under Incident Times → Resources → check **Dispatched and canceled en route**. Dispatch Time, Canceled Time, and Clear Time should fill with that call arrival time. If they stay empty, move this back to Open. |
 | N3 | Open | Reporting → NERIS needs a **Configure Table** button with the same drag-and-drop column layout as Incidents. |
 | N4 | Open | NERIS dropdowns are cut off at the bottom of a short window. The open list must stay fully visible and scrollable (portal or similar), including fields such as primary incident type. |
 | N5 | Open | After a primary incident type is chosen, the form should show only the last name (for example Motor Vehicle Collision), not the full path. Keep sending the full NERIS code. The reporting table already shows the last segment; the form field still shows the full path. |
@@ -26,7 +25,6 @@
 | N10 | Open | Hazards **Save**, **Back**, and **Next** are oblong. Match the buttons used on the rest of the NERIS report. |
 | N13 | Review findings | Live schema is **1.5.x** (OpenAPI `1.5.3`), not 2.0. Version 2 is still planned for later. Our form matches pre–1.5 lists. Findings: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. Do not change the form until you pick which 1.5 fields Crescent needs. |
 | N17 | Open | The primary responding unit is whichever unit is first in the Resources list. It is not the unit with the earliest on-scene time. NERIS export uses that first unit as the primary unit ID, type, staffing, and response mode. Preferred rule: the unit that arrived on scene first. A checkbox is the fallback when a time is missing or two units share the same time. Do not change it until named. |
-| N18 | Waiting on click check | **Complete and Collapse** on a Resources unit saves that unit when it has no errors. Reload and confirm the personnel and times are still there. |
 
 ---
 
@@ -36,10 +34,10 @@
 |----|--------|------|
 | A2 | Open / Waiting on Email Reply | Time Call Cleared stayed blank in Recovery Hub on the live bill. Their website only accepts `HH:MM`. We sent seconds (`2025-11-11T13:59:45`), same shape as Alarm. Follow-up email sent 2026-11-17. Do not change the mapping until Fire Recovery answers. |
 | A3 | Open / Waiting on Email Reply | Is Resident **No** (`Isresident: false`) did not show in Recovery Hub. **Yes** does show when resident is true. Follow-up email sent 2026-11-17. Do not change the mapping until they answer. |
-| G2 | Waiting on click check | Billing uses the server NERIS receipt and a preview. On an exported motor-vehicle report, open View Exports → Fire Recovery. **Preview & Send** should open only after NERIS accepted the export. Confirm is a second click. Nothing is billed automatically. |
+| G2 | Waiting on click check | Billing uses the server NERIS receipt and a preview. On an exported motor-vehicle report, open View Exports and click **Preview & Send**. The preview should be wide enough that Incident Type and Alarm fit without sideways or up-and-down scrolling. Confirm is a second click. Nothing is billed automatically. |
 | G3 | Waiting on click check | A second send does not create a second bill. On staging, open an incident already marked Sent and click **Confirm and send** again. The screen should refuse it and keep the same tracking ID. Do not send another live production bill for this check. |
 | G9 | Open | Finish any pieces of the April Fire Recovery billing screens that are still missing. Phase C already shipped preview, Sent / Failed / Needs review, the billing list, and Update billing status (replacing the old “DataSent” label). Still confirm amount due, amount paid, and tracking ID on the list, and a manual send from the incident queue. The View Exports side box is N12. |
-| N12 | Open | In View Exports, the gray **Not Sent** box on the far right should do the same thing as **View and Send** when the incident can be billed. If it cannot be billed, show a gray circle with a dash instead. |
+| N12 | Waiting on click check | In View Exports, **Not sent** on a billable motor-vehicle call opens the same preview as **Preview & Send**. **Confirm and send** is still a second click. A call that is not billable shows a grey long dash and cannot be clicked. |
 
 ---
 
@@ -75,21 +73,18 @@
 | E3 | Open | Find any leftover checks that look for the exact word `admin` and use “admin and up,” so superadmin is included. Numbered role levels already exist in code. |
 | E8 | Open | Super admin stays out of the normal user-type dropdown and is assigned another way (for example a production script or platform tool). |
 | E9 | Open | An admin can enter a show/hide mode and click fields and menus to show or hide them by user type. Persist and apply those choices. |
-| E12 | Waiting on click check | Reset password is an in-app form. Admin Functions → Department Details → Access / Restrictions → open users → **Reset Password**. You should see new-password fields and **Save Reset Password**, not a browser prompt. If you see the in-app form, mark done. |
 | E13 | Open | Extra login slowdown or rate limit beyond the 15-minute lock that already exists after five wrong passwords. |
 | E14 | Open | A clear record of who reset or changed a password, and when. Access / Restrictions already lists recent account changes. If a password reset already appears there with who/when/target, this item is done. |
 | E15 | Open | Search and filter on large personnel and user lists. |
-| E16 | Waiting on click check | The staging website is its own Render service. In the Render dashboard, confirm a frontend service whose site is the staging address, separate from the production website. If you see that split, mark done. |
 
 ---
 
 ## Scheduling
 
-D9 (schedule save erasing days missing from an open tab) is done. D1 needs a click-check.
+D9 (schedule save erasing days missing from an open tab) is done. D1 (Watseka weekday schedule on staging, Crescent’s 24/48 unchanged) passed on 2026-11-17.
 
 | ID | Status | Item |
 |----|--------|------|
-| D1 | Waiting on click check | Watseka weekday 12-hour schedule on staging. Sign in at `watsekademo.staging.fireultimate.app` and open that schedule. Crescent’s 24/48 schedule on its own site should be unchanged. Work lived on branch `cursor/watseka-scheduling-plan`. If the trial is there and Crescent is unchanged, mark done. |
 | D2 | Open / parked | Phone schedule. Parked until you ask to start it. Pick the layout first (day-first list recommended), then the phone header, one-day list, week and month pickers, and the day-block editor. Desktop week and month stay unchanged. Plan: `docs/plans/canvases/schedule-mobile-plan.canvas.tsx`. |
 | D3 | Open | Scheduler Settings: Standard or Custom mode for each extra field. Not built yet. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. |
 | D4 | Open | Hour ledger: per-person and per-position hours, including the sick-time rule (for example remaining hours after a short sick day must be placed elsewhere). |
@@ -182,13 +177,18 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 | N14 | Narrative Builder can insert NERIS fields by section, including Resources unit-card values and the people selected on each unit. |
 | N15 | Admins have **Validate/Export** beside **Export**. **Export** stays washed out until the report is **In Review** or **Exported**. Print and Delete stay visible. |
 | N16 | **Import** and **Get Incident (Test)** stay, and only a superadmin sees them. |
+| N18 | **Complete and Collapse** saves a Resources unit when that unit has no errors. The personnel and times remain after a reload. |
+| D1 | Watseka staging shows the weekday 12-hour schedule. Crescent’s 24/48 schedule is unchanged. |
+| E12 | Reset password is an in-app form with password fields and **Save Reset Password**. |
+| E16 | The staging website and the production website are two separate Render services. |
+| F5 | **Dispatched and canceled en route** fills Dispatch Time, Canceled Time, and Clear Time with the call arrival time. |
 
 ---
 
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Waiting on click check:** D1, E2, E12, E16, F5, G2, G3, N18. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
+- **Waiting on click check:** E2, G2, G3, N12. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
 - **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

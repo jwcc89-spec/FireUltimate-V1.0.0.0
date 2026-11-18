@@ -4,22 +4,7 @@ Use this list when the priority file status is **Waiting on click check**.
 
 Each check has an ID, the item, and numbered steps. After you run a check, tell the agent pass or fail so the priority status can move to Done or back to Open.
 
-**Updated:** 2026-11-17, evening America/Chicago. N14, N15, and N16 passed and were removed.
-
----
-
-## D1 — Watseka weekday schedule on staging
-
-**Item:** Confirm the weekday 12-hour schedule is on the Watseka staging site, and Crescent’s 24/48 schedule is unchanged.
-
-1. Open `https://watsekademo.staging.fireultimate.app` and sign in.
-2. Open the personnel schedule.
-3. Confirm the weekday 12-hour pattern is there (Monday–Friday style days, not a blank calendar).
-4. Open Crescent’s own site (`https://cifpdil.fireultimate.app` or Crescent staging) and open its schedule.
-5. Confirm Crescent still shows the existing 24-hours-on, 48-hours-off pattern.
-
-**Pass:** Watseka staging shows the weekday schedule, and Crescent’s schedule looks the same as before.  
-**Fail:** Watseka staging has no weekday schedule, or Crescent’s days changed.
+**Updated:** 2026-11-17, evening America/Chicago. G2 preview size and N12 Not Sent behavior are ready to check after the next staging deploy.
 
 ---
 
@@ -40,62 +25,34 @@ Each check has an ID, the item, and numbered steps. After you run a check, tell 
 
 ---
 
-## E12 — Reset password form
-
-**Item:** Reset password is an in-app form, not a browser prompt.
-
-1. Sign in as an admin.
-2. Go to **Admin Functions → Department Details → Access / Restrictions**.
-3. Open the user list.
-4. Click **Reset Password** on one user.
-5. Look at the form that opens.
-
-**Pass:** You see password fields and **Save Reset Password** inside the page.  
-**Fail:** A small browser popup asks for the new password.
-
-Do not save a new password unless you intend to change that account.
-
----
-
-## E16 — Staging website is its own Render service
-
-**Item:** The staging website is a separate Render service from production.
-
-1. Open the Render dashboard.
-2. Find the service that serves the staging website.
-3. Find the service that serves the production website.
-4. Confirm they are two different services.
-
-**Pass:** Staging and production are separate services.  
-**Fail:** One service serves both, or you cannot find a staging frontend service.
-
----
-
-## F5 — Canceled en route fills the times
-
-**Item:** Checking **Dispatched and canceled en route** fills Dispatch, Canceled, and Clear with the call arrival time.
-
-1. Open a NERIS report that already has a call arrival time under **Incident Times**.
-2. Open **Resources**.
-3. Check **Dispatched and canceled en route** on a unit.
-4. Look at Dispatch Time, Canceled Time, and Clear Time.
-
-**Pass:** Those three times fill with the call arrival time.  
-**Fail:** They stay empty and you have to type them.
-
----
-
 ## G2 — Billing preview uses the NERIS receipt
 
-**Item:** Fire Recovery preview opens only after NERIS accepted the export. Confirm is a second click. Nothing bills by itself.
+**Item:** Fire Recovery preview opens only after NERIS accepted the export. The preview is large enough to read Incident Type and Alarm without scrolling. Confirm is a second click. Nothing bills by itself.
 
 1. On staging, open an exported motor-vehicle report.
 2. Go to **Reporting → NERIS → View Exports**.
-3. Open the Fire Recovery panel for that incident.
+3. Open that export.
 4. Click **Preview & Send**.
+5. Read **Incident type** and **Alarm**.
 
-**Pass:** The preview opens because NERIS already accepted the report. A second click is required before anything is sent.  
-**Fail:** Preview opens with no NERIS acceptance, or the bill sends on the first click.
+**Pass:** The preview opens because NERIS already accepted the report. Incident type and Alarm fit in their boxes. You do not have to scroll left, right, up, or down for that short preview. A second click is required before anything is sent.  
+**Fail:** Preview opens with no NERIS acceptance, the bill sends on the first click, or Incident type / Alarm spill out of their boxes.
+
+Do not click **Confirm and send** unless you mean to send a sandbox bill.
+
+---
+
+## N12 — Not sent opens the bill preview
+
+**Item:** On View Exports, **Not sent** opens Preview & Send for a billable motor-vehicle call. A call that is not billable shows a grey long dash and cannot be clicked.
+
+1. On staging, go to **Reporting → NERIS → View Exports**.
+2. Find an exported motor-vehicle call whose Fire Recovery box says **Not sent**.
+3. Click **Not sent**.
+4. Find a call that is not a motor-vehicle incident.
+
+**Pass:** The motor-vehicle click opens the same preview, and **Confirm and send** is a separate click. The other call shows a grey long dash and does not open anything.  
+**Fail:** Not sent does nothing on a billable call, sends the bill on the first click, or a non-billable call can still be clicked.
 
 Do not click **Confirm and send** unless you mean to send a sandbox bill.
 
@@ -113,19 +70,3 @@ Do not click **Confirm and send** unless you mean to send a sandbox bill.
 **Fail:** A second bill is created or the tracking ID changes.
 
 Do this on staging. Do not send another live production bill for this check.
-
----
-
-## N18 — Complete and Collapse saves the unit
-
-**Item:** On Resources, **Complete and Collapse** saves the unit when that unit has no errors.
-
-1. Open a NERIS report and go to **Resources**.
-2. Expand a unit, add personnel, and fill the required times.
-3. Click **Complete and Collapse**.
-4. Confirm the page says **Resources unit saved.**
-5. Reload the report.
-6. Open **Resources** again.
-
-**Pass:** The unit is collapsed, marked complete, and the personnel and times are still there after reload.  
-**Fail:** The message does not say the unit was saved, or the personnel and times are gone after reload.
