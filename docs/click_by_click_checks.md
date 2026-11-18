@@ -4,7 +4,7 @@ Use this list when the priority file status is **Waiting on click check**.
 
 Each check has an ID, the item, and numbered steps. After you run a check, tell the agent pass or fail so the priority status can move to Done or back to Open.
 
-**Updated:** 2026-11-17, evening America/Chicago.
+**Updated:** 2026-11-17, evening America/Chicago. N14, N15, and N16 passed and were removed.
 
 ---
 
@@ -116,65 +116,16 @@ Do this on staging. Do not send another live production bill for this check.
 
 ---
 
-## N14 — Narrative Builder section and Resources values
+## N18 — Complete and Collapse saves the unit
 
-**Item:** In Narrative Builder, pick a NERIS section first, then a field from that section. Resources includes the unit-card values from the report.
+**Item:** On Resources, **Complete and Collapse** saves the unit when that unit has no errors.
 
-1. Sign in as an admin.
-2. Open **Admin Functions → Narrative Builder** (the template designer).
-3. Edit a template or start a new one.
-4. Set the segment type to **NERIS field**.
-5. Use the first box and choose **Core**. The second box should list Core fields only, not the whole report.
-6. Change the first box to **Location**, then **Incident Times**. Each time, the second box should change to that section’s fields.
-7. Change the first box to **Resources**.
-8. Confirm the second box includes the older resource fields and these unit-card values: **Apparatus that responded**, **Number of personnel on scene**, **Personnel on scene**, **Each unit (all values)**, unit types, staffing, response modes, transport modes, personnel by unit, each time (dispatch, en route, staged, on scene, returning, canceled, clear), **Dispatched and canceled en route**, report writers, and unit narratives.
-9. Add **Apparatus that responded**, **Number of personnel on scene**, **Personnel on scene**, and **Personnel by unit** to the template and save.
-10. Open a NERIS report. On **Resources**, expand a unit that is not canceled en route and confirm the **Personnel** list shows the people’s names (not only the number beside the people icon).
-11. Insert that template into the narrative.
+1. Open a NERIS report and go to **Resources**.
+2. Expand a unit, add personnel, and fill the required times.
+3. Click **Complete and Collapse**.
+4. Confirm the page says **Resources unit saved.**
+5. Reload the report.
+6. Open **Resources** again.
 
-**Pass:** The section box filters the field list. Apparatus shows the unit IDs. The personnel count matches the people in the Personnel lists, excluding units marked dispatched and canceled en route. Personnel on scene lists those names. Personnel by unit lists the names on each unit.  
-**Fail:** The count is 0, or either personnel line is blank, while the unit’s Personnel list shows names.
-
----
-
-## N15 — Validate/Export keeps Export
-
-**Item:** Admins can validate and export in one click, or export an already validated report with the old Export button.
-
-1. Sign in as an admin (not only as a regular user).
-2. Open a NERIS report that still has a required field empty.
-3. Confirm you see **Validate**, **Validate/Export**, and **Export**.
-4. Confirm **Export** is washed out and does not send the report.
-5. Click **Validate/Export**.
-6. Fix the missing field so validation can pass. Use a test or staging report you are allowed to export.
-7. Click **Validate**. The status should become **In Review**, and **Export** should become clickable.
-8. Unlock the report, change one field, and confirm the status returns to **Draft** and **Export** washes out again.
-9. Click **Validate/Export**.
-10. Sign in as a regular user and open a NERIS report.
-
-**Pass:** Step 4 does not export. Step 5 stops and lists the errors, and nothing is exported. Step 7 turns **Export** on only after validation passes. Step 8 washes **Export** out again after an edit. Step 9 exports after validation passes. A regular user does not see **Validate/Export** or **Export**.  
-**Fail:** Export works on a draft, Validate/Export exports a report that still has errors, Export is gone, or a regular user sees Validate/Export.
-
-Do not export a live production report unless you mean to send it to NERIS.
-
----
-
-## N16 — Import and Get Incident (Test) are superadmin only
-
-**Passed 2026-11-17.** Import and Get Incident (Test) stay. They show only for superadmin.
-
-**Item:** Import and Get Incident (Test) show only for superadmin.
-
-1. Sign in as an admin who is not a superadmin.
-2. Open a NERIS report.
-3. Look at the buttons at the top. You should still see **Print**, **Delete**, **Validate**, **Validate/Export**, and **Export**.
-4. Sign in as a superadmin.
-5. Open a NERIS report.
-6. Look for **Import** and **Get Incident (Test)**.
-7. Click **Import**.
-8. If the report already has a NERIS ID from an export, click **Get Incident (Test)** and read the response panel.
-
-**Pass:** The admin account does not see Import or Get Incident (Test). The superadmin account sees both. Import does nothing because it is still not built. Get Incident (Test) shows the NERIS response when the report has a NERIS ID.  
-**Fail:** An admin sees those two buttons, or a superadmin cannot see them.
-
-After this passes, say whether Import and Get Incident (Test) should stay or be removed.
+**Pass:** The unit is collapsed, marked complete, and the personnel and times are still there after reload.  
+**Fail:** The message does not say the unit was saved, or the personnel and times are gone after reload.

@@ -1,8 +1,8 @@
 # What needs to be completed
 
-**Updated:** 2026-11-17, evening America/Chicago (N14 personnel names and N15 Export lock ready for another click check).  
+**Updated:** 2026-11-17, evening America/Chicago (N14–N16 done; N17 primary unit recorded).  
 **Branch:** `submenu/neris-golive-cifpd`.  
-**How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/Click by Click Checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
+**How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
 **Group order:** NERIS → Fire Recovery → Incidents and dashboard → UI and layout → Roles, admin, and security → Scheduling → CAD → Waiting on Fire Recovery → Much later → Not scheduled → Marked done.
 
@@ -25,9 +25,8 @@
 | N9 | Open | On the Motor Vehicle Collision tab, hide the call fields that are copied from earlier sections: run date, time alarm received, time call cleared, run number, total personnel on scene, law enforcement agency report number, street, city, state, and ZIP. Keep sending them. Do not remove the mapping. |
 | N10 | Open | Hazards **Save**, **Back**, and **Next** are oblong. Match the buttons used on the rest of the NERIS report. |
 | N13 | Review findings | Live schema is **1.5.x** (OpenAPI `1.5.3`), not 2.0. Version 2 is still planned for later. Our form matches pre–1.5 lists. Findings: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. Do not change the form until you pick which 1.5 fields Crescent needs. |
-| N14 | Waiting on click check | Narrative Builder: pick a NERIS section, then a field. Resources unit-card values are available. Personnel count, personnel on scene, and personnel by unit read the people selected on each unit card and show their names. Retest after the 2026-11-17 evening fix: those three were 0 or blank while apparatus and each-unit lines were right. |
-| N15 | Waiting on click check | Admins and above see **Validate/Export** next to **Export**. Validate/Export checks the report and exports only when the check passes. **Export** stays, and it stays washed out until the report has passed validation (status **In Review** or **Exported**). Editing the report returns it to **Draft** and washes Export out again. |
-| N16 | Done | **Import** and **Get Incident (Test)** stay, and they are visible only to superadmin. Import is still disabled. Get Incident (Test) loads an already-exported incident from NERIS by its NERIS ID. Click check passed 2026-11-17. |
+| N17 | Open | The primary responding unit is whichever unit is first in the Resources list. It is not the unit with the earliest on-scene time. NERIS export uses that first unit as the primary unit ID, type, staffing, and response mode. Preferred rule: the unit that arrived on scene first. A checkbox is the fallback when a time is missing or two units share the same time. Do not change it until named. |
+| N18 | Waiting on click check | **Complete and Collapse** on a Resources unit saves that unit when it has no errors. Reload and confirm the personnel and times are still there. |
 
 ---
 
@@ -180,13 +179,16 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 | G4 | The Fire Recovery password is encrypted, and sandbox versus live department ID is in place. |
 | G5 | The Motor Vehicle Collision billing section and its required party fields are in place. |
 | G8 | The production release and the one real bill are done. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2`. |
+| N14 | Narrative Builder can insert NERIS fields by section, including Resources unit-card values and the people selected on each unit. |
+| N15 | Admins have **Validate/Export** beside **Export**. **Export** stays washed out until the report is **In Review** or **Exported**. Print and Delete stay visible. |
+| N16 | **Import** and **Get Incident (Test)** stay, and only a superadmin sees them. |
 
 ---
 
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Waiting on click check:** D1, E2, E12, E16, F5, G2, G3, N14, N15. Steps are in `docs/Click by Click Checks.md`. After a pass, mark Done. After a fail, move back to Open. N16 passed: Import and Get Incident (Test) stay for superadmin only.
+- **Waiting on click check:** D1, E2, E12, E16, F5, G2, G3, N18. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
 - **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

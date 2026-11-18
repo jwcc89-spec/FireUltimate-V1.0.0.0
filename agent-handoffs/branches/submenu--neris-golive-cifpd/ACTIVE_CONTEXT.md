@@ -6,7 +6,9 @@
 ## Current focus (2026-11-13 — evening review)
 - **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from. Reorganized 2026-11-17 by topic. Do not start a new build until the operator names the item.
 - **N13 (2026-11-17):** Live NERIS schema is **1.5.x** (OpenAPI **1.5.3**). “NERIS 2.0” is still future. Our form is pre–1.5. Gap list: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. No form changes until the operator picks which 1.5 fields to add.
-- **N14 / N15 / N16 (2026-11-17 evening):** Personnel narrative lines read the people selected on each Resources unit and show their names. **Export** stays washed out until the report is **In Review** or **Exported**. N16 passed: Import and Get Incident (Test) stay for superadmin only. N14 and N15 need another click check. Steps: `docs/Click by Click Checks.md`.
+- **N14 / N15 / N16 (2026-11-17 evening):** Done. Narrative Builder Resources values, Validate/Export, and the washed-out Export button passed. Import and Get Incident (Test) stay for superadmin only.
+- **N17:** The primary responding unit is the first unit in the Resources list, not the earliest on-scene unit. Do not change that until named. Preferred rule is earliest on-scene time.
+- **N18:** Complete and Collapse saves a valid Resources unit. Waiting on click check. Steps: `docs/click_by_click_checks.md`.
 - **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
 - **Fire Recovery email (2026-11-17):** Follow-up sent covering A2 cleared time, A3 Is Resident No, A4 commercial trucking, A5 lost tracking ID, A6 billing status timing. Status: **Open / Waiting on Email Reply**. Do not change mappings until they answer.
 - **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank.
