@@ -36,7 +36,7 @@ Before doing any feature work, understand the Branch Rules:
    - Latest user summary: agent-handoffs/branches/<branch-slug>/conversations/YYYY-MM-DD-session-summary.md (condensed summation of that session)
 4) Read and follow before any edits:
    - docs/agent-execution-contract.md
-   - docs/task-2-multitenant-domain-plan.md
+   - docs/plans/task-2-multitenant-domain-plan.md
    - docs/system_architecture.md
    - docs/data_model.md
    - docs/incident-lifecycle.md (when touching incidents/reports/export)

@@ -20,7 +20,7 @@ The agent states at the end of each response **which agent/model was used**. The
 4. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/sessions/2026-11-02-wave-7-handoff.md` — start here
 5. `agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-02-session-summary.md` — user-readable summary
 6. `docs/plans/security-remediation-plan.md` — trust the **Status** line. Staging click test passed. Production is not updated.
-7. `docs/task-2-multitenant-domain-plan.md` — Now vs Later
+7. `docs/plans/task-2-multitenant-domain-plan.md` — Now vs Later
 8. `docs/plans/canvases/repair-plan.canvas.tsx` — repair plan source. Live canvas was not republished on 2026-11-01: https://cursor.com/canvas/store-145781ad-9ad5-4dec-b4ef-ebe57ce55ee4/3b7445ce-b395-4e16-b948-f84dab1ca136
 9. `docs/procedures/RELEASE_CHECKLIST.md` — release wording. Do not run a production release from this prompt.
 10. `docs/system_architecture.md`, `docs/data_model.md`, `docs/incident-lifecycle.md`, and `docs/integrations.md` when touching architecture, data, incidents, reports, export, CAD, NERIS, or NEMSIS
@@ -66,7 +66,7 @@ Before doing any feature work, understand the Branch Rules:
    - agent-handoffs/branches/cursor--stage-b-foundation-b5ff/conversations/2026-11-02-session-summary.md
 4) Read and follow before any edits:
    - docs/agent-execution-contract.md
-   - docs/task-2-multitenant-domain-plan.md
+   - docs/plans/task-2-multitenant-domain-plan.md
    - docs/plans/security-remediation-plan.md (trust the Status line)
    - docs/plans/canvases/repair-plan.canvas.tsx
    - docs/system_architecture.md, docs/data_model.md, docs/incident-lifecycle.md, and docs/integrations.md when the task touches them

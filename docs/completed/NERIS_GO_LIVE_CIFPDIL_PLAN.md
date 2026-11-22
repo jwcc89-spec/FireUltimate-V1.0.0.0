@@ -14,7 +14,7 @@
 **Yes.** Per project documentation and NERIS multi-tenant design:
 
 - **README.md:** “For production accounts: `NERIS_BASE_URL=https://api.neris.fsri.org/v1`”
-- **docs/task-2-multitenant-domain-plan.md (NERIS Multi-Tenant Credentials):** “Keep global in env: `NERIS_BASE_URL` (shared if same for all tenants)”
+- **docs/plans/task-2-multitenant-domain-plan.md (NERIS Multi-Tenant Credentials):** “Keep global in env: `NERIS_BASE_URL` (shared if same for all tenants)”
 - **Conversation (2026-03-06):** “each department will have their own entity ID, Neris ID, client ID and Client Secret and **common NERIS_BASE_URL**” and “keep `NERIS_BASE_URL` global”
 
 So: **one production base URL for all tenants** — `https://api.neris.fsri.org/v1`. Per-tenant values are: Entity ID, Department NERIS ID, Client ID, Client Secret (stored per tenant when that is implemented; for now they can be in `.env.server` for the single live tenant).
@@ -98,7 +98,7 @@ So: **one production base URL for all tenants** — `https://api.neris.fsri.org/
 - In your DNS provider (e.g. Cloudflare):
   - **Wildcard:** `*.fireultimate.app` → CNAME to your **production** app host (e.g. Render prod service).
 - Ensure SSL covers `*.fireultimate.app` (or at least `cifpdil.fireultimate.app`).
-- See `docs/wave-6-domain-routing-runbook.md` for host/tenant verification steps; use production URLs instead of staging.
+- See `docs/completed/wave-6-domain-routing-runbook.md` for host/tenant verification steps; use production URLs instead of staging.
 
 ---
 
@@ -176,7 +176,7 @@ So: **one production base URL for all tenants** — `https://api.neris.fsri.org/
 - `cursoragent-context.md` — UI patterns, branch handoff, NERIS form behavior.
 - **submenu--neris-all:** `agent-handoffs/branches/submenu--neris-all/ACTIVE_CONTEXT.md`, `sessions/*.md`, `conversations/*.md` — NERIS form/proxy implementation (required matrix, conditional validation, Department NERIS ID auto-fill from Admin Vendor/Department Code, aid-flow RL, Cross Street RL, Resource Times Populate Date, personnel de-duplication, mapping).
 - **submenu--departmentdetails-ui:** `ACTIVE_CONTEXT.md`, `sessions/*.md`, `conversations/*.md` — Staging tenant routing, scheduler/UI state, Wave 6/7/8, NERIS/auth.
-- `docs/task-2-multitenant-domain-plan.md` — Tenant slugs, domains, NERIS multi-tenant credentials (global base URL).
-- `docs/wave-6-domain-routing-runbook.md` — DNS, SSL, tenant-context verification.
+- `docs/plans/task-2-multitenant-domain-plan.md` — Tenant slugs, domains, NERIS multi-tenant credentials (global base URL).
+- `docs/completed/wave-6-domain-routing-runbook.md` — DNS, SSL, tenant-context verification.
 - `README.md` — NERIS proxy config (test vs production base URL).
 - `src/nerisMetadata.ts` — NERIS schema links, required fields, form metadata.

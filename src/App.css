@@ -5495,6 +5495,43 @@ body.resource-personnel-modal-open {
   gap: 0.6rem;
 }
 
+.validation-modal.fr-preview-modal {
+  width: min(920px, calc(100vw - 2rem));
+  max-height: none;
+  overflow: visible;
+}
+
+.validation-modal.fr-preview-modal .detail-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.validation-modal.fr-preview-modal .detail-grid div,
+.validation-modal.fr-preview-modal .detail-grid dd,
+.validation-modal.fr-preview-modal .fr-preview-party p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.fire-recovery-not-sent-button {
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+}
+
+.fire-recovery-not-billable {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.6rem;
+  padding: 0.12rem 0.7rem;
+  border-radius: 999px;
+  background-color: #e5e7eb;
+  color: #64748b;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: default;
+}
+
 .validation-modal h2 {
   margin: 0;
   font-size: 1.02rem;

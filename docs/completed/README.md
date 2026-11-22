@@ -10,3 +10,4 @@ Step-by-step procedures whose steps have been completed. Kept for context and au
 | **NERIS_GO_LIVE_CIFPDIL_PLAN.md** | NERIS go-live plan for cifpdil (reference). |
 | **SECURITY_REMEDIATION_ARCHIVE_2026-11.md** | Completed security Parts 0–2B, staging Part 5, and verification snapshots (frozen 2026-11-01). Live open work: `docs/plans/security-remediation-plan.md`. |
 | **schedule-visual-mockup-plan.canvas.tsx** | Personnel Schedule visual mockup, closed November 5, 2026. Phone layout is the separate parked plan `docs/plans/canvases/schedule-mobile-plan.canvas.tsx`. Qualification color palette (B11) is parked inside this archive. |
+| **wave-6-domain-routing-runbook.md** | DNS, SSL, and tenant-domain checks for Wave 6. Wave 6 is complete. Kept for reference. |

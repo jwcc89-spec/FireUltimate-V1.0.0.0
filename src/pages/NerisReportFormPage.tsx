@@ -14,7 +14,7 @@ import {
   type IncidentCallSummary,
   type UserRole,
 } from "../appData";
-import { isAdminOrHigher } from "../roleHierarchy";
+import { isAdminOrHigher, isSuperadmin } from "../roleHierarchy";
 import { getNerisDraftHistory, type NerisReportChangeEntry } from "../api/nerisDrafts";
 import {
   NERIS_REQUIRED_FIELD_MATRIX,
@@ -45,6 +45,7 @@ import {
 import { FireRecoveryBillingSection } from "./FireRecoveryBillingSection";
 import {
   buildNarrativeFromTemplate,
+  formatNarrativeResourceValue,
   formatNerisValueForNarrative,
   type NarrativeTemplate,
 } from "../narrativeBuilder";
@@ -947,6 +948,9 @@ function NerisReportFormPage({
   ]);
   const [resourceUnits, setResourceUnits] = useState<ResourceUnitEntry[]>(
     () => (persistedResourceUnits.length ? persistedResourceUnits : defaultResourceUnits),
+  );
+  const [pendingResourceUnitSave, setPendingResourceUnitSave] = useState<Partial<NerisFormValues> | null>(
+    null,
   );
   const [emergingElectrocutionItems, setEmergingElectrocutionItems] = useState<
     EmergingElectrocutionItem[]
@@ -2262,68 +2266,73 @@ function NerisReportFormPage({
     };
   };
 
-  useEffect(() => {
-    const primaryUnit = resourceUnits[0];
+  const buildResourceFormPatch = useCallback((units: ResourceUnitEntry[]): Partial<NerisFormValues> => {
+    const primaryUnit = units[0];
     const primaryUnitId = primaryUnit?.unitId ?? "";
     const primaryUnitType = primaryUnit?.unitType ?? "";
     const primaryUnitStaffing = primaryUnit
       ? getStaffingValueForUnit(primaryUnit.unitId, primaryUnit.personnel)
       : "";
     const primaryUnitResponseMode = primaryUnit?.responseMode ?? "";
-    const additionalUnits = resourceUnits
+    const additionalUnits = units
       .slice(1)
       .map((unit) => unit.unitId.trim())
       .filter((unitId) => unitId.length > 0)
       .join(", ");
-    const serializedResourceUnits = JSON.stringify(
-      resourceUnits.map((unit) => ({
-        id: unit.id,
-        unitId: unit.unitId,
-        unitType: unit.unitType,
-        staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
-        responseMode: unit.responseMode,
-        transportMode: unit.transportMode,
-        dispatchTime: unit.dispatchTime,
-        enrouteTime: unit.enrouteTime,
-        stagedTime: unit.stagedTime,
-        onSceneTime: unit.onSceneTime,
-        returningTime: unit.returningTime,
-        canceledTime: unit.canceledTime,
-        clearTime: unit.clearTime,
-        isCanceledEnroute: unit.isCanceledEnroute,
-        isComplete: unit.isComplete,
-        isExpanded: unit.isExpanded,
-        showTimesEditor: unit.showTimesEditor,
-        personnel: unit.personnel,
-        showPersonnelSelector: unit.showPersonnelSelector,
-        reportWriter: unit.reportWriter,
-        unitNarrative: unit.unitNarrative,
-      })),
-    );
+    return {
+      resource_primary_unit_id: primaryUnitId,
+      resource_primary_unit_type: primaryUnitType,
+      resource_primary_unit_staffing: primaryUnitStaffing,
+      resource_primary_unit_response_mode: primaryUnitResponseMode,
+      resource_additional_units: additionalUnits,
+      resource_units_json: JSON.stringify(
+        units.map((unit) => ({
+          id: unit.id,
+          unitId: unit.unitId,
+          unitType: unit.unitType,
+          staffing: getStaffingValueForUnit(unit.unitId, unit.personnel),
+          responseMode: unit.responseMode,
+          transportMode: unit.transportMode,
+          dispatchTime: unit.dispatchTime,
+          enrouteTime: unit.enrouteTime,
+          stagedTime: unit.stagedTime,
+          onSceneTime: unit.onSceneTime,
+          returningTime: unit.returningTime,
+          canceledTime: unit.canceledTime,
+          clearTime: unit.clearTime,
+          isCanceledEnroute: unit.isCanceledEnroute,
+          isComplete: unit.isComplete,
+          isExpanded: unit.isExpanded,
+          showTimesEditor: unit.showTimesEditor,
+          personnel: unit.personnel,
+          showPersonnelSelector: unit.showPersonnelSelector,
+          reportWriter: unit.reportWriter,
+          unitNarrative: unit.unitNarrative,
+        })),
+      ),
+    };
+  }, [getStaffingValueForUnit]);
 
+  useEffect(() => {
+    const patch = buildResourceFormPatch(resourceUnits);
     setFormValues((previous) => {
       if (
-        (previous.resource_primary_unit_id ?? "") === primaryUnitId &&
-        (previous.resource_primary_unit_type ?? "") === primaryUnitType &&
-        (previous.resource_primary_unit_staffing ?? "") === primaryUnitStaffing &&
-        (previous.resource_primary_unit_response_mode ?? "") === primaryUnitResponseMode &&
-        (previous.resource_additional_units ?? "") === additionalUnits &&
-        (previous.resource_units_json ?? "") === serializedResourceUnits
+        (previous.resource_primary_unit_id ?? "") === (patch.resource_primary_unit_id ?? "") &&
+        (previous.resource_primary_unit_type ?? "") === (patch.resource_primary_unit_type ?? "") &&
+        (previous.resource_primary_unit_staffing ?? "") === (patch.resource_primary_unit_staffing ?? "") &&
+        (previous.resource_primary_unit_response_mode ?? "") ===
+          (patch.resource_primary_unit_response_mode ?? "") &&
+        (previous.resource_additional_units ?? "") === (patch.resource_additional_units ?? "") &&
+        (previous.resource_units_json ?? "") === (patch.resource_units_json ?? "")
       ) {
         return previous;
       }
-
       return {
         ...previous,
-        resource_primary_unit_id: primaryUnitId,
-        resource_primary_unit_type: primaryUnitType,
-        resource_primary_unit_staffing: primaryUnitStaffing,
-        resource_primary_unit_response_mode: primaryUnitResponseMode,
-        resource_additional_units: additionalUnits,
-        resource_units_json: serializedResourceUnits,
-      };
+        ...patch,
+      } as NerisFormValues;
     });
-  }, [getStaffingValueForUnit, resourceUnits]);
+  }, [buildResourceFormPatch, resourceUnits]);
 
   const toggleResourceUnitExpanded = (unitEntryId: string) => {
     setResourceUnits((previous) =>
@@ -2716,19 +2725,19 @@ function NerisReportFormPage({
     }
 
     clearResourceUnitValidationErrors(unitEntryId);
-    setResourceUnits((previous) =>
-      previous.map((entry) =>
-        entry.id === unitEntryId
-          ? {
-              ...entry,
-              isComplete: true,
-              isExpanded: false,
-              showTimesEditor: false,
-            }
-          : entry,
-      ),
+    const nextUnits = resourceUnits.map((entry) =>
+      entry.id === unitEntryId
+        ? {
+            ...entry,
+            isComplete: true,
+            isExpanded: false,
+            showTimesEditor: false,
+          }
+        : entry,
     );
+    setResourceUnits(nextUnits);
     markNerisFormDirty();
+    setPendingResourceUnitSave(buildResourceFormPatch(nextUnits));
   };
 
   const collapseResourceUnit = (unitEntryId: string) => {
@@ -2924,6 +2933,15 @@ function NerisReportFormPage({
           : `Draft saved for ${detailForSideEffects.callNumber} at ${savedAt}.`),
     );
   };
+
+  useEffect(() => {
+    if (!pendingResourceUnitSave) return;
+    const patch = pendingResourceUnitSave;
+    setPendingResourceUnitSave(null);
+    stampSavedAt("manual", "Draft", "Resources unit saved.", patch);
+    // stampSavedAt is recreated each render. This save runs only when Complete and Collapse queues a patch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingResourceUnitSave]);
 
   const buildValidationSnapshot = () => {
     const syncedValues = ensureStructuredLocations(formValues);
@@ -3180,7 +3198,8 @@ function NerisReportFormPage({
     return fromHistory?.nerisId ?? "";
   };
 
-  const buildExportRequestConfig = (): ExportRequestConfig => {
+  const buildExportRequestConfig = (sourceValues?: NerisFormValues): ExportRequestConfig => {
+    const values = sourceValues ?? formValues;
     const defaultExportSettings = getDefaultNerisExportSettings();
     const exportUrl =
       nerisExportSettings.exportUrl.trim() ||
@@ -3219,7 +3238,7 @@ function NerisReportFormPage({
     }
 
     const timezoneSourceDate = (() => {
-      const dispatchTime = (formValues.incident_time_call_create ?? "").trim();
+      const dispatchTime = (values.incident_time_call_create ?? "").trim();
       if (!dispatchTime) {
         return new Date();
       }
@@ -3236,7 +3255,7 @@ function NerisReportFormPage({
       reportStatus,
       exportedAt: new Date().toISOString(),
       source: "Fire Ultimate Prototype",
-      formValues,
+      formValues: values,
       incidentSnapshot: {
         incidentType: detailForSideEffects.incidentType,
         address: detailForSideEffects.address,
@@ -4146,13 +4165,30 @@ function NerisReportFormPage({
     });
   };
 
-  const handleExportReport = async () => {
+  const reportIsValidated = reportStatus === "In Review" || reportStatus === "Exported";
+
+  const narrativeFormValues = (): Record<string, string> => ({
+    ...formValues,
+    resource_units_json: JSON.stringify(resourceUnits),
+  });
+  const narrativeBuildContext = {
+    personnelOptions: effectivePersonnelOptions,
+  };
+
+  const handleExportReport = async (
+    sourceValues?: NerisFormValues,
+    options?: { alreadyValidated?: boolean },
+  ) => {
+    if (!options?.alreadyValidated && !reportIsValidated) {
+      setErrorMessage("Validate the report before exporting.");
+      return;
+    }
     setValidationModal(null);
     setErrorMessage("");
     setSaveMessage("Export in progress...");
     setIsExporting(true);
     try {
-      const requestConfig = buildExportRequestConfig();
+      const requestConfig = buildExportRequestConfig(sourceValues);
       const exportResult = await executeExport(requestConfig);
       if (exportResult.recordedByServer) {
         await onServerExportRecorded?.();
@@ -4161,11 +4197,16 @@ function NerisReportFormPage({
         exportResult.nerisId
           ? `Report export accepted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}. NERIS ID: ${exportResult.nerisId}`
           : `Report export submitted for ${detailForSideEffects.callNumber} at ${exportResult.exportedAtLabel}.`;
-      const formValuesOverride =
-        exportResult.nerisId?.trim()
-          ? { incident_neris_id: exportResult.nerisId.trim() }
-          : undefined;
-      stampSavedAt("manual", "Exported", successMessage, formValuesOverride);
+      const formValuesOverride: Partial<NerisFormValues> = { ...(sourceValues ?? {}) };
+      if (exportResult.nerisId?.trim()) {
+        formValuesOverride.incident_neris_id = exportResult.nerisId.trim();
+      }
+      stampSavedAt(
+        "manual",
+        "Exported",
+        successMessage,
+        Object.keys(formValuesOverride).length > 0 ? formValuesOverride : undefined,
+      );
       setSaveMessage(successMessage);
     } catch (error) {
       const recordedByServer = Boolean(
@@ -4184,6 +4225,23 @@ function NerisReportFormPage({
     } finally {
       setIsExporting(false);
     }
+  };
+
+  const handleValidateAndExport = async () => {
+    const { mergedErrors, issueLabels, syncedValues } = buildValidationSnapshot();
+    setFormValues(syncedValues);
+    setSectionErrors(mergedErrors);
+    setValidationIssues(issueLabels);
+
+    if (issueLabels.length > 0) {
+      applyValidationFailure(issueLabels, syncedValues);
+      return;
+    }
+
+    setErrorMessage("");
+    setValidationIssues([]);
+    setValidationModal(null);
+    await handleExportReport(syncedValues, { alreadyValidated: true });
   };
 
   const handleGetIncidentTest = async () => {
@@ -5565,7 +5623,7 @@ function NerisReportFormPage({
               ) : null}
             </section>
           ) : null}
-          {incidentTestResponseDetail ? (
+          {isSuperadmin(role) && incidentTestResponseDetail ? (
             <details className="neris-incident-test-response">
               <summary>Get Incident test response</summary>
               <pre className="export-attempt-json">{incidentTestResponseDetail}</pre>
@@ -5573,7 +5631,7 @@ function NerisReportFormPage({
           ) : null}
         </div>
         <div className="header-actions">
-          {isAdminOrHigher(role) ? (
+          {isSuperadmin(role) ? (
             <>
               <button
                 type="button"
@@ -5591,6 +5649,10 @@ function NerisReportFormPage({
               >
                 {isFetchingIncidentTest ? "Getting..." : "Get Incident (Test)"}
               </button>
+            </>
+          ) : null}
+          {isAdminOrHigher(role) ? (
+            <>
               <button
                 type="button"
                 className="secondary-button compact-button"
@@ -5621,8 +5683,21 @@ function NerisReportFormPage({
               <button
                 type="button"
                 className="primary-button compact-button"
-                onClick={handleExportReport}
-                disabled={isExporting}
+                onClick={() => void handleValidateAndExport()}
+                disabled={isExporting || !canEdit}
+              >
+                {isExporting ? "Exporting..." : "Validate/Export"}
+              </button>
+              <button
+                type="button"
+                className="primary-button compact-button"
+                onClick={() => void handleExportReport()}
+                disabled={isExporting || !reportIsValidated}
+                title={
+                  reportIsValidated
+                    ? "Export this validated report"
+                    : "Validate the report before exporting"
+                }
               >
                 {isExporting ? "Exporting..." : "Export"}
               </button>
@@ -8204,7 +8279,14 @@ function NerisReportFormPage({
                         {seg.type === "neris" ? (
                           <span>
                             {(() => {
-                              const rawValue = (formValues[seg.fieldId] ?? "").trim();
+                              const narrativeValues = narrativeFormValues();
+                              const resourceValue = formatNarrativeResourceValue(
+                                seg.fieldId,
+                                narrativeValues,
+                                narrativeBuildContext,
+                              );
+                              if (resourceValue !== null) return resourceValue || "—";
+                              const rawValue = (narrativeValues[seg.fieldId] ?? "").trim();
                               const displayValue = formatNerisValueForNarrative(
                                 seg.fieldId,
                                 rawValue,
@@ -8295,9 +8377,10 @@ function NerisReportFormPage({
                       onClick={() => {
                         const built = buildNarrativeFromTemplate(
                           selected,
-                          formValues,
+                          narrativeFormValues(),
                           narrativeBuilderUserValues,
                           narrativeBuilderQuestionAnswers,
+                          narrativeBuildContext,
                         );
                         updateFieldValue("narrative_outcome", built);
                         setNarrativeBuilderModalOpen(false);

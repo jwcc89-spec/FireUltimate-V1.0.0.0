@@ -20,7 +20,7 @@ So today: **NERIS_ENTITY_ID is not stored “per tenant” anywhere.** It’s ei
 
 ### Future (per-tenant NERIS credentials)
 
-The plan (see `docs/task-2-multitenant-domain-plan.md`, “NERIS Multi-Tenant Credentials”) is:
+The plan (see `docs/plans/task-2-multitenant-domain-plan.md`, “NERIS Multi-Tenant Credentials”) is:
 
 - **Keep in env (global):**  
   - `NERIS_BASE_URL` — same for all tenants (e.g. one production URL).

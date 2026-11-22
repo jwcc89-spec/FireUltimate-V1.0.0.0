@@ -15,7 +15,7 @@ Before doing any feature work, understand the Branch Rules:
    - all conversations in agent-handoffs/branches/menu-submenu--ui-updates/conversations/
 4) Read and follow before any edits:
    - docs/agent-execution-contract.md
-   - docs/task-2-multitenant-domain-plan.md
+   - docs/plans/task-2-multitenant-domain-plan.md
    - docs/system_architecture.md
    - docs/data_model.md
    - docs/incident-lifecycle.md (when touching incidents/reports/export)

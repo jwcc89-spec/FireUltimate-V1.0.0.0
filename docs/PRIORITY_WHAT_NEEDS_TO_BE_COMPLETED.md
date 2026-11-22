@@ -1,190 +1,194 @@
-# What needs to be completed — consolidated list
+# What needs to be completed
 
-Pulled from GO_LIVE_CHECKPOINT, completed backlog history, LATER_TASKS_VALIDATE_EXPORT_ROLES_AND_ADMIN_VISIBILITY, and `later-changes-backlog.md`. Use this to prioritize next work.
+**Updated:** 2026-11-17, evening America/Chicago (N12 Not sent passed).  
+**Branch:** `submenu/neris-golive-cifpd`.  
+**How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
-**For completed history of backlog items #2–#11 (Incidents and NERIS form UX),** see **`docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`**. This file is the active prioritization reference for what remains.
-
----
-
-## Active work only
-
-Completed history is in the **Completed archive** section at the bottom.
+**Group order:** NERIS → Fire Recovery → Incidents and dashboard → UI and layout → Roles, admin, and security → Scheduling → CAD → Waiting on Fire Recovery → Much later → Not scheduled → Marked done.
 
 ---
 
-## Priority order (what to do first)
+## NERIS report and form
 
-| Priority | Item | Guide / reference |
-|----------|------|-------------------|
-| **1** | **CAD email parsing + auto-create incident** | `docs/plans/CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN.md` (see also `EMAIL_AND_CAD_SETUP.md`). After this: point Worker `CAD_INGEST_API_URL` to production. |
-| **2** | **NERIS / go-live backlog** | Open items from this file: **#11.5–#11.7**, **#12–#14.1**, **#15–#24**, **#26.1**, **#28**. (Platform CAD parsing / auto-create is **Priority 1** → **#29**.) Completed backlog history: `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`. See **Sources** at bottom of this file. |
-| 3+ | Rest of list | See “Suggested order to prioritize” at the bottom. |
-
----
-
-## Incidents and NERIS form UX (backlog)
-
-| # | Item | Source | Notes |
-|---|------|--------|--------|
-| 2 | ~~**Reported By** in Edit~~ | BACKLOG #1 | **Done (2026-03).** No overwrite; dropdown shows saved value. |
-| 3 | ~~**Dispatch notes and Callback** save in Edit~~ | BACKLOG #2 | **Done (2026-03).** Persist and display; timeline supports string or array. |
-| 4 | ~~**Times: military (24h)** not AM/PM app-wide~~ | BACKLOG #3 | **Done (2026-03).** All time inputs/displays use 24-hour format app-wide (NERIS, Incidents, etc.). See `.cursor/project-context.md` § Time format. |
-| 5 | ~~**Incidents Setup – Edit Reported By** layout spills into Assigned Units~~ | BACKLOG #4 | **Done (2026-03).** Layout fixed so controls don’t overlap Assigned Units. |
-| 6 | ~~**Initial dispatch code** – from Create Incident when set~~ | BACKLOG #5 | **Done (2026-03-20).** Added free-text **Initial Dispatch Code** below Incident Type in Create Incident, editable in Edit Incident, and mapped into NERIS `initial_dispatch_code` on report initialization. CAD parsing precedence set to override when parser writes this field (Option B). |
-| 7 | ~~**AID GIVEN/RECEIVED** – Aid departments from NERIS, grouped by state (e.g. FD29081313)~~ | BACKLOG #6 | **Done (2026-03).** Completed via 11.3/11.3a/11.3b plus self-select exclusion in #8. |
-| 8 | ~~**Aid Department:** do not allow selecting tenant’s own department (exclude or grey out)~~ | BACKLOG #10 | **Done (2026-03).** UI excludes or disables tenant’s own department; server already strips. |
-| 9 | ~~**Required-if:** FIRE module when fire + auto aid given~~ | BACKLOG #7 | **Done (2026-03-18)** for aid-given + direction **Given** case (see 11.3c). Re-confirm vs NERIS spec if rules expand. |
-| 10 | ~~**Resources UNIT TYPE** – show Apparatus value, not placeholder~~ | BACKLOG #8 | **Done (2026-03).** Shows Department Details → Apparatus Unit Type for selected unit. |
-| 11 | ~~**Resources Populate Date** – dates only for dispatch/en route/on scene/clear; add Returning~~ | BACKLOG #9 | **Done (2026-03).** Populate Date only those four; Returning in Edit Times (between On Scene and Canceled). |
-| 11.1 | ~~**Narrative Builder** – guided narrative composition~~ | 2026-03-19 | **Done (2026-03-19).** Admin template builder + enable toggle + “Use Narrative Builder” RL in NERIS Narrative to insert composed narrative text (editable after). |
-| 11.2 | ~~**Additional occupant contact fields**~~ – capture + map to NERIS | 2026-03-17 | **Done (2026-03).** Added Person/Owner occupant contact capture and mapped support fields in NERIS form/admin required-fields/print paths. |
-| 11.5 | **Scheduler Apparatus: add remove/delete path for imported apparatus entries** | User report (2026-03-20) | In Scheduler Settings → Scheduler Apparatus, add explicit UI action to remove apparatus rows after Import Apparatus sync (currently supports add/import visibility but not clean remove workflow). |
-| 11.6 | **Incidents/Mapping stat cards: map to live metrics (replace placeholders)** | User report (2026-03-20) | Current cards (Open Calls, Average Turnout, Average Travel, Calls Awaiting Closure) are static placeholders in code. Define formulas + tenant-scoped data source and map to live values; remove superadmin-only placeholder warning mode once complete. |
-| 11.7 | **Incidents/Mapping “Export Call Queue” button: map behavior (replace placeholder)** | User report (2026-03-20) | Button is currently UI-only placeholder with no action. Define expected export target (CSV/download vs route/API), tenant-scoped data source, and role rules; remove superadmin-only warning styling after mapped. |
-| 11.3 | ~~**Mutual aid directory + tenant allowlist**~~ | 2026-03-18 | **Done:** `GET /api/neris/entities` (cache, `page_size` ≤100) + DD-M (state-grouped, **Add local**, Reload / Refresh w/ platform admin key). Payload: `mutualAidDepartmentSelections`. NERIS form uses configured list when ≥1 entry; else full directory. |
-| 11.3a | ~~**CORE “Aid department name(s)” — friendly name in UI**~~ | 2026-03-18 | **Done.** Dropdown **label** = department name only; **value** / export = FD/FM NERIS ID (unchanged). |
-| 11.3b | ~~**Local-only mutual aid rows in CORE aid dropdown**~~ | 2026-03-18 | **Done.** Local DD-M entries appear in CORE; synthetic `LOCAL_AID_OPT:*` stored in form; **not** sent as `department_neris_id` (document in narrative if needed). |
-| 11.3c | ~~**FIRE requiredness when mutual aid given**~~ | 2026-03-18 | **Done (client).** When “Was aid given?” = Yes and **Aid direction** = **Given**, FIRE-module fields are **not** required (see `isNerisFieldRequired` in `src/nerisMetadata.ts`). |
-| 11.3d | ~~**NERIS Core + Incident Times — 24h `HH:MM:SS`**~~ | 2026-03-18 | **Done.** Core onset + Incident Times use 24h; app-wide 24h completed (#4). |
-| 11.4 | ~~**Admin NERIS required fields**~~ | 2026-03 | **Done.** Admin Functions → Reports \| NERIS: checkboxes for admin-selected required fields; NERIS-required fields locked; requiredIf fields show "Conditionally required by NERIS" + optional "also require always." Effective-required used in NERIS form (Show Required Fields Only + validation). |
+| ID | Status | Item |
+|----|--------|------|
+| E1 | Open | Conditional required fields: one shared rule for platform defaults and department rules, with an admin screen under NERIS Required Fields. Fire Recovery already has its own requirement levels; this item is the wider NERIS rule engine, not the billing tab alone. |
+| E11 | Open | Each department’s NERIS settings (for example entity ID and export configuration) live in the database and load per request. The NERIS web address stays one setting per environment. |
+| F1 | Open | Recover Reports: on Reporting → NERIS, next to Fire Recovery and View Exports, restore a deleted NERIS report with every typed answer. The incident stays on Incidents. Do not build until named. |
+| N3 | Open | Reporting → NERIS needs a **Configure Table** button with the same drag-and-drop column layout as Incidents. |
+| N4 | Open | NERIS dropdowns are cut off at the bottom of a short window. The open list must stay fully visible and scrollable (portal or similar), including fields such as primary incident type. |
+| N5 | Open | After a primary incident type is chosen, the form should show only the last name (for example Motor Vehicle Collision), not the full path. Keep sending the full NERIS code. The reporting table already shows the last segment; the form field still shows the full path. |
+| N6 | Open | NERIS export is sending the dispatch number. It must send the incident number. Mapping and display of the other number stay as they are unless the operator says otherwise. |
+| N7 | Open | NERIS table dates show `year-month-day T HH:MM:SS`. Show `MM/DD/YY HH:MM` in 24-hour time. |
+| N8 | Open | Add Person needs a **Save** button at the top and the bottom, so Close is not the only choice when an address is missing. |
+| N9 | Open | On the Motor Vehicle Collision tab, hide the call fields that are copied from earlier sections: run date, time alarm received, time call cleared, run number, total personnel on scene, law enforcement agency report number, street, city, state, and ZIP. Keep sending them. Do not remove the mapping. |
+| N10 | Open | Hazards **Save**, **Back**, and **Next** are oblong. Match the buttons used on the rest of the NERIS report. |
+| N13 | Review findings | Live schema is **1.5.x** (OpenAPI `1.5.3`), not 2.0. Version 2 is still planned for later. Our form matches pre–1.5 lists. Findings: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. Do not change the form until you pick which 1.5 fields Crescent needs. |
+| N17 | Open | The primary responding unit is whichever unit is first in the Resources list. It is not the unit with the earliest on-scene time. NERIS export uses that first unit as the primary unit ID, type, staffing, and response mode. Preferred rule: the unit that arrived on scene first. A checkbox is the fallback when a time is missing or two units share the same time. Do not change it until named. |
 
 ---
 
-## Validate / Export and roles (later tasks)
+## Fire Recovery and billing
 
-| # | Item | Source | Notes |
-|---|------|--------|--------|
-| 12 | **Validate for all users; Export admin-only** (hide Export for non-admin) | LATER_TASKS Part 1 | Validate visible to all; Export button only for admin; optional API guard for export. |
-| 13 | **Super admin** – hidden user type, 1–2 per account, special visibility | LATER_TASKS Part 2 | Not in UI dropdown; assign via DB or platform tool; super-admin–only fields/buttons. |
-| 14 | **Admin show/hide mode** – toggle field and menu visibility per user type | LATER_TASKS Part 3 | Button to enter mode; click fields/menus to set show/hide by user type; persist and apply. |
-| 14.1 | **Role hierarchy inheritance + tenant-configurable capabilities (plan + implementation)** | 2026-03-17 | Ensure “admin-and-up” includes superadmin globally, and implement extensible role hierarchy + named permissions (capabilities) so future roles (e.g. secretary, subadmin) follow tenant ordering. Plan: `docs/plans/TENANT_ROLES_AND_PERMISSIONS_PLAN.md`. |
-
----
-
-## Admin and platform (later-changes-backlog)
-
-| # | Item | Source | Priority | Notes |
-|---|------|--------|----------|--------|
-| 15 | Replace prompt-style reset-password UX with in-app modal/dialog | later-changes-backlog | P2 | Department Access. |
-| 16 | Auth rate-limiting and/or lockout for failed logins | later-changes-backlog | P1 | Security. |
-| 17 | Password reset/change audit logging (who, when, target) | later-changes-backlog | P2 | Security. |
-| 18 | Revisit advanced scheduling model (forward-only sync + optional backfill) | later-changes-backlog | P2 | Scheduler Settings. |
-| 19 | Search/filter for larger user/personnel datasets | later-changes-backlog | P2 | Personnel Management. |
-| 20 | Deploy frontend staging as separate Render service | later-changes-backlog | P2 | Platform. |
-| 21 | Configurable tenant policy for demo-style tenants | later-changes-backlog | P2 | Platform. |
-| 22 | Wildcard DNS `*.fireultimate.app` for faster tenant onboarding | later-changes-backlog | P2 | Platform. |
-| 23 | Evaluate Cloudflare proxied mode (orange cloud) after DNS-only baseline | later-changes-backlog | P3 | Platform. |
-| 24 | Optimize frontend bundle size and chunking | later-changes-backlog | P3 | Platform. |
+| ID | Status | Item |
+|----|--------|------|
+| A2 | Open / Waiting on Email Reply | Time Call Cleared stayed blank in Recovery Hub on the live bill. Their website only accepts `HH:MM`. We sent seconds (`2025-11-11T13:59:45`), same shape as Alarm. Follow-up email sent 2026-11-17. Do not change the mapping until Fire Recovery answers. |
+| A3 | Open / Waiting on Email Reply | Is Resident **No** (`Isresident: false`) did not show in Recovery Hub. **Yes** does show when resident is true. Follow-up email sent 2026-11-17. Do not change the mapping until they answer. |
+| G9 | Open | Finish any pieces of the April Fire Recovery billing screens that are still missing. Phase C already shipped preview, Sent / Failed / Needs review, the billing list, and Update billing status (replacing the old “DataSent” label). The View Exports **Not sent** box is done. Still confirm amount due, amount paid, and tracking ID on the list, and a manual send from the incident queue. |
 
 ---
 
-## Future changes (general UI)
+## Incidents and dashboard
 
-| # | Item | Status | Notes |
-|---|------|--------|--------|
-| L1 | ~~**Login screen:** Remove "Fire Department (optional)" field~~ | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
-| L2 | ~~**Login screen:** Remove helper text~~ | **Done** 2026-03-16 | Implemented on menu-submenu/ui-updates. |
-| L3 | ~~**Login screen:** Show tenant picture~~ | **Done** 2026-03-16 | Tenant logo on login and in form header (right). |
-| L4 | ~~**"Scaffolded" → "Beta":** Replace all "Scaffolded" wording with *Beta* (italicized blue text)~~ | **Done** 2026-03-16 | Applies to submenu cards. |
-| L5 | ~~**Beta sections – super admin only (clickable):** For super admin only, beta submenus remain viewable and clickable.~~ | **Done** 2026-03-16 | UserRole superadmin; sidebar/cards clickable only for super admin. |
-| L6 | ~~**Beta sections – admin and lower (not clickable):** Show label with "beta"; do not allow click.~~ | **Done** 2026-03-16 | Sidebar: span + Beta for non–super-admin. |
-| L7 | ~~**Beta cards on main menu:** Card visible but not clickable for admin and lower; only super admin can open.~~ | **Done** 2026-03-16 | submenu-card-beta for non–super-admin. |
-
-**Reference:** See also `docs/later-changes-backlog.md` (Login / Auth, UI Conventions).
+| ID | Status | Item |
+|----|--------|------|
+| E5 | Open | Incidents / Mapping stat cards (Open Calls, Average Turnout, Average Travel, Calls Awaiting Closure) use live, tenant-scoped numbers. Until then, hide or park the demo-style cards (see N2 for the dashboard). |
+| E6 | Open | Export Call Queue performs a real export (CSV or agreed download). Define the target, tenant scope, and who may use it before coding. |
+| F2 | Open | On an open incident, the Status box is unit status (Dispatched, Enroute, On scene, Cleared). Draft should not be a choice. This is not the NERIS report status (Draft, In Review, Exported) and is not the dispatch workflow list in Customization. |
+| N2 | Open | Remove, hide, or park Active Calls and the other dashboard blocks that still use demo-style information on production and staging. Map them to live data later. |
 
 ---
 
-## Optional / when ready
+## UI and layout
 
-| # | Item | Source | Notes |
-|---|------|--------|--------|
-| 25 | ~~**CAD email ingest (receive + store)**~~ | GO_LIVE §6, EMAIL_AND_CAD_SETUP | **Receiving path done.** CAD address given to dispatch. **Open:** parsing / auto-create (`#29`) only. |
-| 26 | ~~**NERIS cross-browser**~~ | User report | **Done** for export history, drafts, lock, and **View Exports Report Status** (Exported after success, cross-browser). See `NERIS_CROSS_BROWSER_FINDINGS.md`. **Open:** draft edge cases only if reported. |
-| 26.1 | **Cross-browser settings persistence follow-up** | CROSS_BROWSER_AND_UX_NOTES | Persist NERIS Export Configuration via server API (tenant-scoped) if needed beyond localStorage-only behavior; monitor/report NERIS draft edge cases if encountered. |
-| 27 | ~~**Production endpoint checks and first controlled production export**~~ | GO_LIVE §3.6–3.7 | **Done.** Production tenant/context + neris/health/entity checks re-run; first controlled production export completed. |
-| 28 | **Future architecture:** per-tenant NERIS config in DB (nerisEntityId, etc.); resolve tenant by domain and load config per request | TENANT_ONBOARDING §H | Scale; keep NERIS_BASE_URL global by environment. |
-| 29 | **CAD email parsing and auto-create incident** | CAD_DISPATCH_PARSING_IMPLEMENTATION_PLAN | Dispatch Parsing Settings; per-tenant rules; auto-create draft incident; dedupe; optional sequencing. **Next major platform item** (NERIS cross-browser phases complete). |
-
-### Expanded: NERIS cross-browser (#26) — resolved + follow-up
-
-- **Was:** Export history / drafts only in localStorage; second browser saw empty history and Draft on exports list.
-- **Now:** Server-backed export history and drafts; migrations applied. **View Exports** **Report Status:** if latest export is **success**, show **Exported** (matches queue; not pre-submit “In Review”). **`getExportsListReportStatus`** in `App.tsx`; successful append stores **Exported** in `NerisReportFormPage`.
-- **Details:** `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`.
+| ID | Status | Item |
+|----|--------|------|
+| F4 | Open | Unchecking a box in Admin Functions → Customization → Submenu Display Settings hides that item from the left menu. Edit Display on the submenu cards still controls which cards show on the menu page. |
+| N1 | Open | Choices such as Edit My Display follow the signed-in person, including onto another browser and another computer. A shared station PC must not keep the previous person’s display. Then list every other setting that still lives only in one browser and should follow the person (this includes the old F6 Edit My Display note). |
+| N11 | Open | Reduce the sidebar width by about 20 percent of its current width. |
 
 ---
 
-## Suggested order to prioritize
+## Roles, admin, and security
 
-1. **CAD parsing + auto-create incident (#29)** — then Worker **`CAD_INGEST_API_URL`** → production.
-2. **High-impact UX:** Reported By and dispatch notes/callback save (#2, #3), Edit Reported By layout (#5), Aid Department no self-select (#8).
-3. **App-wide consistency:** Military time (#4) — **Done.**
-4. **NERIS correctness:** Initial dispatch code (#6); Aid self-select UI (#8); UNIT TYPE (#10); Populate Date + Returning (#11).
-5. **Production checks (#27)** — entity-check, controlled export.
-6. **Roles and security:** Validate for all / Export admin-only (#12), auth rate-limiting (#16).
-7. **Later:** Super admin (#13), admin show/hide mode (#14), backlog #15–#24, per-tenant NERIS (#28).
-
----
-
-**Sources:**  
-- `docs/procedures/GO_LIVE_CHECKPOINT_AND_NEXT_STEPS.md`  
-- `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`  
-- `docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md`  
-- `docs/procedures/CROSS_BROWSER_AND_UX_NOTES.md`  
-- `docs/procedures/LATER_TASKS_VALIDATE_EXPORT_ROLES_AND_ADMIN_VISIBILITY.md`  
-- `docs/later-changes-backlog.md`  
-- `docs/procedures/TENANT_ONBOARDING_CHECKLIST.md` (§H)
+| ID | Status | Item |
+|----|--------|------|
+| B3 | Open | Clear report and incident data from the browser when the sign-in expires. On a shared station PC, people should not keep seeing the previous person’s data. Needs an approved clearing rule before coding. |
+| B4 | Open | Remove the old readable-text password check on the server, after both databases stay at zero readable-text passwords. Safe only while that count stays zero. |
+| B6 | Open | An unknown username must not get a faster sign-in reply than a real username (compare against a stand-in password hash when the username does not exist). |
+| E2 | Waiting on click check | Department role permissions work. Admin Functions → Department Details → Access / Restrictions → **Who can do what**. Change one action to a lower role, save, and sign in as that role. The four roles are User, Subadmin, Admin, and Superadmin. A department cannot yet invent a new role name such as secretary. If those four roles and the saved choice behave as expected, mark done. |
+| E3 | Open | Find any leftover checks that look for the exact word `admin` and use “admin and up,” so superadmin is included. Numbered role levels already exist in code. |
+| E8 | Open | Super admin stays out of the normal user-type dropdown and is assigned another way (for example a production script or platform tool). |
+| E9 | Open | An admin can enter a show/hide mode and click fields and menus to show or hide them by user type. Persist and apply those choices. |
+| E13 | Open | Extra login slowdown or rate limit beyond the 15-minute lock that already exists after five wrong passwords. |
+| E14 | Open | A clear record of who reset or changed a password, and when. Access / Restrictions already lists recent account changes. If a password reset already appears there with who/when/target, this item is done. |
+| E15 | Open | Search and filter on large personnel and user lists. |
 
 ---
 
-## Session notes
+## Scheduling
 
-**2026-03-20:** Doc refresh; View Exports uses server export row (cross-browser Draft fix).  
-**2026-03-20:** Admin Functions menu cleanup completed for Department Details (sidebar module URLs), Audit Logs split-out with Incident Audit Log route, and Department Details save action moved to top-right header.  
-**2026-03:** Staging verified — View Exports **Report Status** shows **Exported** after successful NERIS submit (queue and list aligned; In Review mismatch fixed).
+D9 (schedule save erasing days missing from an open tab) is done. D1 (Watseka weekday schedule on staging, Crescent’s 24/48 unchanged) passed on 2026-11-17.
 
----
-
-## Still pending (at a glance)
-
-Use **Suggested order** below for sequencing. This is a single checklist of what remains.
-
-| Area | Pending |
-|------|---------|
-| **CAD** | **#29** Parsing + auto-create incident → then Worker **`CAD_INGEST_API_URL`** → production (#25). |
-| **Incidents / NERIS UX** | ~~**#2** Reported By in Edit~~; ~~**#3** dispatch notes + callback save~~; ~~**#4** 24h~~ (**done**); ~~**#5** Edit Reported By layout~~ (**done**); ~~**#6** Initial Dispatch Code in Create Incident → NERIS~~ (**done**); ~~**#8** aid self-select~~ (**done**); ~~**#10** UNIT TYPE~~ (**done**); ~~**#11** Populate Date + Returning~~ (**done**); ~~**#11 (incident)** Delete block when NERIS In Review/Exported~~ (**done**); ~~**#11.2** occupant contact fields~~ (**done**); **#11.5** scheduler apparatus remove/delete for imported rows; **#11.6** map Incidents/Mapping stat cards to live metrics; **#11.7** map Export Call Queue behavior; **#26.1** cross-browser settings persistence follow-up (`docs/procedures/CROSS_BROWSER_AND_UX_NOTES.md`). |
-| **Roles / admin** | **#12** Validate all / Export admin-only; **#13** super admin; **#14** show/hide mode; **#14.1** role hierarchy + capabilities. |
-| **Platform** | **#15–#24** (reset-password UX, auth rate limit, audit logs, scheduling, personnel search, staging service, demo policy, wildcard DNS, Cloudflare, bundle size). |
-| **Go-live / ops** | ~~**#27** Production entity-check + controlled first prod export~~ (**done**). |
-| **Architecture** | **#28** Per-tenant NERIS config scale-out (when ready). |
+| ID | Status | Item |
+|----|--------|------|
+| D2 | Open / parked | Phone schedule. Parked until you ask to start it. Pick the layout first (day-first list recommended), then the phone header, one-day list, week and month pickers, and the day-block editor. Desktop week and month stay unchanged. Plan: `docs/plans/canvases/schedule-mobile-plan.canvas.tsx`. |
+| D3 | Open | Scheduler Settings: Standard or Custom mode for each extra field. Not built yet. Spec: `docs/plans/SCHEDULE_OVERTIME_IMPLEMENTATION_SPEC.md`. |
+| D4 | Open | Hour ledger: per-person and per-position hours, including the sick-time rule (for example remaining hours after a short sick day must be placed elsewhere). |
+| D5 | Open | Full overtime hiring workflow on the server (beyond the per-segment OT checkbox already in the day-block UI). |
+| D6 | Open | A history of segment edits (who changed a timed segment, when). |
+| D7 | Open / parked | A screen to create a department without a script. Today only the program owner can create one with a script or the platform admin API. |
+| D8 | Open / parked | Nights and weekends for volunteer or paid-on-call members. This test department does not schedule them in the app. |
+| E4 | Open | Scheduler Apparatus: a way to remove or delete an imported apparatus row after Import Apparatus sync. |
 
 ---
 
-## Completed archive
+## CAD
 
-### Completed section: Critical / mandatory (go-live)
+Every CAD item below is still open. Do not start coding until the operator names the first step. Batches A–I are done. A database change still needs an explicit yes before C2 or C8. Hold from 2026-04-09 still stands until lifted.
 
-| # | Item | Source | Notes |
-|---|------|--------|--------|
-| 1 | ~~**Incident Detail page: editable + API save**~~ | GO_LIVE_CHECKPOINT §2 | **Done (2026-03, tenant testing).** Edits persist via API; verified across browsers. Re-open if a field regresses. |
-
-**Expanded:** Incident Detail needed editable fields and `PATCH /api/incidents` so changes sync across browsers. Tenant testing (2026-03) satisfied this (Browser B sees edits from Browser A).
-
-### Recently completed (tenant verification + code, 2026-03)
-
-| Item | Notes |
-|------|--------|
-| ~~**CAD email receiving**~~ | Ingest path live; emails stored; parsing / auto-create incident is next (`#29`). |
-| ~~**NERIS cross-browser (export history + drafts)**~~ | Server-backed history and drafts; migration run. |
-| ~~**View Exports — Report Status**~~ | **Done (2026-03, staging verified).** Successful export shows **Exported** on **Reporting \| NERIS \| Exports** (matches NERIS queue); fixes second-browser **Draft** and post-validate **In Review** mismatch. `getExportsListReportStatus` + append stores **Exported** on success (`App.tsx`, `NerisReportFormPage.tsx`). |
-| ~~**Incident Detail cross-browser**~~ | Edits in Browser A visible in Browser B via API — go-live Item #1 treated done for current workflow. |
-| ~~**Merge / deploy**~~ | Branch merged/deployed per tenant (staging/prod as applicable). |
-| ~~**Reported By in Edit (#2)**~~ | Detail no longer overwrites API values; dropdown includes saved value so Edit shows what was selected/entered at create. |
-| ~~**Dispatch notes & Callback save (#3)**~~ | Same fix — display uses API; save already sent PATCH; values persist after refresh. |
-| ~~**Create Incident onset date/time (#4)**~~ | Create Incident modal has incident onset date/time; stored in `receivedAt` and mapped to NERIS Incident Onset Date/Time. |
-| ~~**Initial dispatch code (#6)**~~ | Default in `createDefaultNerisFormValues` changed from `AMB.UNRESP-BREATHING` to empty; location: `src/nerisMetadata.ts`. |
-| ~~**Aid department – remove "Current export department" (#8)**~~ | Synthetic option removed from CORE Aid department name(s) dropdown in `NerisReportFormPage.tsx`. |
-| ~~**Admin NERIS required fields (Reports \| NERIS)**~~ | **Done (2026-03).** Admin Functions → Reports \| NERIS required-field config in place; effective-required used in form/filter/validation. |
+| ID | Status | Item |
+|----|--------|------|
+| C1 | Open | Ignore a repeat delivery of the same email (fingerprint by message ID and contents so five deliveries act like one). |
+| C2 | Open | One incident per call number, including both Crescent email shapes (short dispatch and closing summary). Needs an approved database rule. |
+| C3 | Open | CAD updates its own incidents without blanking fields, duplicating notes, or recreating a deleted or hand-made incident. Users do not edit CAD-created incidents; corrections go on the run report. Matching emails on hand-made or deleted rows show a warning for an admin. |
+| C4 | Open | The first CAD email creates the run report. Later emails fill only blank or still-CAD fields. If a person changed a field, show that CAD has newer information instead of overwriting. In Review and Exported reports stay unchanged. |
+| C5 | Open | Refuse broken or unsafe parsing rules when they are saved, with a clear message and a run-time limit. |
+| C6 | Open | An admin screen for allowed senders. An empty list already rejects everyone. Crescent’s sender `dispatch@co.iroquois.il.us` is already saved. Do not delete that row. |
+| C7 | Open | A holding area and an alert when a dispatch email fails, plus safer handling of very large emails (Cloudflare has no dead-letter queue today). |
+| C8 | Open | Separate switches for “create new incidents” and “update existing incidents” (Batch J). Needs an approved database change. |
+| C9 | Open | The admin preview and a real inbound email use the same engine and the same result, tested on Crescent’s sample emails. |
+| C10 | Open | Finish Crescent’s parsing rules, pass the staging checklist, then point the Cloudflare Worker at production (`CAD_INGEST_API_URL`). |
+| C11 | Open | A shared rule library departments turn on, in plain language, with no JSON for normal setup (Batch K). |
+| C12 | Open | Automatic email cleanup after N days or M stored emails, with an admin setting. |
+| C13 | Open | Apparatus matching polish (own units vs mutual aid) and duplicate-call tuning. |
+| C14 | Open | Optional: the Cloudflare Worker drops a disallowed sender before it calls the API. |
+| F7 | Open / later | After CAD is reliable: in-app alerts, dispatcher-note alerts, a map, optional text messages, a mobile app, and a station-log summary. Depends on C1–C4 working first. |
 
 ---
 
-Update this file as items are completed (e.g. move to a “Done” section with date).
+## Waiting on Fire Recovery
+
+Follow-up email sent to Fire Recovery on **2026-11-17** (cleared time, Is Resident No, commercial trucking, lost tracking ID, billing status timing). Do not change code until they reply.
+
+| ID | Status | Item |
+|----|--------|------|
+| A4 | Open / Waiting on Email Reply | How to mark a commercial trucking incident through the API. They said they will add fields later and notify. Asked again in the 2026-11-17 email. Park until they send field names. |
+| A5 | Open / Waiting on Email Reply | How to find a tracking ID after a timeout. Get Incident Tracking Id still lists a SubscriptionKey we do not have. Asked again in the 2026-11-17 email. Keep Needs review plus admin resolve until they answer. |
+| A6 | Open / Waiting on Email Reply | How soon billing status is available after submit, and how often we may check it. Asked again in the 2026-11-17 email. Keep manual **Update billing status** until then. |
+| A11 | Open / Waiting on Email Reply | Archive the Phase C plan (`docs/plans/PHASE_C_FIRE_RECOVERY_PLAN.md`) only after A2, A3, A4, A5, and A6 are closed and the operator says the Recovery Hub follow-ups are finished. |
+
+---
+
+## Much later
+
+| ID | Status | Item |
+|----|--------|------|
+| F8 | Much later | Fire Recovery attachments, address validation, incident search, structure-fire and other run types, automatic billing-status refresh, bulk status, payment reconciliation, invoices, and inspection billing. Not for the current go-live. |
+
+---
+
+## Not scheduled
+
+Explained in the 2026-11-13 review. Not on the build list until the operator schedules them.
+
+| ID | Why it is not scheduled |
+|----|-------------------------|
+| A1 | Some older incidents were exported before the server kept its own proof that NERIS accepted them. The plan was to export one again; if NERIS updated that same incident, we could later add a button that exports again and then opens the billing preview. You confirmed NERIS updates the same incident and does not create a second one. That answers the safety question. The optional re-export-then-bill button is not approved. |
+| A7 | An optional security note said the server could store the name of the person who validated the export. The export screen already has a place for that name when one was saved. We never decided to require it. |
+| A8 | After a bill is sent, someone may need to correct it in Recovery Hub. One idea was a screen that says “correct this in Recovery Hub” and records who clicked it, when, and why. Accidental double-send protection is already in the app. The guided correction screen was not requested. Vendor answer: re-send through the API only if Recovery Hub has not edited the run. |
+| A9 | If someone edits a report after it was billed, Fire Recovery could still have the older bill. One idea was a warning that says the bill may be out of date, without sending another bill. That warning was not requested. The attempt-history table was not approved. |
+| B2 | Suspended and archived departments can still sign in today. Cutting off a department by status alone is unsafe until sessions are cancelled and accounts are disabled. Needs a design conversation before any code. |
+| B5 | When the browser calls the server, the server can check which website the request came from. That check can ignore the difference between `http` and `https`, and it can ignore a port number. Cloudflare already forces HTTPS, and the sign-in cookie is only sent to that department’s own address. Extra work was not requested. |
+| B7 | Developer-tool warnings and session tests that skip when the local test database is not running. People using the department site never see this. |
+| E20 | The website currently downloads as a large file. Splitting it into smaller pieces can make the first page open faster. The screens would look the same. Not requested. |
+| G6 | Pretend-Fire-Recovery tests already live in `server/fireRecovery.test.mjs`. They run with `npm test` so a bug can be found without a real invoice. There is no screen for them. Treated as done; listed here so the ID is explained. |
+| G7 | The remaining email questions are A3, A4, A5, and A6. The staging sandbox test itself is done (tracking ID `c7aaf46a-fd7b-4ea8-9bd6-d644bbfd3418`). |
+
+---
+
+## Marked done in this review
+
+| ID | Item |
+|----|------|
+| A10 | Production CAD test email, and an unsigned `/api/users` request returns 401. |
+| B1 | Capital letters and a trailing slash no longer skip sign-in or permissions. |
+| D9 | Saving the schedule no longer erases days that are missing from an open browser tab. |
+| E7 | Validate is available to the people who should validate. Export stays limited by the billing and NERIS permissions. |
+| E10 | NERIS Export Configuration is saved for the department, not only in one browser. |
+| F3 | Incidents → Configure Table drag-and-drop works. |
+| G1 | The server writes the NERIS success receipt. |
+| G2 | The Fire Recovery preview opens after NERIS accepted the export. Incident type and Alarm fit without scrolling, and **Confirm and send** is a second click. |
+| G3 | A second **Confirm and send** does not create a second bill. The tracking ID and the export date stay the same. |
+| G4 | The Fire Recovery password is encrypted, and sandbox versus live department ID is in place. |
+| G5 | The Motor Vehicle Collision billing section and its required party fields are in place. |
+| G8 | The production release and the one real bill are done. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2`. |
+| N12 | On View Exports, **Not sent** opens the bill preview for a billable motor-vehicle call. **Confirm and send** is a second click. A call that is not billable shows a grey long dash and cannot be clicked. |
+| N14 | Narrative Builder can insert NERIS fields by section, including Resources unit-card values and the people selected on each unit. |
+| N15 | Admins have **Validate/Export** beside **Export**. **Export** stays washed out until the report is **In Review** or **Exported**. Print and Delete stay visible. |
+| N16 | **Import** and **Get Incident (Test)** stay, and only a superadmin sees them. |
+| N18 | **Complete and Collapse** saves a Resources unit when that unit has no errors. The personnel and times remain after a reload. |
+| D1 | Watseka staging shows the weekday 12-hour schedule. Crescent’s 24/48 schedule is unchanged. |
+| E12 | Reset password is an in-app form with password fields and **Save Reset Password**. |
+| E16 | The staging website and the production website are two separate Render services. |
+| F5 | **Dispatched and canceled en route** fills Dispatch Time, Canceled Time, and Clear Time with the call arrival time. |
+
+---
+
+## Now vs Later
+
+- **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
+- **Waiting on click check:** E2. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
+- **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
+- **Later:** F8 and anything under Not scheduled, until you say to schedule it.
+- **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

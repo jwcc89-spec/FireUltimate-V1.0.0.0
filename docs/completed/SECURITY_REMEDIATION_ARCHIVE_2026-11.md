@@ -210,7 +210,7 @@ Built in commit `019f06d`. The "Verified locally" bullets below are the 2026-10-
 **Status: fixes 11–14 are built on this practice branch and not released.** The operator approved the recommended choices on 2026-11-01. Commits: fix 11 `939a629`, fix 12 `70ac3d5`, fix 13 `aa9eba0`, fix 14 `4eaed9e`. `npm test` passed with 23 tests. Do not rebuild them. Fix 13 treats HEAD as GET. Fix 15 is fully done on staging and production. Fix 16 stays unbuilt (Stage C). Fix 17 stays as the current 15-minute lock, with no code change. The November 1 verification section below is the record of what was found before fixes 11–14.
 
 ### Before you start (next agent)
-1. Read `cursoragent-context.md`, `docs/task-2-multitenant-domain-plan.md`, `.cursor/project-context.md`, and this file. Restate the task, the constraints, and the acceptance checks to the user.
+1. Read `cursoragent-context.md`, `docs/plans/task-2-multitenant-domain-plan.md`, `.cursor/project-context.md`, and this file. Restate the task, the constraints, and the acceptance checks to the user.
 2. Get the user's approval before you edit `server/neris-proxy.mjs` or `server/auth/permissions.mjs`. Both hold authorization code. No fix in this part changes the Prisma schema or a migration. If a fix starts to need one, stop and ask.
 3. Stay on `cursor/stage-b-foundation-b5ff`. Do not open a new branch for fixes 11–14 and 16–17. Fix 15 is already done on its own live branches.
 4. Run `git pull origin cursor/stage-b-foundation-b5ff`. The code these steps were written against is `1857c9c`. Line numbers below are from that commit. Search for the quoted code if they have moved.

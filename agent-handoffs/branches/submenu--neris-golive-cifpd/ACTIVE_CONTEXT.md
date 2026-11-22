@@ -3,6 +3,26 @@
 ## Current branch
 - `submenu/neris-golive-cifpd`
 
+## Current focus (2026-11-13 — evening review)
+- **Open work list:** `docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md` is the list to work from. Reorganized 2026-11-17 by topic. Do not start a new build until the operator names the item.
+- **N13 (2026-11-17):** Live NERIS schema is **1.5.x** (OpenAPI **1.5.3**). “NERIS 2.0” is still future. Our form is pre–1.5. Gap list: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. No form changes until the operator picks which 1.5 fields to add.
+- **N14 / N15 / N16 (2026-11-17 evening):** Done. Narrative Builder Resources values, Validate/Export, and the washed-out Export button passed. Import and Get Incident (Test) stay for superadmin only.
+- **N17:** The primary responding unit is the first unit in the Resources list, not the earliest on-scene unit. Do not change that until named. Preferred rule is earliest on-scene time.
+- **N18 (2026-11-17 evening):** Done. Complete and Collapse saves a valid Resources unit, and the personnel and times remain after reload.
+- **D1 (2026-11-17 evening):** Done. Watseka staging has the weekday 12-hour schedule. Crescent’s 24/48 schedule is unchanged.
+- **E12 (2026-11-17 evening):** Done. Reset password opens an in-app form with **Save Reset Password**.
+- **E16 (2026-11-17 evening):** Done. Staging and production are two separate Render services.
+- **F5 (2026-11-17 evening):** Done. Dispatched and canceled en route fills Dispatch, Canceled, and Clear with the call arrival time.
+- **G2 (2026-11-17 evening):** Done. The Fire Recovery preview opens after NERIS accepted the export. Incident type and Alarm fit without scrolling, and **Confirm and send** is a second click.
+- **N12 (2026-11-17 evening):** Done. On View Exports, **Not sent** opens the bill preview for a billable motor-vehicle call. **Confirm and send** is a second click. A non-billable call shows a grey long dash and is not clickable.
+- **G3 (2026-11-17 evening):** Done. A second **Confirm and send** does not create a second bill. The tracking ID and the export date stay the same.
+- **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
+- **Fire Recovery email (2026-11-17):** Follow-up sent covering A2 cleared time, A3 Is Resident No, A4 commercial trucking, A5 lost tracking ID, A6 billing status timing. Status: **Open / Waiting on Email Reply**. Do not change mappings until they answer.
+- **Cleared time:** Recovery Hub’s clear-time box accepts `HH:MM` only. Sending seconds may be why Time Call Cleared stayed blank.
+- **Is Resident:** Yes shows on their site. No did not show when sent as `Isresident: false`.
+- **CAD:** every Stage D item is still open. Do not start coding until the operator names the first CAD step.
+- **File moves:** Task 2 plan is `docs/plans/task-2-multitenant-domain-plan.md`. Wave 6 runbook is `docs/completed/wave-6-domain-routing-runbook.md`. Admin API guide is `docs/procedures/admin-api-beginner-guide.md`.
+
 ## Current focus (2026-11-13 — session end)
 - **Branch:** stay on `submenu/neris-golive-cifpd` unless the user says to switch. Production `main` is at `b60eb44` (merge of this branch). Do not create branches unless asked.
 - **Wave 8 production release happened.** Neon backup `backup-2026-11-13-wave8-fire-recovery` (63 incidents). Production migrations were already applied. Crescent allowed sender `dispatch@co.iroquois.il.us` (id `allow-cifpdil-dispatch-20261101`) was inserted before the code release. PR #44 merged staging into `main`. Operator set production Fire Recovery to live and sent one real bill. Tracking ID `412c2d90-6489-4b63-9fa0-6570adf33bb2` (run `2026-006`). Recovery Hub shows it as a **Draft**. Fire Ultimate status is **Sent**.
@@ -153,5 +173,5 @@
 2. Read `.cursor/project-context.md` (or `cursoragent-context.md` if present) and this file (**ACTIVE_CONTEXT.md**).
 3. Read **sessions/2026-04-09-session.md** and **conversations/2026-04-09-session-summary.md** for the latest CAD + hold + `3fa8683` details.
 4. Read **docs/PRIORITY_WHAT_NEEDS_TO_BE_COMPLETED.md** and **docs/procedures/EMAIL_AND_CAD_SETUP.md** (and **docs/procedures/NERIS_CROSS_BROWSER_FINDINGS.md** if working on NERIS cross-browser).
-5. Read **docs/agent-execution-contract.md**, **docs/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
+5. Read **docs/agent-execution-contract.md**, **docs/plans/task-2-multitenant-domain-plan.md**, **docs/later-changes-backlog.md** (see COPY_PASTE_START_PROMPT.md for full list).
 6. **If CAD hold is still on:** do not start **Batch J/K** unless the user explicitly lifts the hold and names the next task. Otherwise continue from the user’s stated priority only. Do not redo completed work.

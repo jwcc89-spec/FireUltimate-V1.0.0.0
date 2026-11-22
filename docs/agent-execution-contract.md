@@ -4,7 +4,7 @@ Purpose: keep agent behavior consistent across model choices (including Auto) an
 
 ## 1) Mandatory Session Preflight
 - Read `cursoragent-context.md`.
-- Read `docs/task-2-multitenant-domain-plan.md`.
+- Read `docs/plans/task-2-multitenant-domain-plan.md`.
 - Restate in writing:
   - exact request,
   - constraints,
@@ -39,7 +39,7 @@ Purpose: keep agent behavior consistent across model choices (including Auto) an
 - Report what changed, what passed, and what still needs work.
 
 ## 6) Documentation + Handoff
-- Update `docs/task-2-multitenant-domain-plan.md` when decisions change.
+- Update `docs/plans/task-2-multitenant-domain-plan.md` when decisions change.
 - Add "Now vs Later" callouts for deferred items.
 - List blockers/assumptions explicitly.
 

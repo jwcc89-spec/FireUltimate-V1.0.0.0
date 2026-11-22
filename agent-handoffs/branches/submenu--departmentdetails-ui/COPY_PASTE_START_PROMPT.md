@@ -14,7 +14,7 @@ Before doing any feature work, understand the Branch Rules:
    - all conversations in agent-handoffs/branches/submenu--departmentdetails-ui/conversations/
 4) Read and follow before any edits: 
    - docs/agent-execution-contract.md 
-   - docs/task-2-multitenant-domain-plan.md
+   - docs/plans/task-2-multitenant-domain-plan.md
    - docs/later-changes-backlog.md
 4) Before coding, summarize:
    - current branch
