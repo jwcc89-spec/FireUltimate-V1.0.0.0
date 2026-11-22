@@ -5407,8 +5407,17 @@ body.resource-personnel-modal-open {
 .neris-form-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  align-self: start;
   flex-wrap: wrap;
   gap: 0.45rem;
+  grid-column: 1 / -1;
+  height: auto;
+}
+
+.neris-form-actions button {
+  height: auto;
+  align-self: center;
 }
 
 .validation-issue-list {
