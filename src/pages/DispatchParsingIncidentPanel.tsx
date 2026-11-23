@@ -23,7 +23,6 @@ import {
   fieldIdForSection,
   followUpCallNumber,
   incidentNumberFormatFromExtract,
-  incidentNumberSeriesExample,
   labelsFromSavedRules,
   linesToPhrases,
   normalizeSectionSeparator,
@@ -492,73 +491,56 @@ export function DispatchParsingIncidentPanel() {
 
       <section className="cad-dispatch-h-top">
         <CollapsibleSetupSection title="Incident number setup">
-          <label className="cad-allowlist-field">
-            How are sections or fields separated from CAD?
-            <input
-              className="cad-dispatch-merge-key-input cad-incident-separator-input"
-              type="text"
-              maxLength={1}
-              value={separator}
-              aria-label="Character that separates CAD sections"
-              onChange={(event) => setSeparator(event.target.value)}
-            />
-          </label>
-          <p className="panel-description">Enter one character. Crescent’s emails use a semicolon.</p>
-          <label className="cad-allowlist-field">
-            Date calls reset each year
-            <input
-              className="cad-dispatch-merge-key-input"
-              type="date"
-              value={`2026-${String(resetMonth).padStart(2, "0")}-${String(resetDay).padStart(2, "0")}`}
-              aria-label="Date calls reset each year"
-              onChange={(event) => {
-                const match = event.target.value.match(/^\d{4}-(\d{2})-(\d{2})$/);
-                if (!match) return;
-                setResetMonth(Number(match[1]));
-                setResetDay(Number(match[2]));
-              }}
-            />
-          </label>
-          <label className="cad-allowlist-field">
-            Time calls reset (24-hour)
-            <input
-              className="cad-dispatch-merge-key-input cad-incident-separator-input"
-              type="text"
-              inputMode="numeric"
-              placeholder="00:00"
-              value={resetTime}
-              aria-label="Time calls reset in 24-hour format"
-              onChange={(event) => setResetTime(event.target.value)}
-            />
-          </label>
-          <label className="cad-allowlist-field">
-            Incident number format
-            <input
-              className="cad-dispatch-merge-key-input"
-              type="text"
-              value={incidentNumberFormat}
-              aria-label="Incident number format"
-              onChange={(event) => setIncidentNumberFormat(event.target.value)}
-            />
-          </label>
-          <p className="panel-description">
-            The year in the date box is only there so you can pick the month and day. That month, day, and time repeat
-            every year. Enter the time in 24-hour form, such as 00:00. The CAD number, such as 26018313, is saved as
-            the dispatch number. A later email uses that number to find the same call. This app assigns the incident
-            number. With the reset above, the first new call in the current period is{" "}
-            {incidentNumberSeriesExample(
-              new Date(),
-              {
-                month: resetMonth,
-                day: resetDay,
-                time: parseResetTime(resetTime) ? resetTime : DEFAULT_RESET_TIME,
-              },
-              incidentNumberFormat,
-            )}
-            . Each later new call takes the next number. A follow-up email keeps the number already given to that
-            dispatch number. Numbers are assigned when a new dispatch number is processed after you save. A call that
-            arrived before the reset keeps the number it already has.
-          </p>
+          <div className="cad-setup-field-row">
+            <label className="cad-allowlist-field">
+              How are sections or fields separated from CAD?
+              <input
+                className="cad-dispatch-merge-key-input"
+                type="text"
+                maxLength={1}
+                value={separator}
+                aria-label="Character that separates CAD sections"
+                onChange={(event) => setSeparator(event.target.value)}
+              />
+            </label>
+            <label className="cad-allowlist-field">
+              Date calls reset each year
+              <input
+                className="cad-dispatch-merge-key-input"
+                type="date"
+                value={`2026-${String(resetMonth).padStart(2, "0")}-${String(resetDay).padStart(2, "0")}`}
+                aria-label="Date calls reset each year"
+                onChange={(event) => {
+                  const match = event.target.value.match(/^\d{4}-(\d{2})-(\d{2})$/);
+                  if (!match) return;
+                  setResetMonth(Number(match[1]));
+                  setResetDay(Number(match[2]));
+                }}
+              />
+            </label>
+            <label className="cad-allowlist-field">
+              Time calls reset (24-hour)
+              <input
+                className="cad-dispatch-merge-key-input"
+                type="text"
+                inputMode="numeric"
+                placeholder="00:00"
+                value={resetTime}
+                aria-label="Time calls reset in 24-hour format"
+                onChange={(event) => setResetTime(event.target.value)}
+              />
+            </label>
+            <label className="cad-allowlist-field">
+              Incident number format
+              <input
+                className="cad-dispatch-merge-key-input"
+                type="text"
+                value={incidentNumberFormat}
+                aria-label="Incident number format"
+                onChange={(event) => setIncidentNumberFormat(event.target.value)}
+              />
+            </label>
+          </div>
           <div className="cad-dispatch-incident-actions">
             <button
               type="button"
@@ -578,34 +560,29 @@ export function DispatchParsingIncidentPanel() {
         </CollapsibleSetupSection>
 
         <CollapsibleSetupSection title="Exclude emails that contain">
-          <label className="cad-allowlist-field">
-            Phrases
-            <textarea
-              className="cad-dispatch-merge-key-input"
-              rows={3}
-              value={excludeText}
-              aria-label="Phrases that exclude an email"
-              onChange={(event) => setExcludeText(event.target.value)}
-            />
-          </label>
-          <p className="panel-description">
-            One phrase per line. An email that contains any of these phrases is stored, but it does not create or
-            update an incident. Leave this blank for a department that wants EMS calls included, such as Kankakee or
-            Watseka.
-          </p>
-          <label className="cad-allowlist-field">
-            Exceptions
-            <textarea
-              className="cad-dispatch-merge-key-input"
-              rows={3}
-              value={exceptionText}
-              aria-label="Phrases that keep an excluded email"
-              onChange={(event) => setExceptionText(event.target.value)}
-            />
-          </label>
-          <p className="panel-description">
-            One phrase per line. If the email also contains an exception, it is kept and can still become an incident.
-          </p>
+          <p className="panel-description">One phrase per line.</p>
+          <div className="cad-exclude-field-row">
+            <label className="cad-allowlist-field">
+              Exclude emails that contain the phrases
+              <textarea
+                className="cad-dispatch-merge-key-input"
+                rows={3}
+                value={excludeText}
+                aria-label="Phrases that exclude an email"
+                onChange={(event) => setExcludeText(event.target.value)}
+              />
+            </label>
+            <label className="cad-allowlist-field">
+              Exceptions
+              <textarea
+                className="cad-dispatch-merge-key-input"
+                rows={3}
+                value={exceptionText}
+                aria-label="Phrases that keep an excluded email"
+                onChange={(event) => setExceptionText(event.target.value)}
+              />
+            </label>
+          </div>
           <div className="cad-dispatch-incident-actions">
             <button
               type="button"

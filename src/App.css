@@ -1443,6 +1443,36 @@ tbody tr:last-of-type td {
   font-size: 1.05rem;
 }
 
+.cad-setup-field-row,
+.cad-exclude-field-row {
+  display: grid;
+  gap: 0.75rem;
+  align-items: end;
+  min-width: 0;
+}
+
+.cad-setup-field-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.cad-exclude-field-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.cad-setup-field-row .cad-dispatch-merge-key-input,
+.cad-exclude-field-row .cad-dispatch-merge-key-input {
+  width: 100%;
+  max-width: none;
+  box-sizing: border-box;
+}
+
+@media (max-width: 640px) {
+  .cad-setup-field-row,
+  .cad-exclude-field-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .cad-incident-section-list {
   display: grid;
   gap: 0.75rem;
