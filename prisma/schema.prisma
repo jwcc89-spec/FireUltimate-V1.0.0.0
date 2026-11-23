@@ -282,6 +282,7 @@ model CadParsingSettings {
   id                         String   @id @default(cuid())
   tenantId                   String   @unique
   enableIncidentCreation     Boolean  @default(false)
+  enableIncidentUpdate       Boolean  @default(false)
   messageRulesJson           Json     @default("[]")
   incidentRulesJson          Json     @default("[]")
   incidentFieldMapJson       Json     @default("{}")

@@ -459,6 +459,81 @@ export function assignIncidentNumberChart(
   });
 }
 
+export type CadTimeMap = {
+  callCreated: string;
+  callClosed: string;
+  unitDispatch: string;
+  unitEnroute: string;
+  unitOnScene: string;
+  unitClear: string;
+};
+
+export const DEFAULT_CAD_TIME_MAP: CadTimeMap = {
+  callCreated: "Start Date/Time",
+  callClosed: "",
+  unitDispatch: "Dispatch",
+  unitEnroute: "Enroute",
+  unitOnScene: "On Scene",
+  unitClear: "InQuarters",
+};
+
+export function normalizeCadTimeMap(raw: Partial<CadTimeMap> | undefined): CadTimeMap {
+  const source = raw ?? {};
+  const text = (key: keyof CadTimeMap, fallback: string) =>
+    Object.prototype.hasOwnProperty.call(source, key) ? String(source[key] ?? "").trim() : fallback;
+  return {
+    callCreated: text("callCreated", DEFAULT_CAD_TIME_MAP.callCreated),
+    callClosed: text("callClosed", DEFAULT_CAD_TIME_MAP.callClosed),
+    unitDispatch: text("unitDispatch", DEFAULT_CAD_TIME_MAP.unitDispatch),
+    unitEnroute: text("unitEnroute", DEFAULT_CAD_TIME_MAP.unitEnroute),
+    unitOnScene: text("unitOnScene", DEFAULT_CAD_TIME_MAP.unitOnScene),
+    unitClear: text("unitClear", DEFAULT_CAD_TIME_MAP.unitClear),
+  };
+}
+
+export function timeMapFromExtract(raw: unknown): CadTimeMap {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return { ...DEFAULT_CAD_TIME_MAP };
+  const timeMap = (raw as { timeMap?: unknown }).timeMap;
+  if (!timeMap || typeof timeMap !== "object" || Array.isArray(timeMap)) return { ...DEFAULT_CAD_TIME_MAP };
+  return normalizeCadTimeMap(timeMap as Partial<CadTimeMap>);
+}
+
+/** CAD date and time, such as 11/17/26 13:38:19, as YYYY-MM-DDTHH:mm:ss. */
+export function cadClockToIso(month: string, day: string, year: string, time: string): string {
+  const yearNumber = year.length === 2 ? 2000 + Number(year) : Number(year);
+  const clock = time.length === 5 ? `${time}:00` : time;
+  return `${String(yearNumber).padStart(4, "0")}-${month.padStart(2, "0")}-${day.padStart(2, "0")}T${clock}`;
+}
+
+export function cadLabeledDateTime(text: string, label: string): string {
+  const name = label.trim();
+  if (!name) return "";
+  const match = text.match(
+    new RegExp(
+      `${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:\\s*(\\d{1,2})/(\\d{1,2})/(\\d{2,4})\\s+(\\d{2}:\\d{2}(?::\\d{2})?)`,
+      "i",
+    ),
+  );
+  if (!match) return "";
+  return cadClockToIso(match[1], match[2], match[3], match[4]);
+}
+
+export type CadUnitTime = { unit: string; label: string; at: string };
+
+export function cadUnitTimes(text: string): CadUnitTime[] {
+  const found: CadUnitTime[] = [];
+  const pattern =
+    /([0-9A-Za-z]+)\s*-\s*([A-Za-z][A-Za-z ]*?)\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{2}:\d{2}(?::\d{2})?)/g;
+  for (const match of text.matchAll(pattern)) {
+    found.push({
+      unit: match[1],
+      label: match[2].trim(),
+      at: cadClockToIso(match[3], match[4], match[5], match[6]),
+    });
+  }
+  return found;
+}
+
 /** Split one CAD line on the separator character. Uses the first line that contains it. */
 export function splitDispatchParts(text: string, separator = DEFAULT_SECTION_SEPARATOR): string[] {
   const active = normalizeSectionSeparator(separator);
@@ -545,7 +620,7 @@ export function buildIncidentLabelConfig(
     day: DEFAULT_RESET_DAY,
     time: DEFAULT_RESET_TIME,
   },
-  filters: { excludeContains?: string[]; excludeExceptions?: string[] } = {},
+  filters: { excludeContains?: string[]; excludeExceptions?: string[]; timeMap?: Partial<CadTimeMap> } = {},
 ): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
@@ -557,6 +632,7 @@ export function buildIncidentLabelConfig(
     resetTime: string;
     excludeContains: string[];
     excludeExceptions: string[];
+    timeMap: CadTimeMap;
   };
 } {
   const active = normalizeSectionSeparator(separator);
@@ -570,6 +646,7 @@ export function buildIncidentLabelConfig(
     resetTime: parseResetTime(reset.time) ? reset.time : DEFAULT_RESET_TIME,
     excludeContains: linesToPhrases((filters.excludeContains ?? []).join("\n")),
     excludeExceptions: linesToPhrases((filters.excludeExceptions ?? []).join("\n")),
+    timeMap: normalizeCadTimeMap(filters.timeMap),
   };
 
   for (const field of INCIDENT_LABEL_FIELDS) {

@@ -2427,6 +2427,89 @@ function unitsMatchingApparatus(plain, names) {
   return filterNamedUnits(found.join(", "), names);
 }
 
+async function departmentApparatusRecords(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" && !Array.isArray(details.payloadJson)
+      ? details.payloadJson
+      : {};
+  const records = Array.isArray(payload.masterApparatusRecords)
+    ? payload.masterApparatusRecords
+    : Array.isArray(payload.apparatusRecords)
+      ? payload.apparatusRecords
+      : [];
+  return records
+    .filter((record) => record && typeof record === "object")
+    .map((record) => ({
+      unitId: trimValue(record.unitId),
+      commonName: trimValue(record.commonName),
+    }))
+    .filter((record) => record.unitId || record.commonName);
+}
+
+// Keep these date readers in step with src/cadDispatch/incidentLabelMap.ts.
+function cadClockToIso(month, day, year, time) {
+  const yearNumber = String(year).length === 2 ? 2000 + Number(year) : Number(year);
+  const clock = String(time).length === 5 ? `${time}:00` : String(time);
+  return `${String(yearNumber).padStart(4, "0")}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}T${clock}`;
+}
+
+function cadLabeledDateTime(text, label) {
+  const name = trimValue(label);
+  if (!name) return "";
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(text).match(
+    new RegExp(`${escaped}\\s*:\\s*(\\d{1,2})/(\\d{1,2})/(\\d{2,4})\\s+(\\d{2}:\\d{2}(?::\\d{2})?)`, "i"),
+  );
+  if (!match) return "";
+  return cadClockToIso(match[1], match[2], match[3], match[4]);
+}
+
+function cadUnitTimes(text) {
+  const found = [];
+  const pattern =
+    /([0-9A-Za-z]+)\s*-\s*([A-Za-z][A-Za-z ]*?)\s+(\d{1,2})\/(\d{1,2})\/(\d{2,4})\s+(\d{2}:\d{2}(?::\d{2})?)/g;
+  for (const match of String(text).matchAll(pattern)) {
+    found.push({
+      unit: match[1],
+      label: match[2].trim(),
+      at: cadClockToIso(match[3], match[4], match[5], match[6]),
+    });
+  }
+  return found;
+}
+
+function timeMapFromSettings(settings) {
+  const raw = settings?.incidentNumberExtractJson;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) && raw.timeMap && typeof raw.timeMap === "object"
+    ? raw.timeMap
+    : null;
+  const text = (key, fallback) => {
+    if (source && Object.prototype.hasOwnProperty.call(source, key)) return trimValue(source[key]);
+    return fallback;
+  };
+  return {
+    callCreated: text("callCreated", "Start Date/Time"),
+    callClosed: text("callClosed", ""),
+    unitDispatch: text("unitDispatch", "Dispatch"),
+    unitEnroute: text("unitEnroute", "Enroute"),
+    unitOnScene: text("unitOnScene", "On Scene"),
+    unitClear: text("unitClear", "InQuarters"),
+  };
+}
+
+function apparatusUnitId(token, records) {
+  const key = trimValue(token).toLowerCase();
+  if (!key) return "";
+  const match = records.find(
+    (record) => record.unitId.toLowerCase() === key || record.commonName.toLowerCase() === key,
+  );
+  return match ? match.unitId || match.commonName : "";
+}
+
 const CAD_NUMBER_TIME_ZONE = "America/Chicago";
 
 function parseResetClock(value) {
@@ -2503,26 +2586,6 @@ function formatAssignedIncidentNumber(sequence, yy, pattern) {
   return template.replaceAll("{yy}", yy).replaceAll("{seq}", seq);
 }
 
-function incidentNumberNeedsAssignment(existing, cadNumber, periodStart) {
-  if (!existing) return true;
-  const current = trimValue(existing.incidentNumber);
-  if (!current || current === cadNumber) {
-    const created = existing.createdAt instanceof Date ? existing.createdAt.getTime() : NaN;
-    if (!current) return true;
-    return Number.isFinite(created) && created >= periodStart.getTime();
-  }
-  return false;
-}
-
-function incidentSequenceMatcher(yy, pattern) {
-  const template = String(pattern ?? "").trim() || "{yy}-{seq}";
-  const escaped = template.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const source = escaped
-    .replace("\\{yy\\}", String(yy).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
-    .replace("\\{seq\\}", "(\\d+)");
-  return new RegExp(`^${source}$`);
-}
-
 function incidentNumberFormatFromSettings(settings) {
   const raw = settings?.incidentNumberExtractJson;
   if (raw && typeof raw === "object" && !Array.isArray(raw) && typeof raw.incidentNumberFormat === "string") {
@@ -2560,30 +2623,60 @@ async function findIncidentForCadDispatch(tenantId, cadNumber) {
   });
 }
 
-/**
- * A follow-up email (CAD CFS: / unit times) uses a different section order.
- * Match the call number inside "CAD CFS:" and add the text to that incident.
- * Leave address, type, and the other new-call fields as already saved.
- */
-async function nextDepartmentIncidentNumber(tx, tenantId, pattern, reset) {
-  const { yy } = currentFiscalPeriod(new Date(), reset);
-  const rows = await tx.incident.findMany({
-    where: { tenantId },
-    select: { incidentNumber: true },
+async function renumberDraftIncidentsByDispatchOrder(tx, tenantId, pattern, reset) {
+  const incidents = await tx.incident.findMany({
+    where: { tenantId, deletedAt: null },
+    select: { id: true, dispatchNumber: true, incidentNumber: true },
   });
-  const matcher = incidentSequenceMatcher(yy, pattern);
-  let max = 0;
-  for (const row of rows) {
-    const match = String(row.incidentNumber ?? "").match(matcher);
-    if (!match) continue;
-    const value = Number(match[1]);
-    if (Number.isInteger(value) && value > max) max = value;
+  const withDispatch = incidents.filter((row) => trimValue(row.dispatchNumber));
+  withDispatch.sort((left, right) => {
+    const leftNumber = Number(left.dispatchNumber);
+    const rightNumber = Number(right.dispatchNumber);
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+    return String(left.dispatchNumber).localeCompare(String(right.dispatchNumber));
+  });
+  const draftKeys = withDispatch.flatMap((row) => {
+    const keys = [row.id];
+    const currentNumber = trimValue(row.incidentNumber);
+    if (currentNumber && currentNumber !== row.id) keys.push(currentNumber);
+    return keys;
+  });
+  const drafts = await tx.nerisDraft.findMany({
+    where: { tenantId, callNumber: { in: draftKeys } },
+  });
+  const draftByCall = new Map();
+  for (const draft of drafts) {
+    if (isReportRemoved(draft.payload)) continue;
+    draftByCall.set(draft.callNumber, draft);
   }
-  return formatAssignedIncidentNumber(max + 1, yy, pattern);
+  const { yy } = currentFiscalPeriod(new Date(), reset);
+  let sequence = 0;
+  for (const incident of withDispatch) {
+    sequence += 1;
+    const proposed = formatAssignedIncidentNumber(sequence, yy, pattern);
+    const currentNumber = trimValue(incident.incidentNumber);
+    const draft = draftByCall.get(incident.id) || (currentNumber ? draftByCall.get(currentNumber) : null);
+    if (draft && reportStatusOf(draft.payload) !== "Draft") continue;
+    if (trimValue(incident.incidentNumber) === proposed) continue;
+    await tx.incident.update({ where: { id: incident.id }, data: { incidentNumber: proposed } });
+    if (!draft) continue;
+    const payload = draft.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload)
+      ? { ...draft.payload }
+      : {};
+    const formValues =
+      payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+        ? { ...payload.formValues }
+        : {};
+    formValues.incident_internal_id = proposed;
+    payload.formValues = formValues;
+    await tx.nerisDraft.update({ where: { id: draft.id }, data: { payload } });
+  }
 }
 
-async function saveMatchedCadIncident(tenantId, cadNumber, reset, pattern, updateFields, createFields) {
-  await prisma.$transaction(async (tx) => {
+async function saveMatchedCadIncident(tenantId, cadNumber, reset, pattern, updateFields, createFields, access) {
+  return prisma.$transaction(async (tx) => {
     await tx.$queryRaw`SELECT id FROM "CadParsingSettings" WHERE "tenantId" = ${tenantId} FOR UPDATE`;
     const byDispatch = await tx.incident.findFirst({
       where: { tenantId, dispatchNumber: cadNumber, deletedAt: null },
@@ -2593,41 +2686,160 @@ async function saveMatchedCadIncident(tenantId, cadNumber, reset, pattern, updat
       (await tx.incident.findFirst({
         where: { tenantId, incidentNumber: cadNumber, deletedAt: null },
       }));
-    const { periodStart } = currentFiscalPeriod(new Date(), reset);
-    const incidentNumber = incidentNumberNeedsAssignment(existing, cadNumber, periodStart)
-      ? await nextDepartmentIncidentNumber(tx, tenantId, pattern, reset)
-      : trimValue(existing.incidentNumber);
+    if (existing && !access.allowUpdate) return "";
+    if (!existing && !access.allowCreate) return "";
+    let incidentId = existing?.id ?? "";
     if (existing) {
       await tx.incident.update({
         where: { id: existing.id },
-        data: { ...updateFields, dispatchNumber: cadNumber, incidentNumber },
+        data: { ...updateFields, dispatchNumber: cadNumber },
       });
-      return;
+    } else {
+      const created = await tx.incident.create({
+        data: {
+          tenantId,
+          currentState: "Draft",
+          priority: "",
+          address: "",
+          stillDistrict: "",
+          assignedUnits: "",
+          reportedBy: null,
+          callbackNumber: null,
+          dispatchNotes: null,
+          mapReference: null,
+          receivedAt: "",
+          incidentType: "",
+          dispatchInfo: "CAD email ingest",
+          ...createFields,
+          dispatchNumber: cadNumber,
+          incidentNumber: "",
+        },
+      });
+      incidentId = created.id;
     }
-    await tx.incident.create({
-      data: {
-        tenantId,
-        currentState: "Draft",
-        priority: "",
-        address: "",
-        stillDistrict: "",
-        assignedUnits: "",
-        reportedBy: null,
-        callbackNumber: null,
-        dispatchNotes: null,
-        mapReference: null,
-        receivedAt: "",
-        incidentType: "",
-        dispatchInfo: "CAD email ingest",
-        ...createFields,
-        dispatchNumber: cadNumber,
-        incidentNumber,
-      },
-    });
+    await renumberDraftIncidentsByDispatchOrder(tx, tenantId, pattern, reset);
+    return incidentId;
   });
 }
 
-async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incidentNumberFormat, reset, apparatusNames) {
+async function applyCadTimes(tenantId, incidentId, plain, timeMap, apparatusRecords) {
+  if (!incidentId) return;
+  const incident = await prisma.incident.findFirst({ where: { id: incidentId, tenantId } });
+  if (!incident || incident.deletedAt) return;
+  const created = cadLabeledDateTime(plain, timeMap.callCreated);
+  const closed = cadLabeledDateTime(plain, timeMap.callClosed);
+  if (created && !trimValue(incident.receivedAt)) {
+    await prisma.incident.update({ where: { id: incident.id }, data: { receivedAt: created } });
+  }
+  const keys = [incident.id];
+  const currentNumber = trimValue(incident.incidentNumber);
+  if (currentNumber && currentNumber !== incident.id) keys.push(currentNumber);
+  const drafts = await prisma.nerisDraft.findMany({
+    where: { tenantId, callNumber: { in: keys } },
+  });
+  const active = drafts.find((row) => !isReportRemoved(row.payload));
+  if (active && reportStatusOf(active.payload) !== "Draft") return;
+  const payload =
+    active?.payload && typeof active.payload === "object" && !Array.isArray(active.payload)
+      ? { ...active.payload }
+      : { reportStatus: "Draft" };
+  const formValues =
+    payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+      ? { ...payload.formValues }
+      : {};
+  const fill = (key, value) => {
+    if (value && !trimValue(formValues[key])) formValues[key] = value;
+  };
+  fill("incident_time_call_create", created);
+  fill("incident_time_clear", closed);
+  fill("time_incident_clear", closed);
+  if (created && !trimValue(formValues.incident_onset_date)) {
+    formValues.incident_onset_date = created.slice(0, 10);
+    formValues.incident_onset_time = created.slice(11, 19);
+  }
+  let units = [];
+  try {
+    const parsed = JSON.parse(formValues.resource_units_json || "[]");
+    units = Array.isArray(parsed) ? parsed : [];
+  } catch {
+    units = [];
+  }
+  const fieldForLabel = (label) => {
+    const folded = label.toLowerCase();
+    const pairs = [
+      [timeMap.unitDispatch, "dispatchTime"],
+      [timeMap.unitEnroute, "enrouteTime"],
+      [timeMap.unitOnScene, "onSceneTime"],
+      [timeMap.unitClear, "clearTime"],
+    ];
+    for (const [name, field] of pairs) {
+      if (name && folded === name.toLowerCase()) return field;
+    }
+    return "";
+  };
+  for (const entry of cadUnitTimes(plain)) {
+    const field = fieldForLabel(entry.label);
+    const unitId = apparatusUnitId(entry.unit, apparatusRecords);
+    if (!field || !unitId) continue;
+    let row = units.find((unit) => trimValue(unit?.unitId).toLowerCase() === unitId.toLowerCase());
+    if (!row) {
+      row = {
+        id: `cad-${unitId}`,
+        unitId,
+        unitType: "",
+        staffing: "",
+        responseMode: "",
+        transportMode: "",
+        dispatchTime: "",
+        enrouteTime: "",
+        stagedTime: "",
+        onSceneTime: "",
+        returningTime: "",
+        canceledTime: "",
+        clearTime: "",
+        isCanceledEnroute: false,
+        isComplete: false,
+        isExpanded: false,
+        showTimesEditor: false,
+        personnel: "",
+        showPersonnelSelector: false,
+        reportWriter: "",
+        unitNarrative: "",
+      };
+      units.push(row);
+    }
+    if (!trimValue(row[field])) row[field] = entry.at;
+  }
+  const hasUnitTime = units.some((unit) =>
+    ["dispatchTime", "enrouteTime", "onSceneTime", "clearTime"].some((field) => trimValue(unit[field])),
+  );
+  if (!created && !closed && !hasUnitTime) return;
+  formValues.resource_units_json = JSON.stringify(units);
+  if (units[0] && !trimValue(formValues.resource_primary_unit_id)) {
+    formValues.resource_primary_unit_id = units[0].unitId;
+  }
+  payload.formValues = formValues;
+  payload.reportStatus = trimValue(payload.reportStatus) || "Draft";
+  if (active) {
+    await prisma.nerisDraft.update({ where: { id: active.id }, data: { payload } });
+    return;
+  }
+  await prisma.nerisDraft.create({
+    data: { tenantId, callNumber: incident.id, payload },
+  });
+}
+
+async function cadIngestApplyFollowUpIncident(
+  tenantId,
+  plain,
+  callNumber,
+  incidentNumberFormat,
+  reset,
+  apparatusNames,
+  access,
+  timeMap,
+  apparatusRecords,
+) {
   const notes = String(plain).trim().slice(0, 12000);
   const units = unitsMatchingApparatus(plain, apparatusNames);
   const nature = cadLabeledValue(plain, "Nature");
@@ -2638,7 +2850,7 @@ async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incid
     .slice(0, 20000);
   const updateFields = { dispatchNotes: combined };
   if (units) updateFields.assignedUnits = units;
-  await saveMatchedCadIncident(
+  const incidentId = await saveMatchedCadIncident(
     tenantId,
     callNumber,
     reset,
@@ -2649,8 +2861,9 @@ async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incid
       assignedUnits: units || "",
       dispatchNotes: notes,
     },
+    access,
   );
-  return;
+  await applyCadTimes(tenantId, incidentId, plain, timeMap, apparatusRecords);
 }
 
 function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
@@ -2680,7 +2893,9 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   const settings = await prisma.cadParsingSettings.findUnique({
     where: { tenantId },
   });
-  if (!settings || !settings.enableIncidentCreation) return;
+  const allowCreate = Boolean(settings?.enableIncidentCreation);
+  const allowUpdate = Boolean(settings?.enableIncidentUpdate);
+  if (!settings || (!allowCreate && !allowUpdate)) return;
 
   const plain = getDispatchPlainTextFromRawBody(rawBody);
   if (!plain) return;
@@ -2690,6 +2905,9 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   const sectionSeparator = separatorFromSettings(settings);
   const reset = resetFromSettings(settings);
   const apparatusNames = await departmentApparatusNames(tenantId);
+  const apparatusRecords = await departmentApparatusRecords(tenantId);
+  const timeMap = timeMapFromSettings(settings);
+  const access = { allowCreate, allowUpdate };
   const followUpNumber = cadFollowUpCallNumber(plain);
   if (followUpNumber) {
     await cadIngestApplyFollowUpIncident(
@@ -2699,6 +2917,9 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
       incidentNumberFormat,
       reset,
       apparatusNames,
+      access,
+      timeMap,
+      apparatusRecords,
     );
     return;
   }
@@ -2749,7 +2970,7 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   if (updatedDispatchCode) updateFields.mapReference = updatedDispatchCode;
   if (trimValue(mapped.dispatchInfo)) updateFields.dispatchInfo = mapped.dispatchInfo;
   if (trimValue(mapped.receivedAt)) updateFields.receivedAt = mapped.receivedAt;
-  await saveMatchedCadIncident(tenantId, mergeKey, reset, incidentNumberFormat, updateFields, {
+  const incidentId = await saveMatchedCadIncident(tenantId, mergeKey, reset, incidentNumberFormat, updateFields, {
     incidentType: trimValue(mapped.incidentType) || "",
     priority: trimValue(mapped.priority) || "",
     address: trimValue(mapped.address) || "",
@@ -2761,7 +2982,8 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
     mapReference: trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference) || null,
     receivedAt: trimValue(mapped.receivedAt) || "",
     dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",
-  });
+  }, access);
+  await applyCadTimes(tenantId, incidentId, plain, timeMap, apparatusRecords);
 }
 
 // ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
@@ -2939,6 +3161,108 @@ app.post("/api/cad/incident-number-chart/apply", async (request, response) => {
   }
 });
 
+app.post("/api/cad/incident-number-chart/import", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(401).json({ ok: false, message: "Tenant required." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const rows = Array.isArray(body.rows) ? body.rows : [];
+    let created = 0;
+    let updated = 0;
+    let removed = 0;
+    let skipped = 0;
+
+    const activeDraftFor = async (incident) => {
+      const keys = [incident.id];
+      const currentNumber = trimValue(incident.incidentNumber);
+      if (currentNumber && currentNumber !== incident.id) keys.push(currentNumber);
+      const drafts = await prisma.nerisDraft.findMany({
+        where: { tenantId, callNumber: { in: keys } },
+      });
+      return drafts.find((row) => !isReportRemoved(row.payload)) ?? null;
+    };
+
+    const writeDraftNumber = async (incident, active, incidentNumber) => {
+      const payload =
+        active?.payload && typeof active.payload === "object" && !Array.isArray(active.payload)
+          ? { ...active.payload }
+          : { reportStatus: "Draft" };
+      const formValues =
+        payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+          ? { ...payload.formValues }
+          : {};
+      formValues.incident_internal_id = incidentNumber;
+      payload.formValues = formValues;
+      payload.reportStatus = trimValue(payload.reportStatus) || "Draft";
+      if (active) {
+        await prisma.nerisDraft.update({ where: { id: active.id }, data: { payload } });
+        return;
+      }
+      await prisma.nerisDraft.create({
+        data: { tenantId, callNumber: incident.id, payload },
+      });
+    };
+
+    for (const item of rows) {
+      const dispatchNumber = trimValue(item?.dispatchNumber);
+      const incidentNumber = trimValue(item?.incidentNumber);
+      const shouldDelete = Boolean(item?.deleted);
+      if (!dispatchNumber) continue;
+      const incident = await prisma.incident.findFirst({
+        where: { tenantId, dispatchNumber, deletedAt: null },
+      });
+      const active = incident ? await activeDraftFor(incident) : null;
+      const locked = Boolean(active && reportStatusOf(active.payload) !== "Draft");
+      if (shouldDelete) {
+        if (!incident || locked) {
+          if (incident) skipped += 1;
+          continue;
+        }
+        await prisma.incident.update({
+          where: { id: incident.id },
+          data: { deletedAt: new Date() },
+        });
+        removed += 1;
+        continue;
+      }
+      if (!incidentNumber) continue;
+      if (!incident) {
+        const createdIncident = await prisma.incident.create({
+          data: {
+            tenantId,
+            currentState: "Draft",
+            dispatchNumber,
+            incidentNumber,
+            dispatchInfo: "Imported incident number chart",
+          },
+        });
+        await writeDraftNumber(createdIncident, null, incidentNumber);
+        created += 1;
+        continue;
+      }
+      if (locked) {
+        skipped += 1;
+        continue;
+      }
+      await prisma.incident.update({
+        where: { id: incident.id },
+        data: { incidentNumber },
+      });
+      await writeDraftNumber(incident, active, incidentNumber);
+      updated += 1;
+    }
+    response.json({ ok: true, data: { created, updated, removed, skipped } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not import the incident number chart."),
+    });
+  }
+});
+
 const CAD_ALLOWLIST_PATTERN_TYPES = new Set(["domain_suffix", "exact_email", "regex"]);
 const CAD_ALLOWLIST_MAX_ENTRIES = 200;
 const CAD_ALLOWLIST_PATTERN_MAX_LEN = 500;
@@ -2946,6 +3270,7 @@ const CAD_ALLOWLIST_PATTERN_MAX_LEN = 500;
 function defaultCadParsingConfigApi() {
   return {
     enableIncidentCreation: false,
+    enableIncidentUpdate: false,
     messageRules: [],
     incidentRules: [],
     incidentFieldMap: {},
@@ -2960,6 +3285,7 @@ function cadParsingRowToApi(row) {
   const ext = row.incidentNumberExtractJson;
   return {
     enableIncidentCreation: Boolean(row.enableIncidentCreation),
+    enableIncidentUpdate: Boolean(row.enableIncidentUpdate),
     messageRules: Array.isArray(msg) ? msg : [],
     incidentRules: Array.isArray(inc) ? inc : [],
     incidentFieldMap: map && typeof map === "object" && !Array.isArray(map) ? map : {},
@@ -3010,6 +3336,10 @@ app.patch("/api/cad/parsing-config", async (request, response) => {
     let enableIncidentCreation = base.enableIncidentCreation;
     if (typeof body.enableIncidentCreation === "boolean") {
       enableIncidentCreation = body.enableIncidentCreation;
+    }
+    let enableIncidentUpdate = base.enableIncidentUpdate;
+    if (typeof body.enableIncidentUpdate === "boolean") {
+      enableIncidentUpdate = body.enableIncidentUpdate;
     }
 
     let messageRules = base.messageRules;
@@ -3066,6 +3396,7 @@ app.patch("/api/cad/parsing-config", async (request, response) => {
       create: {
         tenantId,
         enableIncidentCreation,
+        enableIncidentUpdate,
         messageRulesJson: messageRules,
         incidentRulesJson: incidentRules,
         incidentFieldMapJson: incidentFieldMap,
@@ -3073,6 +3404,7 @@ app.patch("/api/cad/parsing-config", async (request, response) => {
       },
       update: {
         enableIncidentCreation,
+        enableIncidentUpdate,
         messageRulesJson: messageRules,
         incidentRulesJson: incidentRules,
         incidentFieldMapJson: incidentFieldMap,
@@ -3084,6 +3416,7 @@ app.patch("/api/cad/parsing-config", async (request, response) => {
       ok: true,
       data: {
         enableIncidentCreation,
+        enableIncidentUpdate,
         messageRules,
         incidentRules,
         incidentFieldMap,

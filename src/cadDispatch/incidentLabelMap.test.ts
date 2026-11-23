@@ -4,6 +4,9 @@ import {
   assignIncidentNumberChart,
   assignSectionToField,
   buildIncidentLabelConfig,
+  cadLabeledDateTime,
+  cadUnitTimes,
+  DEFAULT_CAD_TIME_MAP,
   chicagoWallTimeToUtc,
   currentFiscalPeriod,
   emptyIncidentLabels,
@@ -17,6 +20,7 @@ import {
   splitDispatchParts,
   emailExcludedBySetup,
   unitsMatchingApparatus,
+  timeMapFromExtract,
 } from "./incidentLabelMap.ts";
 
 const RESET = { month: 11, day: 1, time: "00:00" };
@@ -195,6 +199,25 @@ describe("incidentLabelMap", () => {
     const built = buildIncidentLabelConfig(choices);
     assert.equal(built.fieldMap.dispatchNumber, "dispatchNumber");
     assert.equal(built.fieldMap.incidentInformation, "dispatchInfo");
+  });
+
+  it("reads call and unit times from the email labels", () => {
+    const email =
+      "Start Date/Time: 11/06/26 17:29, Units: 1801, Unit response times:1801 - Dispatch 11/06/26 17:30:11, 1801 - On Scene 11/06/26 17:40:00, 1801 - InQuarters 11/06/26 18:05:02";
+    assert.equal(cadLabeledDateTime(email, "Start Date/Time"), "2026-11-06T17:29:00");
+    assert.equal(cadLabeledDateTime(email, ""), "");
+    const times = cadUnitTimes(email);
+    assert.equal(times[0]?.unit, "1801");
+    assert.equal(times[0]?.label, "Dispatch");
+    assert.equal(times[0]?.at, "2026-11-06T17:30:11");
+    assert.equal(times[1]?.label, "On Scene");
+    assert.equal(times[2]?.at, "2026-11-06T18:05:02");
+    const built = buildIncidentLabelConfig(emptyIncidentLabels(), ";", "{yy}-{seq}", RESET, {
+      timeMap: { ...DEFAULT_CAD_TIME_MAP, callClosed: "Clear" },
+    });
+    assert.equal(built.incidentNumberExtract.timeMap.callClosed, "Clear");
+    assert.equal(timeMapFromExtract(built.incidentNumberExtract).unitOnScene, "On Scene");
+    assert.equal(timeMapFromExtract({}).callCreated, "Start Date/Time");
   });
 
   it("reads the part that contains highlighted text", () => {

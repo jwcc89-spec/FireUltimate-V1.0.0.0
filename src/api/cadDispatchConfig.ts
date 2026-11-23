@@ -7,6 +7,7 @@ import type { CadRule } from "../cadDispatch/ruleEngine.ts";
 
 export interface CadParsingConfig {
   enableIncidentCreation: boolean;
+  enableIncidentUpdate?: boolean;
   messageRules: CadRule[];
   incidentRules: CadRule[];
   incidentFieldMap: Record<string, unknown>;

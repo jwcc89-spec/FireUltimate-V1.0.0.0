@@ -147,6 +147,31 @@ export async function applyIncidentNumberChart(
   return { updated: json.data.updated ?? 0, skipped: json.data.skipped ?? 0 };
 }
 
+export async function importIncidentNumberChart(
+  rows: unknown[],
+): Promise<{ created: number; updated: number; removed: number; skipped: number }> {
+  const res = await fetch("/api/cad/incident-number-chart/import", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ version: 1, rows }),
+  });
+  const json = (await res.json()) as {
+    ok?: boolean;
+    data?: { created?: number; updated?: number; removed?: number; skipped?: number };
+    message?: string;
+  };
+  if (!res.ok || !json.ok || !json.data) {
+    throw new Error(json.message ?? `HTTP ${res.status}`);
+  }
+  return {
+    created: json.data.created ?? 0,
+    updated: json.data.updated ?? 0,
+    removed: json.data.removed ?? 0,
+    skipped: json.data.skipped ?? 0,
+  };
+}
+
 export async function deleteIncident(
   id: string,
   options?: { deletedBy?: string; deletedReason?: string }

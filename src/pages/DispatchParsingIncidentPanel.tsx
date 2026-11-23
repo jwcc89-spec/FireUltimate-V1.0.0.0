@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
 import {
   getCadParsingConfig,
   patchCadParsingConfig,
 } from "../api/cadDispatchConfig.ts";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails.ts";
-import { applyIncidentNumberChart, deleteIncident, getIncidentList } from "../api/incidents.ts";
+import { applyIncidentNumberChart, deleteIncident, getIncidentList, importIncidentNumberChart } from "../api/incidents.ts";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
 import {
   INCIDENT_LABEL_FIELDS,
@@ -16,6 +16,7 @@ import {
   emailExcludedBySetup,
   buildIncidentLabelConfig,
   emptyIncidentLabels,
+  DEFAULT_CAD_TIME_MAP,
   DEFAULT_INCIDENT_NUMBER_FORMAT,
   DEFAULT_RESET_DAY,
   DEFAULT_RESET_MONTH,
@@ -33,6 +34,8 @@ import {
   resetFromExtract,
   separatorFromExtract,
   splitDispatchParts,
+  timeMapFromExtract,
+  type CadTimeMap,
 } from "../cadDispatch/incidentLabelMap.ts";
 import { parseCadRulesJson } from "../cadDispatch/ruleEngine.ts";
 
@@ -49,7 +52,7 @@ async function loadStoredCadEmails(): Promise<CadEmailIngestRow[]> {
   return all;
 }
 
-type SaveSection = "setup" | "exclude" | "fields";
+type SaveSection = "setup" | "exclude" | "times" | "automation" | "fields";
 
 function CollapsibleSetupSection({
   title,
@@ -96,6 +99,8 @@ export function DispatchParsingIncidentPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [enableIncidentCreation, setEnableIncidentCreation] = useState(false);
+  const [enableIncidentUpdate, setEnableIncidentUpdate] = useState(false);
+  const [timeMap, setTimeMap] = useState<CadTimeMap>({ ...DEFAULT_CAD_TIME_MAP });
   const [choices, setChoices] = useState(emptyIncidentLabels);
   const [separator, setSeparator] = useState(";");
   const [incidentNumberFormat, setIncidentNumberFormat] = useState(DEFAULT_INCIDENT_NUMBER_FORMAT);
@@ -121,6 +126,7 @@ export function DispatchParsingIncidentPanel() {
   const [chartBusy, setChartBusy] = useState(false);
   const [chartMessage, setChartMessage] = useState<string | null>(null);
   const [chartReload, setChartReload] = useState(0);
+  const chartFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,6 +136,10 @@ export function DispatchParsingIncidentPanel() {
       .then((cfg) => {
         if (cancelled) return;
         setEnableIncidentCreation(cfg.enableIncidentCreation);
+        setEnableIncidentUpdate(
+          typeof cfg.enableIncidentUpdate === "boolean" ? cfg.enableIncidentUpdate : cfg.enableIncidentCreation,
+        );
+        setTimeMap(timeMapFromExtract(cfg.incidentNumberExtract));
         let parsedRules: unknown = cfg.incidentRules ?? [];
         try {
           parsedRules = parseCadRulesJson(JSON.parse(JSON.stringify(cfg.incidentRules ?? [])));
@@ -399,6 +409,48 @@ export function DispatchParsingIncidentPanel() {
     }
   }, [chartRows]);
 
+  const handleExportChart = useCallback(() => {
+    const payload = {
+      version: 1,
+      rows: chartRows.map((row) => ({
+        dispatchNumber: row.dispatchNumber,
+        cfs: row.cfs,
+        incidentNumber: row.deleted ? "" : row.proposedIncidentNumber,
+        deleted: row.deleted,
+      })),
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "incident-number-chart.json";
+    link.click();
+    URL.revokeObjectURL(url);
+  }, [chartRows]);
+
+  const handleImportChart = useCallback(async (file: File) => {
+    setChartBusy(true);
+    setChartError(null);
+    setChartMessage(null);
+    try {
+      const parsed = JSON.parse(await file.text()) as { rows?: unknown };
+      if (!Array.isArray(parsed.rows)) {
+        throw new Error("That file is not an incident number chart.");
+      }
+      const result = await importIncidentNumberChart(parsed.rows);
+      setChartMessage(
+        `Imported ${result.created} new call${result.created === 1 ? "" : "s"}, updated ${result.updated}, removed ${
+          result.removed
+        }. ${result.skipped} report${result.skipped === 1 ? "" : "s"} left unchanged because they are In Review or Exported.`,
+      );
+      setChartReload((current) => current + 1);
+    } catch (e) {
+      setChartError(e instanceof Error ? e.message : "Could not import that chart.");
+    } finally {
+      setChartBusy(false);
+    }
+  }, []);
+
   const handleSave = useCallback(async (section: SaveSection) => {
     setSaveError(null);
     setSaveOkAt(null);
@@ -415,12 +467,14 @@ export function DispatchParsingIncidentPanel() {
       {
         excludeContains: linesToPhrases(excludeText),
         excludeExceptions: linesToPhrases(exceptionText),
+        timeMap,
       },
     );
     setSaveBusy(true);
     try {
       await patchCadParsingConfig({
         enableIncidentCreation,
+        enableIncidentUpdate,
         incidentRules: built.rules,
         incidentFieldMap: built.fieldMap,
         incidentNumberExtract: built.incidentNumberExtract,
@@ -434,6 +488,8 @@ export function DispatchParsingIncidentPanel() {
     }
   }, [
     enableIncidentCreation,
+    enableIncidentUpdate,
+    timeMap,
     choices,
     separator,
     incidentNumberFormat,
@@ -601,6 +657,55 @@ export function DispatchParsingIncidentPanel() {
           ) : null}
         </CollapsibleSetupSection>
 
+        <CollapsibleSetupSection title="Call times">
+          <p className="panel-description">
+            Type the label exactly as it appears before the date in the email. Leave a box blank to skip that time.
+            Blank times on a Draft report are filled. Times someone already entered stay as they are. Only units in
+            Department Apparatus are added.
+          </p>
+          <div className="cad-exclude-field-row">
+            {(
+              [
+                ["callCreated", "Call created"],
+                ["callClosed", "Call closed"],
+                ["unitDispatch", "Unit dispatch"],
+                ["unitEnroute", "Unit en route"],
+                ["unitOnScene", "Unit on scene"],
+                ["unitClear", "Unit clear"],
+              ] as const
+            ).map(([key, label]) => (
+              <label className="cad-allowlist-field" key={key}>
+                {label}
+                <input
+                  className="cad-dispatch-merge-key-input"
+                  type="text"
+                  value={timeMap[key]}
+                  aria-label={label}
+                  onChange={(event) =>
+                    setTimeMap((current) => ({ ...current, [key]: event.target.value }))
+                  }
+                />
+              </label>
+            ))}
+          </div>
+          <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleSave("times")}
+              disabled={saveBusy}
+            >
+              {saveBusy && savedSection === "times" ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {savedSection === "times" && saveError ? <p className="field-error">{saveError}</p> : null}
+          {savedSection === "times" && saveOkAt !== null && !saveError ? (
+            <p className="cad-dispatch-save-ok" role="status">
+              Saved. The next dispatch email fills blank call times from these labels.
+            </p>
+          ) : null}
+        </CollapsibleSetupSection>
+
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
             <h2>Automatic incident creation</h2>
@@ -611,8 +716,32 @@ export function DispatchParsingIncidentPanel() {
               checked={enableIncidentCreation}
               onChange={(e) => setEnableIncidentCreation(e.target.checked)}
             />
-            <span>Create or update a draft incident when a dispatch email arrives</span>
+            <span>Create a draft incident when a new dispatch email arrives</span>
           </label>
+          <label className="cad-dispatch-checkbox-label">
+            <input
+              type="checkbox"
+              checked={enableIncidentUpdate}
+              onChange={(e) => setEnableIncidentUpdate(e.target.checked)}
+            />
+            <span>Update the matching draft incident when a follow-up email arrives</span>
+          </label>
+          <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleSave("automation")}
+              disabled={saveBusy}
+            >
+              {saveBusy && savedSection === "automation" ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {savedSection === "automation" && saveError ? <p className="field-error">{saveError}</p> : null}
+          {savedSection === "automation" && saveOkAt !== null && !saveError ? (
+            <p className="cad-dispatch-save-ok" role="status">
+              Saved. The next dispatch email uses these create and update switches.
+            </p>
+          ) : null}
         </article>
 
         {customRulesPresent ? (
@@ -757,9 +886,11 @@ export function DispatchParsingIncidentPanel() {
 
         <CollapsibleSetupSection title="Incident number table">
           <p className="panel-description">
-            Calls are sorted by dispatch number. Deleted calls stay on the list with a blank incident number. Emails
-            that match an exclude phrase are left out. Force update writes these incident numbers onto Draft incidents
-            and Draft NERIS reports. In Review and Exported reports stay as they are.
+            Calls are sorted by dispatch number. A new email numbers every Draft call in this order. Deleted calls stay
+            on the list with a blank incident number. Emails that match an exclude phrase are left out. Force update
+            writes these incident numbers onto Draft incidents and Draft NERIS reports. In Review and Exported reports
+            stay as they are. Export this reviewed table, then import that file on production. Mail stays pointed at
+            staging.
           </p>
           {chartError ? <p className="field-error">{chartError}</p> : null}
           {chartRows.length === 0 ? (
@@ -809,6 +940,33 @@ export function DispatchParsingIncidentPanel() {
             </table>
           )}
           <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={chartBusy || chartRows.length === 0}
+              onClick={handleExportChart}
+            >
+              Export
+            </button>
+            <button
+              type="button"
+              className="secondary-button"
+              disabled={chartBusy}
+              onClick={() => chartFileRef.current?.click()}
+            >
+              Import
+            </button>
+            <input
+              ref={chartFileRef}
+              type="file"
+              accept="application/json,.json"
+              hidden
+              onChange={(event) => {
+                const file = event.target.files?.[0];
+                event.target.value = "";
+                if (file) void handleImportChart(file);
+              }}
+            />
             <button
               type="button"
               className="primary-button"
