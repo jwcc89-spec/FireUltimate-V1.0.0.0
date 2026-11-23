@@ -2364,20 +2364,100 @@ function cadLabeledValue(plain, label) {
   return match ? match[1].trim() : "";
 }
 
-function departmentCfsDigits(plain) {
-  const raw = cadLabeledValue(plain, "Department CFS");
-  const match = String(raw).match(/(\d+)\s*$/);
-  return match ? match[1] : "";
+const CAD_NUMBER_TIME_ZONE = "America/Chicago";
+
+function parseResetClock(value) {
+  const match = String(value ?? "").trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
 }
 
-function formatCadIncidentNumber(cfs, pattern) {
-  const digits = String(cfs ?? "").trim();
-  if (!digits) return "";
+function resetFromSettings(settings) {
+  const raw = settings?.incidentNumberExtractJson;
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const month = Number(source.resetMonth);
+  const day = Number(source.resetDay);
+  const time = typeof source.resetTime === "string" ? source.resetTime : "00:00";
+  return {
+    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : 11,
+    day: Number.isInteger(day) && day >= 1 && day <= 31 ? day : 1,
+    time: parseResetClock(time) ? time : "00:00",
+  };
+}
+
+function chicagoClockParts(date) {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: CAD_NUMBER_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
+function chicagoWallTimeToUtc(year, month, day, hour, minute) {
+  let utc = Date.UTC(year, month - 1, day, hour, minute);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const seen = chicagoClockParts(new Date(utc));
+    const seenUtc = Date.UTC(seen.year, seen.month - 1, seen.day, seen.hour, seen.minute);
+    const desired = Date.UTC(year, month - 1, day, hour, minute);
+    utc += desired - seenUtc;
+  }
+  return new Date(utc);
+}
+
+function currentFiscalPeriod(now, reset) {
+  const parsed = parseResetClock(reset.time) ?? { hour: 0, minute: 0 };
+  const nowParts = chicagoClockParts(now);
+  let start = chicagoWallTimeToUtc(nowParts.year, reset.month, reset.day, parsed.hour, parsed.minute);
+  if (now.getTime() < start.getTime()) {
+    start = chicagoWallTimeToUtc(nowParts.year - 1, reset.month, reset.day, parsed.hour, parsed.minute);
+  }
+  const startParts = chicagoClockParts(start);
+  const nextStart = chicagoWallTimeToUtc(startParts.year + 1, reset.month, reset.day, parsed.hour, parsed.minute);
+  return {
+    yy: String(chicagoClockParts(nextStart).year).slice(-2),
+    periodStart: start,
+  };
+}
+
+function formatAssignedIncidentNumber(sequence, yy, pattern) {
+  const seq = String(Math.max(1, sequence)).padStart(3, "0");
   const template = String(pattern ?? "").trim() || "{yy}-{seq}";
-  return template
-    .replaceAll("{cfs}", digits)
-    .replaceAll("{yy}", digits.slice(0, 2))
-    .replaceAll("{seq}", digits.slice(2));
+  return template.replaceAll("{yy}", yy).replaceAll("{seq}", seq);
+}
+
+function incidentNumberNeedsAssignment(existing, cadNumber, periodStart) {
+  if (!existing) return true;
+  const current = trimValue(existing.incidentNumber);
+  if (!current || current === cadNumber) {
+    const created = existing.createdAt instanceof Date ? existing.createdAt.getTime() : NaN;
+    if (!current) return true;
+    return Number.isFinite(created) && created >= periodStart.getTime();
+  }
+  return false;
+}
+
+function incidentSequenceMatcher(yy, pattern) {
+  const template = String(pattern ?? "").trim() || "{yy}-{seq}";
+  const escaped = template.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const source = escaped
+    .replace("\\{yy\\}", String(yy).replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .replace("\\{seq\\}", "(\\d+)");
+  return new RegExp(`^${source}$`);
 }
 
 function incidentNumberFormatFromSettings(settings) {
@@ -2422,44 +2502,92 @@ async function findIncidentForCadDispatch(tenantId, cadNumber) {
  * Match the call number inside "CAD CFS:" and add the text to that incident.
  * Leave address, type, and the other new-call fields as already saved.
  */
-async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incidentNumberFormat) {
+async function nextDepartmentIncidentNumber(tx, tenantId, pattern, reset) {
+  const { yy } = currentFiscalPeriod(new Date(), reset);
+  const rows = await tx.incident.findMany({
+    where: { tenantId },
+    select: { incidentNumber: true },
+  });
+  const matcher = incidentSequenceMatcher(yy, pattern);
+  let max = 0;
+  for (const row of rows) {
+    const match = String(row.incidentNumber ?? "").match(matcher);
+    if (!match) continue;
+    const value = Number(match[1]);
+    if (Number.isInteger(value) && value > max) max = value;
+  }
+  return formatAssignedIncidentNumber(max + 1, yy, pattern);
+}
+
+async function saveMatchedCadIncident(tenantId, cadNumber, reset, pattern, updateFields, createFields) {
+  await prisma.$transaction(async (tx) => {
+    await tx.$queryRaw`SELECT id FROM "CadParsingSettings" WHERE "tenantId" = ${tenantId} FOR UPDATE`;
+    const byDispatch = await tx.incident.findFirst({
+      where: { tenantId, dispatchNumber: cadNumber, deletedAt: null },
+    });
+    const existing =
+      byDispatch ||
+      (await tx.incident.findFirst({
+        where: { tenantId, incidentNumber: cadNumber, deletedAt: null },
+      }));
+    const { periodStart } = currentFiscalPeriod(new Date(), reset);
+    const incidentNumber = incidentNumberNeedsAssignment(existing, cadNumber, periodStart)
+      ? await nextDepartmentIncidentNumber(tx, tenantId, pattern, reset)
+      : trimValue(existing.incidentNumber);
+    if (existing) {
+      await tx.incident.update({
+        where: { id: existing.id },
+        data: { ...updateFields, dispatchNumber: cadNumber, incidentNumber },
+      });
+      return;
+    }
+    await tx.incident.create({
+      data: {
+        tenantId,
+        currentState: "Draft",
+        priority: "",
+        address: "",
+        stillDistrict: "",
+        assignedUnits: "",
+        reportedBy: null,
+        callbackNumber: null,
+        dispatchNotes: null,
+        mapReference: null,
+        receivedAt: "",
+        incidentType: "",
+        dispatchInfo: "CAD email ingest",
+        ...createFields,
+        dispatchNumber: cadNumber,
+        incidentNumber,
+      },
+    });
+  });
+}
+
+async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incidentNumberFormat, reset) {
   const notes = String(plain).trim().slice(0, 12000);
   const units = cadLabeledValue(plain, "Units");
   const nature = cadLabeledValue(plain, "Nature");
-  const formatted = formatCadIncidentNumber(departmentCfsDigits(plain), incidentNumberFormat);
   const existing = await findIncidentForCadDispatch(tenantId, callNumber);
-  if (existing) {
-    const combined = [trimValue(existing.dispatchNotes), notes]
-      .filter(Boolean)
-      .join("\n\n--- CAD dispatch ---\n");
-    const updateData = {
-      dispatchNotes: combined.slice(0, 20000),
-      dispatchNumber: callNumber,
-    };
-    if (units) updateData.assignedUnits = units;
-    if (formatted) updateData.incidentNumber = formatted;
-    await prisma.incident.update({ where: { id: existing.id }, data: updateData });
-    return;
-  }
-  await prisma.incident.create({
-    data: {
-      tenantId,
-      incidentNumber: formatted || "",
-      dispatchNumber: callNumber,
+  const combined = [trimValue(existing?.dispatchNotes), notes]
+    .filter(Boolean)
+    .join("\n\n--- CAD dispatch ---\n")
+    .slice(0, 20000);
+  const updateFields = { dispatchNotes: combined };
+  if (units) updateFields.assignedUnits = units;
+  await saveMatchedCadIncident(
+    tenantId,
+    callNumber,
+    reset,
+    incidentNumberFormat,
+    updateFields,
+    {
       incidentType: nature || "",
-      priority: "",
-      address: "",
-      stillDistrict: "",
       assignedUnits: units || "",
-      reportedBy: null,
-      callbackNumber: null,
       dispatchNotes: notes,
-      mapReference: null,
-      currentState: "Draft",
-      receivedAt: "",
-      dispatchInfo: "CAD email ingest",
     },
-  });
+  );
+  return;
 }
 
 function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
@@ -2496,9 +2624,10 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
 
   const incidentNumberFormat = incidentNumberFormatFromSettings(settings);
   const sectionSeparator = separatorFromSettings(settings);
+  const reset = resetFromSettings(settings);
   const followUpNumber = cadFollowUpCallNumber(plain);
   if (followUpNumber) {
-    await cadIngestApplyFollowUpIncident(tenantId, plain, followUpNumber, incidentNumberFormat);
+    await cadIngestApplyFollowUpIncident(tenantId, plain, followUpNumber, incidentNumberFormat, reset);
     return;
   }
 
@@ -2530,57 +2659,36 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   }
 
   const mapped = buildCadMappedIncidentFields(result.slots, fieldMap, result.text);
-  const formattedIncidentNumber = formatCadIncidentNumber(
-    departmentCfsDigits(plain),
-    incidentNumberFormat,
-  );
-
   const existing = await findIncidentForCadDispatch(tenantId, mergeKey);
-
-  if (existing) {
-    const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
-    const combined = [trimValue(existing.dispatchNotes), newBlock].filter(Boolean).join("\n\n--- CAD dispatch ---\n");
-    const updateData = {
-      dispatchNotes: combined.slice(0, 20000),
-    };
-    if (trimValue(mapped.address)) updateData.address = mapped.address;
-    if (trimValue(mapped.incidentType)) updateData.incidentType = mapped.incidentType;
-    if (trimValue(mapped.priority)) updateData.priority = mapped.priority;
-    if (trimValue(mapped.stillDistrict)) updateData.stillDistrict = mapped.stillDistrict;
-    if (trimValue(mapped.assignedUnits)) updateData.assignedUnits = mapped.assignedUnits;
-    if (trimValue(mapped.reportedBy)) updateData.reportedBy = mapped.reportedBy;
-    if (trimValue(mapped.callbackNumber)) updateData.callbackNumber = mapped.callbackNumber;
-    updateData.dispatchNumber = mergeKey;
-    if (formattedIncidentNumber) updateData.incidentNumber = formattedIncidentNumber;
-    const updatedDispatchCode = trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference);
-    if (updatedDispatchCode) updateData.mapReference = updatedDispatchCode;
-    if (trimValue(mapped.dispatchInfo)) updateData.dispatchInfo = mapped.dispatchInfo;
-    if (trimValue(mapped.receivedAt)) updateData.receivedAt = mapped.receivedAt;
-    await prisma.incident.update({
-      where: { id: existing.id },
-      data: updateData,
-    });
-    return;
-  }
-
-  await prisma.incident.create({
-    data: {
-      tenantId,
-      incidentNumber: formattedIncidentNumber || "",
-      dispatchNumber: mergeKey,
-      incidentType: trimValue(mapped.incidentType) || "",
-      priority: trimValue(mapped.priority) || "",
-      address: trimValue(mapped.address) || "",
-      stillDistrict: trimValue(mapped.stillDistrict) || "",
-      assignedUnits: trimValue(mapped.assignedUnits) || "",
-      reportedBy: trimValue(mapped.reportedBy) || null,
-      callbackNumber: trimValue(mapped.callbackNumber) || null,
-      dispatchNotes: trimValue(mapped.dispatchNotes) || null,
-      mapReference: trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference) || null,
-      currentState: "Draft",
-      receivedAt: trimValue(mapped.receivedAt) || "",
-      dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",
-    },
+  const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
+  const combined = [trimValue(existing?.dispatchNotes), newBlock]
+    .filter(Boolean)
+    .join("\n\n--- CAD dispatch ---\n")
+    .slice(0, 20000);
+  const updateFields = { dispatchNotes: combined };
+  if (trimValue(mapped.address)) updateFields.address = mapped.address;
+  if (trimValue(mapped.incidentType)) updateFields.incidentType = mapped.incidentType;
+  if (trimValue(mapped.priority)) updateFields.priority = mapped.priority;
+  if (trimValue(mapped.stillDistrict)) updateFields.stillDistrict = mapped.stillDistrict;
+  if (trimValue(mapped.assignedUnits)) updateFields.assignedUnits = mapped.assignedUnits;
+  if (trimValue(mapped.reportedBy)) updateFields.reportedBy = mapped.reportedBy;
+  if (trimValue(mapped.callbackNumber)) updateFields.callbackNumber = mapped.callbackNumber;
+  const updatedDispatchCode = trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference);
+  if (updatedDispatchCode) updateFields.mapReference = updatedDispatchCode;
+  if (trimValue(mapped.dispatchInfo)) updateFields.dispatchInfo = mapped.dispatchInfo;
+  if (trimValue(mapped.receivedAt)) updateFields.receivedAt = mapped.receivedAt;
+  await saveMatchedCadIncident(tenantId, mergeKey, reset, incidentNumberFormat, updateFields, {
+    incidentType: trimValue(mapped.incidentType) || "",
+    priority: trimValue(mapped.priority) || "",
+    address: trimValue(mapped.address) || "",
+    stillDistrict: trimValue(mapped.stillDistrict) || "",
+    assignedUnits: trimValue(mapped.assignedUnits) || "",
+    reportedBy: trimValue(mapped.reportedBy) || null,
+    callbackNumber: trimValue(mapped.callbackNumber) || null,
+    dispatchNotes: trimValue(mapped.dispatchNotes) || null,
+    mapReference: trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference) || null,
+    receivedAt: trimValue(mapped.receivedAt) || "",
+    dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",
   });
 }
 

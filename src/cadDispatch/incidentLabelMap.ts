@@ -10,7 +10,16 @@ import { parseCadRulesJson, runCadRulePipeline, type CadRule } from "./ruleEngin
 
 export const DEFAULT_SECTION_SEPARATOR = ";";
 export const DEFAULT_INCIDENT_NUMBER_FORMAT = "{yy}-{seq}";
-export const WAITING_FOR_DEPARTMENT_CFS = "Waiting for Department CFS";
+export const DEFAULT_RESET_MONTH = 11;
+export const DEFAULT_RESET_DAY = 1;
+export const DEFAULT_RESET_TIME = "00:00";
+const INCIDENT_NUMBER_TIME_ZONE = "America/Chicago";
+
+export type CadNumberReset = {
+  month: number;
+  day: number;
+  time: string;
+};
 
 /** One visible character. A blank value means the default semicolon. */
 export function normalizeSectionSeparator(value: string): string {
@@ -68,6 +77,90 @@ export function incidentNumberFormatFromExtract(raw: unknown): string {
     if (typeof value === "string" && value.trim()) return value.trim();
   }
   return DEFAULT_INCIDENT_NUMBER_FORMAT;
+}
+
+export function parseResetTime(value: string): { hour: number; minute: number } | null {
+  const match = value.trim().match(/^(\d{2}):(\d{2})$/);
+  if (!match) return null;
+  const hour = Number(match[1]);
+  const minute = Number(match[2]);
+  if (hour > 23 || minute > 59) return null;
+  return { hour, minute };
+}
+
+export function resetFromExtract(raw: unknown): CadNumberReset {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? (raw as Record<string, unknown>) : {};
+  const month = Number(source.resetMonth);
+  const day = Number(source.resetDay);
+  const time = typeof source.resetTime === "string" ? source.resetTime : DEFAULT_RESET_TIME;
+  return {
+    month: Number.isInteger(month) && month >= 1 && month <= 12 ? month : DEFAULT_RESET_MONTH,
+    day: Number.isInteger(day) && day >= 1 && day <= 31 ? day : DEFAULT_RESET_DAY,
+    time: parseResetTime(time) ? time : DEFAULT_RESET_TIME,
+  };
+}
+
+function chicagoParts(date: Date): { year: number; month: number; day: number; hour: number; minute: number } {
+  const fmt = new Intl.DateTimeFormat("en-US", {
+    timeZone: INCIDENT_NUMBER_TIME_ZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(date).map((part) => [part.type, part.value]));
+  return {
+    year: Number(parts.year),
+    month: Number(parts.month),
+    day: Number(parts.day),
+    hour: Number(parts.hour),
+    minute: Number(parts.minute),
+  };
+}
+
+/** UTC instant for a clock time in America/Chicago. */
+export function chicagoWallTimeToUtc(year: number, month: number, day: number, hour: number, minute: number): Date {
+  let utc = Date.UTC(year, month - 1, day, hour, minute);
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    const seen = chicagoParts(new Date(utc));
+    const seenUtc = Date.UTC(seen.year, seen.month - 1, seen.day, seen.hour, seen.minute);
+    const desired = Date.UTC(year, month - 1, day, hour, minute);
+    utc += desired - seenUtc;
+  }
+  return new Date(utc);
+}
+
+/** The two-digit year is the calendar year of the next reset. November 1, 2026 starts 27. */
+export function currentFiscalPeriod(now: Date, reset: CadNumberReset): { yy: string; periodStart: Date } {
+  const parsed = parseResetTime(reset.time) ?? { hour: 0, minute: 0 };
+  const nowParts = chicagoParts(now);
+  let start = chicagoWallTimeToUtc(nowParts.year, reset.month, reset.day, parsed.hour, parsed.minute);
+  if (now.getTime() < start.getTime()) {
+    start = chicagoWallTimeToUtc(nowParts.year - 1, reset.month, reset.day, parsed.hour, parsed.minute);
+  }
+  const startParts = chicagoParts(start);
+  const nextStart = chicagoWallTimeToUtc(startParts.year + 1, reset.month, reset.day, parsed.hour, parsed.minute);
+  const yy = String(chicagoParts(nextStart).year).slice(-2);
+  return { yy, periodStart: start };
+}
+
+export function formatAssignedIncidentNumber(sequence: number, yy: string, pattern: string): string {
+  const seq = String(Math.max(1, sequence)).padStart(3, "0");
+  const template = pattern.trim() || DEFAULT_INCIDENT_NUMBER_FORMAT;
+  return template.replaceAll("{yy}", yy).replaceAll("{seq}", seq);
+}
+
+export function incidentNumberSeriesExample(
+  now: Date,
+  reset: CadNumberReset,
+  pattern = DEFAULT_INCIDENT_NUMBER_FORMAT,
+): string {
+  const { yy } = currentFiscalPeriod(now, reset);
+  const first = formatAssignedIncidentNumber(1, yy, pattern);
+  const second = formatAssignedIncidentNumber(2, yy, pattern);
+  return `${first}, then ${second}`;
 }
 
 export function separatorFromExtract(raw: unknown): string {
@@ -284,10 +377,21 @@ export function buildIncidentLabelConfig(
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
   separator = DEFAULT_SECTION_SEPARATOR,
   incidentNumberFormat = DEFAULT_INCIDENT_NUMBER_FORMAT,
+  reset: CadNumberReset = {
+    month: DEFAULT_RESET_MONTH,
+    day: DEFAULT_RESET_DAY,
+    time: DEFAULT_RESET_TIME,
+  },
 ): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
-  incidentNumberExtract: { separator: string; incidentNumberFormat: string };
+  incidentNumberExtract: {
+    separator: string;
+    incidentNumberFormat: string;
+    resetMonth: number;
+    resetDay: number;
+    resetTime: string;
+  };
 } {
   const active = normalizeSectionSeparator(separator);
   const rules: CadRule[] = [{ type: "trim" }, { type: "normalize_newlines" }];
@@ -295,6 +399,9 @@ export function buildIncidentLabelConfig(
   const incidentNumberExtract = {
     separator: active,
     incidentNumberFormat: incidentNumberFormat.trim() || DEFAULT_INCIDENT_NUMBER_FORMAT,
+    resetMonth: reset.month,
+    resetDay: reset.day,
+    resetTime: parseResetTime(reset.time) ? reset.time : DEFAULT_RESET_TIME,
   };
 
   for (const field of INCIDENT_LABEL_FIELDS) {
@@ -382,10 +489,15 @@ export function previewIncidentFromLabels(
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
   separator = DEFAULT_SECTION_SEPARATOR,
   incidentNumberFormat = DEFAULT_INCIDENT_NUMBER_FORMAT,
+  reset: CadNumberReset = {
+    month: DEFAULT_RESET_MONTH,
+    day: DEFAULT_RESET_DAY,
+    time: DEFAULT_RESET_TIME,
+  },
+  now = new Date(),
 ): { ok: true; followUp: boolean; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
   const dispatchNumber = cadDispatchNumber(plainText, separator);
-  const cfs = departmentCfsDigits(plainText);
-  const incidentNumber = formatIncidentNumber(cfs, incidentNumberFormat) || WAITING_FOR_DEPARTMENT_CFS;
+  const incidentNumber = incidentNumberSeriesExample(now, reset, incidentNumberFormat);
   const followUpNumber = followUpCallNumber(plainText);
   if (followUpNumber) {
     const units = labeledCadValue(plainText, "Units");
@@ -395,7 +507,6 @@ export function previewIncidentFromLabels(
       rows: [
         { id: "incidentNumber", label: "Incident number", value: incidentNumber },
         { id: "dispatchNumber", label: "Dispatch number", value: dispatchNumber },
-        { id: "cfsNumber", label: "CFS number", value: cfs },
         { id: "incidentType", label: "Incident type", value: "Unchanged" },
         { id: "initialDispatchCode", label: "Initial dispatch code", value: "Unchanged" },
         { id: "priority", label: "Priority", value: "Unchanged" },
@@ -409,7 +520,7 @@ export function previewIncidentFromLabels(
       ],
     };
   }
-  const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat);
+  const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat, reset);
   const result = runCadRulePipeline(plainText, built.rules);
   if (!result.ok) return { ok: false, error: result.error };
   const mapped = buildMappedIncidentFieldsPreview(result.slots, built.fieldMap, result.text);
@@ -417,7 +528,6 @@ export function previewIncidentFromLabels(
   const rows: IncidentPreviewRow[] = [
     { id: "incidentNumber", label: "Incident number", value: incidentNumber },
     { id: "dispatchNumber", label: "Dispatch number", value: dispatchNumber },
-    { id: "cfsNumber", label: "CFS number", value: cfs },
     { id: "incidentType", label: "Incident type", value: mapped.incidentType || "" },
     { id: "initialDispatchCode", label: "Initial dispatch code", value: initialDispatchCode },
     { id: "priority", label: "Priority", value: mapped.priority || "" },

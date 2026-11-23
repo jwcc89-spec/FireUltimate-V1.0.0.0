@@ -3,16 +3,21 @@ import { describe, it } from "node:test";
 import {
   assignSectionToField,
   buildIncidentLabelConfig,
+  chicagoWallTimeToUtc,
+  currentFiscalPeriod,
   emptyIncidentLabels,
-  departmentCfsDigits,
   fieldIdForSection,
-  formatIncidentNumber,
   followUpCallNumber,
+  formatAssignedIncidentNumber,
+  incidentNumberSeriesExample,
   partFromSelection,
   labelsFromSavedRules,
   previewIncidentFromLabels,
   splitDispatchParts,
 } from "./incidentLabelMap.ts";
+
+const RESET = { month: 11, day: 1, time: "00:00" };
+const AFTER_RESET = chicagoWallTimeToUtc(2026, 11, 17, 12, 0);
 
 const SAMPLE =
   "26018614; Fire Alarm - Commercial Structure; 540 E UNITED STATES HIGHWAY 24, GILMAN, IL 60938; INCOBRASA - GENERAL FIRE ALARM ZONE 993; Common name: ; CAD Notes: None; New Message:";
@@ -38,11 +43,11 @@ describe("incidentLabelMap", () => {
     choices.address = { index: 2, afterLabel: false };
     choices.initialDispatchCode = { index: 3, afterLabel: false };
     choices.dispatchNotes = { index: 5, afterLabel: true };
-    const preview = previewIncidentFromLabels(SAMPLE, choices);
+    const preview = previewIncidentFromLabels(SAMPLE, choices, ";", "{yy}-{seq}", RESET, AFTER_RESET);
     assert.equal(preview.ok, true);
     if (!preview.ok) return;
     const value = (id: string) => preview.rows.find((row) => row.id === id)?.value;
-    assert.equal(value("incidentNumber"), "Waiting for Department CFS");
+    assert.equal(value("incidentNumber"), "27-001, then 27-002");
     assert.equal(value("dispatchNumber"), "26018614");
     assert.equal(value("incidentType"), "Fire Alarm - Commercial Structure");
     assert.equal(value("address"), "540 E UNITED STATES HIGHWAY 24, GILMAN, IL 60938");
@@ -94,25 +99,37 @@ describe("incidentLabelMap", () => {
     const choices = emptyIncidentLabels();
     choices.incidentNumber = { index: 0, afterLabel: false };
     choices.address = { index: 2, afterLabel: false };
-    const followPreview = previewIncidentFromLabels(followUp, choices);
+    const followPreview = previewIncidentFromLabels(followUp, choices, ";", "{yy}-{seq}", RESET, AFTER_RESET);
     assert.equal(followPreview.ok, true);
     if (!followPreview.ok) return;
     assert.equal(followPreview.followUp, true);
-    assert.equal(departmentCfsDigits(followUp), "2600089");
-    assert.equal(formatIncidentNumber("2600089", "{yy}-{seq}"), "26-00089");
-    assert.equal(formatIncidentNumber("2600089", "{cfs}"), "2600089");
-    assert.equal(followPreview.rows.find((row) => row.id === "incidentNumber")?.value, "26-00089");
+    assert.equal(followPreview.rows.find((row) => row.id === "incidentNumber")?.value, "27-001, then 27-002");
     assert.equal(followPreview.rows.find((row) => row.id === "dispatchNumber")?.value, "26018313");
-    assert.equal(followPreview.rows.find((row) => row.id === "cfsNumber")?.value, "2600089");
     assert.equal(followPreview.rows.find((row) => row.id === "address")?.value, "Unchanged");
     assert.equal(followPreview.rows.find((row) => row.id === "assignedUnits")?.value, "1801");
-    const freshPreview = previewIncidentFromLabels(fresh, choices);
+    const freshPreview = previewIncidentFromLabels(fresh, choices, ";", "{yy}-{seq}", RESET, AFTER_RESET);
     assert.equal(freshPreview.ok, true);
     if (!freshPreview.ok) return;
     assert.equal(freshPreview.followUp, false);
     assert.equal(freshPreview.rows.find((row) => row.id === "dispatchNumber")?.value, "26018313");
-    assert.equal(freshPreview.rows.find((row) => row.id === "incidentNumber")?.value, "Waiting for Department CFS");
+    assert.equal(freshPreview.rows.find((row) => row.id === "incidentNumber")?.value, "27-001, then 27-002");
     assert.equal(freshPreview.rows.find((row) => row.id === "address")?.value, "2000 NORTH / 1600 EAST, CRESCENT CITY");
+  });
+
+  it("starts 27-001 on the first call after November 1", () => {
+    assert.equal(currentFiscalPeriod(AFTER_RESET, RESET).yy, "27");
+    assert.equal(incidentNumberSeriesExample(AFTER_RESET, RESET), "27-001, then 27-002");
+    assert.equal(formatAssignedIncidentNumber(1, "27", "{yy}-{seq}"), "27-001");
+    assert.equal(currentFiscalPeriod(chicagoWallTimeToUtc(2026, 10, 31, 12, 0), RESET).yy, "26");
+    assert.equal(currentFiscalPeriod(chicagoWallTimeToUtc(2026, 11, 1, 0, 0), RESET).yy, "27");
+    assert.equal(
+      currentFiscalPeriod(chicagoWallTimeToUtc(2026, 11, 1, 7, 0), { month: 11, day: 1, time: "08:00" }).yy,
+      "26",
+    );
+    const built = buildIncidentLabelConfig(emptyIncidentLabels(), ";", "{yy}-{seq}", RESET);
+    assert.equal(built.incidentNumberExtract.resetMonth, 11);
+    assert.equal(built.incidentNumberExtract.resetDay, 1);
+    assert.equal(built.incidentNumberExtract.resetTime, "00:00");
   });
 
   it("assigns one incident field to each section", () => {

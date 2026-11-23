@@ -11,12 +11,18 @@ import {
   buildIncidentLabelConfig,
   emptyIncidentLabels,
   DEFAULT_INCIDENT_NUMBER_FORMAT,
+  DEFAULT_RESET_DAY,
+  DEFAULT_RESET_MONTH,
+  DEFAULT_RESET_TIME,
   fieldIdForSection,
   followUpCallNumber,
   incidentNumberFormatFromExtract,
+  incidentNumberSeriesExample,
   labelsFromSavedRules,
   normalizeSectionSeparator,
+  parseResetTime,
   previewIncidentFromLabels,
+  resetFromExtract,
   separatorFromExtract,
   splitDispatchParts,
 } from "../cadDispatch/incidentLabelMap.ts";
@@ -44,6 +50,9 @@ export function DispatchParsingIncidentPanel() {
   const [choices, setChoices] = useState(emptyIncidentLabels);
   const [separator, setSeparator] = useState(";");
   const [incidentNumberFormat, setIncidentNumberFormat] = useState(DEFAULT_INCIDENT_NUMBER_FORMAT);
+  const [resetMonth, setResetMonth] = useState(DEFAULT_RESET_MONTH);
+  const [resetDay, setResetDay] = useState(DEFAULT_RESET_DAY);
+  const [resetTime, setResetTime] = useState(DEFAULT_RESET_TIME);
   const [customRulesPresent, setCustomRulesPresent] = useState(false);
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
@@ -73,6 +82,10 @@ export function DispatchParsingIncidentPanel() {
         const savedSeparator = separatorFromExtract(cfg.incidentNumberExtract);
         setSeparator(savedSeparator);
         setIncidentNumberFormat(incidentNumberFormatFromExtract(cfg.incidentNumberExtract));
+        const savedReset = resetFromExtract(cfg.incidentNumberExtract);
+        setResetMonth(savedReset.month);
+        setResetDay(savedReset.day);
+        setResetTime(savedReset.time);
         const loaded = labelsFromSavedRules(parsedRules, savedSeparator);
         const normalized = emptyIncidentLabels();
         for (const field of INCIDENT_LABEL_FIELDS) {
@@ -128,13 +141,25 @@ export function DispatchParsingIncidentPanel() {
 
   const preview = useMemo(() => {
     if (!sampleText) return null;
-    return previewIncidentFromLabels(sampleText, choices, activeSeparator, incidentNumberFormat);
-  }, [sampleText, choices, activeSeparator, incidentNumberFormat]);
+    return previewIncidentFromLabels(sampleText, choices, activeSeparator, incidentNumberFormat, {
+      month: resetMonth,
+      day: resetDay,
+      time: resetTime,
+    });
+  }, [sampleText, choices, activeSeparator, incidentNumberFormat, resetMonth, resetDay, resetTime]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
     setSaveOkAt(null);
-    const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat);
+    if (!parseResetTime(resetTime)) {
+      setSaveError("Enter the reset time in 24-hour format, such as 00:00.");
+      return;
+    }
+    const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat, {
+      month: resetMonth,
+      day: resetDay,
+      time: resetTime,
+    });
     setSaveBusy(true);
     try {
       await patchCadParsingConfig({
@@ -150,7 +175,7 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, choices, separator, incidentNumberFormat]);
+  }, [enableIncidentCreation, choices, separator, incidentNumberFormat, resetMonth, resetDay, resetTime]);
 
   const sections = splitDispatchParts(sampleText, activeSeparator);
 
@@ -200,6 +225,79 @@ export function DispatchParsingIncidentPanel() {
       <section className="cad-dispatch-h-top">
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
+            <h2>Incident number setup</h2>
+          </div>
+          <label className="cad-allowlist-field">
+            How are sections or fields separated from CAD?
+            <input
+              className="cad-dispatch-merge-key-input cad-incident-separator-input"
+              type="text"
+              maxLength={1}
+              value={separator}
+              aria-label="Character that separates CAD sections"
+              onChange={(event) => setSeparator(event.target.value)}
+            />
+          </label>
+          <p className="panel-description">Enter one character. Crescent’s emails use a semicolon.</p>
+          <label className="cad-allowlist-field">
+            Date calls reset each year
+            <input
+              className="cad-dispatch-merge-key-input"
+              type="date"
+              value={`2026-${String(resetMonth).padStart(2, "0")}-${String(resetDay).padStart(2, "0")}`}
+              aria-label="Date calls reset each year"
+              onChange={(event) => {
+                const match = event.target.value.match(/^\d{4}-(\d{2})-(\d{2})$/);
+                if (!match) return;
+                setResetMonth(Number(match[1]));
+                setResetDay(Number(match[2]));
+              }}
+            />
+          </label>
+          <label className="cad-allowlist-field">
+            Time calls reset (24-hour)
+            <input
+              className="cad-dispatch-merge-key-input cad-incident-separator-input"
+              type="text"
+              inputMode="numeric"
+              placeholder="00:00"
+              value={resetTime}
+              aria-label="Time calls reset in 24-hour format"
+              onChange={(event) => setResetTime(event.target.value)}
+            />
+          </label>
+          <label className="cad-allowlist-field">
+            Incident number format
+            <input
+              className="cad-dispatch-merge-key-input"
+              type="text"
+              value={incidentNumberFormat}
+              aria-label="Incident number format"
+              onChange={(event) => setIncidentNumberFormat(event.target.value)}
+            />
+          </label>
+          <p className="panel-description">
+            The year in the date box is only there so you can pick the month and day. That month, day, and time repeat
+            every year. Enter the time in 24-hour form, such as 00:00. The CAD number, such as 26018313, is saved as
+            the dispatch number. A later email uses that number to find the same call. This app assigns the incident
+            number. With the reset above, the first new call in the current period is{" "}
+            {incidentNumberSeriesExample(
+              new Date(),
+              {
+                month: resetMonth,
+                day: resetDay,
+                time: parseResetTime(resetTime) ? resetTime : DEFAULT_RESET_TIME,
+              },
+              incidentNumberFormat,
+            )}
+            . Each later new call takes the next number. A follow-up email keeps the number already given to that
+            dispatch number. Numbers are assigned when a new dispatch number is processed after you save. A call that
+            arrived before the reset keeps the number it already has.
+          </p>
+        </article>
+
+        <article className="panel cad-dispatch-incident-card">
+          <div className="panel-header">
             <h2>Automatic incident creation</h2>
           </div>
           <label className="cad-dispatch-checkbox-label">
@@ -223,36 +321,8 @@ export function DispatchParsingIncidentPanel() {
           <div className="panel-header">
             <h2>Match the email to incident fields</h2>
           </div>
-          <label className="cad-allowlist-field">
-            How are sections or fields separated from CAD?
-            <input
-              className="cad-dispatch-merge-key-input cad-incident-separator-input"
-              type="text"
-              maxLength={1}
-              value={separator}
-              aria-label="Character that separates CAD sections"
-              onChange={(event) => setSeparator(event.target.value)}
-            />
-          </label>
           <p className="panel-description">
-            Enter one character. Crescent’s emails use a semicolon. Set the address, type, and notes from the
-            new-call email, the one that starts with the CAD number.
-          </p>
-          <label className="cad-allowlist-field">
-            Incident number format
-            <input
-              className="cad-dispatch-merge-key-input"
-              type="text"
-              value={incidentNumberFormat}
-              aria-label="Incident number format"
-              onChange={(event) => setIncidentNumberFormat(event.target.value)}
-            />
-          </label>
-          <p className="panel-description">
-            The CAD number, such as 26018313, is saved as the dispatch number. Later emails use that number to update
-            the same incident. Crescent’s CFS is the digits at the end of Department CFS, such as 2600089 from
-            CrescentIroquoisFPD2600089. This format turns that CFS into the incident number. {"{cfs}"} stays 2600089.{" "}
-            {"{yy}-{seq}"} becomes 26-00089. Those year digits change when the CFS resets on November 1.
+            Set the address, type, and notes from the new-call email, the one that starts with the CAD number.
           </p>
           {emailsError ? <p className="field-error">{emailsError}</p> : null}
           {emailsLoading ? <p className="panel-description">Loading emails…</p> : null}
