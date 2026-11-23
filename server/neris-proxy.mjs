@@ -2948,14 +2948,18 @@ function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
  * Loads tenant parsing settings; if enableIncidentCreation and rules yield a merge key, creates or updates Incident.
  * Errors are logged; ingest HTTP response stays successful if email row was stored.
  */
-async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
+async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverride = null) {
   if (!tenantId) return;
 
   const settings = await prisma.cadParsingSettings.findUnique({
     where: { tenantId },
   });
-  const allowCreate = Boolean(settings?.enableIncidentCreation);
-  const allowUpdate = Boolean(settings?.enableIncidentUpdate);
+  const allowCreate = accessOverride
+    ? Boolean(accessOverride.allowCreate)
+    : Boolean(settings?.enableIncidentCreation);
+  const allowUpdate = accessOverride
+    ? Boolean(accessOverride.allowUpdate)
+    : Boolean(settings?.enableIncidentUpdate);
   if (!settings || (!allowCreate && !allowUpdate)) return;
 
   const plain = getDispatchPlainTextFromRawBody(rawBody);
@@ -3224,6 +3228,125 @@ app.post("/api/cad/incident-number-chart/apply", async (request, response) => {
   }
 });
 
+function incidentFieldsFromChartItem(item) {
+  const source = item?.incident;
+  if (!source || typeof source !== "object" || Array.isArray(source)) return {};
+  const fields = {};
+  for (const key of [
+    "incidentType",
+    "priority",
+    "address",
+    "stillDistrict",
+    "assignedUnits",
+    "reportedBy",
+    "callbackNumber",
+    "dispatchNotes",
+    "receivedAt",
+    "dispatchInfo",
+  ]) {
+    const value = trimValue(source[key]);
+    if (value) fields[key] = value;
+  }
+  const dispatchCode = trimValue(source.initialDispatchCode);
+  if (dispatchCode) fields.mapReference = dispatchCode;
+  return fields;
+}
+
+function blankIncidentFields(incident, fields) {
+  const data = {};
+  for (const [key, value] of Object.entries(fields)) {
+    if (value && !trimValue(incident?.[key])) data[key] = value;
+  }
+  return data;
+}
+
+app.post("/api/cad/incident-number-chart/create", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(401).json({ ok: false, message: "Tenant required." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const dispatchNumber = trimValue(body.dispatchNumber);
+    const incidentNumber = trimValue(body.incidentNumber);
+    if (!dispatchNumber) {
+      response.status(400).json({ ok: false, message: "Dispatch number is required." });
+      return;
+    }
+    const settings = await prisma.cadParsingSettings.findUnique({ where: { tenantId } });
+    if (!settings) {
+      response.status(400).json({ ok: false, message: "Save the incident parsing setup before creating an incident." });
+      return;
+    }
+    const separator = separatorFromSettings(settings);
+    const emails = await prisma.cadEmailIngest.findMany({
+      where: { tenantId },
+      orderBy: { createdAt: "desc" },
+      take: 1000,
+      select: { rawBody: true },
+    });
+    const matching = emails.filter((row) => {
+      const plain = getDispatchPlainTextFromRawBody(row.rawBody) || "";
+      return cadDispatchMatchNumber(plain, separator) === dispatchNumber;
+    });
+    if (matching.length === 0) {
+      response.status(404).json({ ok: false, message: "No stored email was found for that dispatch number." });
+      return;
+    }
+    const access = { allowCreate: true, allowUpdate: true };
+    for (const row of matching.reverse()) {
+      await cadIngestApplyIncidentAutomation(tenantId, row.rawBody, access);
+    }
+    const incident = await findIncidentForCadDispatch(tenantId, dispatchNumber);
+    if (!incident) {
+      response.status(400).json({
+        ok: false,
+        message: "That email is excluded or could not be matched, so it did not create an incident.",
+      });
+      return;
+    }
+    let savedNumber = trimValue(incident.incidentNumber);
+    if (incidentNumber && savedNumber !== incidentNumber) {
+      const keys = [incident.id];
+      if (savedNumber && savedNumber !== incident.id) keys.push(savedNumber);
+      const drafts = await prisma.nerisDraft.findMany({
+        where: { tenantId, callNumber: { in: keys } },
+      });
+      const active = drafts.find((row) => !isReportRemoved(row.payload));
+      if (!active || reportStatusOf(active.payload) === "Draft") {
+        await prisma.incident.update({
+          where: { id: incident.id },
+          data: { incidentNumber },
+        });
+        if (active) {
+          const payload =
+            active.payload && typeof active.payload === "object" && !Array.isArray(active.payload)
+              ? { ...active.payload }
+              : {};
+          const formValues =
+            payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+              ? { ...payload.formValues }
+              : {};
+          formValues.incident_internal_id = incidentNumber;
+          payload.formValues = formValues;
+          await prisma.nerisDraft.update({ where: { id: active.id }, data: { payload } });
+        }
+        savedNumber = incidentNumber;
+        const overrides = incidentNumberOverridesFromSettings(settings);
+        overrides[dispatchNumber] = incidentNumber;
+        await saveIncidentNumberOverrides(tenantId, overrides);
+      }
+    }
+    response.json({ ok: true, data: { incidentId: incident.id, incidentNumber: savedNumber } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not create that incident."),
+    });
+  }
+});
+
 app.post("/api/cad/incident-number-chart/import", async (request, response) => {
   try {
     const tenantId = request.tenant?.id;
@@ -3293,13 +3416,15 @@ app.post("/api/cad/incident-number-chart/import", async (request, response) => {
       }
       if (!incidentNumber) continue;
       if (!incident) {
+        const importedFields = incidentFieldsFromChartItem(item);
         const createdIncident = await prisma.incident.create({
           data: {
             tenantId,
             currentState: "Draft",
             dispatchNumber,
             incidentNumber,
-            dispatchInfo: "Imported incident number chart",
+            ...importedFields,
+            dispatchInfo: importedFields.dispatchInfo || "Imported incident number chart",
           },
         });
         await writeDraftNumber(createdIncident, null, incidentNumber);
@@ -3312,7 +3437,7 @@ app.post("/api/cad/incident-number-chart/import", async (request, response) => {
       }
       await prisma.incident.update({
         where: { id: incident.id },
-        data: { incidentNumber },
+        data: { incidentNumber, ...blankIncidentFields(incident, incidentFieldsFromChartItem(item)) },
       });
       await writeDraftNumber(incident, active, incidentNumber);
       updated += 1;

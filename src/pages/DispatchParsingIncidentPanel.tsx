@@ -5,7 +5,13 @@ import {
   patchCadParsingConfig,
 } from "../api/cadDispatchConfig.ts";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails.ts";
-import { applyIncidentNumberChart, deleteIncident, getIncidentList, importIncidentNumberChart } from "../api/incidents.ts";
+import {
+  applyIncidentNumberChart,
+  createIncidentFromChart,
+  deleteIncident,
+  getIncidentList,
+  importIncidentNumberChart,
+} from "../api/incidents.ts";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
 import {
   INCIDENT_LABEL_FIELDS,
@@ -443,15 +449,64 @@ export function DispatchParsingIncidentPanel() {
     }
   }, [chartRows, numberInBox, overridesFromBoxes]);
 
+  const handleCreateIncident = useCallback(async (dispatchNumber: string, incidentNumber: string) => {
+    setChartBusy(true);
+    setChartError(null);
+    setChartMessage(null);
+    try {
+      const created = await createIncidentFromChart({
+        dispatchNumber,
+        incidentNumber: incidentNumber.trim(),
+      });
+      try {
+        const cfg = await getCadParsingConfig();
+        setSavedOverrides(incidentNumberOverridesFromExtract(cfg.incidentNumberExtract));
+      } catch {
+        // The incident was created. The table reload still shows it.
+      }
+      setNumberEdits((current) => {
+        const next = { ...current };
+        delete next[dispatchNumber];
+        return next;
+      });
+      setChartMessage(`Created incident ${created.incidentNumber || incidentNumber} for dispatch ${dispatchNumber}.`);
+      setChartReload((current) => current + 1);
+    } catch (e) {
+      setChartError(e instanceof Error ? e.message : "Could not create that incident.");
+    } finally {
+      setChartBusy(false);
+    }
+  }, []);
+
   const handleExportChart = useCallback(() => {
     const payload = {
       version: 1,
-      rows: tableRows.map((row) => ({
-        dispatchNumber: row.dispatchNumber,
-        cfs: row.cfs,
-        incidentNumber: row.deleted ? "" : numberInBox(row).trim(),
-        deleted: row.deleted,
-      })),
+      rows: tableRows.map((row) => {
+        const incident = chartIncidents.find(
+          (item) => item.dispatchNumber?.trim() === row.dispatchNumber && !item.deletedAt,
+        );
+        return {
+          dispatchNumber: row.dispatchNumber,
+          cfs: row.cfs,
+          incidentNumber: row.deleted ? "" : numberInBox(row).trim(),
+          deleted: row.deleted,
+          incident: incident
+            ? {
+                incidentType: incident.incidentType,
+                priority: incident.priority,
+                address: incident.address,
+                stillDistrict: incident.stillDistrict,
+                assignedUnits: incident.assignedUnits,
+                reportedBy: incident.reportedBy ?? "",
+                callbackNumber: incident.callbackNumber ?? "",
+                dispatchNotes: incident.dispatchNotes ?? "",
+                initialDispatchCode: incident.initialDispatchCode ?? "",
+                receivedAt: incident.receivedAt,
+                dispatchInfo: incident.dispatchInfo,
+              }
+            : undefined,
+        };
+      }),
     };
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
@@ -460,7 +515,7 @@ export function DispatchParsingIncidentPanel() {
     link.download = "incident-number-chart.json";
     link.click();
     URL.revokeObjectURL(url);
-  }, [tableRows, numberInBox]);
+  }, [tableRows, numberInBox, chartIncidents]);
 
   const handleImportChart = useCallback(async (file: File) => {
     setChartBusy(true);
@@ -939,10 +994,10 @@ export function DispatchParsingIncidentPanel() {
             kept when the next email arrives.
           </p>
           <p className="panel-description">
-            Export saves this table only: dispatch number, CFS, the incident number in the box, and whether the call
-            was deleted. It does not include the email, address, notes, or NERIS report. Importing that file on
-            production reserves those incident numbers. The call details appear there when production receives its own
-            CAD email. Mail stays pointed at staging.
+            Create incident builds that call from the stored email, including the number in the box. Export then
+            includes the dispatch number, CFS, incident number, and the incident details, so importing the file on
+            production creates those calls. It does not copy the raw email or the NERIS report. Mail stays pointed at
+            staging.
           </p>
           {chartError ? <p className="field-error">{chartError}</p> : null}
           {tableRows.length === 0 ? (
@@ -990,6 +1045,16 @@ export function DispatchParsingIncidentPanel() {
                       </td>
                       <td>{row.incidentId ? row.reportStatus : "No incident yet"}</td>
                       <td>
+                        {!row.deleted && !row.incidentId ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={chartBusy || !typed.trim()}
+                            onClick={() => void handleCreateIncident(row.dispatchNumber, typed)}
+                          >
+                            Create incident
+                          </button>
+                        ) : null}
                         {row.incidentId && !row.deleted ? (
                           <button
                             type="button"

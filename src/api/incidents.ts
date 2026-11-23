@@ -148,6 +148,27 @@ export async function applyIncidentNumberChart(
   return { updated: json.data.updated ?? 0, skipped: json.data.skipped ?? 0 };
 }
 
+export async function createIncidentFromChart(body: {
+  dispatchNumber: string;
+  incidentNumber: string;
+}): Promise<{ incidentId: string; incidentNumber: string }> {
+  const res = await fetch("/api/cad/incident-number-chart/create", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = (await res.json()) as {
+    ok?: boolean;
+    data?: { incidentId?: string; incidentNumber?: string };
+    message?: string;
+  };
+  if (!res.ok || !json.ok || !json.data?.incidentId) {
+    throw new Error(json.message ?? `HTTP ${res.status}`);
+  }
+  return { incidentId: json.data.incidentId, incidentNumber: json.data.incidentNumber ?? "" };
+}
+
 export async function importIncidentNumberChart(
   rows: unknown[],
 ): Promise<{ created: number; updated: number; removed: number; skipped: number }> {
