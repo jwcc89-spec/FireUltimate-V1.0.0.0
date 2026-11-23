@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 import {
   getCadParsingConfig,
   patchCadParsingConfig,
@@ -32,6 +33,28 @@ import {
 import { parseCadRulesJson } from "../cadDispatch/ruleEngine.ts";
 
 const EMAIL_LIST_LIMIT = 20;
+
+type SaveSection = "setup" | "exclude" | "fields";
+
+function CollapsibleSetupSection({ title, children }: { title: string; children: ReactNode }) {
+  const [isOpen, setIsOpen] = useState(false);
+  return (
+    <article className="panel cad-dispatch-incident-card">
+      <div className="panel-header collapsible-panel-header">
+        <button
+          type="button"
+          className="collapsible-toggle"
+          onClick={() => setIsOpen((previous) => !previous)}
+          aria-expanded={isOpen}
+        >
+          <h2>{title}</h2>
+          <ChevronDown size={16} className={`collapsible-icon ${isOpen ? "open" : ""}`} />
+        </button>
+      </div>
+      {isOpen ? <div className="collapsible-panel-body">{children}</div> : null}
+    </article>
+  );
+}
 
 function formatRowDate(iso: string): string {
   if (!iso) return "—";
@@ -69,6 +92,7 @@ export function DispatchParsingIncidentPanel() {
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveOkAt, setSaveOkAt] = useState<number | null>(null);
+  const [savedSection, setSavedSection] = useState<SaveSection | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -206,10 +230,11 @@ export function DispatchParsingIncidentPanel() {
     apparatusNames,
   ]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (section: SaveSection) => {
     setSaveError(null);
     setSaveOkAt(null);
-    if (!parseResetTime(resetTime)) {
+    setSavedSection(section);
+    if (section === "setup" && !parseResetTime(resetTime)) {
       setSaveError("Enter the reset time in 24-hour format, such as 00:00.");
       return;
     }
@@ -296,10 +321,7 @@ export function DispatchParsingIncidentPanel() {
       </header>
 
       <section className="cad-dispatch-h-top">
-        <article className="panel cad-dispatch-incident-card">
-          <div className="panel-header">
-            <h2>Incident number setup</h2>
-          </div>
+        <CollapsibleSetupSection title="Incident number setup">
           <label className="cad-allowlist-field">
             How are sections or fields separated from CAD?
             <input
@@ -367,12 +389,25 @@ export function DispatchParsingIncidentPanel() {
             dispatch number. Numbers are assigned when a new dispatch number is processed after you save. A call that
             arrived before the reset keeps the number it already has.
           </p>
-        </article>
-
-        <article className="panel cad-dispatch-incident-card">
-          <div className="panel-header">
-            <h2>Exclude emails that contain</h2>
+          <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleSave("setup")}
+              disabled={saveBusy}
+            >
+              {saveBusy && savedSection === "setup" ? "Saving…" : "Save"}
+            </button>
           </div>
+          {savedSection === "setup" && saveError ? <p className="field-error">{saveError}</p> : null}
+          {savedSection === "setup" && saveOkAt !== null && !saveError ? (
+            <p className="cad-dispatch-save-ok" role="status">
+              Saved. The next dispatch email uses this incident number setup.
+            </p>
+          ) : null}
+        </CollapsibleSetupSection>
+
+        <CollapsibleSetupSection title="Exclude emails that contain">
           <label className="cad-allowlist-field">
             Phrases
             <textarea
@@ -401,7 +436,23 @@ export function DispatchParsingIncidentPanel() {
           <p className="panel-description">
             One phrase per line. If the email also contains an exception, it is kept and can still become an incident.
           </p>
-        </article>
+          <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleSave("exclude")}
+              disabled={saveBusy}
+            >
+              {saveBusy && savedSection === "exclude" ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {savedSection === "exclude" && saveError ? <p className="field-error">{saveError}</p> : null}
+          {savedSection === "exclude" && saveOkAt !== null && !saveError ? (
+            <p className="cad-dispatch-save-ok" role="status">
+              Saved. The next dispatch email uses this exclude list.
+            </p>
+          ) : null}
+        </CollapsibleSetupSection>
 
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
@@ -424,10 +475,7 @@ export function DispatchParsingIncidentPanel() {
           </p>
         ) : null}
 
-        <article className="panel cad-dispatch-incident-card">
-          <div className="panel-header">
-            <h2>Match the email to incident fields</h2>
-          </div>
+        <CollapsibleSetupSection title="Match the email to incident fields">
           <p className="panel-description">
             Set the address, type, and notes from the new-call email, the one that starts with the CAD number.
           </p>
@@ -510,7 +558,23 @@ export function DispatchParsingIncidentPanel() {
               <pre className="cad-dispatch-preview-pre cad-incident-sample-text">{sampleText}</pre>
             </details>
           ) : null}
-        </article>
+          <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="primary-button"
+              onClick={() => void handleSave("fields")}
+              disabled={saveBusy}
+            >
+              {saveBusy && savedSection === "fields" ? "Saving…" : "Save"}
+            </button>
+          </div>
+          {savedSection === "fields" && saveError ? <p className="field-error">{saveError}</p> : null}
+          {savedSection === "fields" && saveOkAt !== null && !saveError ? (
+            <p className="cad-dispatch-save-ok" role="status">
+              Saved. The next dispatch email uses these sections.
+            </p>
+          ) : null}
+        </CollapsibleSetupSection>
 
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
@@ -544,22 +608,6 @@ export function DispatchParsingIncidentPanel() {
               </tbody>
             </table>
             </>
-          ) : null}
-          <div className="cad-dispatch-incident-actions cad-dispatch-incident-save-row">
-            <button
-              type="button"
-              className="primary-button"
-              onClick={() => void handleSave()}
-              disabled={saveBusy}
-            >
-              {saveBusy ? "Saving…" : "Save"}
-            </button>
-          </div>
-          {saveError ? <p className="field-error">{saveError}</p> : null}
-          {saveOkAt !== null && !saveError ? (
-            <p className="cad-dispatch-save-ok" role="status">
-              Saved. The next dispatch email uses these sections.
-            </p>
           ) : null}
         </article>
       </section>
