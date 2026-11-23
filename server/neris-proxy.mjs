@@ -2878,6 +2878,67 @@ app.get("/api/cad/emails", async (request, response) => {
   }
 });
 
+app.post("/api/cad/incident-number-chart/apply", async (request, response) => {
+  try {
+    const tenantId = request.tenant?.id;
+    if (!tenantId) {
+      response.status(401).json({ ok: false, message: "Tenant required." });
+      return;
+    }
+    const body = request.body && typeof request.body === "object" ? request.body : {};
+    const updates = Array.isArray(body.updates) ? body.updates : [];
+    let updated = 0;
+    let skipped = 0;
+    for (const item of updates) {
+      const incidentId = trimValue(item?.incidentId);
+      const incidentNumber = trimValue(item?.incidentNumber);
+      if (!incidentId || !incidentNumber) continue;
+      const incident = await prisma.incident.findFirst({
+        where: { id: incidentId, tenantId, deletedAt: null },
+      });
+      if (!incident) continue;
+      const keys = [incident.id];
+      const currentNumber = trimValue(incident.incidentNumber);
+      if (currentNumber && currentNumber !== incident.id) keys.push(currentNumber);
+      const drafts = await prisma.nerisDraft.findMany({
+        where: { tenantId, callNumber: { in: keys } },
+      });
+      const active = drafts.find((row) => !isReportRemoved(row.payload));
+      if (active && reportStatusOf(active.payload) !== "Draft") {
+        skipped += 1;
+        continue;
+      }
+      await prisma.incident.update({
+        where: { id: incident.id },
+        data: { incidentNumber },
+      });
+      if (active) {
+        const payload =
+          active.payload && typeof active.payload === "object" && !Array.isArray(active.payload)
+            ? { ...active.payload }
+            : {};
+        const formValues =
+          payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+            ? { ...payload.formValues }
+            : {};
+        formValues.incident_internal_id = incidentNumber;
+        payload.formValues = formValues;
+        await prisma.nerisDraft.update({
+          where: { id: active.id },
+          data: { payload },
+        });
+      }
+      updated += 1;
+    }
+    response.json({ ok: true, data: { updated, skipped } });
+  } catch (error) {
+    response.status(500).json({
+      ok: false,
+      message: publicErrorMessage(error, "Could not update incident numbers."),
+    });
+  }
+});
+
 const CAD_ALLOWLIST_PATTERN_TYPES = new Set(["domain_suffix", "exact_email", "regex"]);
 const CAD_ALLOWLIST_MAX_ENTRIES = 200;
 const CAD_ALLOWLIST_PATTERN_MAX_LEN = 500;

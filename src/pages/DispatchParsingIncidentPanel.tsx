@@ -5,10 +5,15 @@ import {
   patchCadParsingConfig,
 } from "../api/cadDispatchConfig.ts";
 import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails.ts";
+import { applyIncidentNumberChart, deleteIncident, getIncidentList } from "../api/incidents.ts";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
 import {
   INCIDENT_LABEL_FIELDS,
+  assignIncidentNumberChart,
   assignSectionToField,
+  cadDispatchNumber,
+  departmentCfsDigits,
+  emailExcludedBySetup,
   buildIncidentLabelConfig,
   emptyIncidentLabels,
   DEFAULT_INCIDENT_NUMBER_FORMAT,
@@ -32,12 +37,31 @@ import {
 } from "../cadDispatch/incidentLabelMap.ts";
 import { parseCadRulesJson } from "../cadDispatch/ruleEngine.ts";
 
-const EMAIL_LIST_LIMIT = 20;
+const CHART_EMAIL_PAGE = 200;
+const CHART_EMAIL_CAP = 1000;
+
+async function loadStoredCadEmails(): Promise<CadEmailIngestRow[]> {
+  const all: CadEmailIngestRow[] = [];
+  for (let offset = 0; offset < CHART_EMAIL_CAP; offset += CHART_EMAIL_PAGE) {
+    const page = await getCadEmails(CHART_EMAIL_PAGE, offset);
+    all.push(...page);
+    if (page.length < CHART_EMAIL_PAGE) break;
+  }
+  return all;
+}
 
 type SaveSection = "setup" | "exclude" | "fields";
 
-function CollapsibleSetupSection({ title, children }: { title: string; children: ReactNode }) {
-  const [isOpen, setIsOpen] = useState(false);
+function CollapsibleSetupSection({
+  title,
+  children,
+  defaultOpen = false,
+}: {
+  title: string;
+  children: ReactNode;
+  defaultOpen?: boolean;
+}) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   return (
     <article className="panel cad-dispatch-incident-card">
       <div className="panel-header collapsible-panel-header">
@@ -93,6 +117,11 @@ export function DispatchParsingIncidentPanel() {
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveOkAt, setSaveOkAt] = useState<number | null>(null);
   const [savedSection, setSavedSection] = useState<SaveSection | null>(null);
+  const [chartIncidents, setChartIncidents] = useState<Awaited<ReturnType<typeof getIncidentList>>>([]);
+  const [chartError, setChartError] = useState<string | null>(null);
+  const [chartBusy, setChartBusy] = useState(false);
+  const [chartMessage, setChartMessage] = useState<string | null>(null);
+  const [chartReload, setChartReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -176,7 +205,7 @@ export function DispatchParsingIncidentPanel() {
     let cancelled = false;
     setEmailsLoading(true);
     setEmailsError(null);
-    getCadEmails(EMAIL_LIST_LIMIT, 0)
+    loadStoredCadEmails()
       .then((list) => {
         if (cancelled) return;
         setEmails(list);
@@ -193,11 +222,28 @@ export function DispatchParsingIncidentPanel() {
     return () => {
       cancelled = true;
     };
-  }, [saveOkAt]);
+  }, [saveOkAt, chartReload]);
+
+  useEffect(() => {
+    let cancelled = false;
+    getIncidentList(true)
+      .then((list) => {
+        if (!cancelled) setChartIncidents(list);
+      })
+      .catch((e) => {
+        if (!cancelled) setChartError(e instanceof Error ? e.message : "Failed to load incidents.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [chartReload]);
 
   const selectedEmail = emails.find((row) => row.id === selectedEmailId) ?? emails[0] ?? null;
   const sampleText = selectedEmail
     ? (getDispatchPlainTextFromRawBody(selectedEmail.rawBody ?? "") ?? "")
+    : "";
+  const excludeSearchText = selectedEmail
+    ? `${sampleText}\n${(selectedEmail.rawBody ?? "").replace(/<[^>]+>/g, " ")}`
     : "";
 
   const activeSeparator = normalizeSectionSeparator(separator);
@@ -229,6 +275,130 @@ export function DispatchParsingIncidentPanel() {
     exceptionText,
     apparatusNames,
   ]);
+
+  const sampleExcluded = useMemo(
+    () =>
+      emailExcludedBySetup(
+        excludeSearchText,
+        linesToPhrases(excludeText),
+        linesToPhrases(exceptionText),
+      ),
+    [excludeSearchText, excludeText, exceptionText],
+  );
+
+  const chartRows = useMemo(() => {
+    const exclude = linesToPhrases(excludeText);
+    const exceptions = linesToPhrases(exceptionText);
+    const calls = new Map<
+      string,
+      {
+        dispatchNumber: string;
+        cfs: string;
+        incidentId: string;
+        currentIncidentNumber: string;
+        deleted: boolean;
+        reportStatus: string;
+      }
+    >();
+    for (const email of emails) {
+      const plain = getDispatchPlainTextFromRawBody(email.rawBody ?? "") ?? "";
+      const search = `${plain}\n${(email.rawBody ?? "").replace(/<[^>]+>/g, " ")}`;
+      if (emailExcludedBySetup(search, exclude, exceptions)) continue;
+      const dispatchNumber = cadDispatchNumber(plain, activeSeparator);
+      if (!dispatchNumber) continue;
+      const existing = calls.get(dispatchNumber);
+      calls.set(dispatchNumber, {
+        dispatchNumber,
+        cfs: existing?.cfs || departmentCfsDigits(plain),
+        incidentId: existing?.incidentId ?? "",
+        currentIncidentNumber: existing?.currentIncidentNumber ?? "",
+        deleted: existing?.deleted ?? false,
+        reportStatus: existing?.reportStatus ?? "Draft",
+      });
+    }
+    for (const incident of chartIncidents) {
+      const dispatchNumber = incident.dispatchNumber?.trim() ?? "";
+      if (!dispatchNumber) continue;
+      const existing = calls.get(dispatchNumber);
+      calls.set(dispatchNumber, {
+        dispatchNumber,
+        cfs: existing?.cfs ?? "",
+        incidentId: incident.callNumber,
+        currentIncidentNumber: incident.incidentNumber || "",
+        deleted: Boolean(incident.deletedAt),
+        reportStatus: incident.nerisReportStatus || "Draft",
+      });
+    }
+    return assignIncidentNumberChart(
+      [...calls.values()],
+      new Date(),
+      {
+        month: resetMonth,
+        day: resetDay,
+        time: parseResetTime(resetTime) ? resetTime : DEFAULT_RESET_TIME,
+      },
+      incidentNumberFormat,
+    );
+  }, [
+    emails,
+    chartIncidents,
+    excludeText,
+    exceptionText,
+    activeSeparator,
+    resetMonth,
+    resetDay,
+    resetTime,
+    incidentNumberFormat,
+  ]);
+
+  const handleDeleteChartRow = useCallback(async (incidentId: string) => {
+    if (
+      !window.confirm(
+        "Delete this call? It will no longer use an incident number. Use Force update to renumber the remaining calls.",
+      )
+    ) {
+      return;
+    }
+    setChartBusy(true);
+    setChartError(null);
+    setChartMessage(null);
+    try {
+      await deleteIncident(incidentId, { deletedReason: "Removed from the incident number table." });
+      setChartReload((current) => current + 1);
+    } catch (e) {
+      setChartError(e instanceof Error ? e.message : "Could not delete that call.");
+    } finally {
+      setChartBusy(false);
+    }
+  }, []);
+
+  const handleForceUpdate = useCallback(async () => {
+    const updates = chartRows
+      .filter(
+        (row) =>
+          row.incidentId &&
+          !row.deleted &&
+          row.proposedIncidentNumber &&
+          row.proposedIncidentNumber !== row.currentIncidentNumber,
+      )
+      .map((row) => ({ incidentId: row.incidentId, incidentNumber: row.proposedIncidentNumber }));
+    setChartBusy(true);
+    setChartError(null);
+    setChartMessage(null);
+    try {
+      const result = await applyIncidentNumberChart(updates);
+      setChartMessage(
+        `Updated ${result.updated} incident number${result.updated === 1 ? "" : "s"}. ${result.skipped} report${
+          result.skipped === 1 ? "" : "s"
+        } left unchanged because they are In Review or Exported.`,
+      );
+      setChartReload((current) => current + 1);
+    } catch (e) {
+      setChartError(e instanceof Error ? e.message : "Force update failed.");
+    } finally {
+      setChartBusy(false);
+    }
+  }, [chartRows]);
 
   const handleSave = useCallback(async (section: SaveSection) => {
     setSaveError(null);
@@ -576,21 +746,18 @@ export function DispatchParsingIncidentPanel() {
           ) : null}
         </CollapsibleSetupSection>
 
-        <article className="panel cad-dispatch-incident-card">
-          <div className="panel-header">
-            <h2>Preview from the sample email</h2>
-          </div>
+        <CollapsibleSetupSection title="Preview from the sample email" defaultOpen>
           {!sampleText ? (
             <p className="panel-description">Choose an email with dispatch text to see the filled incident.</p>
+          ) : sampleExcluded ? (
+            <p className="panel-description">
+              This email is excluded. It does not create or update an incident, and it is left out of the incident
+              number table.
+            </p>
           ) : preview && !preview.ok ? (
             <p className="field-error">{preview.error}</p>
           ) : preview && preview.ok ? (
             <>
-              {preview.excluded ? (
-                <p className="panel-description">
-                  This email matches an exclude phrase and would not create or update an incident.
-                </p>
-              ) : null}
               {preview.followUp ? (
                 <p className="panel-description">
                   Follow-up email. Rows marked Unchanged stay as they were saved from the new-call email. The notes
@@ -609,7 +776,77 @@ export function DispatchParsingIncidentPanel() {
             </table>
             </>
           ) : null}
-        </article>
+        </CollapsibleSetupSection>
+
+        <CollapsibleSetupSection title="Incident number table">
+          <p className="panel-description">
+            Calls are sorted by dispatch number. Deleted calls stay on the list with a blank incident number. Emails
+            that match an exclude phrase are left out. Force update writes these incident numbers onto Draft incidents
+            and Draft NERIS reports. In Review and Exported reports stay as they are.
+          </p>
+          {chartError ? <p className="field-error">{chartError}</p> : null}
+          {chartRows.length === 0 ? (
+            <p className="panel-description">No calls to number yet.</p>
+          ) : (
+            <table className="cad-incident-slot-table">
+              <thead>
+                <tr>
+                  <th>Dispatch number</th>
+                  <th>CFS</th>
+                  <th>Incident number</th>
+                  <th>Report</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {chartRows.map((row) => (
+                  <tr key={row.dispatchNumber}>
+                    <td>{row.dispatchNumber}</td>
+                    <td>{row.cfs || "Not provided"}</td>
+                    <td>
+                      {row.deleted
+                        ? "Deleted"
+                        : row.proposedIncidentNumber}
+                      {!row.deleted &&
+                      row.currentIncidentNumber &&
+                      row.currentIncidentNumber !== row.proposedIncidentNumber
+                        ? ` (currently ${row.currentIncidentNumber})`
+                        : ""}
+                    </td>
+                    <td>{row.incidentId ? row.reportStatus : "No incident yet"}</td>
+                    <td>
+                      {row.incidentId && !row.deleted ? (
+                        <button
+                          type="button"
+                          className="secondary-button"
+                          disabled={chartBusy}
+                          onClick={() => void handleDeleteChartRow(row.incidentId)}
+                        >
+                          Delete
+                        </button>
+                      ) : null}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="cad-dispatch-incident-actions">
+            <button
+              type="button"
+              className="primary-button"
+              disabled={chartBusy || chartRows.length === 0}
+              onClick={() => void handleForceUpdate()}
+            >
+              {chartBusy ? "Updating…" : "Force update"}
+            </button>
+          </div>
+          {chartMessage ? (
+            <p className="cad-dispatch-save-ok" role="status">
+              {chartMessage}
+            </p>
+          ) : null}
+        </CollapsibleSetupSection>
       </section>
     </>
   );

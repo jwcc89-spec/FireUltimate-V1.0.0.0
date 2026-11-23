@@ -324,16 +324,30 @@ export function phraseListFromExtract(raw: unknown, key: "excludeContains" | "ex
   return linesToPhrases(phrasesToLines((raw as Record<string, unknown>)[key]));
 }
 
+function foldedEmailText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
 /** True when the email contains an exclude phrase and none of the exceptions. */
 export function emailExcludedBySetup(
   text: string,
   exclude: readonly string[],
   exceptions: readonly string[],
 ): boolean {
-  const hay = text.toLowerCase();
-  const excluded = exclude.some((phrase) => phrase.trim() && hay.includes(phrase.trim().toLowerCase()));
+  const hay = foldedEmailText(text);
+  const excluded = exclude.some((phrase) => {
+    const needle = foldedEmailText(phrase);
+    return needle.length > 0 && hay.includes(needle);
+  });
   if (!excluded) return false;
-  return !exceptions.some((phrase) => phrase.trim() && hay.includes(phrase.trim().toLowerCase()));
+  return !exceptions.some((phrase) => {
+    const needle = foldedEmailText(phrase);
+    return needle.length > 0 && hay.includes(needle);
+  });
 }
 
 export function unitsMentionedInCadEmail(text: string): string[] {
@@ -372,6 +386,77 @@ export function filterNamedUnits(value: string, apparatusNames: readonly string[
 
 export function unitsMatchingApparatus(text: string, apparatusNames: readonly string[]): string {
   return filterNamedUnits(unitsMentionedInCadEmail(text).join(", "), apparatusNames);
+}
+
+export type IncidentChartCall = {
+  dispatchNumber: string;
+  cfs?: string;
+  incidentId?: string;
+  currentIncidentNumber?: string;
+  deleted?: boolean;
+  reportStatus?: string;
+};
+
+export type IncidentChartRow = {
+  dispatchNumber: string;
+  cfs: string;
+  incidentId: string;
+  currentIncidentNumber: string;
+  proposedIncidentNumber: string;
+  deleted: boolean;
+  reportStatus: string;
+};
+
+/** Sort by dispatch number and assign incident numbers. Deleted calls stay in the list with a blank number. */
+export function assignIncidentNumberChart(
+  calls: readonly IncidentChartCall[],
+  now: Date,
+  reset: CadNumberReset,
+  pattern = DEFAULT_INCIDENT_NUMBER_FORMAT,
+): IncidentChartRow[] {
+  const byDispatch = new Map<string, IncidentChartCall>();
+  for (const call of calls) {
+    const dispatchNumber = call.dispatchNumber.trim();
+    if (!dispatchNumber) continue;
+    const existing = byDispatch.get(dispatchNumber);
+    if (!existing) {
+      byDispatch.set(dispatchNumber, { ...call, dispatchNumber });
+      continue;
+    }
+    byDispatch.set(dispatchNumber, {
+      ...existing,
+      cfs: existing.cfs || call.cfs,
+      incidentId: existing.incidentId || call.incidentId,
+      currentIncidentNumber: existing.currentIncidentNumber || call.currentIncidentNumber,
+      deleted: Boolean(existing.deleted || call.deleted),
+      reportStatus: existing.reportStatus || call.reportStatus,
+    });
+  }
+  const { yy } = currentFiscalPeriod(now, reset);
+  const ordered = [...byDispatch.values()].sort((left, right) => {
+    const leftNumber = Number(left.dispatchNumber);
+    const rightNumber = Number(right.dispatchNumber);
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+      return leftNumber - rightNumber;
+    }
+    return left.dispatchNumber.localeCompare(right.dispatchNumber);
+  });
+  let sequence = 0;
+  return ordered.map((call) => {
+    const deleted = Boolean(call.deleted);
+    const proposedIncidentNumber = deleted
+      ? ""
+      : formatAssignedIncidentNumber(++sequence, yy, pattern);
+    return {
+      dispatchNumber: call.dispatchNumber,
+      cfs: call.cfs?.trim() ?? "",
+      incidentId: call.incidentId?.trim() ?? "",
+      currentIncidentNumber: call.currentIncidentNumber?.trim() ?? "",
+      proposedIncidentNumber,
+      deleted,
+      reportStatus: call.reportStatus?.trim() || "Draft",
+    };
+  });
 }
 
 /** Split one CAD line on the separator character. Uses the first line that contains it. */

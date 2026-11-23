@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  assignIncidentNumberChart,
   assignSectionToField,
   buildIncidentLabelConfig,
   chicagoWallTimeToUtc,
@@ -144,7 +145,31 @@ describe("incidentLabelMap", () => {
     assert.equal(choices.incidentNumber, null);
   });
 
+  it("numbers calls by dispatch order and leaves deleted calls blank", () => {
+    const rows = assignIncidentNumberChart(
+      [
+        { dispatchNumber: "26017820", incidentId: "c", currentIncidentNumber: "26017820", reportStatus: "Draft" },
+        { dispatchNumber: "26017636", incidentId: "a", deleted: true, reportStatus: "Draft" },
+        {
+          dispatchNumber: "26017731",
+          cfs: "2600083",
+          incidentId: "b",
+          currentIncidentNumber: "26017731",
+          reportStatus: "Draft",
+        },
+      ],
+      AFTER_RESET,
+      RESET,
+    );
+    assert.equal(rows.map((row) => row.dispatchNumber).join(","), "26017636,26017731,26017820");
+    assert.equal(rows[0]?.proposedIncidentNumber, "");
+    assert.equal(rows[1]?.proposedIncidentNumber, "27-001");
+    assert.equal(rows[1]?.cfs, "2600083");
+    assert.equal(rows[2]?.proposedIncidentNumber, "27-002");
+  });
+
   it("lets a department exclude phrases and keep exceptions", () => {
+    assert.equal(emailExcludedBySetup("Requesting an ambulance at the scene", ["requesting an ambulance"], []), true);
     assert.equal(emailExcludedBySetup("Crescent EMS medical assist", ["EMS"], []), true);
     assert.equal(emailExcludedBySetup("Crescent EMS medical assist", ["EMS"], ["medical assist"]), false);
     assert.equal(emailExcludedBySetup("Structure fire", ["EMS"], []), false);
