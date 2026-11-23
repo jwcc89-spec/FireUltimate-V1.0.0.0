@@ -187,6 +187,8 @@ interface IncidentCreatePayload {
   incidentOnsetTime: string;
   /** Free-text initial dispatch code; maps to NERIS initial_dispatch_code. */
   initialDispatchCode: string;
+  /** CAD description of the call. Stored on the incident as dispatch info. */
+  dispatchInfo: string;
 }
 
 interface RouteResolverProps {
@@ -4233,6 +4235,7 @@ function IncidentsListPage({
     incidentOnsetDate: getDefaultIncidentOnsetDate(),
     incidentOnsetTime: getDefaultIncidentOnsetTime(),
     initialDispatchCode: "",
+    dispatchInfo: "",
   }));
   const [createIncidentError, setCreateIncidentError] = useState("");
   const isIncidentFieldVisible = useCallback(
@@ -4315,6 +4318,7 @@ function IncidentsListPage({
       incidentOnsetDate: getDefaultIncidentOnsetDate(),
       incidentOnsetTime: getDefaultIncidentOnsetTime(),
       initialDispatchCode: "",
+      dispatchInfo: "",
     });
     setCreateIncidentError("");
   };
@@ -5124,6 +5128,7 @@ function IncidentCallDetailPage({
     incidentOnsetDate: "",
     incidentOnsetTime: "",
     initialDispatchCode: String(detail?.initialDispatchCode ?? "").trim(),
+    dispatchInfo: String(detail?.dispatchInfo ?? "").trim(),
   }));
   const [saveError, setSaveError] = useState("");
   const [saveSuccess, setSaveSuccess] = useState("");
@@ -5263,7 +5268,7 @@ function IncidentCallDetailPage({
       callbackNumber: draft.callbackNumber.trim(),
       dispatchNotes: draft.dispatchNotes.trim(),
       initialDispatchCode: draft.initialDispatchCode.trim(),
-      dispatchInfo: draft.dispatchNotes.trim() || detail.dispatchInfo,
+      dispatchInfo: draft.dispatchInfo.trim(),
     });
     setSaveError("");
     setSaveSuccess("Incident details saved.");
@@ -5511,6 +5516,17 @@ function IncidentCallDetailPage({
                 />
               </label>
               ) : null}
+              <label>
+                Incident Information
+                <textarea
+                  rows={3}
+                  value={draft.dispatchInfo}
+                  readOnly={isIncidentLockedByNeris}
+                  onChange={(event) =>
+                    setDraft((previous) => ({ ...previous, dispatchInfo: event.target.value }))
+                  }
+                />
+              </label>
               {isIncidentFieldVisible("dispatchNotes") ? (
               <label>
                 Dispatch Notes
@@ -14632,6 +14648,7 @@ function App() {
       currentState: payload.currentState.trim() || "Draft",
       receivedAt,
       dispatchInfo:
+        payload.dispatchInfo.trim() ||
         payload.dispatchNotes.trim() ||
         "Manual incident created from Incidents / Mapping.",
     };

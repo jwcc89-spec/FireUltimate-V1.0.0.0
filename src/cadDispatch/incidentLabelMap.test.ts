@@ -14,6 +14,8 @@ import {
   labelsFromSavedRules,
   previewIncidentFromLabels,
   splitDispatchParts,
+  emailExcludedBySetup,
+  unitsMatchingApparatus,
 } from "./incidentLabelMap.ts";
 
 const RESET = { month: 11, day: 1, time: "00:00" };
@@ -140,6 +142,34 @@ describe("incidentLabelMap", () => {
     assert.equal(fieldIdForSection(choices, 0), "dispatchNumber");
     assert.equal(fieldIdForSection(choices, 1), "incidentType");
     assert.equal(choices.incidentNumber, null);
+  });
+
+  it("lets a department exclude phrases and keep exceptions", () => {
+    assert.equal(emailExcludedBySetup("Crescent EMS medical assist", ["EMS"], []), true);
+    assert.equal(emailExcludedBySetup("Crescent EMS medical assist", ["EMS"], ["medical assist"]), false);
+    assert.equal(emailExcludedBySetup("Structure fire", ["EMS"], []), false);
+    const built = buildIncidentLabelConfig(emptyIncidentLabels(), ";", "{yy}-{seq}", RESET, {
+      excludeContains: ["EMS"],
+      excludeExceptions: ["medical assist"],
+    });
+    assert.deepEqual(built.incidentNumberExtract.excludeContains, ["EMS"]);
+    assert.deepEqual(built.incidentNumberExtract.excludeExceptions, ["medical assist"]);
+  });
+
+  it("drops a CAD unit that is not department apparatus", () => {
+    const email =
+      "Crescent-Iroquois Fire - CAD CFS: 26017731; Department CFS: CrescentIroquoisFPD2600083; Nature: Fire Controlled Burn, Units: CrescentIroquoisFireDispatched, Unit response times:CrescentIroquoisFireDispatched - Dispatch 11/06/26 17:30:11";
+    assert.equal(unitsMatchingApparatus(email, ["1801", "1871", "1881"]), "");
+    assert.equal(
+      unitsMatchingApparatus(`${email}; 1801 - On Scene 11/06/26 17:40:00`, ["1801", "1871"]),
+      "1801",
+    );
+    const choices = emptyIncidentLabels();
+    choices.dispatchNumber = { index: 0, afterLabel: false };
+    choices.incidentInformation = { index: 3, afterLabel: false };
+    const built = buildIncidentLabelConfig(choices);
+    assert.equal(built.fieldMap.dispatchNumber, "dispatchNumber");
+    assert.equal(built.fieldMap.incidentInformation, "dispatchInfo");
   });
 
   it("reads the part that contains highlighted text", () => {

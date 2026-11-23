@@ -2364,6 +2364,69 @@ function cadLabeledValue(plain, label) {
   return match ? match[1].trim() : "";
 }
 
+function phraseListFromExtract(raw, key) {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw[key] : [];
+  const values = Array.isArray(source) ? source : [];
+  return values.map((item) => String(item ?? "").trim()).filter(Boolean);
+}
+
+function cadEmailIsExcluded(plain, settings) {
+  const raw = settings?.incidentNumberExtractJson;
+  const exclude = phraseListFromExtract(raw, "excludeContains");
+  const exceptions = phraseListFromExtract(raw, "excludeExceptions");
+  const hay = String(plain).toLowerCase();
+  const excluded = exclude.some((phrase) => hay.includes(phrase.toLowerCase()));
+  if (!excluded) return false;
+  return !exceptions.some((phrase) => hay.includes(phrase.toLowerCase()));
+}
+
+async function departmentApparatusNames(tenantId) {
+  const details = await prisma.departmentDetails.findUnique({
+    where: { tenantId },
+    select: { payloadJson: true },
+  });
+  const payload =
+    details?.payloadJson && typeof details.payloadJson === "object" && !Array.isArray(details.payloadJson)
+      ? details.payloadJson
+      : {};
+  const records = Array.isArray(payload.masterApparatusRecords)
+    ? payload.masterApparatusRecords
+    : Array.isArray(payload.apparatusRecords)
+      ? payload.apparatusRecords
+      : [];
+  const names = new Set();
+  for (const record of records) {
+    if (!record || typeof record !== "object") continue;
+    for (const key of ["unitId", "commonName"]) {
+      const value = trimValue(record[key]).toLowerCase();
+      if (value) names.add(value);
+    }
+  }
+  return names;
+}
+
+function filterNamedUnits(value, names) {
+  const kept = [];
+  const seen = new Set();
+  for (const part of String(value ?? "").split(/[,;/]+/)) {
+    const token = part.trim();
+    const key = token.toLowerCase();
+    if (!token || seen.has(key) || !names.has(key)) continue;
+    seen.add(key);
+    kept.push(token);
+  }
+  return kept.join(", ");
+}
+
+function unitsMatchingApparatus(plain, names) {
+  const found = [];
+  const labeled = cadLabeledValue(plain, "Units");
+  if (labeled) found.push(labeled);
+  const timed = /([0-9A-Za-z]+)\s*-\s*(?:Dispatch|On Scene|InQuarters|In Quarters|Enroute|En Route|Clear)/gi;
+  for (const match of String(plain).matchAll(timed)) found.push(match[1]);
+  return filterNamedUnits(found.join(", "), names);
+}
+
 const CAD_NUMBER_TIME_ZONE = "America/Chicago";
 
 function parseResetClock(value) {
@@ -2564,9 +2627,9 @@ async function saveMatchedCadIncident(tenantId, cadNumber, reset, pattern, updat
   });
 }
 
-async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incidentNumberFormat, reset) {
+async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incidentNumberFormat, reset, apparatusNames) {
   const notes = String(plain).trim().slice(0, 12000);
-  const units = cadLabeledValue(plain, "Units");
+  const units = unitsMatchingApparatus(plain, apparatusNames);
   const nature = cadLabeledValue(plain, "Nature");
   const existing = await findIncidentForCadDispatch(tenantId, callNumber);
   const combined = [trimValue(existing?.dispatchNotes), notes]
@@ -2621,13 +2684,22 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
 
   const plain = getDispatchPlainTextFromRawBody(rawBody);
   if (!plain) return;
+  if (cadEmailIsExcluded(plain, settings)) return;
 
   const incidentNumberFormat = incidentNumberFormatFromSettings(settings);
   const sectionSeparator = separatorFromSettings(settings);
   const reset = resetFromSettings(settings);
+  const apparatusNames = await departmentApparatusNames(tenantId);
   const followUpNumber = cadFollowUpCallNumber(plain);
   if (followUpNumber) {
-    await cadIngestApplyFollowUpIncident(tenantId, plain, followUpNumber, incidentNumberFormat, reset);
+    await cadIngestApplyFollowUpIncident(
+      tenantId,
+      plain,
+      followUpNumber,
+      incidentNumberFormat,
+      reset,
+      apparatusNames,
+    );
     return;
   }
 
@@ -2652,13 +2724,12 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
       ? settings.incidentFieldMapJson
       : {};
 
-  const mergeKey = cadDispatchMatchNumber(plain, sectionSeparator);
+  const mapped = buildCadMappedIncidentFields(result.slots, fieldMap, result.text);
+  const mergeKey = trimValue(mapped.dispatchNumber) || cadDispatchMatchNumber(plain, sectionSeparator);
   if (!mergeKey) {
     console.warn("[CAD ingest] no CAD dispatch number found to match this email to an incident.");
     return;
   }
-
-  const mapped = buildCadMappedIncidentFields(result.slots, fieldMap, result.text);
   const existing = await findIncidentForCadDispatch(tenantId, mergeKey);
   const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
   const combined = [trimValue(existing?.dispatchNotes), newBlock]
@@ -2670,7 +2741,8 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   if (trimValue(mapped.incidentType)) updateFields.incidentType = mapped.incidentType;
   if (trimValue(mapped.priority)) updateFields.priority = mapped.priority;
   if (trimValue(mapped.stillDistrict)) updateFields.stillDistrict = mapped.stillDistrict;
-  if (trimValue(mapped.assignedUnits)) updateFields.assignedUnits = mapped.assignedUnits;
+  const keptUnits = filterNamedUnits(mapped.assignedUnits, apparatusNames);
+  if (keptUnits) updateFields.assignedUnits = keptUnits;
   if (trimValue(mapped.reportedBy)) updateFields.reportedBy = mapped.reportedBy;
   if (trimValue(mapped.callbackNumber)) updateFields.callbackNumber = mapped.callbackNumber;
   const updatedDispatchCode = trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference);
@@ -2682,7 +2754,7 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
     priority: trimValue(mapped.priority) || "",
     address: trimValue(mapped.address) || "",
     stillDistrict: trimValue(mapped.stillDistrict) || "",
-    assignedUnits: trimValue(mapped.assignedUnits) || "",
+    assignedUnits: filterNamedUnits(mapped.assignedUnits, apparatusNames),
     reportedBy: trimValue(mapped.reportedBy) || null,
     callbackNumber: trimValue(mapped.callbackNumber) || null,
     dispatchNotes: trimValue(mapped.dispatchNotes) || null,

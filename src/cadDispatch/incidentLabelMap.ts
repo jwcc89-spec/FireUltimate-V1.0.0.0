@@ -182,7 +182,8 @@ export type IncidentLabelFieldId =
   | "assignedUnits"
   | "address"
   | "callbackNumber"
-  | "dispatchNotes";
+  | "dispatchNotes"
+  | "incidentInformation";
 
 export type IncidentPartChoice = {
   /** Zero-based part when the email is split on semicolons. */
@@ -204,7 +205,7 @@ export const INCIDENT_LABEL_FIELDS: readonly IncidentLabelField[] = [
     id: "incidentNumber",
     label: "Incident number",
     target: null,
-    hint: "Built from the department CFS and the incident number format. Later emails match the dispatch number.",
+    hint: "Assigned from the reset date and format. Later emails match the dispatch number.",
   },
   {
     id: "dispatchNumber",
@@ -266,6 +267,12 @@ export const INCIDENT_LABEL_FIELDS: readonly IncidentLabelField[] = [
     target: "dispatchNotes",
     hint: "Choose the notes part. If you leave this unused, the full email is saved as the notes.",
   },
+  {
+    id: "incidentInformation",
+    label: "Incident Information",
+    target: "dispatchInfo",
+    hint: "Choose the part that describes the call, such as the line after the address.",
+  },
 ];
 
 function separatorPattern(separator: string): { head: string; wholeTail: string; afterTail: string } {
@@ -293,7 +300,78 @@ export function emptyIncidentLabels(): Record<IncidentLabelFieldId, IncidentPart
     address: null,
     callbackNumber: null,
     dispatchNotes: null,
+    incidentInformation: null,
   };
+}
+
+export function linesToPhrases(value: string): string[] {
+  return value
+    .split(/\n/)
+    .map((line) => line.trim())
+    .filter(Boolean);
+}
+
+export function phrasesToLines(raw: unknown): string {
+  if (!Array.isArray(raw)) return "";
+  return raw
+    .map((item) => String(item).trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function phraseListFromExtract(raw: unknown, key: "excludeContains" | "excludeExceptions"): string[] {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return [];
+  return linesToPhrases(phrasesToLines((raw as Record<string, unknown>)[key]));
+}
+
+/** True when the email contains an exclude phrase and none of the exceptions. */
+export function emailExcludedBySetup(
+  text: string,
+  exclude: readonly string[],
+  exceptions: readonly string[],
+): boolean {
+  const hay = text.toLowerCase();
+  const excluded = exclude.some((phrase) => phrase.trim() && hay.includes(phrase.trim().toLowerCase()));
+  if (!excluded) return false;
+  return !exceptions.some((phrase) => phrase.trim() && hay.includes(phrase.trim().toLowerCase()));
+}
+
+export function unitsMentionedInCadEmail(text: string): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+  const add = (value: string) => {
+    const token = value.trim();
+    const key = token.toLowerCase();
+    if (!token || seen.has(key)) return;
+    seen.add(key);
+    found.push(token);
+  };
+  const labeled = labeledCadValue(text, "Units");
+  if (labeled) {
+    for (const part of labeled.split(/[,;/]+/)) add(part);
+  }
+  const timed = /([0-9A-Za-z]+)\s*-\s*(?:Dispatch|On Scene|InQuarters|In Quarters|Enroute|En Route|Clear)/gi;
+  for (const match of text.matchAll(timed)) add(match[1] ?? "");
+  return found;
+}
+
+/** Keep only names that match a Department Apparatus unit id or common name. */
+export function filterNamedUnits(value: string, apparatusNames: readonly string[]): string {
+  const allowed = new Set(apparatusNames.map((name) => name.trim().toLowerCase()).filter(Boolean));
+  const kept: string[] = [];
+  const seen = new Set<string>();
+  for (const part of value.split(/[,;/]+/)) {
+    const token = part.trim();
+    const key = token.toLowerCase();
+    if (!token || seen.has(key) || !allowed.has(key)) continue;
+    seen.add(key);
+    kept.push(token);
+  }
+  return kept.join(", ");
+}
+
+export function unitsMatchingApparatus(text: string, apparatusNames: readonly string[]): string {
+  return filterNamedUnits(unitsMentionedInCadEmail(text).join(", "), apparatusNames);
 }
 
 /** Split one CAD line on the separator character. Uses the first line that contains it. */
@@ -382,6 +460,7 @@ export function buildIncidentLabelConfig(
     day: DEFAULT_RESET_DAY,
     time: DEFAULT_RESET_TIME,
   },
+  filters: { excludeContains?: string[]; excludeExceptions?: string[] } = {},
 ): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
@@ -391,6 +470,8 @@ export function buildIncidentLabelConfig(
     resetMonth: number;
     resetDay: number;
     resetTime: string;
+    excludeContains: string[];
+    excludeExceptions: string[];
   };
 } {
   const active = normalizeSectionSeparator(separator);
@@ -402,10 +483,12 @@ export function buildIncidentLabelConfig(
     resetMonth: reset.month,
     resetDay: reset.day,
     resetTime: parseResetTime(reset.time) ? reset.time : DEFAULT_RESET_TIME,
+    excludeContains: linesToPhrases((filters.excludeContains ?? []).join("\n")),
+    excludeExceptions: linesToPhrases((filters.excludeExceptions ?? []).join("\n")),
   };
 
   for (const field of INCIDENT_LABEL_FIELDS) {
-    if (field.id === "incidentNumber" || field.id === "dispatchNumber") continue;
+    if (field.id === "incidentNumber") continue;
     const choice = choices[field.id];
     if (!choice || choice.index < 0) continue;
     if (!field.target) continue;
@@ -442,7 +525,7 @@ export function labelsFromSavedRules(rawRules: unknown, separator = DEFAULT_SECT
     if (rule.type !== "extract_capture" || rule.group !== 1 || (rule.flags ?? "") !== "") {
       return { recognized: false, labels };
     }
-    if (rule.slot === "incidentNumber" || rule.slot === "dispatchNumber") continue;
+    if (rule.slot === "incidentNumber") continue;
     const field = INCIDENT_LABEL_FIELDS.find((item) => item.id === rule.slot);
     if (!field || seen.has(field.id)) return { recognized: false, labels };
     const choice = choiceFromPattern(rule.pattern, separator);
@@ -495,25 +578,35 @@ export function previewIncidentFromLabels(
     time: DEFAULT_RESET_TIME,
   },
   now = new Date(),
-): { ok: true; followUp: boolean; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
-  const dispatchNumber = cadDispatchNumber(plainText, separator);
+  filters: { excludeContains?: string[]; excludeExceptions?: string[]; apparatusNames?: string[] | null } = {},
+): { ok: true; followUp: boolean; excluded: boolean; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
   const incidentNumber = incidentNumberSeriesExample(now, reset, incidentNumberFormat);
+  const excluded = emailExcludedBySetup(
+    plainText,
+    filters.excludeContains ?? [],
+    filters.excludeExceptions ?? [],
+  );
+  const apparatusNames = filters.apparatusNames ?? null;
   const followUpNumber = followUpCallNumber(plainText);
   if (followUpNumber) {
-    const units = labeledCadValue(plainText, "Units");
+    const mentioned = unitsMentionedInCadEmail(plainText);
+    const matched = apparatusNames ? unitsMatchingApparatus(plainText, apparatusNames) : mentioned.join(", ");
+    const units = matched || (apparatusNames && mentioned.length > 0 ? "Not a department apparatus" : "Unchanged");
     return {
       ok: true,
       followUp: true,
+      excluded,
       rows: [
         { id: "incidentNumber", label: "Incident number", value: incidentNumber },
-        { id: "dispatchNumber", label: "Dispatch number", value: dispatchNumber },
+        { id: "dispatchNumber", label: "Dispatch number", value: followUpNumber },
         { id: "incidentType", label: "Incident type", value: "Unchanged" },
+        { id: "incidentInformation", label: "Incident Information", value: "Unchanged" },
         { id: "initialDispatchCode", label: "Initial dispatch code", value: "Unchanged" },
         { id: "priority", label: "Priority", value: "Unchanged" },
         { id: "stillDistrict", label: "Still district", value: "Unchanged" },
         { id: "status", label: "Status", value: "Draft" },
         { id: "reportedBy", label: "Reported by", value: "Unchanged" },
-        { id: "assignedUnits", label: "Assigned units", value: units || "Unchanged" },
+        { id: "assignedUnits", label: "Assigned units", value: units },
         { id: "address", label: "Address", value: "Unchanged" },
         { id: "callbackNumber", label: "Callback number", value: "Unchanged" },
         { id: "dispatchNotes", label: "Dispatch notes", value: plainText.trim() },
@@ -525,19 +618,27 @@ export function previewIncidentFromLabels(
   if (!result.ok) return { ok: false, error: result.error };
   const mapped = buildMappedIncidentFieldsPreview(result.slots, built.fieldMap, result.text);
   const initialDispatchCode = mapped.initialDispatchCode || mapped.mapReference || "";
+  const dispatchNumber = mapped.dispatchNumber || cadDispatchNumber(plainText, separator);
+  const mappedUnits = mapped.assignedUnits || "";
+  const units =
+    apparatusNames == null
+      ? mappedUnits
+      : filterNamedUnits(mappedUnits, apparatusNames) ||
+        (mappedUnits ? "Not a department apparatus" : "");
   const rows: IncidentPreviewRow[] = [
     { id: "incidentNumber", label: "Incident number", value: incidentNumber },
     { id: "dispatchNumber", label: "Dispatch number", value: dispatchNumber },
     { id: "incidentType", label: "Incident type", value: mapped.incidentType || "" },
+    { id: "incidentInformation", label: "Incident Information", value: mapped.dispatchInfo || "" },
     { id: "initialDispatchCode", label: "Initial dispatch code", value: initialDispatchCode },
     { id: "priority", label: "Priority", value: mapped.priority || "" },
     { id: "stillDistrict", label: "Still district", value: mapped.stillDistrict || "" },
     { id: "status", label: "Status", value: "Draft" },
     { id: "reportedBy", label: "Reported by", value: mapped.reportedBy || "" },
-    { id: "assignedUnits", label: "Assigned units", value: mapped.assignedUnits || "" },
+    { id: "assignedUnits", label: "Assigned units", value: units },
     { id: "address", label: "Address", value: mapped.address || "" },
     { id: "callbackNumber", label: "Callback number", value: mapped.callbackNumber || "" },
     { id: "dispatchNotes", label: "Dispatch notes", value: mapped.dispatchNotes || "" },
   ];
-  return { ok: true, followUp: false, rows };
+  return { ok: true, followUp: false, excluded, rows };
 }

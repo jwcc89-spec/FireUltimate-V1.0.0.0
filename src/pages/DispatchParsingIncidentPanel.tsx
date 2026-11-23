@@ -19,8 +19,11 @@ import {
   incidentNumberFormatFromExtract,
   incidentNumberSeriesExample,
   labelsFromSavedRules,
+  linesToPhrases,
   normalizeSectionSeparator,
   parseResetTime,
+  phraseListFromExtract,
+  phrasesToLines,
   previewIncidentFromLabels,
   resetFromExtract,
   separatorFromExtract,
@@ -53,6 +56,9 @@ export function DispatchParsingIncidentPanel() {
   const [resetMonth, setResetMonth] = useState(DEFAULT_RESET_MONTH);
   const [resetDay, setResetDay] = useState(DEFAULT_RESET_DAY);
   const [resetTime, setResetTime] = useState(DEFAULT_RESET_TIME);
+  const [excludeText, setExcludeText] = useState("");
+  const [exceptionText, setExceptionText] = useState("");
+  const [apparatusNames, setApparatusNames] = useState<string[] | null>(null);
   const [customRulesPresent, setCustomRulesPresent] = useState(false);
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
@@ -86,10 +92,12 @@ export function DispatchParsingIncidentPanel() {
         setResetMonth(savedReset.month);
         setResetDay(savedReset.day);
         setResetTime(savedReset.time);
+        setExcludeText(phrasesToLines(phraseListFromExtract(cfg.incidentNumberExtract, "excludeContains")));
+        setExceptionText(phrasesToLines(phraseListFromExtract(cfg.incidentNumberExtract, "excludeExceptions")));
         const loaded = labelsFromSavedRules(parsedRules, savedSeparator);
         const normalized = emptyIncidentLabels();
         for (const field of INCIDENT_LABEL_FIELDS) {
-          if (field.id === "incidentNumber" || field.id === "dispatchNumber") continue;
+          if (field.id === "incidentNumber") continue;
           const choice = loaded.labels[field.id];
           if (choice) normalized[field.id] = { index: choice.index, afterLabel: false };
         }
@@ -103,6 +111,37 @@ export function DispatchParsingIncidentPanel() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/department-details")
+      .then((response) => (response.ok ? response.json() : null))
+      .then((json) => {
+        if (cancelled || !json) return;
+        const data = json.data && typeof json.data === "object" ? json.data : {};
+        const records = Array.isArray(data.masterApparatusRecords)
+          ? data.masterApparatusRecords
+          : Array.isArray(data.apparatusRecords)
+            ? data.apparatusRecords
+            : [];
+        const names: string[] = [];
+        for (const record of records) {
+          if (!record || typeof record !== "object") continue;
+          const entry = record as { unitId?: unknown; commonName?: unknown };
+          for (const value of [entry.unitId, entry.commonName]) {
+            const name = String(value ?? "").trim();
+            if (name) names.push(name);
+          }
+        }
+        setApparatusNames(names);
+      })
+      .catch(() => {
+        if (!cancelled) setApparatusNames(null);
       });
     return () => {
       cancelled = true;
@@ -141,12 +180,31 @@ export function DispatchParsingIncidentPanel() {
 
   const preview = useMemo(() => {
     if (!sampleText) return null;
-    return previewIncidentFromLabels(sampleText, choices, activeSeparator, incidentNumberFormat, {
-      month: resetMonth,
-      day: resetDay,
-      time: resetTime,
-    });
-  }, [sampleText, choices, activeSeparator, incidentNumberFormat, resetMonth, resetDay, resetTime]);
+    return previewIncidentFromLabels(
+      sampleText,
+      choices,
+      activeSeparator,
+      incidentNumberFormat,
+      { month: resetMonth, day: resetDay, time: resetTime },
+      new Date(),
+      {
+        excludeContains: linesToPhrases(excludeText),
+        excludeExceptions: linesToPhrases(exceptionText),
+        apparatusNames,
+      },
+    );
+  }, [
+    sampleText,
+    choices,
+    activeSeparator,
+    incidentNumberFormat,
+    resetMonth,
+    resetDay,
+    resetTime,
+    excludeText,
+    exceptionText,
+    apparatusNames,
+  ]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
@@ -155,11 +213,16 @@ export function DispatchParsingIncidentPanel() {
       setSaveError("Enter the reset time in 24-hour format, such as 00:00.");
       return;
     }
-    const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat, {
-      month: resetMonth,
-      day: resetDay,
-      time: resetTime,
-    });
+    const built = buildIncidentLabelConfig(
+      choices,
+      separator,
+      incidentNumberFormat,
+      { month: resetMonth, day: resetDay, time: resetTime },
+      {
+        excludeContains: linesToPhrases(excludeText),
+        excludeExceptions: linesToPhrases(exceptionText),
+      },
+    );
     setSaveBusy(true);
     try {
       await patchCadParsingConfig({
@@ -175,7 +238,17 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, choices, separator, incidentNumberFormat, resetMonth, resetDay, resetTime]);
+  }, [
+    enableIncidentCreation,
+    choices,
+    separator,
+    incidentNumberFormat,
+    resetMonth,
+    resetDay,
+    resetTime,
+    excludeText,
+    exceptionText,
+  ]);
 
   const sections = splitDispatchParts(sampleText, activeSeparator);
 
@@ -298,6 +371,40 @@ export function DispatchParsingIncidentPanel() {
 
         <article className="panel cad-dispatch-incident-card">
           <div className="panel-header">
+            <h2>Exclude emails that contain</h2>
+          </div>
+          <label className="cad-allowlist-field">
+            Phrases
+            <textarea
+              className="cad-dispatch-merge-key-input"
+              rows={3}
+              value={excludeText}
+              aria-label="Phrases that exclude an email"
+              onChange={(event) => setExcludeText(event.target.value)}
+            />
+          </label>
+          <p className="panel-description">
+            One phrase per line. An email that contains any of these phrases is stored, but it does not create or
+            update an incident. Leave this blank for a department that wants EMS calls included, such as Kankakee or
+            Watseka.
+          </p>
+          <label className="cad-allowlist-field">
+            Exceptions
+            <textarea
+              className="cad-dispatch-merge-key-input"
+              rows={3}
+              value={exceptionText}
+              aria-label="Phrases that keep an excluded email"
+              onChange={(event) => setExceptionText(event.target.value)}
+            />
+          </label>
+          <p className="panel-description">
+            One phrase per line. If the email also contains an exception, it is kept and can still become an incident.
+          </p>
+        </article>
+
+        <article className="panel cad-dispatch-incident-card">
+          <div className="panel-header">
             <h2>Automatic incident creation</h2>
           </div>
           <label className="cad-dispatch-checkbox-label">
@@ -376,9 +483,7 @@ export function DispatchParsingIncidentPanel() {
                       }
                     >
                       <option value="">Do not use</option>
-                      {INCIDENT_LABEL_FIELDS.filter(
-                        (field) => field.id !== "incidentNumber" && field.id !== "dispatchNumber",
-                      ).map((field) => {
+                      {INCIDENT_LABEL_FIELDS.filter((field) => field.id !== "incidentNumber").map((field) => {
                         const taken = choices[field.id];
                         const usedOnAnotherSection = Boolean(taken && taken.index !== index);
                         return (
@@ -395,7 +500,10 @@ export function DispatchParsingIncidentPanel() {
           ) : (
             <p className="panel-description">This email has no semicolon-separated sections.</p>
           )}
-          <p className="panel-description">Status is not taken from the email. A new CAD incident starts as Draft.</p>
+          <p className="panel-description">
+            Status is not taken from the email. A new CAD incident starts as Draft. Assigned units are saved only when
+            the name matches Admin Functions → Setup/Configuration → Operational Details → Department Apparatus.
+          </p>
           {sampleText ? (
             <details className="cad-incident-original-details">
               <summary>Original text</summary>
@@ -414,6 +522,11 @@ export function DispatchParsingIncidentPanel() {
             <p className="field-error">{preview.error}</p>
           ) : preview && preview.ok ? (
             <>
+              {preview.excluded ? (
+                <p className="panel-description">
+                  This email matches an exclude phrase and would not create or update an incident.
+                </p>
+              ) : null}
               {preview.followUp ? (
                 <p className="panel-description">
                   Follow-up email. Rows marked Unchanged stay as they were saved from the new-call email. The notes
