@@ -7,16 +7,15 @@ import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails.ts";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
 import {
   INCIDENT_LABEL_FIELDS,
+  assignSectionToField,
   buildIncidentLabelConfig,
   emptyIncidentLabels,
-  partChoiceFromKey,
-  partChoiceKey,
-  partFromSelection,
+  fieldIdForSection,
   labelsFromSavedRules,
+  normalizeSectionSeparator,
   previewIncidentFromLabels,
+  separatorFromExtract,
   splitDispatchParts,
-  valueAfterLabel,
-  type IncidentLabelFieldId,
 } from "../cadDispatch/incidentLabelMap.ts";
 import { parseCadRulesJson } from "../cadDispatch/ruleEngine.ts";
 
@@ -40,6 +39,7 @@ export function DispatchParsingIncidentPanel() {
 
   const [enableIncidentCreation, setEnableIncidentCreation] = useState(false);
   const [choices, setChoices] = useState(emptyIncidentLabels);
+  const [separator, setSeparator] = useState(";");
   const [customRulesPresent, setCustomRulesPresent] = useState(false);
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
@@ -47,7 +47,6 @@ export function DispatchParsingIncidentPanel() {
   const [emailsError, setEmailsError] = useState<string | null>(null);
   const [selectedEmailId, setSelectedEmailId] = useState<string>("");
 
-  const [highlightError, setHighlightError] = useState<string | null>(null);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [saveBusy, setSaveBusy] = useState(false);
   const [saveOkAt, setSaveOkAt] = useState<number | null>(null);
@@ -67,8 +66,15 @@ export function DispatchParsingIncidentPanel() {
           setLoadError(e instanceof Error ? e.message : "Invalid saved incident rules.");
           return;
         }
-        const loaded = labelsFromSavedRules(parsedRules);
-        setChoices(loaded.labels);
+        const savedSeparator = separatorFromExtract(cfg.incidentNumberExtract);
+        setSeparator(savedSeparator);
+        const loaded = labelsFromSavedRules(parsedRules, savedSeparator);
+        const normalized = emptyIncidentLabels();
+        for (const field of INCIDENT_LABEL_FIELDS) {
+          const choice = loaded.labels[field.id];
+          if (choice) normalized[field.id] = { index: choice.index, afterLabel: false };
+        }
+        setChoices(normalized);
         setCustomRulesPresent(!loaded.recognized);
       })
       .catch((e) => {
@@ -112,15 +118,17 @@ export function DispatchParsingIncidentPanel() {
     ? (getDispatchPlainTextFromRawBody(selectedEmail.rawBody ?? "") ?? "")
     : "";
 
+  const activeSeparator = normalizeSectionSeparator(separator);
+
   const preview = useMemo(() => {
     if (!sampleText) return null;
-    return previewIncidentFromLabels(sampleText, choices);
-  }, [sampleText, choices]);
+    return previewIncidentFromLabels(sampleText, choices, activeSeparator);
+  }, [sampleText, choices, activeSeparator]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
     setSaveOkAt(null);
-    const built = buildIncidentLabelConfig(choices);
+    const built = buildIncidentLabelConfig(choices, separator);
     setSaveBusy(true);
     try {
       await patchCadParsingConfig({
@@ -136,21 +144,9 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, choices]);
+  }, [enableIncidentCreation, choices, separator]);
 
-  const applyHighlightedText = useCallback(
-    (fieldId: IncidentLabelFieldId) => {
-      const selected = window.getSelection?.()?.toString() ?? "";
-      const choice = partFromSelection(sampleText, selected);
-      if (!choice) {
-        setHighlightError("Highlight the words in the email first, then click Use highlighted text.");
-        return;
-      }
-      setHighlightError(null);
-      setChoices((current) => ({ ...current, [fieldId]: choice }));
-    },
-    [sampleText],
-  );
+  const sections = splitDispatchParts(sampleText, activeSeparator);
 
   if (loading) {
     return (
@@ -221,9 +217,22 @@ export function DispatchParsingIncidentPanel() {
           <div className="panel-header">
             <h2>Match the email to incident fields</h2>
           </div>
+          <label className="cad-allowlist-field">
+            How are sections or fields separated from CAD?
+            <input
+              className="cad-dispatch-merge-key-input cad-incident-separator-input"
+              type="text"
+              maxLength={1}
+              value={separator}
+              aria-label="Character that separates CAD sections"
+              onChange={(event) => setSeparator(event.target.value)}
+            />
+          </label>
           <p className="panel-description">
-            This dispatch email is split into parts at each semicolon. Highlight the words that belong in a field,
-            then click <strong>Use highlighted text</strong>. You can also pick the part from the list.
+            Enter one character. Crescent’s emails use a semicolon. Section 1 is the text before the first separator.
+            Section 2 is the text before the next one, and so on. Pick the incident field for each section. The same
+            section number is used on the next email, so check a second email and confirm section 1 is still the same
+            kind of information.
           </p>
           {emailsError ? <p className="field-error">{emailsError}</p> : null}
           {emailsLoading ? <p className="panel-description">Loading emails…</p> : null}
@@ -239,10 +248,7 @@ export function DispatchParsingIncidentPanel() {
               <select
                 className="cad-dispatch-merge-key-input"
                 value={selectedEmail?.id ?? ""}
-                onChange={(event) => {
-                  setSelectedEmailId(event.target.value);
-                  setHighlightError(null);
-                }}
+                onChange={(event) => setSelectedEmailId(event.target.value)}
               >
                 {emails.map((row) => (
                   <option key={row.id} value={row.id}>
@@ -253,82 +259,49 @@ export function DispatchParsingIncidentPanel() {
             </label>
           ) : null}
 
-          <div className="cad-incident-label-layout">
-            <div>
-              <h3 className="cad-dispatch-message-row-h">Original text</h3>
-              {sampleText ? (
-                <>
-                  <pre className="cad-dispatch-preview-pre cad-incident-sample-text">{sampleText}</pre>
-                  <ol className="cad-incident-part-list">
-                    {splitDispatchParts(sampleText).map((part, index) => {
-                      const after = valueAfterLabel(part);
-                      return (
-                        <li key={index}>
-                          <strong>Part {index + 1}.</strong> {part || "(empty)"}
-                          {after != null ? <span> — value after the label: {after || "(empty)"}</span> : null}
-                        </li>
-                      );
-                    })}
-                  </ol>
-                </>
-              ) : (
-                <p className="panel-description">No dispatch text in this email.</p>
-              )}
-            </div>
-            <div>
-              <h3 className="cad-dispatch-message-row-h">Incident fields</h3>
-              {highlightError ? <p className="field-error">{highlightError}</p> : null}
-              <div className="cad-incident-label-list">
-                {INCIDENT_LABEL_FIELDS.map((field) => (
-                  <div key={field.id} className="cad-incident-label-row">
-                    <label className="cad-allowlist-field">
-                      {field.label}
-                      <select
-                        className="cad-dispatch-merge-key-input"
-                        value={partChoiceKey(choices[field.id])}
-                        aria-label={`${field.label} part of the email`}
-                        onChange={(event) =>
-                          setChoices((current) => ({
-                            ...current,
-                            [field.id]: partChoiceFromKey(event.target.value),
-                          }))
-                        }
-                      >
-                        <option value="">Not used</option>
-                        {splitDispatchParts(sampleText).map((part, index) => (
-                          <option key={index} value={String(index)}>
-                            Part {index + 1}: {part || "(empty)"}
-                          </option>
-                        ))}
-                        {splitDispatchParts(sampleText).map((part, index) => {
-                          const after = valueAfterLabel(part);
-                          if (after == null) return null;
-                          return (
-                            <option key={`${index}:after`} value={`${index}:after`}>
-                              Part {index + 1} after the label: {after || "(empty)"}
-                            </option>
-                          );
-                        })}
-                      </select>
-                    </label>
-                    <p className="panel-description">{field.hint}</p>
-                    <button
-                      type="button"
-                      className="secondary-button small-button"
-                      onClick={() => applyHighlightedText(field.id)}
-                      disabled={!sampleText}
-                    >
-                      Use highlighted text
-                    </button>
+          {sections.length > 0 ? (
+            <div className="cad-incident-section-list">
+              {sections.map((part, index) => (
+                <div key={index} className="cad-incident-section-row">
+                  <div>
+                    <p className="cad-incident-section-label">Section {index + 1}</p>
+                    <p className="cad-incident-section-text">{part || "(empty)"}</p>
                   </div>
-                ))}
-                <div className="cad-incident-label-row">
-                  <p className="cad-allowlist-field">Status</p>
-                  <p className="panel-description">New incidents from CAD start as Draft.</p>
+                  <label className="cad-allowlist-field">
+                    Incident field
+                    <select
+                      className="cad-dispatch-merge-key-input"
+                      value={fieldIdForSection(choices, index)}
+                      aria-label={`Incident field for section ${index + 1}`}
+                      onChange={(event) =>
+                        setChoices((current) => assignSectionToField(current, index, event.target.value))
+                      }
+                    >
+                      <option value="">Do not use</option>
+                      {INCIDENT_LABEL_FIELDS.map((field) => {
+                        const taken = choices[field.id];
+                        const usedOnAnotherSection = Boolean(taken && taken.index !== index);
+                        return (
+                          <option key={field.id} value={field.id} disabled={usedOnAnotherSection}>
+                            {field.label}
+                          </option>
+                        );
+                      })}
+                    </select>
+                  </label>
                 </div>
-              </div>
+              ))}
             </div>
-          </div>
+          ) : (
+            <p className="panel-description">This email has no semicolon-separated sections.</p>
+          )}
+          <p className="panel-description">Status is not taken from the email. A new CAD incident starts as Draft.</p>
+          {sampleText ? (
+            <details className="cad-incident-original-details">
+              <summary>Original text</summary>
+              <pre className="cad-dispatch-preview-pre cad-incident-sample-text">{sampleText}</pre>
+            </details>
+          ) : null}
         </article>
 
         <article className="panel cad-dispatch-incident-card">
@@ -364,7 +337,7 @@ export function DispatchParsingIncidentPanel() {
           {saveError ? <p className="field-error">{saveError}</p> : null}
           {saveOkAt !== null && !saveError ? (
             <p className="cad-dispatch-save-ok" role="status">
-              Saved. The next dispatch email uses these parts.
+              Saved. The next dispatch email uses these sections.
             </p>
           ) : null}
         </article>

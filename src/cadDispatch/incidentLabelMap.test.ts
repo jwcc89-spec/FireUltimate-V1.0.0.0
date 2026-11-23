@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import {
+  assignSectionToField,
   buildIncidentLabelConfig,
   emptyIncidentLabels,
+  fieldIdForSection,
   partFromSelection,
   labelsFromSavedRules,
   previewIncidentFromLabels,
@@ -56,6 +58,37 @@ describe("incidentLabelMap", () => {
     assert.deepEqual(loaded.labels.address, { index: 2, afterLabel: false });
     assert.deepEqual(loaded.labels.dispatchNotes, { index: 5, afterLabel: true });
     assert.equal(loaded.labels.incidentNumber, null);
+  });
+
+  it("splits and reads fields when the separator is a pipe", () => {
+    const piped = "26018614|Fire Alarm - Commercial Structure|540 E Highway 24";
+    assert.deepEqual(splitDispatchParts(piped, "|"), [
+      "26018614",
+      "Fire Alarm - Commercial Structure",
+      "540 E Highway 24",
+    ]);
+    const choices = emptyIncidentLabels();
+    choices.incidentNumber = { index: 0, afterLabel: false };
+    choices.address = { index: 2, afterLabel: false };
+    const built = buildIncidentLabelConfig(choices, "|");
+    assert.equal(built.incidentNumberExtract.separator, "|");
+    const loaded = labelsFromSavedRules(built.rules, "|");
+    assert.equal(loaded.recognized, true);
+    assert.deepEqual(loaded.labels.address, { index: 2, afterLabel: false });
+    const preview = previewIncidentFromLabels(piped, choices, "|");
+    assert.equal(preview.ok, true);
+    if (!preview.ok) return;
+    assert.equal(preview.rows.find((row) => row.id === "address")?.value, "540 E Highway 24");
+  });
+
+  it("assigns one incident field to each section", () => {
+    let choices = emptyIncidentLabels();
+    choices = assignSectionToField(choices, 0, "incidentNumber");
+    choices = assignSectionToField(choices, 1, "incidentType");
+    choices = assignSectionToField(choices, 0, "dispatchNumber");
+    assert.equal(fieldIdForSection(choices, 0), "dispatchNumber");
+    assert.equal(fieldIdForSection(choices, 1), "incidentType");
+    assert.equal(choices.incidentNumber, null);
   });
 
   it("reads the part that contains highlighted text", () => {

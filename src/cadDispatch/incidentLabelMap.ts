@@ -8,7 +8,25 @@ import {
   buildMappedIncidentFieldsPreview,
   extractMergeKeyFromSlots,
 } from "./incidentMappingPreview.ts";
+import { escapeRegexLiteral } from "./regexEscape.ts";
 import { parseCadRulesJson, runCadRulePipeline, type CadRule } from "./ruleEngine.ts";
+
+export const DEFAULT_SECTION_SEPARATOR = ";";
+
+/** One visible character. A blank value means the default semicolon. */
+export function normalizeSectionSeparator(value: string): string {
+  const char = Array.from(value)[0] ?? "";
+  if (!char || /\s/.test(char)) return DEFAULT_SECTION_SEPARATOR;
+  return char;
+}
+
+export function separatorFromExtract(raw: unknown): string {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const value = (raw as { separator?: unknown }).separator;
+    if (typeof value === "string") return normalizeSectionSeparator(value);
+  }
+  return DEFAULT_SECTION_SEPARATOR;
+}
 
 export type IncidentLabelFieldId =
   | "incidentNumber"
@@ -107,9 +125,17 @@ export const INCIDENT_LABEL_FIELDS: readonly IncidentLabelField[] = [
   },
 ];
 
-const PATTERN_HEAD = "(?:^|\\n)(?:[^;\\n]*;){";
-const WHOLE_TAIL = "}\\s*([^;\\n]+)";
-const AFTER_TAIL = "}\\s*[^:;\\n]*:\\s*([^;\\n]*)";
+function separatorPattern(separator: string): { head: string; wholeTail: string; afterTail: string } {
+  const active = normalizeSectionSeparator(separator);
+  const escaped = escapeRegexLiteral(active);
+  const classBody = active.replace(/[\\\]\-^]/g, "\\$&");
+  const notSeparator = `[^${classBody}\\n]`;
+  return {
+    head: `(?:^|\\n)(?:${notSeparator}*${escaped}){`,
+    wholeTail: `}\\s*(${notSeparator}+)`,
+    afterTail: `}\\s*[^:${classBody}\\n]*:\\s*(${notSeparator}*)`,
+  };
+}
 
 export function emptyIncidentLabels(): Record<IncidentLabelFieldId, IncidentPartChoice | null> {
   return {
@@ -127,14 +153,15 @@ export function emptyIncidentLabels(): Record<IncidentLabelFieldId, IncidentPart
   };
 }
 
-/** Split one CAD line on semicolons. Uses the first line that contains a semicolon. */
-export function splitDispatchParts(text: string): string[] {
+/** Split one CAD line on the separator character. Uses the first line that contains it. */
+export function splitDispatchParts(text: string, separator = DEFAULT_SECTION_SEPARATOR): string[] {
+  const active = normalizeSectionSeparator(separator);
   const source =
     text
       .split(/\n/)
       .map((line) => line.trim())
-      .find((line) => line.includes(";")) ?? text.trim();
-  const parts = source.split(";").map((part) => part.trim());
+      .find((line) => line.includes(active)) ?? text.trim();
+  const parts = source.split(active).map((part) => part.trim());
   while (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
   return parts;
 }
@@ -150,6 +177,32 @@ export function partChoiceKey(choice: IncidentPartChoice | null): string {
   return choice.afterLabel ? `${choice.index}:after` : String(choice.index);
 }
 
+export function fieldIdForSection(
+  choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
+  index: number,
+): IncidentLabelFieldId | "" {
+  for (const field of INCIDENT_LABEL_FIELDS) {
+    const choice = choices[field.id];
+    if (choice && choice.index === index) return field.id;
+  }
+  return "";
+}
+
+export function assignSectionToField(
+  choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
+  index: number,
+  fieldId: string,
+): Record<IncidentLabelFieldId, IncidentPartChoice | null> {
+  const next: Record<IncidentLabelFieldId, IncidentPartChoice | null> = { ...choices };
+  for (const field of INCIDENT_LABEL_FIELDS) {
+    const choice = next[field.id];
+    if (choice && choice.index === index) next[field.id] = null;
+  }
+  const selected = INCIDENT_LABEL_FIELDS.find((field) => field.id === fieldId);
+  if (selected) next[selected.id] = { index, afterLabel: false };
+  return next;
+}
+
 export function partChoiceFromKey(key: string): IncidentPartChoice | null {
   if (!key) return null;
   const afterLabel = key.endsWith(":after");
@@ -158,42 +211,50 @@ export function partChoiceFromKey(key: string): IncidentPartChoice | null {
   return { index: Number(raw), afterLabel };
 }
 
-function patternForPart(choice: IncidentPartChoice): string {
-  return `${PATTERN_HEAD}${choice.index}${choice.afterLabel ? AFTER_TAIL : WHOLE_TAIL}`;
+function patternForPart(choice: IncidentPartChoice, separator: string): string {
+  const pieces = separatorPattern(separator);
+  return `${pieces.head}${choice.index}${choice.afterLabel ? pieces.afterTail : pieces.wholeTail}`;
 }
 
-function choiceFromPattern(pattern: string): IncidentPartChoice | null {
-  if (!pattern.startsWith(PATTERN_HEAD)) return null;
-  const tail = pattern.endsWith(AFTER_TAIL) ? AFTER_TAIL : pattern.endsWith(WHOLE_TAIL) ? WHOLE_TAIL : null;
+function choiceFromPattern(pattern: string, separator: string): IncidentPartChoice | null {
+  const pieces = separatorPattern(separator);
+  if (!pattern.startsWith(pieces.head)) return null;
+  const tail = pattern.endsWith(pieces.afterTail)
+    ? pieces.afterTail
+    : pattern.endsWith(pieces.wholeTail)
+      ? pieces.wholeTail
+      : null;
   if (!tail) return null;
-  const mid = pattern.slice(PATTERN_HEAD.length, pattern.length - tail.length);
+  const mid = pattern.slice(pieces.head.length, pattern.length - tail.length);
   if (!/^\d+$/.test(mid)) return null;
-  return { index: Number(mid), afterLabel: tail === AFTER_TAIL };
+  return { index: Number(mid), afterLabel: tail === pieces.afterTail };
 }
 
 export function buildIncidentLabelConfig(
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
+  separator = DEFAULT_SECTION_SEPARATOR,
 ): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
-  incidentNumberExtract: { slot: string } | null;
+  incidentNumberExtract: { separator: string; slot?: string };
 } {
+  const active = normalizeSectionSeparator(separator);
   const rules: CadRule[] = [{ type: "trim" }, { type: "normalize_newlines" }];
   const fieldMap: Record<string, string> = {};
-  let incidentNumberExtract: { slot: string } | null = null;
+  const incidentNumberExtract: { separator: string; slot?: string } = { separator: active };
 
   for (const field of INCIDENT_LABEL_FIELDS) {
     const choice = choices[field.id];
     if (!choice || choice.index < 0) continue;
     rules.push({
       type: "extract_capture",
-      pattern: patternForPart(choice),
+      pattern: patternForPart(choice, active),
       group: 1,
       slot: field.id,
       flags: "",
     });
     if (field.id === "incidentNumber") {
-      incidentNumberExtract = { slot: "incidentNumber" };
+      incidentNumberExtract.slot = "incidentNumber";
     } else if (field.target) {
       fieldMap[field.id] = field.target;
     }
@@ -202,7 +263,7 @@ export function buildIncidentLabelConfig(
   return { rules, fieldMap, incidentNumberExtract };
 }
 
-export function labelsFromSavedRules(rawRules: unknown): {
+export function labelsFromSavedRules(rawRules: unknown, separator = DEFAULT_SECTION_SEPARATOR): {
   recognized: boolean;
   labels: Record<IncidentLabelFieldId, IncidentPartChoice | null>;
 } {
@@ -224,7 +285,7 @@ export function labelsFromSavedRules(rawRules: unknown): {
     }
     const field = INCIDENT_LABEL_FIELDS.find((item) => item.id === rule.slot);
     if (!field || seen.has(field.id)) return { recognized: false, labels };
-    const choice = choiceFromPattern(rule.pattern);
+    const choice = choiceFromPattern(rule.pattern, separator);
     if (!choice) return { recognized: false, labels };
     labels[field.id] = choice;
     seen.add(field.id);
@@ -233,14 +294,19 @@ export function labelsFromSavedRules(rawRules: unknown): {
 }
 
 /** The semicolon part that contains the highlighted words. */
-export function partFromSelection(text: string, selected: string): IncidentPartChoice | null {
+export function partFromSelection(
+  text: string,
+  selected: string,
+  separator = DEFAULT_SECTION_SEPARATOR,
+): IncidentPartChoice | null {
+  const active = normalizeSectionSeparator(separator);
   const needle = selected.trim();
   if (!needle || !text.includes(needle)) return null;
   const idx = text.indexOf(needle);
-  const start = text.lastIndexOf(";", idx);
-  const end = text.indexOf(";", idx);
+  const start = text.lastIndexOf(active, idx);
+  const end = text.indexOf(active, idx);
   const segment = text.slice(start + 1, end === -1 ? text.length : end).trim();
-  const index = splitDispatchParts(text).indexOf(segment);
+  const index = splitDispatchParts(text, active).indexOf(segment);
   if (index < 0) return null;
   const colon = segment.indexOf(":");
   if (colon >= 0) {
@@ -261,8 +327,9 @@ export type IncidentPreviewRow = {
 export function previewIncidentFromLabels(
   plainText: string,
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
+  separator = DEFAULT_SECTION_SEPARATOR,
 ): { ok: true; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
-  const built = buildIncidentLabelConfig(choices);
+  const built = buildIncidentLabelConfig(choices, separator);
   const result = runCadRulePipeline(plainText, built.rules);
   if (!result.ok) return { ok: false, error: result.error };
   const mergeKey = extractMergeKeyFromSlots(result.slots, built.incidentNumberExtract);

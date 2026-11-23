@@ -1,7 +1,7 @@
 # CAD email dispatch — product & implementation plan
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress — **implementation:** Batches A–G, **G1**, **H**, **I** **done** (2026-04-10). **Batch K slice 1 (2026-11-23):** Incident Parsing fills fields from semicolon-separated parts of the CAD email (no JSON). Crescent’s mail looks like `26018614; Fire Alarm - Commercial Structure; 540 E UNITED STATES HIGHWAY 24, ...`. **Next:** **Batch J** (schema approval) and the rest of **K** (message-parsing guide, shared rule library). **Product:** end-user-friendly rules (no JSON for departments), field mapping UI, plain-language previews; apparatus matching.  
+**Status:** In progress — **implementation:** Batches A–G, **G1**, **H**, **I** **done** (2026-04-10). **Batch K slice 1 (2026-11-23):** Incident Parsing asks for the one character that separates CAD sections, then each section has a dropdown for the incident field. Crescent’s mail uses `;`, as in `26018614; Fire Alarm - Commercial Structure; 540 E UNITED STATES HIGHWAY 24, ...`. **Next:** **Batch J** (schema approval) and the rest of **K** (message-parsing guide, shared rule library). **Product:** end-user-friendly rules (no JSON for departments), field mapping UI, plain-language previews; apparatus matching.  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md` · Migrations — `docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md` §**I.2**
 
 This file is the **single plan** for incoming CAD email: **what we want the product to do** and **how we are building it** (phases + batches). It replaces having separate “product” and “implementation” CAD plan documents.
