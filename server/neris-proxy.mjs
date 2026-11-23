@@ -2332,6 +2332,8 @@ const CAD_INCIDENT_FIELD_MAP_TARGETS = new Set([
   "reportedBy",
   "callbackNumber",
   "dispatchNotes",
+  "dispatchNumber",
+  "initialDispatchCode",
   "mapReference",
   "dispatchInfo",
   "receivedAt",
@@ -2431,7 +2433,9 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
     if (trimValue(mapped.assignedUnits)) updateData.assignedUnits = mapped.assignedUnits;
     if (trimValue(mapped.reportedBy)) updateData.reportedBy = mapped.reportedBy;
     if (trimValue(mapped.callbackNumber)) updateData.callbackNumber = mapped.callbackNumber;
-    if (trimValue(mapped.mapReference)) updateData.mapReference = mapped.mapReference;
+    if (trimValue(mapped.dispatchNumber)) updateData.dispatchNumber = mapped.dispatchNumber;
+    const updatedDispatchCode = trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference);
+    if (updatedDispatchCode) updateData.mapReference = updatedDispatchCode;
     if (trimValue(mapped.dispatchInfo)) updateData.dispatchInfo = mapped.dispatchInfo;
     if (trimValue(mapped.receivedAt)) updateData.receivedAt = mapped.receivedAt;
     await prisma.incident.update({
@@ -2445,7 +2449,7 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
     data: {
       tenantId,
       incidentNumber: mergeKey,
-      dispatchNumber: mergeKey,
+      dispatchNumber: trimValue(mapped.dispatchNumber) || mergeKey,
       incidentType: trimValue(mapped.incidentType) || "",
       priority: trimValue(mapped.priority) || "",
       address: trimValue(mapped.address) || "",
@@ -2454,7 +2458,7 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
       reportedBy: trimValue(mapped.reportedBy) || null,
       callbackNumber: trimValue(mapped.callbackNumber) || null,
       dispatchNotes: trimValue(mapped.dispatchNotes) || null,
-      mapReference: trimValue(mapped.mapReference) || null,
+      mapReference: trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference) || null,
       currentState: "Draft",
       receivedAt: trimValue(mapped.receivedAt) || "",
       dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",

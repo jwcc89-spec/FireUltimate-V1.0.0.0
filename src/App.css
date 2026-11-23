@@ -1403,6 +1403,38 @@ tbody tr:last-of-type td {
   margin: 0;
 }
 
+.cad-incident-label-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+  align-items: start;
+  margin-top: 0.75rem;
+}
+
+@media (max-width: 960px) {
+  .cad-incident-label-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+.cad-incident-sample-text {
+  max-height: 36rem;
+  overflow: auto;
+  user-select: text;
+}
+
+.cad-incident-label-list {
+  display: grid;
+  gap: 0.85rem;
+}
+
+.cad-incident-label-row {
+  display: grid;
+  gap: 0.25rem;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #eef2f7;
+}
+
 .cad-dispatch-rules-textarea {
   width: 100%;
   box-sizing: border-box;
@@ -4292,6 +4324,26 @@ body.resource-personnel-modal-open {
   border: none;
   box-shadow: none;
   padding: 0;
+}
+
+.reporting-admin-sidebar .neris-section-nav button {
+  display: grid;
+  gap: 0.12rem;
+}
+
+.reporting-admin-sidebar .dispatch-parsing-nav-label {
+  font-weight: 600;
+}
+
+.reporting-admin-sidebar .dispatch-parsing-nav-hint {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: #64748b;
+  line-height: 1.25;
+}
+
+.reporting-admin-sidebar .neris-section-nav button.active .dispatch-parsing-nav-hint {
+  color: #1d4ed8;
 }
 
 /* Narrative Builder admin (Phase 2 + Phase 3) */

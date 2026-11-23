@@ -1,7 +1,7 @@
 # CAD email dispatch — product & implementation plan
 
 **Branch:** `submenu/neris-golive-cifpd`  
-**Status:** In progress — **implementation:** Batches A–G, **G1**, **H**, **I** **done** (2026-04-10). **Next:** **Batch J** (schema approval) → **K** (user-friendly parsing UX). **Product:** end-user-friendly rules (no JSON for departments), field mapping UI, plain-language previews; apparatus matching.  
+**Status:** In progress — **implementation:** Batches A–G, **G1**, **H**, **I** **done** (2026-04-10). **Batch K slice 1 (2026-11-23):** Incident Parsing uses email labels to fill incident fields (no JSON). **Next:** **Batch J** (schema approval) and the rest of **K** (message-parsing guide, shared rule library). **Product:** end-user-friendly rules (no JSON for departments), field mapping UI, plain-language previews; apparatus matching.  
 **Runbooks:** `docs/procedures/EMAIL_AND_CAD_SETUP.md` · Migrations — `docs/user instructions/TENANT_ONBOARDING_CHECKLIST.md` §**I.2**
 
 This file is the **single plan** for incoming CAD email: **what we want the product to do** and **how we are building it** (phases + batches). It replaces having separate “product” and “implementation” CAD plan documents.
@@ -40,6 +40,7 @@ Build toward (order can overlap engineering phases):
 
 - **Historical build order:** Incident automation (ingest → create/update draft incidents) shipped in **Batch G**; **member-facing parsed message text** (`CadEmailIngest.parsedMessageText`) and the **Message Parsing** admin tab shipped in **Batch H**. So engineering prioritized **incident** wiring first, then **message** persistence and UI.
 - **Current behavior (post–Batch H):** On each successful **`CadEmailIngest`** insert (after secret + allowlist), the server runs **both** pipelines when configured: **(1)** **Message rules** → `parsedMessageText` (does not require incident automation to be on); **(2)** if **Enable Incident Creation** is on, **incident rules** → create/update incident. They are **parallel concerns**, not sequential phases.
+- **Screen roles (decided 2026-11-23):** **Message Parsing** is the cleaned dispatch text that will show on the dashboard, and later on the incident widget. **Incident Parsing** is the only place that writes extracted values into a new incident (incident number, dispatch number, incident type, initial dispatch code, priority, still district, reported by, assigned units, address, callback number, dispatch notes). Status stays **Draft** when CAD creates the incident.
 - **Future:** **Batch K** makes **both** Message and Incident rule configuration **user-friendly** (same product direction as §1.3).
 
 ### 1.4 Apparatus matching

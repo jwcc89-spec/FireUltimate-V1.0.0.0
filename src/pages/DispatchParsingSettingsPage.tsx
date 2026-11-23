@@ -13,21 +13,25 @@ export const DISPATCH_PARSING_ADMIN_MODULES = [
   {
     id: "allowed-senders",
     label: "Allowed Senders",
+    hint: "Who may send dispatch mail",
     path: "/admin-functions/dispatch-parsing-settings/allowed-senders",
   },
   {
     id: "message-parsing",
     label: "Message Parsing",
+    hint: "Text for the dashboard",
     path: "/admin-functions/dispatch-parsing-settings/message-parsing",
   },
   {
     id: "incident-parsing",
     label: "Incident Parsing",
+    hint: "Fills the incident fields",
     path: "/admin-functions/dispatch-parsing-settings/incident-parsing",
   },
   {
     id: "raw-email",
     label: "Raw Email",
+    hint: "Original messages",
     path: "/admin-functions/dispatch-parsing-settings/raw-email",
   },
 ] as const;
@@ -285,7 +289,7 @@ export function DispatchParsingAdminPage() {
         <aside className="panel neris-sidebar reporting-admin-sidebar">
           <div className="neris-sidebar-header">
             <h2>Dispatch Parsing</h2>
-            <p>Admin modules</p>
+            <p>Message Parsing is the dashboard text. Incident Parsing fills a new incident.</p>
           </div>
           <nav className="neris-section-nav" aria-label="Dispatch parsing module navigation">
             {DISPATCH_PARSING_ADMIN_MODULES.map((mod) => (
@@ -295,7 +299,8 @@ export function DispatchParsingAdminPage() {
                 className={mod.id === activeModuleId ? "active" : ""}
                 onClick={() => navigate(mod.path)}
               >
-                {mod.label}
+                <span className="dispatch-parsing-nav-label">{mod.label}</span>
+                <span className="dispatch-parsing-nav-hint">{mod.hint}</span>
               </button>
             ))}
           </nav>

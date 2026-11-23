@@ -197,7 +197,10 @@ export function DispatchParsingMessagePanel() {
         <header className="page-header dispatch-parsing-module-header">
           <div>
             <h1>Message Parsing</h1>
-            <p>Rules for the parsed dispatch string used for member notifications and stored on each ingest.</p>
+            <p>
+              Builds the dispatch text shown on the dashboard, and later on the incident widget. It does not fill
+              incident fields. Use Incident Parsing for that.
+            </p>
           </div>
         </header>
         <p className="field-error">{loadError}</p>
@@ -211,10 +214,10 @@ export function DispatchParsingMessagePanel() {
         <div>
           <h1>Message Parsing</h1>
           <p>
-            Add rules <strong>one at a time</strong> from the dropdown, reorder with ↑ ↓, remove with ×.{" "}
-            <strong>Preview</strong> shows up to {EMAIL_LIST_LIMIT} rows: <strong>Original text</strong> (dispatch
-            content) beside a single <strong>Parsed text</strong> box (result plus any extracted fields).{" "}
-            <strong>Save</strong> persists rules for this tenant.
+            This page builds the short dispatch text that will show on the dashboard, and later on the incident
+            widget. It does not write incident number, address, units, or the other incident fields. Use{" "}
+            <strong>Incident Parsing</strong> for those. <strong>Preview</strong> shows up to {EMAIL_LIST_LIMIT}{" "}
+            emails: original text beside the dashboard text. <strong>Save</strong> keeps this for the department.
           </p>
         </div>
       </header>

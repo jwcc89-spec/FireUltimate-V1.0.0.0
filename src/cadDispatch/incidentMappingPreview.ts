@@ -12,6 +12,8 @@ export const CAD_INCIDENT_FIELD_OPTIONS = [
   { value: "reportedBy", label: "Reported by" },
   { value: "callbackNumber", label: "Callback number" },
   { value: "dispatchNotes", label: "Dispatch notes" },
+  { value: "dispatchNumber", label: "Dispatch number" },
+  { value: "initialDispatchCode", label: "Initial dispatch code" },
   { value: "mapReference", label: "Map reference" },
   { value: "dispatchInfo", label: "Dispatch info" },
   { value: "receivedAt", label: "Received at" },
