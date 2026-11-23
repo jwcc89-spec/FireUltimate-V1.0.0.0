@@ -619,7 +619,10 @@ function NerisReportFormPage({
   );
 
   useEffect(() => {
-    if (!callNumber) return;
+    if (!callNumber || !isAdminOrHigher(role)) {
+      setChangeHistory([]);
+      return;
+    }
     let cancelled = false;
     getNerisDraftHistory(callNumber)
       .then((rows) => {
@@ -631,7 +634,7 @@ function NerisReportFormPage({
     return () => {
       cancelled = true;
     };
-  }, [callNumber, reportStatus, lastSavedAt]);
+  }, [callNumber, reportStatus, lastSavedAt, role]);
   const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
     (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
       aidDirection: entry.aidDirection,
@@ -3057,9 +3060,7 @@ function NerisReportFormPage({
     });
     setReportStatus("Draft");
     setSaveMessage("");
-    setErrorMessage(
-      "Validation incomplete. Complete the required fields listed below.",
-    );
+    setErrorMessage("");
     setValidationModal({
       mode: "issues",
       issues: issueLabels,
@@ -5512,6 +5513,31 @@ function NerisReportFormPage({
     unmappedFilledFieldLabels.length - visibleUnmappedFieldLabels.length,
   );
 
+  const recordIncidentNumber = String(
+    detail?.incidentNumber ?? detail?.incident_internal_id ?? "",
+  ).trim();
+  const formIncidentNumber = String(formValues.incident_internal_id ?? "").trim();
+  const headerIncidentNumber =
+    (formIncidentNumber && formIncidentNumber !== callNumber ? formIncidentNumber : "") ||
+    (recordIncidentNumber && recordIncidentNumber !== callNumber ? recordIncidentNumber : "") ||
+    "Not set";
+  const headerIncidentType = (() => {
+    const normalized = normalizeNerisEnumValue(formValues.primary_incident_type ?? "");
+    const lastSegment =
+      normalized
+        .split("||")
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)
+        .at(-1) ?? "";
+    if (!lastSegment) {
+      return detail?.incidentType || "Not set";
+    }
+    return lastSegment
+      .toLowerCase()
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  })();
+
   if (!detail) {
     return (
       <section className="page-section">
@@ -5534,9 +5560,14 @@ function NerisReportFormPage({
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>{detail.callNumber}</h1>
+          <div className="neris-report-title-row">
+            <h1>{headerIncidentNumber}</h1>
+            <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
+              {reportStatus}
+            </span>
+          </div>
           <p>
-            <strong>{detail.incidentType}</strong> at {detail.address}
+            <strong>{headerIncidentType}</strong> at {detail.address}
           </p>
           {persistedDraft?.reportRemoved ? (
             <p className="field-hint">
@@ -5551,15 +5582,10 @@ function NerisReportFormPage({
             <span>
               Last saved <strong>{lastSavedAt}</strong>
             </span>
-            <span>
-              Status{" "}
-              <strong className={toToneClass(toneFromNerisStatus(reportStatus))}>
-                {reportStatus}
-              </strong>
-            </span>
           </div>
           {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
+          {isAdminOrHigher(role) ? (
           <details className="panel neris-change-history">
             <summary>Change history</summary>
             {changeHistory.length === 0 ? (
@@ -5591,6 +5617,7 @@ function NerisReportFormPage({
               </ul>
             )}
           </details>
+          ) : null}
           {incidentCompareRows.length > 0 ? (
             <section className="neris-incident-compare panel" aria-live="polite">
               <div className="neris-incident-compare-header">
@@ -5741,9 +5768,6 @@ function NerisReportFormPage({
               Unlock
             </button>
           ) : null}
-          <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
-            {reportStatus}
-          </span>
         </div>
       </header>
 

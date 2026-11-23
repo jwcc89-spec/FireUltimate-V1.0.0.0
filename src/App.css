@@ -734,6 +734,13 @@ body.resizing-shell-sidebar {
   color: #0f172a;
 }
 
+.neris-report-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 .page-header p {
   margin: 0.3rem 0 0;
   color: #475569;
