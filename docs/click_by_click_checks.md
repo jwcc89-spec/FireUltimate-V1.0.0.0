@@ -33,7 +33,7 @@ Each check has an ID, the item, and numbered steps. After you run a check, tell 
 2. Check **Show Required Fields Only**.
 3. Open **Risk Reduction**.
 4. Confirm the four questions (smoke alarm, fire alarm, other alarm, fire suppression) are visible and each label ends with *.
-5. Confirm **Back**, **Save**, and **Next** are short buttons, not tall boxes.
+5. Confirm **Back**, **Save**, and **Next** are short buttons. Also confirm **Yes**, **No**, and **Unknown** under Risk reduction completed, Follow-up required, and Contact Made are short before any answer is chosen.
 6. Open the main incident section and confirm **Was aid given or received?** has * and Validate complains if it is empty.
 7. Answer the four protection questions (No or Unknown is enough) and answer the aid question.
 8. Click **Validate**.
