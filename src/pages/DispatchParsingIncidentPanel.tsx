@@ -11,6 +11,7 @@ import {
   INCIDENT_LABEL_FIELDS,
   assignIncidentNumberChart,
   assignSectionToField,
+  chartRowsNewestFirst,
   cadDispatchNumber,
   departmentCfsDigits,
   emailExcludedBySetup,
@@ -24,6 +25,7 @@ import {
   fieldIdForSection,
   followUpCallNumber,
   incidentNumberFormatFromExtract,
+  incidentNumberOverridesFromExtract,
   labelsFromSavedRules,
   linesToPhrases,
   normalizeSectionSeparator,
@@ -126,6 +128,8 @@ export function DispatchParsingIncidentPanel() {
   const [chartBusy, setChartBusy] = useState(false);
   const [chartMessage, setChartMessage] = useState<string | null>(null);
   const [chartReload, setChartReload] = useState(0);
+  const [numberEdits, setNumberEdits] = useState<Record<string, string>>({});
+  const [savedOverrides, setSavedOverrides] = useState<Record<string, string>>({});
   const chartFileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -140,6 +144,7 @@ export function DispatchParsingIncidentPanel() {
           typeof cfg.enableIncidentUpdate === "boolean" ? cfg.enableIncidentUpdate : cfg.enableIncidentCreation,
         );
         setTimeMap(timeMapFromExtract(cfg.incidentNumberExtract));
+        setSavedOverrides(incidentNumberOverridesFromExtract(cfg.incidentNumberExtract));
         let parsedRules: unknown = cfg.incidentRules ?? [];
         try {
           parsedRules = parseCadRulesJson(JSON.parse(JSON.stringify(cfg.incidentRules ?? [])));
@@ -360,7 +365,31 @@ export function DispatchParsingIncidentPanel() {
     incidentNumberFormat,
   ]);
 
-  const handleDeleteChartRow = useCallback(async (incidentId: string) => {
+  const tableRows = useMemo(() => chartRowsNewestFirst(chartRows), [chartRows]);
+
+  const numberInBox = useCallback(
+    (row: (typeof chartRows)[number]) => {
+      if (row.deleted) return "";
+      if (Object.prototype.hasOwnProperty.call(numberEdits, row.dispatchNumber)) {
+        return numberEdits[row.dispatchNumber];
+      }
+      return savedOverrides[row.dispatchNumber] || row.proposedIncidentNumber;
+    },
+    [numberEdits, savedOverrides],
+  );
+
+  const overridesFromBoxes = useCallback(
+    (exceptDispatchNumber = "") =>
+      chartRows.flatMap((row) => {
+        if (row.deleted || row.dispatchNumber === exceptDispatchNumber) return [];
+        const typed = numberInBox(row).trim();
+        if (!typed || typed === row.proposedIncidentNumber) return [];
+        return [{ dispatchNumber: row.dispatchNumber, incidentNumber: typed }];
+      }),
+    [chartRows, numberInBox],
+  );
+
+  const handleDeleteChartRow = useCallback(async (incidentId: string, dispatchNumber: string) => {
     if (
       !window.confirm(
         "Delete this call? It will no longer use an incident number. Use Force update to renumber the remaining calls.",
@@ -373,29 +402,34 @@ export function DispatchParsingIncidentPanel() {
     setChartMessage(null);
     try {
       await deleteIncident(incidentId, { deletedReason: "Removed from the incident number table." });
+      const overrides = overridesFromBoxes(dispatchNumber);
+      await applyIncidentNumberChart([], overrides);
+      setSavedOverrides(Object.fromEntries(overrides.map((item) => [item.dispatchNumber, item.incidentNumber])));
+      setNumberEdits({});
       setChartReload((current) => current + 1);
     } catch (e) {
       setChartError(e instanceof Error ? e.message : "Could not delete that call.");
     } finally {
       setChartBusy(false);
     }
-  }, []);
+  }, [overridesFromBoxes]);
 
   const handleForceUpdate = useCallback(async () => {
-    const updates = chartRows
-      .filter(
-        (row) =>
-          row.incidentId &&
-          !row.deleted &&
-          row.proposedIncidentNumber &&
-          row.proposedIncidentNumber !== row.currentIncidentNumber,
-      )
-      .map((row) => ({ incidentId: row.incidentId, incidentNumber: row.proposedIncidentNumber }));
+    const updates = chartRows.flatMap((row) => {
+      if (!row.incidentId || row.deleted) return [];
+      if (row.reportStatus === "In Review" || row.reportStatus === "Exported") return [];
+      const typed = numberInBox(row).trim();
+      if (!typed || typed === row.currentIncidentNumber) return [];
+      return [{ incidentId: row.incidentId, incidentNumber: typed }];
+    });
+    const overrides = overridesFromBoxes();
     setChartBusy(true);
     setChartError(null);
     setChartMessage(null);
     try {
-      const result = await applyIncidentNumberChart(updates);
+      const result = await applyIncidentNumberChart(updates, overrides);
+      setSavedOverrides(Object.fromEntries(overrides.map((item) => [item.dispatchNumber, item.incidentNumber])));
+      setNumberEdits({});
       setChartMessage(
         `Updated ${result.updated} incident number${result.updated === 1 ? "" : "s"}. ${result.skipped} report${
           result.skipped === 1 ? "" : "s"
@@ -407,15 +441,15 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setChartBusy(false);
     }
-  }, [chartRows]);
+  }, [chartRows, numberInBox, overridesFromBoxes]);
 
   const handleExportChart = useCallback(() => {
     const payload = {
       version: 1,
-      rows: chartRows.map((row) => ({
+      rows: tableRows.map((row) => ({
         dispatchNumber: row.dispatchNumber,
         cfs: row.cfs,
-        incidentNumber: row.deleted ? "" : row.proposedIncidentNumber,
+        incidentNumber: row.deleted ? "" : numberInBox(row).trim(),
         deleted: row.deleted,
       })),
     };
@@ -426,7 +460,7 @@ export function DispatchParsingIncidentPanel() {
     link.download = "incident-number-chart.json";
     link.click();
     URL.revokeObjectURL(url);
-  }, [chartRows]);
+  }, [tableRows, numberInBox]);
 
   const handleImportChart = useCallback(async (file: File) => {
     setChartBusy(true);
@@ -438,6 +472,17 @@ export function DispatchParsingIncidentPanel() {
         throw new Error("That file is not an incident number chart.");
       }
       const result = await importIncidentNumberChart(parsed.rows);
+      const imported: Record<string, string> = {};
+      for (const item of parsed.rows) {
+        if (!item || typeof item !== "object") continue;
+        const row = item as { dispatchNumber?: unknown; incidentNumber?: unknown; deleted?: unknown };
+        const dispatchNumber = String(row.dispatchNumber ?? "").trim();
+        const incidentNumber = String(row.incidentNumber ?? "").trim();
+        if (!dispatchNumber || !incidentNumber || row.deleted) continue;
+        imported[dispatchNumber] = incidentNumber;
+      }
+      setSavedOverrides(imported);
+      setNumberEdits({});
       setChartMessage(
         `Imported ${result.created} new call${result.created === 1 ? "" : "s"}, updated ${result.updated}, removed ${
           result.removed
@@ -468,6 +513,7 @@ export function DispatchParsingIncidentPanel() {
         excludeContains: linesToPhrases(excludeText),
         excludeExceptions: linesToPhrases(exceptionText),
         timeMap,
+        incidentNumberOverrides: savedOverrides,
       },
     );
     setSaveBusy(true);
@@ -490,6 +536,7 @@ export function DispatchParsingIncidentPanel() {
     enableIncidentCreation,
     enableIncidentUpdate,
     timeMap,
+    savedOverrides,
     choices,
     separator,
     incidentNumberFormat,
@@ -886,17 +933,22 @@ export function DispatchParsingIncidentPanel() {
 
         <CollapsibleSetupSection title="Incident number table">
           <p className="panel-description">
-            Calls are sorted by dispatch number. A new email numbers every Draft call in this order. Deleted calls stay
-            on the list with a blank incident number. Emails that match an exclude phrase are left out. Force update
-            writes these incident numbers onto Draft incidents and Draft NERIS reports. In Review and Exported reports
-            stay as they are. Export this reviewed table, then import that file on production. Mail stays pointed at
-            staging.
+            The newest dispatch number is at the top. The first incident number of the year still belongs to the
+            earliest call. Type the incident number you want, then Force update. That writes the box onto Draft
+            incidents and Draft NERIS reports. In Review and Exported reports stay as they are. A number you type is
+            kept when the next email arrives.
+          </p>
+          <p className="panel-description">
+            Export saves this table only: dispatch number, CFS, the incident number in the box, and whether the call
+            was deleted. It does not include the email, address, notes, or NERIS report. Importing that file on
+            production reserves those incident numbers. The call details appear there when production receives its own
+            CAD email. Mail stays pointed at staging.
           </p>
           {chartError ? <p className="field-error">{chartError}</p> : null}
-          {chartRows.length === 0 ? (
+          {tableRows.length === 0 ? (
             <p className="panel-description">No calls to number yet.</p>
           ) : (
-            <table className="cad-incident-slot-table">
+            <table className="cad-incident-slot-table cad-incident-number-table">
               <thead>
                 <tr>
                   <th>Dispatch number</th>
@@ -907,35 +959,51 @@ export function DispatchParsingIncidentPanel() {
                 </tr>
               </thead>
               <tbody>
-                {chartRows.map((row) => (
-                  <tr key={row.dispatchNumber}>
-                    <td>{row.dispatchNumber}</td>
-                    <td>{row.cfs || "Not provided"}</td>
-                    <td>
-                      {row.deleted
-                        ? "Deleted"
-                        : row.proposedIncidentNumber}
-                      {!row.deleted &&
-                      row.currentIncidentNumber &&
-                      row.currentIncidentNumber !== row.proposedIncidentNumber
-                        ? ` (currently ${row.currentIncidentNumber})`
-                        : ""}
-                    </td>
-                    <td>{row.incidentId ? row.reportStatus : "No incident yet"}</td>
-                    <td>
-                      {row.incidentId && !row.deleted ? (
-                        <button
-                          type="button"
-                          className="secondary-button"
-                          disabled={chartBusy}
-                          onClick={() => void handleDeleteChartRow(row.incidentId)}
-                        >
-                          Delete
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
+                {tableRows.map((row) => {
+                  const locked = row.reportStatus === "In Review" || row.reportStatus === "Exported";
+                  const typed = numberInBox(row);
+                  return (
+                    <tr key={row.dispatchNumber}>
+                      <td>{row.dispatchNumber}</td>
+                      <td>{row.cfs || "Not provided"}</td>
+                      <td>
+                        {row.deleted ? (
+                          "Deleted"
+                        ) : (
+                          <input
+                            className="cad-dispatch-merge-key-input cad-incident-number-input"
+                            type="text"
+                            value={typed}
+                            aria-label={`Incident number for dispatch ${row.dispatchNumber}`}
+                            disabled={chartBusy || locked}
+                            onChange={(event) =>
+                              setNumberEdits((current) => ({
+                                ...current,
+                                [row.dispatchNumber]: event.target.value,
+                              }))
+                            }
+                          />
+                        )}
+                        {!row.deleted && row.currentIncidentNumber && row.currentIncidentNumber !== typed
+                          ? ` Saved as ${row.currentIncidentNumber}`
+                          : ""}
+                      </td>
+                      <td>{row.incidentId ? row.reportStatus : "No incident yet"}</td>
+                      <td>
+                        {row.incidentId && !row.deleted ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={chartBusy}
+                            onClick={() => void handleDeleteChartRow(row.incidentId, row.dispatchNumber)}
+                          >
+                            Delete
+                          </button>
+                        ) : null}
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           )}

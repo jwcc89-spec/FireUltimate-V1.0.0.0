@@ -129,12 +129,13 @@ export async function updateIncident(
 
 export async function applyIncidentNumberChart(
   updates: { incidentId: string; incidentNumber: string }[],
+  overrides: { dispatchNumber: string; incidentNumber: string }[] = [],
 ): Promise<{ updated: number; skipped: number }> {
   const res = await fetch("/api/cad/incident-number-chart/apply", {
     method: "POST",
     credentials: "include",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ updates }),
+    body: JSON.stringify({ updates, overrides }),
   });
   const json = (await res.json()) as {
     ok?: boolean;

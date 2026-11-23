@@ -3,6 +3,7 @@ import { describe, it } from "node:test";
 import {
   assignIncidentNumberChart,
   assignSectionToField,
+  chartRowsNewestFirst,
   buildIncidentLabelConfig,
   cadLabeledDateTime,
   cadUnitTimes,
@@ -13,6 +14,7 @@ import {
   fieldIdForSection,
   followUpCallNumber,
   formatAssignedIncidentNumber,
+  incidentNumberOverridesFromExtract,
   incidentNumberSeriesExample,
   partFromSelection,
   labelsFromSavedRules,
@@ -170,6 +172,17 @@ describe("incidentLabelMap", () => {
     assert.equal(rows[1]?.proposedIncidentNumber, "27-001");
     assert.equal(rows[1]?.cfs, "2600083");
     assert.equal(rows[2]?.proposedIncidentNumber, "27-002");
+    const shown = chartRowsNewestFirst(rows);
+    assert.equal(shown.map((row) => row.dispatchNumber).join(","), "26017820,26017731,26017636");
+    assert.equal(shown.find((row) => row.dispatchNumber === "26017731")?.proposedIncidentNumber, "27-001");
+  });
+
+  it("keeps a typed incident number on that dispatch number", () => {
+    const built = buildIncidentLabelConfig(emptyIncidentLabels(), ";", "{yy}-{seq}", RESET, {
+      incidentNumberOverrides: { "26017731": "27-001" },
+    });
+    assert.equal(incidentNumberOverridesFromExtract(built.incidentNumberExtract)["26017731"], "27-001");
+    assert.deepEqual(incidentNumberOverridesFromExtract({}), {});
   });
 
   it("lets a department exclude phrases and keep exceptions", () => {

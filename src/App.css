@@ -2083,6 +2083,20 @@ tbody tr:last-of-type td {
   word-break: break-word;
 }
 
+.cad-incident-number-table {
+  table-layout: auto;
+}
+
+.cad-incident-number-table th {
+  width: auto;
+}
+
+.cad-incident-number-table .cad-incident-number-input {
+  width: 8rem;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
 .cad-incident-merge-key-value {
   margin: 0;
   font-weight: 600;

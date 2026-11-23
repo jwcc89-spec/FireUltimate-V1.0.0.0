@@ -459,6 +459,31 @@ export function assignIncidentNumberChart(
   });
 }
 
+/** Table order: highest dispatch number first. Number assignment stays earliest call first. */
+export function chartRowsNewestFirst(rows: readonly IncidentChartRow[]): IncidentChartRow[] {
+  return [...rows].sort((left, right) => {
+    const leftNumber = Number(left.dispatchNumber);
+    const rightNumber = Number(right.dispatchNumber);
+    if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+      return rightNumber - leftNumber;
+    }
+    return right.dispatchNumber.localeCompare(left.dispatchNumber);
+  });
+}
+
+export function incidentNumberOverridesFromExtract(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const overrides = (raw as { incidentNumberOverrides?: unknown }).incidentNumberOverrides;
+  if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) return {};
+  const result: Record<string, string> = {};
+  for (const [dispatchNumber, incidentNumber] of Object.entries(overrides)) {
+    const dispatch = dispatchNumber.trim();
+    const number = String(incidentNumber ?? "").trim();
+    if (dispatch && number) result[dispatch] = number;
+  }
+  return result;
+}
+
 export type CadTimeMap = {
   callCreated: string;
   callClosed: string;
@@ -620,7 +645,12 @@ export function buildIncidentLabelConfig(
     day: DEFAULT_RESET_DAY,
     time: DEFAULT_RESET_TIME,
   },
-  filters: { excludeContains?: string[]; excludeExceptions?: string[]; timeMap?: Partial<CadTimeMap> } = {},
+  filters: {
+    excludeContains?: string[];
+    excludeExceptions?: string[];
+    timeMap?: Partial<CadTimeMap>;
+    incidentNumberOverrides?: Record<string, string>;
+  } = {},
 ): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
@@ -633,6 +663,7 @@ export function buildIncidentLabelConfig(
     excludeContains: string[];
     excludeExceptions: string[];
     timeMap: CadTimeMap;
+    incidentNumberOverrides: Record<string, string>;
   };
 } {
   const active = normalizeSectionSeparator(separator);
@@ -647,6 +678,9 @@ export function buildIncidentLabelConfig(
     excludeContains: linesToPhrases((filters.excludeContains ?? []).join("\n")),
     excludeExceptions: linesToPhrases((filters.excludeExceptions ?? []).join("\n")),
     timeMap: normalizeCadTimeMap(filters.timeMap),
+    incidentNumberOverrides: incidentNumberOverridesFromExtract({
+      incidentNumberOverrides: filters.incidentNumberOverrides,
+    }),
   };
 
   for (const field of INCIDENT_LABEL_FIELDS) {

@@ -2623,7 +2623,55 @@ async function findIncidentForCadDispatch(tenantId, cadNumber) {
   });
 }
 
+function incidentNumberOverridesFromSettings(settings) {
+  const raw = settings?.incidentNumberExtractJson;
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  const overrides = raw.incidentNumberOverrides;
+  if (!overrides || typeof overrides !== "object" || Array.isArray(overrides)) return {};
+  const result = {};
+  for (const [dispatchNumber, incidentNumber] of Object.entries(overrides)) {
+    const dispatch = trimValue(dispatchNumber);
+    const number = trimValue(incidentNumber);
+    if (dispatch && number) result[dispatch] = number;
+  }
+  return result;
+}
+
+function incidentNumberOverrideList(value) {
+  if (!Array.isArray(value)) return null;
+  const result = {};
+  for (const item of value) {
+    const dispatchNumber = trimValue(item?.dispatchNumber);
+    const incidentNumber = trimValue(item?.incidentNumber);
+    if (dispatchNumber && incidentNumber) result[dispatchNumber] = incidentNumber;
+  }
+  return result;
+}
+
+async function saveIncidentNumberOverrides(tenantId, overrides) {
+  const existing = await prisma.cadParsingSettings.findUnique({ where: { tenantId } });
+  const extract =
+    existing?.incidentNumberExtractJson &&
+    typeof existing.incidentNumberExtractJson === "object" &&
+    !Array.isArray(existing.incidentNumberExtractJson)
+      ? { ...existing.incidentNumberExtractJson }
+      : {};
+  extract.incidentNumberOverrides = overrides;
+  if (!existing) {
+    await prisma.cadParsingSettings.create({
+      data: { tenantId, incidentNumberExtractJson: extract },
+    });
+    return;
+  }
+  await prisma.cadParsingSettings.update({
+    where: { tenantId },
+    data: { incidentNumberExtractJson: extract },
+  });
+}
+
 async function renumberDraftIncidentsByDispatchOrder(tx, tenantId, pattern, reset) {
+  const settings = await tx.cadParsingSettings.findUnique({ where: { tenantId } });
+  const overrides = incidentNumberOverridesFromSettings(settings);
   const incidents = await tx.incident.findMany({
     where: { tenantId, deletedAt: null },
     select: { id: true, dispatchNumber: true, incidentNumber: true },
@@ -2652,13 +2700,26 @@ async function renumberDraftIncidentsByDispatchOrder(tx, tenantId, pattern, rese
     draftByCall.set(draft.callNumber, draft);
   }
   const { yy } = currentFiscalPeriod(new Date(), reset);
+  const reserved = new Set(Object.values(overrides));
+  for (const incident of withDispatch) {
+    const currentNumber = trimValue(incident.incidentNumber);
+    const draft = draftByCall.get(incident.id) || (currentNumber ? draftByCall.get(currentNumber) : null);
+    if (draft && reportStatusOf(draft.payload) !== "Draft" && currentNumber) reserved.add(currentNumber);
+  }
   let sequence = 0;
   for (const incident of withDispatch) {
-    sequence += 1;
-    const proposed = formatAssignedIncidentNumber(sequence, yy, pattern);
     const currentNumber = trimValue(incident.incidentNumber);
     const draft = draftByCall.get(incident.id) || (currentNumber ? draftByCall.get(currentNumber) : null);
     if (draft && reportStatusOf(draft.payload) !== "Draft") continue;
+    const manual = overrides[trimValue(incident.dispatchNumber)];
+    let proposed = manual;
+    if (!proposed) {
+      do {
+        sequence += 1;
+        proposed = formatAssignedIncidentNumber(sequence, yy, pattern);
+      } while (reserved.has(proposed) && sequence < 100000);
+      reserved.add(proposed);
+    }
     if (trimValue(incident.incidentNumber) === proposed) continue;
     await tx.incident.update({ where: { id: incident.id }, data: { incidentNumber: proposed } });
     if (!draft) continue;
@@ -3152,6 +3213,8 @@ app.post("/api/cad/incident-number-chart/apply", async (request, response) => {
       }
       updated += 1;
     }
+    const overrides = incidentNumberOverrideList(body.overrides);
+    if (overrides) await saveIncidentNumberOverrides(tenantId, overrides);
     response.json({ ok: true, data: { updated, skipped } });
   } catch (error) {
     response.status(500).json({
@@ -3254,6 +3317,14 @@ app.post("/api/cad/incident-number-chart/import", async (request, response) => {
       await writeDraftNumber(incident, active, incidentNumber);
       updated += 1;
     }
+    const importedOverrides = {};
+    for (const item of rows) {
+      const dispatchNumber = trimValue(item?.dispatchNumber);
+      const incidentNumber = trimValue(item?.incidentNumber);
+      if (!dispatchNumber || !incidentNumber || item?.deleted) continue;
+      importedOverrides[dispatchNumber] = incidentNumber;
+    }
+    await saveIncidentNumberOverrides(tenantId, importedOverrides);
     response.json({ ok: true, data: { created, updated, removed, skipped } });
   } catch (error) {
     response.status(500).json({
