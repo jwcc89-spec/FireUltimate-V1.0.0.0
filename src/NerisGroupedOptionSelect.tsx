@@ -320,20 +320,38 @@ export function NerisGroupedOptionSelect({
 
   useLayoutEffect(() => {
     if (!isOpen || !usePortal || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const maxPanelHeight = Math.min(480, Math.max(320, spaceBelow));
-    setPanelStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: Math.max(rect.width, 280),
-      minHeight: "280px",
-      maxHeight: `${maxPanelHeight}px`,
-      display: "flex",
-      flexDirection: "column",
-      zIndex: 100000,
-    });
+    const update = () => {
+      const rect = triggerRef.current?.getBoundingClientRect();
+      if (!rect) return;
+      const gap = 4;
+      const margin = 12;
+      const spaceBelow = window.innerHeight - rect.bottom - margin;
+      const spaceAbove = rect.top - margin;
+      const openAbove = spaceBelow < 220 && spaceAbove > spaceBelow;
+      const available = Math.max(160, openAbove ? spaceAbove : spaceBelow);
+      const maxPanelHeight = Math.min(480, available);
+      const top = openAbove
+        ? Math.max(margin, rect.top - gap - maxPanelHeight)
+        : rect.bottom + gap;
+      setPanelStyle({
+        position: "fixed",
+        top,
+        left: Math.max(margin, rect.left),
+        width: Math.max(rect.width, 280),
+        maxHeight: `${maxPanelHeight}px`,
+        display: "flex",
+        flexDirection: "column",
+        overflow: "hidden",
+        zIndex: 100000,
+      });
+    };
+    update();
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
   }, [isOpen, usePortal]);
 
   useEffect(() => {

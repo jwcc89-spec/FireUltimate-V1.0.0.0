@@ -5421,6 +5421,7 @@ function NerisReportFormPage({
               variant="incidentType"
               placeholder={`Select ${field.label.toLowerCase()}`}
               searchPlaceholder={`Search ${field.label.toLowerCase()}...`}
+              usePortal
             />
           ) : (
             <NerisFlatSingleOptionSelect
