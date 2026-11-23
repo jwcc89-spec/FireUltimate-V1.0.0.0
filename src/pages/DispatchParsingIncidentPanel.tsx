@@ -9,9 +9,13 @@ import {
   INCIDENT_LABEL_FIELDS,
   buildIncidentLabelConfig,
   emptyIncidentLabels,
-  labelOnLineOfSelection,
+  partChoiceFromKey,
+  partChoiceKey,
+  partFromSelection,
   labelsFromSavedRules,
   previewIncidentFromLabels,
+  splitDispatchParts,
+  valueAfterLabel,
   type IncidentLabelFieldId,
 } from "../cadDispatch/incidentLabelMap.ts";
 import { parseCadRulesJson } from "../cadDispatch/ruleEngine.ts";
@@ -35,7 +39,7 @@ export function DispatchParsingIncidentPanel() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const [enableIncidentCreation, setEnableIncidentCreation] = useState(false);
-  const [labels, setLabels] = useState(emptyIncidentLabels);
+  const [choices, setChoices] = useState(emptyIncidentLabels);
   const [customRulesPresent, setCustomRulesPresent] = useState(false);
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
@@ -64,7 +68,7 @@ export function DispatchParsingIncidentPanel() {
           return;
         }
         const loaded = labelsFromSavedRules(parsedRules);
-        setLabels(loaded.labels);
+        setChoices(loaded.labels);
         setCustomRulesPresent(!loaded.recognized);
       })
       .catch((e) => {
@@ -110,13 +114,13 @@ export function DispatchParsingIncidentPanel() {
 
   const preview = useMemo(() => {
     if (!sampleText) return null;
-    return previewIncidentFromLabels(sampleText, labels);
-  }, [sampleText, labels]);
+    return previewIncidentFromLabels(sampleText, choices);
+  }, [sampleText, choices]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
     setSaveOkAt(null);
-    const built = buildIncidentLabelConfig(labels);
+    const built = buildIncidentLabelConfig(choices);
     setSaveBusy(true);
     try {
       await patchCadParsingConfig({
@@ -132,20 +136,18 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, labels]);
+  }, [enableIncidentCreation, choices]);
 
   const applyHighlightedText = useCallback(
     (fieldId: IncidentLabelFieldId) => {
       const selected = window.getSelection?.()?.toString() ?? "";
-      const label = labelOnLineOfSelection(sampleText, selected);
-      if (!label) {
-        setHighlightError(
-          "Highlight the value in the email first. The line needs a label, such as Address: 123 Main St. If the value is on the next line, type the label in the box.",
-        );
+      const choice = partFromSelection(sampleText, selected);
+      if (!choice) {
+        setHighlightError("Highlight the words in the email first, then click Use highlighted text.");
         return;
       }
       setHighlightError(null);
-      setLabels((current) => ({ ...current, [fieldId]: label }));
+      setChoices((current) => ({ ...current, [fieldId]: choice }));
     },
     [sampleText],
   );
@@ -210,8 +212,8 @@ export function DispatchParsingIncidentPanel() {
 
         {customRulesPresent ? (
           <p className="field-error">
-            Older custom extraction rules are still saved. The labels below are what Preview and Save use. Save
-            replaces those older rules.
+            Older extraction rules are still saved. The parts below are what Preview and Save use. Save replaces
+            those older rules.
           </p>
         ) : null}
 
@@ -220,9 +222,8 @@ export function DispatchParsingIncidentPanel() {
             <h2>Match the email to incident fields</h2>
           </div>
           <p className="panel-description">
-            Pick a sample email. For each field, type the label that appears in the email, such as{" "}
-            <strong>Address</strong> or <strong>CFS</strong>. You can also highlight the value in the email, then
-            click <strong>Use highlighted text</strong>.
+            This dispatch email is split into parts at each semicolon. Highlight the words that belong in a field,
+            then click <strong>Use highlighted text</strong>. You can also pick the part from the list.
           </p>
           {emailsError ? <p className="field-error">{emailsError}</p> : null}
           {emailsLoading ? <p className="panel-description">Loading emails…</p> : null}
@@ -256,7 +257,20 @@ export function DispatchParsingIncidentPanel() {
             <div>
               <h3 className="cad-dispatch-message-row-h">Original text</h3>
               {sampleText ? (
-                <pre className="cad-dispatch-preview-pre cad-incident-sample-text">{sampleText}</pre>
+                <>
+                  <pre className="cad-dispatch-preview-pre cad-incident-sample-text">{sampleText}</pre>
+                  <ol className="cad-incident-part-list">
+                    {splitDispatchParts(sampleText).map((part, index) => {
+                      const after = valueAfterLabel(part);
+                      return (
+                        <li key={index}>
+                          <strong>Part {index + 1}.</strong> {part || "(empty)"}
+                          {after != null ? <span> — value after the label: {after || "(empty)"}</span> : null}
+                        </li>
+                      );
+                    })}
+                  </ol>
+                </>
               ) : (
                 <p className="panel-description">No dispatch text in this email.</p>
               )}
@@ -269,16 +283,33 @@ export function DispatchParsingIncidentPanel() {
                   <div key={field.id} className="cad-incident-label-row">
                     <label className="cad-allowlist-field">
                       {field.label}
-                      <input
-                        type="text"
+                      <select
                         className="cad-dispatch-merge-key-input"
-                        value={labels[field.id]}
-                        placeholder="Label in the email"
-                        aria-label={`${field.label} label in the email`}
+                        value={partChoiceKey(choices[field.id])}
+                        aria-label={`${field.label} part of the email`}
                         onChange={(event) =>
-                          setLabels((current) => ({ ...current, [field.id]: event.target.value }))
+                          setChoices((current) => ({
+                            ...current,
+                            [field.id]: partChoiceFromKey(event.target.value),
+                          }))
                         }
-                      />
+                      >
+                        <option value="">Not used</option>
+                        {splitDispatchParts(sampleText).map((part, index) => (
+                          <option key={index} value={String(index)}>
+                            Part {index + 1}: {part || "(empty)"}
+                          </option>
+                        ))}
+                        {splitDispatchParts(sampleText).map((part, index) => {
+                          const after = valueAfterLabel(part);
+                          if (after == null) return null;
+                          return (
+                            <option key={`${index}:after`} value={`${index}:after`}>
+                              Part {index + 1} after the label: {after || "(empty)"}
+                            </option>
+                          );
+                        })}
+                      </select>
                     </label>
                     <p className="panel-description">{field.hint}</p>
                     <button
@@ -333,7 +364,7 @@ export function DispatchParsingIncidentPanel() {
           {saveError ? <p className="field-error">{saveError}</p> : null}
           {saveOkAt !== null && !saveError ? (
             <p className="cad-dispatch-save-ok" role="status">
-              Saved. The next dispatch email uses these labels.
+              Saved. The next dispatch email uses these parts.
             </p>
           ) : null}
         </article>

@@ -1,9 +1,9 @@
 /**
- * Plain label-to-field setup for Incident Parsing.
- * Saves as the existing extract rules + field map. No new database columns.
+ * Incident Parsing for semicolon-separated CAD text.
+ * Each incident field stores which part of the email to use.
+ * Saved as the existing extract rules + field map. No new database columns.
  */
 
-import { escapeRegexLiteral, tryDecodeLiteralPattern } from "./regexEscape.ts";
 import {
   buildMappedIncidentFieldsPreview,
   extractMergeKeyFromSlots,
@@ -23,12 +23,18 @@ export type IncidentLabelFieldId =
   | "callbackNumber"
   | "dispatchNotes";
 
+export type IncidentPartChoice = {
+  /** Zero-based part when the email is split on semicolons. */
+  index: number;
+  /** Use only the words after a colon inside that part, such as the value in "CAD Notes: None". */
+  afterLabel: boolean;
+};
+
 export type IncidentLabelField = {
   id: IncidentLabelFieldId;
   label: string;
   /** Incident column written by ingest. Incident number is the merge key, not a mapped column. */
   target: string | null;
-  notes: boolean;
   hint: string;
 };
 
@@ -37,120 +43,137 @@ export const INCIDENT_LABEL_FIELDS: readonly IncidentLabelField[] = [
     id: "incidentNumber",
     label: "Incident number",
     target: null,
-    notes: false,
     hint: "Later emails with this same number update the same incident.",
   },
   {
     id: "dispatchNumber",
     label: "Dispatch number",
     target: "dispatchNumber",
-    notes: false,
-    hint: "Leave the label blank to copy the incident number.",
+    hint: "Leave this unused to copy the incident number.",
   },
   {
     id: "incidentType",
     label: "Incident type",
     target: "incidentType",
-    notes: false,
-    hint: "The words after this label are saved as the incident type.",
+    hint: "Choose the part that names the type of call.",
   },
   {
     id: "initialDispatchCode",
     label: "Initial dispatch code",
     target: "initialDispatchCode",
-    notes: false,
-    hint: "The words after this label are saved as the initial dispatch code.",
+    hint: "Choose the part that holds the dispatch code.",
   },
   {
     id: "priority",
     label: "Priority",
     target: "priority",
-    notes: false,
-    hint: "The words after this label are saved as the priority.",
+    hint: "Choose the part that holds the priority.",
   },
   {
     id: "stillDistrict",
     label: "Still district",
     target: "stillDistrict",
-    notes: false,
-    hint: "The words after this label are saved as the still district.",
+    hint: "Choose the part that holds the still district.",
   },
   {
     id: "reportedBy",
     label: "Reported by",
     target: "reportedBy",
-    notes: false,
-    hint: "The words after this label are saved as reported by.",
+    hint: "Choose the part that names who reported the call.",
   },
   {
     id: "assignedUnits",
     label: "Assigned units",
     target: "assignedUnits",
-    notes: false,
-    hint: "The words after this label are saved as assigned units.",
+    hint: "Choose the part that lists the units.",
   },
   {
     id: "address",
     label: "Address",
     target: "address",
-    notes: false,
-    hint: "The words after this label, or the next line, are saved as the address.",
+    hint: "Choose the part that holds the street address.",
   },
   {
     id: "callbackNumber",
     label: "Callback number",
     target: "callbackNumber",
-    notes: false,
-    hint: "The words after this label are saved as the callback number.",
+    hint: "Choose the part that holds the callback number.",
   },
   {
     id: "dispatchNotes",
     label: "Dispatch notes",
     target: "dispatchNotes",
-    notes: true,
-    hint: "Text after this label is saved until the next blank line. Leave blank to save the full email as the notes.",
+    hint: "Choose the notes part. If you leave this unused, the full email is saved as the notes.",
   },
 ];
 
-const LINE_PREFIX = "(?:^|\\n)\\s*";
-const LINE_SUFFIX = "\\s*:?\\s*(?:\\n\\s*)?([^\\n]+)";
-const NOTES_SUFFIX = "\\s*:?\\s*([^\\n]+(?:\\n(?!\\s*\\n)[^\\n]+)*)";
+const PATTERN_HEAD = "(?:^|\\n)(?:[^;\\n]*;){";
+const WHOLE_TAIL = "}\\s*([^;\\n]+)";
+const AFTER_TAIL = "}\\s*[^:;\\n]*:\\s*([^;\\n]*)";
 
-export function emptyIncidentLabels(): Record<IncidentLabelFieldId, string> {
+export function emptyIncidentLabels(): Record<IncidentLabelFieldId, IncidentPartChoice | null> {
   return {
-    incidentNumber: "",
-    dispatchNumber: "",
-    incidentType: "",
-    initialDispatchCode: "",
-    priority: "",
-    stillDistrict: "",
-    reportedBy: "",
-    assignedUnits: "",
-    address: "",
-    callbackNumber: "",
-    dispatchNotes: "",
+    incidentNumber: null,
+    dispatchNumber: null,
+    incidentType: null,
+    initialDispatchCode: null,
+    priority: null,
+    stillDistrict: null,
+    reportedBy: null,
+    assignedUnits: null,
+    address: null,
+    callbackNumber: null,
+    dispatchNotes: null,
   };
 }
 
-function cleanLabel(label: string): string {
-  return label.trim().replace(/\s*:+\s*$/, "");
+/** Split one CAD line on semicolons. Uses the first line that contains a semicolon. */
+export function splitDispatchParts(text: string): string[] {
+  const source =
+    text
+      .split(/\n/)
+      .map((line) => line.trim())
+      .find((line) => line.includes(";")) ?? text.trim();
+  const parts = source.split(";").map((part) => part.trim());
+  while (parts.length > 0 && parts[parts.length - 1] === "") parts.pop();
+  return parts;
 }
 
-export function patternForEmailLabel(label: string, notes: boolean): string {
-  const escaped = escapeRegexLiteral(cleanLabel(label));
-  return `${LINE_PREFIX}${escaped}${notes ? NOTES_SUFFIX : LINE_SUFFIX}`;
+export function valueAfterLabel(part: string): string | null {
+  const colon = part.indexOf(":");
+  if (colon < 0) return null;
+  return part.slice(colon + 1).trim();
 }
 
-function labelFromPattern(pattern: string, notes: boolean): string | null {
-  const suffix = notes ? NOTES_SUFFIX : LINE_SUFFIX;
-  if (!pattern.startsWith(LINE_PREFIX) || !pattern.endsWith(suffix)) return null;
-  const mid = pattern.slice(LINE_PREFIX.length, pattern.length - suffix.length);
-  const decoded = tryDecodeLiteralPattern(mid);
-  if (decoded == null || !decoded.trim()) return null;
-  return decoded;
+export function partChoiceKey(choice: IncidentPartChoice | null): string {
+  if (!choice) return "";
+  return choice.afterLabel ? `${choice.index}:after` : String(choice.index);
 }
 
-export function buildIncidentLabelConfig(labels: Record<IncidentLabelFieldId, string>): {
+export function partChoiceFromKey(key: string): IncidentPartChoice | null {
+  if (!key) return null;
+  const afterLabel = key.endsWith(":after");
+  const raw = afterLabel ? key.slice(0, -":after".length) : key;
+  if (!/^\d+$/.test(raw)) return null;
+  return { index: Number(raw), afterLabel };
+}
+
+function patternForPart(choice: IncidentPartChoice): string {
+  return `${PATTERN_HEAD}${choice.index}${choice.afterLabel ? AFTER_TAIL : WHOLE_TAIL}`;
+}
+
+function choiceFromPattern(pattern: string): IncidentPartChoice | null {
+  if (!pattern.startsWith(PATTERN_HEAD)) return null;
+  const tail = pattern.endsWith(AFTER_TAIL) ? AFTER_TAIL : pattern.endsWith(WHOLE_TAIL) ? WHOLE_TAIL : null;
+  if (!tail) return null;
+  const mid = pattern.slice(PATTERN_HEAD.length, pattern.length - tail.length);
+  if (!/^\d+$/.test(mid)) return null;
+  return { index: Number(mid), afterLabel: tail === AFTER_TAIL };
+}
+
+export function buildIncidentLabelConfig(
+  choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
+): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
   incidentNumberExtract: { slot: string } | null;
@@ -160,14 +183,14 @@ export function buildIncidentLabelConfig(labels: Record<IncidentLabelFieldId, st
   let incidentNumberExtract: { slot: string } | null = null;
 
   for (const field of INCIDENT_LABEL_FIELDS) {
-    const label = cleanLabel(labels[field.id] ?? "");
-    if (!label) continue;
+    const choice = choices[field.id];
+    if (!choice || choice.index < 0) continue;
     rules.push({
       type: "extract_capture",
-      pattern: patternForEmailLabel(label, field.notes),
+      pattern: patternForPart(choice),
       group: 1,
       slot: field.id,
-      flags: "i",
+      flags: "",
     });
     if (field.id === "incidentNumber") {
       incidentNumberExtract = { slot: "incidentNumber" };
@@ -181,7 +204,7 @@ export function buildIncidentLabelConfig(labels: Record<IncidentLabelFieldId, st
 
 export function labelsFromSavedRules(rawRules: unknown): {
   recognized: boolean;
-  labels: Record<IncidentLabelFieldId, string>;
+  labels: Record<IncidentLabelFieldId, IncidentPartChoice | null>;
 } {
   const labels = emptyIncidentLabels();
   let rules: CadRule[];
@@ -196,48 +219,37 @@ export function labelsFromSavedRules(rawRules: unknown): {
   }
   const seen = new Set<string>();
   for (const rule of rules.slice(2)) {
-    if (rule.type !== "extract_capture" || rule.group !== 1 || (rule.flags ?? "") !== "i") {
+    if (rule.type !== "extract_capture" || rule.group !== 1 || (rule.flags ?? "") !== "") {
       return { recognized: false, labels };
     }
     const field = INCIDENT_LABEL_FIELDS.find((item) => item.id === rule.slot);
     if (!field || seen.has(field.id)) return { recognized: false, labels };
-    const label = labelFromPattern(rule.pattern, field.notes);
-    if (!label) return { recognized: false, labels };
-    labels[field.id] = label;
+    const choice = choiceFromPattern(rule.pattern);
+    if (!choice) return { recognized: false, labels };
+    labels[field.id] = choice;
     seen.add(field.id);
   }
   return { recognized: true, labels };
 }
 
-/** Label on the line that contains the highlighted value. */
-export function labelOnLineOfSelection(text: string, selected: string): string | null {
+/** The semicolon part that contains the highlighted words. */
+export function partFromSelection(text: string, selected: string): IncidentPartChoice | null {
   const needle = selected.trim();
-  if (!needle || !text) return null;
+  if (!needle || !text.includes(needle)) return null;
   const idx = text.indexOf(needle);
-  if (idx < 0) return null;
-  const lineStart = text.lastIndexOf("\n", idx - 1) + 1;
-  const lineEnd = text.indexOf("\n", idx);
-  const line = text.slice(lineStart, lineEnd === -1 ? undefined : lineEnd);
-  const colon = line.indexOf(":");
-  if (colon < 0) {
-    if (lineStart === 0) return null;
-    const prevEnd = lineStart - 1;
-    const prevStart = text.lastIndexOf("\n", prevEnd - 1) + 1;
-    const prev = text.slice(prevStart, prevEnd);
-    const prevColon = prev.indexOf(":");
-    if (prevColon < 0) return null;
-    const prevLabel = prev.slice(0, prevColon).trim();
-    const prevValue = prev.slice(prevColon + 1).trim();
-    if (!prevLabel || prevValue) return null;
-    return prevLabel;
+  const start = text.lastIndexOf(";", idx);
+  const end = text.indexOf(";", idx);
+  const segment = text.slice(start + 1, end === -1 ? text.length : end).trim();
+  const index = splitDispatchParts(text).indexOf(segment);
+  if (index < 0) return null;
+  const colon = segment.indexOf(":");
+  if (colon >= 0) {
+    const value = segment.slice(colon + 1).trim();
+    if (value && needle.toLowerCase() === value.toLowerCase()) {
+      return { index, afterLabel: true };
+    }
   }
-  const label = line.slice(0, colon).trim();
-  const value = line.slice(colon + 1).trim();
-  if (!label || !value) return null;
-  if (!value.toLowerCase().includes(needle.toLowerCase()) && !needle.toLowerCase().includes(value.toLowerCase())) {
-    return null;
-  }
-  return label;
+  return { index, afterLabel: false };
 }
 
 export type IncidentPreviewRow = {
@@ -248,9 +260,9 @@ export type IncidentPreviewRow = {
 
 export function previewIncidentFromLabels(
   plainText: string,
-  labels: Record<IncidentLabelFieldId, string>,
+  choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
 ): { ok: true; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
-  const built = buildIncidentLabelConfig(labels);
+  const built = buildIncidentLabelConfig(choices);
   const result = runCadRulePipeline(plainText, built.rules);
   if (!result.ok) return { ok: false, error: result.error };
   const mergeKey = extractMergeKeyFromSlots(result.slots, built.incidentNumberExtract);
