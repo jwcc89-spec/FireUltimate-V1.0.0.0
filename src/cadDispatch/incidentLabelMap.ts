@@ -4,14 +4,13 @@
  * Saved as the existing extract rules + field map. No new database columns.
  */
 
-import {
-  buildMappedIncidentFieldsPreview,
-  extractMergeKeyFromSlots,
-} from "./incidentMappingPreview.ts";
+import { buildMappedIncidentFieldsPreview } from "./incidentMappingPreview.ts";
 import { escapeRegexLiteral } from "./regexEscape.ts";
 import { parseCadRulesJson, runCadRulePipeline, type CadRule } from "./ruleEngine.ts";
 
 export const DEFAULT_SECTION_SEPARATOR = ";";
+export const DEFAULT_INCIDENT_NUMBER_FORMAT = "{yy}-{seq}";
+export const WAITING_FOR_DEPARTMENT_CFS = "Waiting for Department CFS";
 
 /** One visible character. A blank value means the default semicolon. */
 export function normalizeSectionSeparator(value: string): string {
@@ -30,6 +29,45 @@ export function followUpCallNumber(text: string): string {
 export function labeledCadValue(text: string, label: string): string {
   const match = text.match(new RegExp(`${escapeRegexLiteral(label)}\\s*:\\s*([^;,\\n]+)`, "i"));
   return match?.[1]?.trim() ?? "";
+}
+
+/** Digits at the end of "Department CFS: CrescentIroquoisFPD2600089". */
+export function departmentCfsDigits(text: string): string {
+  const raw = labeledCadValue(text, "Department CFS");
+  const match = raw.match(/(\d+)\s*$/);
+  return match?.[1] ?? "";
+}
+
+/**
+ * CAD number used to match later emails. Follow-up mail uses "CAD CFS:".
+ * A new-call email uses the number before the first separator.
+ */
+export function cadDispatchNumber(text: string, separator = DEFAULT_SECTION_SEPARATOR): string {
+  const labeled = followUpCallNumber(text);
+  if (labeled) return labeled;
+  const active = normalizeSectionSeparator(separator);
+  const first = text.trim().split(active)[0]?.trim() ?? "";
+  if (/^\d[\dA-Za-z-]*$/.test(first)) return first;
+  return "";
+}
+
+/** Turn a department CFS into the incident number. `{yy}-{seq}` makes 2600089 into 26-00089. */
+export function formatIncidentNumber(cfs: string, pattern = DEFAULT_INCIDENT_NUMBER_FORMAT): string {
+  const digits = cfs.trim();
+  if (!digits) return "";
+  const template = pattern.trim() || DEFAULT_INCIDENT_NUMBER_FORMAT;
+  return template
+    .replaceAll("{cfs}", digits)
+    .replaceAll("{yy}", digits.slice(0, 2))
+    .replaceAll("{seq}", digits.slice(2));
+}
+
+export function incidentNumberFormatFromExtract(raw: unknown): string {
+  if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+    const value = (raw as { incidentNumberFormat?: unknown }).incidentNumberFormat;
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return DEFAULT_INCIDENT_NUMBER_FORMAT;
 }
 
 export function separatorFromExtract(raw: unknown): string {
@@ -73,13 +111,13 @@ export const INCIDENT_LABEL_FIELDS: readonly IncidentLabelField[] = [
     id: "incidentNumber",
     label: "Incident number",
     target: null,
-    hint: "Later emails with this same number update the same incident.",
+    hint: "Built from the department CFS and the incident number format. Later emails match the dispatch number.",
   },
   {
     id: "dispatchNumber",
     label: "Dispatch number",
     target: "dispatchNumber",
-    hint: "Leave this unused to copy the incident number.",
+    hint: "The CAD number. Later emails for this call use this number to find the incident.",
   },
   {
     id: "incidentType",
@@ -245,19 +283,25 @@ function choiceFromPattern(pattern: string, separator: string): IncidentPartChoi
 export function buildIncidentLabelConfig(
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
   separator = DEFAULT_SECTION_SEPARATOR,
+  incidentNumberFormat = DEFAULT_INCIDENT_NUMBER_FORMAT,
 ): {
   rules: CadRule[];
   fieldMap: Record<string, string>;
-  incidentNumberExtract: { separator: string; slot?: string };
+  incidentNumberExtract: { separator: string; incidentNumberFormat: string };
 } {
   const active = normalizeSectionSeparator(separator);
   const rules: CadRule[] = [{ type: "trim" }, { type: "normalize_newlines" }];
   const fieldMap: Record<string, string> = {};
-  const incidentNumberExtract: { separator: string; slot?: string } = { separator: active };
+  const incidentNumberExtract = {
+    separator: active,
+    incidentNumberFormat: incidentNumberFormat.trim() || DEFAULT_INCIDENT_NUMBER_FORMAT,
+  };
 
   for (const field of INCIDENT_LABEL_FIELDS) {
+    if (field.id === "incidentNumber" || field.id === "dispatchNumber") continue;
     const choice = choices[field.id];
     if (!choice || choice.index < 0) continue;
+    if (!field.target) continue;
     rules.push({
       type: "extract_capture",
       pattern: patternForPart(choice, active),
@@ -265,11 +309,7 @@ export function buildIncidentLabelConfig(
       slot: field.id,
       flags: "",
     });
-    if (field.id === "incidentNumber") {
-      incidentNumberExtract.slot = "incidentNumber";
-    } else if (field.target) {
-      fieldMap[field.id] = field.target;
-    }
+    fieldMap[field.id] = field.target;
   }
 
   return { rules, fieldMap, incidentNumberExtract };
@@ -295,6 +335,7 @@ export function labelsFromSavedRules(rawRules: unknown, separator = DEFAULT_SECT
     if (rule.type !== "extract_capture" || rule.group !== 1 || (rule.flags ?? "") !== "") {
       return { recognized: false, labels };
     }
+    if (rule.slot === "incidentNumber" || rule.slot === "dispatchNumber") continue;
     const field = INCIDENT_LABEL_FIELDS.find((item) => item.id === rule.slot);
     if (!field || seen.has(field.id)) return { recognized: false, labels };
     const choice = choiceFromPattern(rule.pattern, separator);
@@ -340,21 +381,21 @@ export function previewIncidentFromLabels(
   plainText: string,
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
   separator = DEFAULT_SECTION_SEPARATOR,
+  incidentNumberFormat = DEFAULT_INCIDENT_NUMBER_FORMAT,
 ): { ok: true; followUp: boolean; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
+  const dispatchNumber = cadDispatchNumber(plainText, separator);
+  const cfs = departmentCfsDigits(plainText);
+  const incidentNumber = formatIncidentNumber(cfs, incidentNumberFormat) || WAITING_FOR_DEPARTMENT_CFS;
   const followUpNumber = followUpCallNumber(plainText);
   if (followUpNumber) {
-    const departmentNumber = labeledCadValue(plainText, "Department CFS");
     const units = labeledCadValue(plainText, "Units");
     return {
       ok: true,
       followUp: true,
       rows: [
-        { id: "incidentNumber", label: "Incident number", value: followUpNumber },
-        {
-          id: "dispatchNumber",
-          label: "Dispatch number",
-          value: departmentNumber || followUpNumber,
-        },
+        { id: "incidentNumber", label: "Incident number", value: incidentNumber },
+        { id: "dispatchNumber", label: "Dispatch number", value: dispatchNumber },
+        { id: "cfsNumber", label: "CFS number", value: cfs },
         { id: "incidentType", label: "Incident type", value: "Unchanged" },
         { id: "initialDispatchCode", label: "Initial dispatch code", value: "Unchanged" },
         { id: "priority", label: "Priority", value: "Unchanged" },
@@ -368,16 +409,15 @@ export function previewIncidentFromLabels(
       ],
     };
   }
-  const built = buildIncidentLabelConfig(choices, separator);
+  const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat);
   const result = runCadRulePipeline(plainText, built.rules);
   if (!result.ok) return { ok: false, error: result.error };
-  const mergeKey = extractMergeKeyFromSlots(result.slots, built.incidentNumberExtract);
   const mapped = buildMappedIncidentFieldsPreview(result.slots, built.fieldMap, result.text);
-  const dispatchNumber = mapped.dispatchNumber || mergeKey;
   const initialDispatchCode = mapped.initialDispatchCode || mapped.mapReference || "";
   const rows: IncidentPreviewRow[] = [
-    { id: "incidentNumber", label: "Incident number", value: mergeKey },
+    { id: "incidentNumber", label: "Incident number", value: incidentNumber },
     { id: "dispatchNumber", label: "Dispatch number", value: dispatchNumber },
+    { id: "cfsNumber", label: "CFS number", value: cfs },
     { id: "incidentType", label: "Incident type", value: mapped.incidentType || "" },
     { id: "initialDispatchCode", label: "Initial dispatch code", value: initialDispatchCode },
     { id: "priority", label: "Priority", value: mapped.priority || "" },

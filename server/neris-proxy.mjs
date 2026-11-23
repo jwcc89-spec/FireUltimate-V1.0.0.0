@@ -2364,34 +2364,88 @@ function cadLabeledValue(plain, label) {
   return match ? match[1].trim() : "";
 }
 
+function departmentCfsDigits(plain) {
+  const raw = cadLabeledValue(plain, "Department CFS");
+  const match = String(raw).match(/(\d+)\s*$/);
+  return match ? match[1] : "";
+}
+
+function formatCadIncidentNumber(cfs, pattern) {
+  const digits = String(cfs ?? "").trim();
+  if (!digits) return "";
+  const template = String(pattern ?? "").trim() || "{yy}-{seq}";
+  return template
+    .replaceAll("{cfs}", digits)
+    .replaceAll("{yy}", digits.slice(0, 2))
+    .replaceAll("{seq}", digits.slice(2));
+}
+
+function incidentNumberFormatFromSettings(settings) {
+  const raw = settings?.incidentNumberExtractJson;
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && typeof raw.incidentNumberFormat === "string") {
+    const value = raw.incidentNumberFormat.trim();
+    if (value) return value;
+  }
+  return "{yy}-{seq}";
+}
+
+function separatorFromSettings(settings) {
+  const raw = settings?.incidentNumberExtractJson;
+  if (raw && typeof raw === "object" && !Array.isArray(raw) && typeof raw.separator === "string") {
+    const value = raw.separator.trim();
+    if (value && !/\s/.test(value[0])) return value[0];
+  }
+  return ";";
+}
+
+function cadDispatchMatchNumber(plain, separator) {
+  const labeled = cadFollowUpCallNumber(plain);
+  if (labeled) return labeled;
+  const active = separator || ";";
+  const first = String(plain).trim().split(active)[0]?.trim() ?? "";
+  if (/^\d[\dA-Za-z-]*$/.test(first)) return first;
+  return "";
+}
+
+async function findIncidentForCadDispatch(tenantId, cadNumber) {
+  const byDispatch = await prisma.incident.findFirst({
+    where: { tenantId, dispatchNumber: cadNumber, deletedAt: null },
+  });
+  if (byDispatch) return byDispatch;
+  return prisma.incident.findFirst({
+    where: { tenantId, incidentNumber: cadNumber, deletedAt: null },
+  });
+}
+
 /**
  * A follow-up email (CAD CFS: / unit times) uses a different section order.
  * Match the call number inside "CAD CFS:" and add the text to that incident.
  * Leave address, type, and the other new-call fields as already saved.
  */
-async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber) {
+async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber, incidentNumberFormat) {
   const notes = String(plain).trim().slice(0, 12000);
   const units = cadLabeledValue(plain, "Units");
-  const departmentCfs = cadLabeledValue(plain, "Department CFS");
   const nature = cadLabeledValue(plain, "Nature");
-  const existing = await prisma.incident.findFirst({
-    where: { tenantId, incidentNumber: callNumber, deletedAt: null },
-  });
+  const formatted = formatCadIncidentNumber(departmentCfsDigits(plain), incidentNumberFormat);
+  const existing = await findIncidentForCadDispatch(tenantId, callNumber);
   if (existing) {
     const combined = [trimValue(existing.dispatchNotes), notes]
       .filter(Boolean)
       .join("\n\n--- CAD dispatch ---\n");
-    const updateData = { dispatchNotes: combined.slice(0, 20000) };
+    const updateData = {
+      dispatchNotes: combined.slice(0, 20000),
+      dispatchNumber: callNumber,
+    };
     if (units) updateData.assignedUnits = units;
-    if (departmentCfs) updateData.dispatchNumber = departmentCfs;
+    if (formatted) updateData.incidentNumber = formatted;
     await prisma.incident.update({ where: { id: existing.id }, data: updateData });
     return;
   }
   await prisma.incident.create({
     data: {
       tenantId,
-      incidentNumber: callNumber,
-      dispatchNumber: departmentCfs || callNumber,
+      incidentNumber: formatted || "",
+      dispatchNumber: callNumber,
       incidentType: nature || "",
       priority: "",
       address: "",
@@ -2440,9 +2494,11 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   const plain = getDispatchPlainTextFromRawBody(rawBody);
   if (!plain) return;
 
+  const incidentNumberFormat = incidentNumberFormatFromSettings(settings);
+  const sectionSeparator = separatorFromSettings(settings);
   const followUpNumber = cadFollowUpCallNumber(plain);
   if (followUpNumber) {
-    await cadIngestApplyFollowUpIncident(tenantId, plain, followUpNumber);
+    await cadIngestApplyFollowUpIncident(tenantId, plain, followUpNumber, incidentNumberFormat);
     return;
   }
 
@@ -2467,19 +2523,19 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
       ? settings.incidentFieldMapJson
       : {};
 
-  const mergeKey = extractCadIncidentMergeKey(result.slots, settings.incidentNumberExtractJson);
+  const mergeKey = cadDispatchMatchNumber(plain, sectionSeparator);
   if (!mergeKey) {
-    console.warn(
-      "[CAD ingest] no incident merge key in slots (set incidentNumberExtract.slot or extract slot cfs / incidentNumber).",
-    );
+    console.warn("[CAD ingest] no CAD dispatch number found to match this email to an incident.");
     return;
   }
 
   const mapped = buildCadMappedIncidentFields(result.slots, fieldMap, result.text);
+  const formattedIncidentNumber = formatCadIncidentNumber(
+    departmentCfsDigits(plain),
+    incidentNumberFormat,
+  );
 
-  const existing = await prisma.incident.findFirst({
-    where: { tenantId, incidentNumber: mergeKey, deletedAt: null },
-  });
+  const existing = await findIncidentForCadDispatch(tenantId, mergeKey);
 
   if (existing) {
     const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
@@ -2494,7 +2550,8 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
     if (trimValue(mapped.assignedUnits)) updateData.assignedUnits = mapped.assignedUnits;
     if (trimValue(mapped.reportedBy)) updateData.reportedBy = mapped.reportedBy;
     if (trimValue(mapped.callbackNumber)) updateData.callbackNumber = mapped.callbackNumber;
-    if (trimValue(mapped.dispatchNumber)) updateData.dispatchNumber = mapped.dispatchNumber;
+    updateData.dispatchNumber = mergeKey;
+    if (formattedIncidentNumber) updateData.incidentNumber = formattedIncidentNumber;
     const updatedDispatchCode = trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference);
     if (updatedDispatchCode) updateData.mapReference = updatedDispatchCode;
     if (trimValue(mapped.dispatchInfo)) updateData.dispatchInfo = mapped.dispatchInfo;
@@ -2509,8 +2566,8 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
   await prisma.incident.create({
     data: {
       tenantId,
-      incidentNumber: mergeKey,
-      dispatchNumber: trimValue(mapped.dispatchNumber) || mergeKey,
+      incidentNumber: formattedIncidentNumber || "",
+      dispatchNumber: mergeKey,
       incidentType: trimValue(mapped.incidentType) || "",
       priority: trimValue(mapped.priority) || "",
       address: trimValue(mapped.address) || "",

@@ -10,8 +10,10 @@ import {
   assignSectionToField,
   buildIncidentLabelConfig,
   emptyIncidentLabels,
+  DEFAULT_INCIDENT_NUMBER_FORMAT,
   fieldIdForSection,
   followUpCallNumber,
+  incidentNumberFormatFromExtract,
   labelsFromSavedRules,
   normalizeSectionSeparator,
   previewIncidentFromLabels,
@@ -41,6 +43,7 @@ export function DispatchParsingIncidentPanel() {
   const [enableIncidentCreation, setEnableIncidentCreation] = useState(false);
   const [choices, setChoices] = useState(emptyIncidentLabels);
   const [separator, setSeparator] = useState(";");
+  const [incidentNumberFormat, setIncidentNumberFormat] = useState(DEFAULT_INCIDENT_NUMBER_FORMAT);
   const [customRulesPresent, setCustomRulesPresent] = useState(false);
 
   const [emails, setEmails] = useState<CadEmailIngestRow[]>([]);
@@ -69,9 +72,11 @@ export function DispatchParsingIncidentPanel() {
         }
         const savedSeparator = separatorFromExtract(cfg.incidentNumberExtract);
         setSeparator(savedSeparator);
+        setIncidentNumberFormat(incidentNumberFormatFromExtract(cfg.incidentNumberExtract));
         const loaded = labelsFromSavedRules(parsedRules, savedSeparator);
         const normalized = emptyIncidentLabels();
         for (const field of INCIDENT_LABEL_FIELDS) {
+          if (field.id === "incidentNumber" || field.id === "dispatchNumber") continue;
           const choice = loaded.labels[field.id];
           if (choice) normalized[field.id] = { index: choice.index, afterLabel: false };
         }
@@ -123,13 +128,13 @@ export function DispatchParsingIncidentPanel() {
 
   const preview = useMemo(() => {
     if (!sampleText) return null;
-    return previewIncidentFromLabels(sampleText, choices, activeSeparator);
-  }, [sampleText, choices, activeSeparator]);
+    return previewIncidentFromLabels(sampleText, choices, activeSeparator, incidentNumberFormat);
+  }, [sampleText, choices, activeSeparator, incidentNumberFormat]);
 
   const handleSave = useCallback(async () => {
     setSaveError(null);
     setSaveOkAt(null);
-    const built = buildIncidentLabelConfig(choices, separator);
+    const built = buildIncidentLabelConfig(choices, separator, incidentNumberFormat);
     setSaveBusy(true);
     try {
       await patchCadParsingConfig({
@@ -145,7 +150,7 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setSaveBusy(false);
     }
-  }, [enableIncidentCreation, choices, separator]);
+  }, [enableIncidentCreation, choices, separator, incidentNumberFormat]);
 
   const sections = splitDispatchParts(sampleText, activeSeparator);
 
@@ -230,10 +235,24 @@ export function DispatchParsingIncidentPanel() {
             />
           </label>
           <p className="panel-description">
-            Enter one character. Crescent’s emails use a semicolon. Set the sections from the new-call email, the
-            one that starts with the call number. A follow-up email that contains <strong>CAD CFS:</strong> uses that
-            number and updates the same incident. It adds its text to the notes and leaves the address and type
-            already saved.
+            Enter one character. Crescent’s emails use a semicolon. Set the address, type, and notes from the
+            new-call email, the one that starts with the CAD number.
+          </p>
+          <label className="cad-allowlist-field">
+            Incident number format
+            <input
+              className="cad-dispatch-merge-key-input"
+              type="text"
+              value={incidentNumberFormat}
+              aria-label="Incident number format"
+              onChange={(event) => setIncidentNumberFormat(event.target.value)}
+            />
+          </label>
+          <p className="panel-description">
+            The CAD number, such as 26018313, is saved as the dispatch number. Later emails use that number to update
+            the same incident. Crescent’s CFS is the digits at the end of Department CFS, such as 2600089 from
+            CrescentIroquoisFPD2600089. This format turns that CFS into the incident number. {"{cfs}"} stays 2600089.{" "}
+            {"{yy}-{seq}"} becomes 26-00089. Those year digits change when the CFS resets on November 1.
           </p>
           {emailsError ? <p className="field-error">{emailsError}</p> : null}
           {emailsLoading ? <p className="panel-description">Loading emails…</p> : null}
@@ -287,7 +306,9 @@ export function DispatchParsingIncidentPanel() {
                       }
                     >
                       <option value="">Do not use</option>
-                      {INCIDENT_LABEL_FIELDS.map((field) => {
+                      {INCIDENT_LABEL_FIELDS.filter(
+                        (field) => field.id !== "incidentNumber" && field.id !== "dispatchNumber",
+                      ).map((field) => {
                         const taken = choices[field.id];
                         const usedOnAnotherSection = Boolean(taken && taken.index !== index);
                         return (
