@@ -11,6 +11,7 @@ import {
   buildIncidentLabelConfig,
   emptyIncidentLabels,
   fieldIdForSection,
+  followUpCallNumber,
   labelsFromSavedRules,
   normalizeSectionSeparator,
   previewIncidentFromLabels,
@@ -229,10 +230,10 @@ export function DispatchParsingIncidentPanel() {
             />
           </label>
           <p className="panel-description">
-            Enter one character. Crescent’s emails use a semicolon. Section 1 is the text before the first separator.
-            Section 2 is the text before the next one, and so on. Pick the incident field for each section. The same
-            section number is used on the next email, so check a second email and confirm section 1 is still the same
-            kind of information.
+            Enter one character. Crescent’s emails use a semicolon. Set the sections from the new-call email, the
+            one that starts with the call number. A follow-up email that contains <strong>CAD CFS:</strong> uses that
+            number and updates the same incident. It adds its text to the notes and leaves the address and type
+            already saved.
           </p>
           {emailsError ? <p className="field-error">{emailsError}</p> : null}
           {emailsLoading ? <p className="panel-description">Loading emails…</p> : null}
@@ -259,6 +260,13 @@ export function DispatchParsingIncidentPanel() {
             </label>
           ) : null}
 
+          {followUpCallNumber(sampleText) ? (
+            <p className="panel-description">
+              This sample is a follow-up. It updates call <strong>{followUpCallNumber(sampleText)}</strong>. The
+              section list is locked so it does not replace the new-call mapping. Choose the email that starts with
+              the call number to set those sections.
+            </p>
+          ) : null}
           {sections.length > 0 ? (
             <div className="cad-incident-section-list">
               {sections.map((part, index) => (
@@ -272,6 +280,7 @@ export function DispatchParsingIncidentPanel() {
                     <select
                       className="cad-dispatch-merge-key-input"
                       value={fieldIdForSection(choices, index)}
+                      disabled={Boolean(followUpCallNumber(sampleText))}
                       aria-label={`Incident field for section ${index + 1}`}
                       onChange={(event) =>
                         setChoices((current) => assignSectionToField(current, index, event.target.value))
@@ -313,7 +322,14 @@ export function DispatchParsingIncidentPanel() {
           ) : preview && !preview.ok ? (
             <p className="field-error">{preview.error}</p>
           ) : preview && preview.ok ? (
-            <table className="cad-incident-slot-table">
+            <>
+              {preview.followUp ? (
+                <p className="panel-description">
+                  Follow-up email. Rows marked Unchanged stay as they were saved from the new-call email. The notes
+                  from this email are added under the notes already saved.
+                </p>
+              ) : null}
+              <table className="cad-incident-slot-table">
               <tbody>
                 {preview.rows.map((row) => (
                   <tr key={row.id}>
@@ -323,6 +339,7 @@ export function DispatchParsingIncidentPanel() {
                 ))}
               </tbody>
             </table>
+            </>
           ) : null}
           <div className="cad-dispatch-incident-actions cad-dispatch-incident-save-row">
             <button

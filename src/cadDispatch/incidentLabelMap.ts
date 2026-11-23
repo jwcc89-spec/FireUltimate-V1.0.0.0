@@ -20,6 +20,18 @@ export function normalizeSectionSeparator(value: string): string {
   return char;
 }
 
+/** Call number from a follow-up email, such as "CAD CFS: 26018313". Empty for a new-call email. */
+export function followUpCallNumber(text: string): string {
+  const match = text.match(/CAD CFS:\s*([0-9A-Za-z-]+)/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+/** Value after a label, stopping at a comma, semicolon, or new line. */
+export function labeledCadValue(text: string, label: string): string {
+  const match = text.match(new RegExp(`${escapeRegexLiteral(label)}\\s*:\\s*([^;,\\n]+)`, "i"));
+  return match?.[1]?.trim() ?? "";
+}
+
 export function separatorFromExtract(raw: unknown): string {
   if (raw && typeof raw === "object" && !Array.isArray(raw)) {
     const value = (raw as { separator?: unknown }).separator;
@@ -328,7 +340,34 @@ export function previewIncidentFromLabels(
   plainText: string,
   choices: Record<IncidentLabelFieldId, IncidentPartChoice | null>,
   separator = DEFAULT_SECTION_SEPARATOR,
-): { ok: true; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
+): { ok: true; followUp: boolean; rows: IncidentPreviewRow[] } | { ok: false; error: string } {
+  const followUpNumber = followUpCallNumber(plainText);
+  if (followUpNumber) {
+    const departmentNumber = labeledCadValue(plainText, "Department CFS");
+    const units = labeledCadValue(plainText, "Units");
+    return {
+      ok: true,
+      followUp: true,
+      rows: [
+        { id: "incidentNumber", label: "Incident number", value: followUpNumber },
+        {
+          id: "dispatchNumber",
+          label: "Dispatch number",
+          value: departmentNumber || followUpNumber,
+        },
+        { id: "incidentType", label: "Incident type", value: "Unchanged" },
+        { id: "initialDispatchCode", label: "Initial dispatch code", value: "Unchanged" },
+        { id: "priority", label: "Priority", value: "Unchanged" },
+        { id: "stillDistrict", label: "Still district", value: "Unchanged" },
+        { id: "status", label: "Status", value: "Draft" },
+        { id: "reportedBy", label: "Reported by", value: "Unchanged" },
+        { id: "assignedUnits", label: "Assigned units", value: units || "Unchanged" },
+        { id: "address", label: "Address", value: "Unchanged" },
+        { id: "callbackNumber", label: "Callback number", value: "Unchanged" },
+        { id: "dispatchNotes", label: "Dispatch notes", value: plainText.trim() },
+      ],
+    };
+  }
   const built = buildIncidentLabelConfig(choices, separator);
   const result = runCadRulePipeline(plainText, built.rules);
   if (!result.ok) return { ok: false, error: result.error };
@@ -350,5 +389,5 @@ export function previewIncidentFromLabels(
     { id: "callbackNumber", label: "Callback number", value: mapped.callbackNumber || "" },
     { id: "dispatchNotes", label: "Dispatch notes", value: mapped.dispatchNotes || "" },
   ];
-  return { ok: true, rows };
+  return { ok: true, followUp: false, rows };
 }

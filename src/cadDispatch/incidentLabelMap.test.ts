@@ -5,6 +5,7 @@ import {
   buildIncidentLabelConfig,
   emptyIncidentLabels,
   fieldIdForSection,
+  followUpCallNumber,
   partFromSelection,
   labelsFromSavedRules,
   previewIncidentFromLabels,
@@ -79,6 +80,34 @@ describe("incidentLabelMap", () => {
     assert.equal(preview.ok, true);
     if (!preview.ok) return;
     assert.equal(preview.rows.find((row) => row.id === "address")?.value, "540 E Highway 24");
+  });
+
+  it("keeps a follow-up email on the same call number", () => {
+    const followUp =
+      "Crescent-Iroquois Fire - CAD CFS: 26018313; Department CFS: CrescentIroquoisFPD2600089; Nature: Fire Controlled Burn Fire Controlled Burn,Start Date/Time: 11/17/26 13:35, Units: 1801; CrescentIroquoisFireDispatched, Unit response times:1801 - On Scene 11/17/26 13:38:19";
+    const fresh =
+      "26018313; Fire Controlled Burn; 2000 NORTH / 1600 EAST, CRESCENT CITY; INFORMATION ONLY / CONTROLLED BURN / TREE STUMPS; Common name: ; CAD Notes: tree stumps; New Message:";
+    assert.equal(followUpCallNumber(followUp), "26018313");
+    assert.equal(followUpCallNumber(fresh), "");
+    const choices = emptyIncidentLabels();
+    choices.incidentNumber = { index: 0, afterLabel: false };
+    choices.address = { index: 2, afterLabel: false };
+    const followPreview = previewIncidentFromLabels(followUp, choices);
+    assert.equal(followPreview.ok, true);
+    if (!followPreview.ok) return;
+    assert.equal(followPreview.followUp, true);
+    assert.equal(followPreview.rows.find((row) => row.id === "incidentNumber")?.value, "26018313");
+    assert.equal(
+      followPreview.rows.find((row) => row.id === "dispatchNumber")?.value,
+      "CrescentIroquoisFPD2600089",
+    );
+    assert.equal(followPreview.rows.find((row) => row.id === "address")?.value, "Unchanged");
+    assert.equal(followPreview.rows.find((row) => row.id === "assignedUnits")?.value, "1801");
+    const freshPreview = previewIncidentFromLabels(fresh, choices);
+    assert.equal(freshPreview.ok, true);
+    if (!freshPreview.ok) return;
+    assert.equal(freshPreview.followUp, false);
+    assert.equal(freshPreview.rows.find((row) => row.id === "address")?.value, "2000 NORTH / 1600 EAST, CRESCENT CITY");
   });
 
   it("assigns one incident field to each section", () => {

@@ -2353,6 +2353,61 @@ function extractCadIncidentMergeKey(slots, incidentNumberExtract) {
   return "";
 }
 
+function cadFollowUpCallNumber(plain) {
+  const match = String(plain).match(/CAD CFS:\s*([0-9A-Za-z-]+)/i);
+  return match ? match[1].trim() : "";
+}
+
+function cadLabeledValue(plain, label) {
+  const escaped = String(label).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const match = String(plain).match(new RegExp(`${escaped}\\s*:\\s*([^;,\\n]+)`, "i"));
+  return match ? match[1].trim() : "";
+}
+
+/**
+ * A follow-up email (CAD CFS: / unit times) uses a different section order.
+ * Match the call number inside "CAD CFS:" and add the text to that incident.
+ * Leave address, type, and the other new-call fields as already saved.
+ */
+async function cadIngestApplyFollowUpIncident(tenantId, plain, callNumber) {
+  const notes = String(plain).trim().slice(0, 12000);
+  const units = cadLabeledValue(plain, "Units");
+  const departmentCfs = cadLabeledValue(plain, "Department CFS");
+  const nature = cadLabeledValue(plain, "Nature");
+  const existing = await prisma.incident.findFirst({
+    where: { tenantId, incidentNumber: callNumber, deletedAt: null },
+  });
+  if (existing) {
+    const combined = [trimValue(existing.dispatchNotes), notes]
+      .filter(Boolean)
+      .join("\n\n--- CAD dispatch ---\n");
+    const updateData = { dispatchNotes: combined.slice(0, 20000) };
+    if (units) updateData.assignedUnits = units;
+    if (departmentCfs) updateData.dispatchNumber = departmentCfs;
+    await prisma.incident.update({ where: { id: existing.id }, data: updateData });
+    return;
+  }
+  await prisma.incident.create({
+    data: {
+      tenantId,
+      incidentNumber: callNumber,
+      dispatchNumber: departmentCfs || callNumber,
+      incidentType: nature || "",
+      priority: "",
+      address: "",
+      stillDistrict: "",
+      assignedUnits: units || "",
+      reportedBy: null,
+      callbackNumber: null,
+      dispatchNotes: notes,
+      mapReference: null,
+      currentState: "Draft",
+      receivedAt: "",
+      dispatchInfo: "CAD email ingest",
+    },
+  });
+}
+
 function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
   const data = {};
   if (fieldMap && typeof fieldMap === "object" && !Array.isArray(fieldMap)) {
@@ -2384,6 +2439,12 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody) {
 
   const plain = getDispatchPlainTextFromRawBody(rawBody);
   if (!plain) return;
+
+  const followUpNumber = cadFollowUpCallNumber(plain);
+  if (followUpNumber) {
+    await cadIngestApplyFollowUpIncident(tenantId, plain, followUpNumber);
+    return;
+  }
 
   let rules;
   try {
