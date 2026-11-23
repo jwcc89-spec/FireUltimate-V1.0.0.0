@@ -11,6 +11,7 @@ import {
   deleteIncident,
   getIncidentList,
   importIncidentNumberChart,
+  updateIncident,
 } from "../api/incidents.ts";
 import { getDispatchPlainTextFromRawBody } from "../cadDispatch/extractDispatchPlainText.ts";
 import {
@@ -32,6 +33,8 @@ import {
   followUpCallNumber,
   incidentNumberFormatFromExtract,
   incidentNumberOverridesFromExtract,
+  incidentNumbersFromSeriesStarts,
+  parseAssignedIncidentNumber,
   labelsFromSavedRules,
   linesToPhrases,
   normalizeSectionSeparator,
@@ -373,26 +376,59 @@ export function DispatchParsingIncidentPanel() {
 
   const tableRows = useMemo(() => chartRowsNewestFirst(chartRows), [chartRows]);
 
+  const seriesStarts = useMemo(() => {
+    const starts = { ...savedOverrides };
+    const edited = Object.entries(numberEdits).filter(([, value]) => value.trim());
+    const rank = (value: string) => {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) ? numeric : Number.MAX_SAFE_INTEGER;
+    };
+    for (const dispatchNumber of Object.keys(starts)) {
+      const replacedByOlderEdit = edited.some(([editedDispatch]) => rank(editedDispatch) < rank(dispatchNumber));
+      if (replacedByOlderEdit) delete starts[dispatchNumber];
+    }
+    for (const [dispatchNumber, value] of Object.entries(numberEdits)) {
+      const typed = value.trim();
+      if (typed) starts[dispatchNumber] = typed;
+      else delete starts[dispatchNumber];
+    }
+    return starts;
+  }, [savedOverrides, numberEdits]);
+
+  const seriesNumbers = useMemo(
+    () =>
+      incidentNumbersFromSeriesStarts(
+        chartRows.map((row) => ({
+          dispatchNumber: row.dispatchNumber,
+          deleted: row.deleted,
+          locked: row.reportStatus === "In Review" || row.reportStatus === "Exported",
+          heldNumber: row.currentIncidentNumber,
+        })),
+        seriesStarts,
+        incidentNumberFormat,
+      ),
+    [chartRows, seriesStarts, incidentNumberFormat],
+  );
+
   const numberInBox = useCallback(
     (row: (typeof chartRows)[number]) => {
       if (row.deleted) return "";
       if (Object.prototype.hasOwnProperty.call(numberEdits, row.dispatchNumber)) {
         return numberEdits[row.dispatchNumber];
       }
-      return savedOverrides[row.dispatchNumber] || row.proposedIncidentNumber;
+      return seriesNumbers[row.dispatchNumber] || row.currentIncidentNumber || row.proposedIncidentNumber;
     },
-    [numberEdits, savedOverrides],
+    [numberEdits, seriesNumbers],
   );
 
-  const overridesFromBoxes = useCallback(
+  const seriesOverrideList = useCallback(
     (exceptDispatchNumber = "") =>
-      chartRows.flatMap((row) => {
-        if (row.deleted || row.dispatchNumber === exceptDispatchNumber) return [];
-        const typed = numberInBox(row).trim();
-        if (!typed || typed === row.proposedIncidentNumber) return [];
-        return [{ dispatchNumber: row.dispatchNumber, incidentNumber: typed }];
+      Object.entries(seriesStarts).flatMap(([dispatchNumber, incidentNumber]) => {
+        if (dispatchNumber === exceptDispatchNumber) return [];
+        if (!parseAssignedIncidentNumber(incidentNumber, incidentNumberFormat)) return [];
+        return [{ dispatchNumber, incidentNumber }];
       }),
-    [chartRows, numberInBox],
+    [seriesStarts, incidentNumberFormat],
   );
 
   const handleDeleteChartRow = useCallback(async (incidentId: string, dispatchNumber: string) => {
@@ -408,7 +444,7 @@ export function DispatchParsingIncidentPanel() {
     setChartMessage(null);
     try {
       await deleteIncident(incidentId, { deletedReason: "Removed from the incident number table." });
-      const overrides = overridesFromBoxes(dispatchNumber);
+      const overrides = seriesOverrideList(dispatchNumber);
       await applyIncidentNumberChart([], overrides);
       setSavedOverrides(Object.fromEntries(overrides.map((item) => [item.dispatchNumber, item.incidentNumber])));
       setNumberEdits({});
@@ -418,17 +454,32 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setChartBusy(false);
     }
-  }, [overridesFromBoxes]);
+  }, [seriesOverrideList]);
+
+  const handleRestoreChartRow = useCallback(async (incidentId: string) => {
+    setChartBusy(true);
+    setChartError(null);
+    setChartMessage(null);
+    try {
+      await updateIncident(incidentId, { deletedAt: null, deletedBy: "", deletedReason: "" });
+      setChartMessage("Restored the incident, including notes that were typed on it. Its NERIS report is still attached.");
+      setChartReload((current) => current + 1);
+    } catch (e) {
+      setChartError(e instanceof Error ? e.message : "Could not restore that incident.");
+    } finally {
+      setChartBusy(false);
+    }
+  }, []);
 
   const handleForceUpdate = useCallback(async () => {
     const updates = chartRows.flatMap((row) => {
       if (!row.incidentId || row.deleted) return [];
       if (row.reportStatus === "In Review" || row.reportStatus === "Exported") return [];
-      const typed = numberInBox(row).trim();
+      const typed = (seriesNumbers[row.dispatchNumber] || numberInBox(row)).trim();
       if (!typed || typed === row.currentIncidentNumber) return [];
       return [{ incidentId: row.incidentId, incidentNumber: typed }];
     });
-    const overrides = overridesFromBoxes();
+    const overrides = seriesOverrideList();
     setChartBusy(true);
     setChartError(null);
     setChartMessage(null);
@@ -447,7 +498,7 @@ export function DispatchParsingIncidentPanel() {
     } finally {
       setChartBusy(false);
     }
-  }, [chartRows, numberInBox, overridesFromBoxes]);
+  }, [chartRows, seriesNumbers, numberInBox, seriesOverrideList]);
 
   const handleCreateIncident = useCallback(async (dispatchNumber: string, incidentNumber: string) => {
     setChartBusy(true);
@@ -988,10 +1039,11 @@ export function DispatchParsingIncidentPanel() {
 
         <CollapsibleSetupSection title="Incident number table">
           <p className="panel-description">
-            The newest dispatch number is at the top. The first incident number of the year still belongs to the
-            earliest call. Type the incident number you want, then Force update. That writes the box onto Draft
-            incidents and Draft NERIS reports. In Review and Exported reports stay as they are. A number you type is
-            kept when the next email arrives.
+            The newest dispatch number is at the top. Type a starting number, such as 27-001, on the first call of
+            that year. Force update writes that number and counts the newer calls above it: 27-002, then 27-003.
+            Older calls stay as they are until you type their own starting number, such as 26-001. In Review and
+            Exported reports stay as they are. Restore brings back a deleted incident, the notes typed on it, and
+            the NERIS report that is still stored with it.
           </p>
           <p className="panel-description">
             Create incident builds that call from the stored email, including the number in the box. Export then
@@ -1053,6 +1105,16 @@ export function DispatchParsingIncidentPanel() {
                             onClick={() => void handleCreateIncident(row.dispatchNumber, typed)}
                           >
                             Create incident
+                          </button>
+                        ) : null}
+                        {row.incidentId && row.deleted ? (
+                          <button
+                            type="button"
+                            className="secondary-button"
+                            disabled={chartBusy}
+                            onClick={() => void handleRestoreChartRow(row.incidentId)}
+                          >
+                            Restore
                           </button>
                         ) : null}
                         {row.incidentId && !row.deleted ? (

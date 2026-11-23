@@ -106,6 +106,8 @@ export interface CreateIncidentBody {
   receivedAt?: string;
   dispatchInfo?: string;
   deletedAt?: string | null;
+  deletedBy?: string | null;
+  deletedReason?: string | null;
 }
 
 export async function createIncident(body: CreateIncidentBody): Promise<IncidentCallSummary> {

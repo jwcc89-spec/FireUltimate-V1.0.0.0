@@ -2586,6 +2586,67 @@ function formatAssignedIncidentNumber(sequence, yy, pattern) {
   return template.replaceAll("{yy}", yy).replaceAll("{seq}", seq);
 }
 
+// Keep this series math in step with incidentNumbersFromSeriesStarts in incidentLabelMap.ts.
+function parseAssignedIncidentNumber(value, pattern) {
+  const template = String(pattern ?? "").trim() || "{yy}-{seq}";
+  const source = template
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace("\\{yy\\}", "(\\d{2})")
+    .replace("\\{seq\\}", "(\\d+)");
+  const match = String(value ?? "").trim().match(new RegExp(`^${source}$`));
+  if (!match) return null;
+  const sequence = Number(match[2]);
+  if (!Number.isInteger(sequence) || sequence < 1) return null;
+  return { yy: match[1], sequence };
+}
+
+function compareDispatchNumber(left, right) {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  return String(left).localeCompare(String(right));
+}
+
+function incidentNumbersFromSeriesStarts(rows, starts, pattern) {
+  const ordered = [...rows].sort((left, right) => compareDispatchNumber(left.dispatchNumber, right.dispatchNumber));
+  const startEntries = Object.entries(starts)
+    .map(([dispatchNumber, incidentNumber]) => ({
+      dispatchNumber: trimValue(dispatchNumber),
+      incidentNumber: trimValue(incidentNumber),
+    }))
+    .filter((item) => item.dispatchNumber && parseAssignedIncidentNumber(item.incidentNumber, pattern))
+    .sort((left, right) => compareDispatchNumber(left.dispatchNumber, right.dispatchNumber));
+  const result = new Map();
+  for (let index = 0; index < startEntries.length; index += 1) {
+    const start = startEntries[index];
+    const parsed = parseAssignedIncidentNumber(start.incidentNumber, pattern);
+    const nextDispatch = startEntries[index + 1]?.dispatchNumber;
+    const range = ordered.filter((row) => {
+      if (compareDispatchNumber(row.dispatchNumber, start.dispatchNumber) < 0) return false;
+      if (nextDispatch && compareDispatchNumber(row.dispatchNumber, nextDispatch) >= 0) return false;
+      return true;
+    });
+    const held = new Set(
+      range.filter((row) => row.locked && trimValue(row.heldNumber)).map((row) => trimValue(row.heldNumber)),
+    );
+    let sequence = parsed.sequence;
+    for (const row of range) {
+      if (row.deleted || row.locked) continue;
+      let candidate = formatAssignedIncidentNumber(sequence, parsed.yy, pattern);
+      while (held.has(candidate) && sequence < 100000) {
+        sequence += 1;
+        candidate = formatAssignedIncidentNumber(sequence, parsed.yy, pattern);
+      }
+      result.set(row.dispatchNumber, candidate);
+      held.add(candidate);
+      sequence += 1;
+    }
+  }
+  return result;
+}
+
 function incidentNumberFormatFromSettings(settings) {
   const raw = settings?.incidentNumberExtractJson;
   if (raw && typeof raw === "object" && !Array.isArray(raw) && typeof raw.incidentNumberFormat === "string") {
@@ -2698,6 +2759,39 @@ async function renumberDraftIncidentsByDispatchOrder(tx, tenantId, pattern, rese
   for (const draft of drafts) {
     if (isReportRemoved(draft.payload)) continue;
     draftByCall.set(draft.callNumber, draft);
+  }
+  const seriesRows = withDispatch.map((incident) => {
+    const currentNumber = trimValue(incident.incidentNumber);
+    const draft = draftByCall.get(incident.id) || (currentNumber ? draftByCall.get(currentNumber) : null);
+    return {
+      dispatchNumber: trimValue(incident.dispatchNumber),
+      deleted: false,
+      locked: Boolean(draft && reportStatusOf(draft.payload) !== "Draft"),
+      heldNumber: currentNumber,
+    };
+  });
+  const seriesNumbers = incidentNumbersFromSeriesStarts(seriesRows, overrides, pattern);
+  if (seriesNumbers.size > 0) {
+    for (const incident of withDispatch) {
+      const proposed = seriesNumbers.get(trimValue(incident.dispatchNumber));
+      if (!proposed || trimValue(incident.incidentNumber) === proposed) continue;
+      const currentNumber = trimValue(incident.incidentNumber);
+      const draft = draftByCall.get(incident.id) || (currentNumber ? draftByCall.get(currentNumber) : null);
+      if (draft && reportStatusOf(draft.payload) !== "Draft") continue;
+      await tx.incident.update({ where: { id: incident.id }, data: { incidentNumber: proposed } });
+      if (!draft) continue;
+      const payload = draft.payload && typeof draft.payload === "object" && !Array.isArray(draft.payload)
+        ? { ...draft.payload }
+        : {};
+      const formValues =
+        payload.formValues && typeof payload.formValues === "object" && !Array.isArray(payload.formValues)
+          ? { ...payload.formValues }
+          : {};
+      formValues.incident_internal_id = proposed;
+      payload.formValues = formValues;
+      await tx.nerisDraft.update({ where: { id: draft.id }, data: { payload } });
+    }
+    return;
   }
   const { yy } = currentFiscalPeriod(new Date(), reset);
   const reserved = new Set(Object.values(overrides));

@@ -4,6 +4,7 @@ import {
   assignIncidentNumberChart,
   assignSectionToField,
   chartRowsNewestFirst,
+  incidentNumbersFromSeriesStarts,
   buildIncidentLabelConfig,
   cadLabeledDateTime,
   cadUnitTimes,
@@ -175,6 +176,31 @@ describe("incidentLabelMap", () => {
     const shown = chartRowsNewestFirst(rows);
     assert.equal(shown.map((row) => row.dispatchNumber).join(","), "26017820,26017731,26017636");
     assert.equal(shown.find((row) => row.dispatchNumber === "26017731")?.proposedIncidentNumber, "27-001");
+  });
+
+  it("counts newer calls up from a typed starting number", () => {
+    const rows = [
+      { dispatchNumber: "26017600", currentIncidentNumber: "27-040" },
+      { dispatchNumber: "26017731" },
+      { dispatchNumber: "26017740", deleted: true },
+      { dispatchNumber: "26017820" },
+      { dispatchNumber: "26017900", locked: true, heldNumber: "27-003" },
+      { dispatchNumber: "26018000" },
+    ];
+    const from27 = incidentNumbersFromSeriesStarts(rows, { "26017731": "27-001" });
+    assert.equal(from27["26017600"], undefined);
+    assert.equal(from27["26017731"], "27-001");
+    assert.equal(from27["26017740"], undefined);
+    assert.equal(from27["26017820"], "27-002");
+    assert.equal(from27["26017900"], undefined);
+    assert.equal(from27["26018000"], "27-004");
+    const bothYears = incidentNumbersFromSeriesStarts(rows, {
+      "26017600": "26-001",
+      "26017731": "27-001",
+    });
+    assert.equal(bothYears["26017600"], "26-001");
+    assert.equal(bothYears["26017731"], "27-001");
+    assert.equal(bothYears["26017820"], "27-002");
   });
 
   it("keeps a typed incident number on that dispatch number", () => {

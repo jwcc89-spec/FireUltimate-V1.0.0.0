@@ -152,6 +152,80 @@ export function formatAssignedIncidentNumber(sequence: number, yy: string, patte
   return template.replaceAll("{yy}", yy).replaceAll("{seq}", seq);
 }
 
+export function parseAssignedIncidentNumber(
+  value: string,
+  pattern = DEFAULT_INCIDENT_NUMBER_FORMAT,
+): { yy: string; sequence: number } | null {
+  const template = pattern.trim() || DEFAULT_INCIDENT_NUMBER_FORMAT;
+  const source = template
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace("\\{yy\\}", "(\\d{2})")
+    .replace("\\{seq\\}", "(\\d+)");
+  const match = value.trim().match(new RegExp(`^${source}$`));
+  if (!match) return null;
+  const sequence = Number(match[2]);
+  if (!Number.isInteger(sequence) || sequence < 1) return null;
+  return { yy: match[1], sequence };
+}
+
+function compareDispatchNumber(left: string, right: string): number {
+  const leftNumber = Number(left);
+  const rightNumber = Number(right);
+  if (Number.isFinite(leftNumber) && Number.isFinite(rightNumber) && leftNumber !== rightNumber) {
+    return leftNumber - rightNumber;
+  }
+  return left.localeCompare(right);
+}
+
+/**
+ * A typed number is the start of a series. Newer dispatch numbers count up from it
+ * until the next typed start. Older calls are left out of the result.
+ */
+export function incidentNumbersFromSeriesStarts(
+  rows: readonly { dispatchNumber: string; deleted?: boolean; locked?: boolean; heldNumber?: string }[],
+  starts: Readonly<Record<string, string>>,
+  pattern = DEFAULT_INCIDENT_NUMBER_FORMAT,
+): Record<string, string> {
+  const ordered = [...rows]
+    .filter((row) => row.dispatchNumber.trim())
+    .sort((left, right) => compareDispatchNumber(left.dispatchNumber, right.dispatchNumber));
+  const startEntries = Object.entries(starts)
+    .map(([dispatchNumber, incidentNumber]) => ({
+      dispatchNumber: dispatchNumber.trim(),
+      incidentNumber: incidentNumber.trim(),
+    }))
+    .filter((item) => item.dispatchNumber && parseAssignedIncidentNumber(item.incidentNumber, pattern))
+    .sort((left, right) => compareDispatchNumber(left.dispatchNumber, right.dispatchNumber));
+  const result: Record<string, string> = {};
+  for (let index = 0; index < startEntries.length; index += 1) {
+    const start = startEntries[index];
+    const parsed = parseAssignedIncidentNumber(start.incidentNumber, pattern);
+    if (!parsed) continue;
+    const nextDispatch = startEntries[index + 1]?.dispatchNumber;
+    const range = ordered.filter((row) => {
+      if (compareDispatchNumber(row.dispatchNumber, start.dispatchNumber) < 0) return false;
+      if (nextDispatch && compareDispatchNumber(row.dispatchNumber, nextDispatch) >= 0) return false;
+      return true;
+    });
+    const held = new Set(
+      range.filter((row) => row.locked && row.heldNumber?.trim()).map((row) => row.heldNumber?.trim() ?? ""),
+    );
+    let sequence = parsed.sequence;
+    for (const row of range) {
+      if (row.deleted || row.locked) continue;
+      let candidate = formatAssignedIncidentNumber(sequence, parsed.yy, pattern);
+      while (held.has(candidate) && sequence < 100000) {
+        sequence += 1;
+        candidate = formatAssignedIncidentNumber(sequence, parsed.yy, pattern);
+      }
+      result[row.dispatchNumber] = candidate;
+      held.add(candidate);
+      sequence += 1;
+    }
+  }
+  return result;
+}
+
 export function incidentNumberSeriesExample(
   now: Date,
   reset: CadNumberReset,
