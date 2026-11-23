@@ -38,7 +38,7 @@ export interface NerisValueOption {
 
 export interface NerisConditionalRule {
   fieldId: string;
-  operator: "equals" | "notEmpty" | "isEmpty" | "includes" | "startsWith";
+  operator: "equals" | "notEmpty" | "isEmpty" | "includes" | "startsWith" | "typeIncludes";
   value?: string;
 }
 
@@ -1576,6 +1576,7 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     label: "Was aid given or received?",
     inputKind: "select",
     optionsKey: "yes_no",
+    required: true,
     layout: "half",
   },
   {
@@ -2183,6 +2184,55 @@ export const NERIS_FORM_FIELDS: NerisFieldMetadata[] = [
     layout: "half",
   },
   {
+    id: "risk_reduction_smoke_alarm_present",
+    sectionId: "riskReduction",
+    label: "Was there at least one smoke alarm present?",
+    inputKind: "select",
+    optionsKey: "yes_no_unknown",
+    requiredIf: { fieldId: "primary_incident_type", operator: "typeIncludes", value: "STRUCTURE_FIRE" },
+    layout: "full",
+  },
+  {
+    id: "risk_reduction_fire_alarm_present",
+    sectionId: "riskReduction",
+    label: "Was there at least one fire alarm present?",
+    inputKind: "select",
+    optionsKey: "yes_no_unknown",
+    requiredIf: { fieldId: "primary_incident_type", operator: "typeIncludes", value: "STRUCTURE_FIRE" },
+    layout: "full",
+  },
+  {
+    id: "risk_reduction_other_alarm_present",
+    sectionId: "riskReduction",
+    label: "Were there any other alarms present?",
+    inputKind: "select",
+    optionsKey: "yes_no_unknown",
+    requiredIf: { fieldId: "primary_incident_type", operator: "typeIncludes", value: "STRUCTURE_FIRE" },
+    layout: "full",
+  },
+  {
+    id: "risk_reduction_fire_suppression_present",
+    sectionId: "riskReduction",
+    label: "Were there any fire suppression systems present?",
+    inputKind: "select",
+    optionsKey: "yes_no_unknown",
+    requiredIf: { fieldId: "primary_incident_type", operator: "typeIncludes", value: "STRUCTURE_FIRE" },
+    layout: "full",
+  },
+  {
+    id: "risk_reduction_cooking_suppression_present",
+    sectionId: "riskReduction",
+    label: "Was there at least one cooking fire suppression system present?",
+    inputKind: "select",
+    optionsKey: "yes_no_unknown",
+    requiredIf: {
+      fieldId: "primary_incident_type",
+      operator: "typeIncludes",
+      value: "CONFINED_COOKING_APPLIANCE_FIRE",
+    },
+    layout: "full",
+  },
+  {
     id: "risk_reduction_follow_up_required",
     sectionId: "riskReduction",
     label: "Follow-up required",
@@ -2438,7 +2488,48 @@ function evaluateNerisRule(rule: NerisConditionalRule, values: NerisFormValues):
   if (rule.operator === "startsWith") {
     return toApiEnumValue(value).startsWith(expectedValue);
   }
+  if (rule.operator === "typeIncludes") {
+    const blob = [values.primary_incident_type ?? "", values.additional_incident_types ?? ""].join(",");
+    return toApiEnumValue(blob).includes(expectedValue);
+  }
   return toApiEnumValue(value) === expectedValue;
+}
+
+const STRUCTURE_FIRE_PROTECTION_FIELD_IDS = new Set([
+  "risk_reduction_smoke_alarm_present",
+  "risk_reduction_fire_alarm_present",
+  "risk_reduction_other_alarm_present",
+  "risk_reduction_fire_suppression_present",
+  "risk_reduction_cooking_suppression_present",
+]);
+
+/** NERIS skips these modules only when every aid is SUPPORT_AID that was GIVEN. */
+export function structureFireProtectionExempt(values: NerisFormValues): boolean {
+  if (toApiEnumValue(values.incident_has_aid ?? "") !== "YES") return false;
+  const rows: Array<{ type: string; direction: string }> = [];
+  if (toApiEnumValue(values.incident_aid_agency_type ?? "") === "FIRE_DEPARTMENT") {
+    rows.push({
+      type: toApiEnumValue(values.incident_aid_type ?? ""),
+      direction: toApiEnumValue(values.incident_aid_direction ?? ""),
+    });
+  }
+  try {
+    const extra = JSON.parse(values.incident_aid_extra_json ?? "[]") as unknown;
+    if (Array.isArray(extra)) {
+      for (const row of extra) {
+        if (!row || typeof row !== "object") continue;
+        const entry = row as { aidType?: string; aidDirection?: string };
+        rows.push({
+          type: toApiEnumValue(entry.aidType ?? ""),
+          direction: toApiEnumValue(entry.aidDirection ?? ""),
+        });
+      }
+    }
+  } catch {
+    return false;
+  }
+  if (rows.length === 0) return false;
+  return rows.every((row) => row.type === "SUPPORT_AID" && row.direction === "GIVEN");
 }
 
 export function isNerisFieldRequired(
@@ -2453,6 +2544,9 @@ export function isNerisFieldRequired(
   }
   const requiredByRule = evaluateNerisRule(field.requiredIf, values);
   if (!requiredByRule) {
+    return false;
+  }
+  if (STRUCTURE_FIRE_PROTECTION_FIELD_IDS.has(field.id) && structureFireProtectionExempt(values)) {
     return false;
   }
 

@@ -734,6 +734,13 @@ body.resizing-shell-sidebar {
   color: #0f172a;
 }
 
+.neris-report-title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem;
+}
+
 .page-header p {
   margin: 0.3rem 0 0;
   color: #475569;
@@ -4718,17 +4725,26 @@ body.resource-personnel-modal-open {
 .neris-risk-reduction-layout {
   display: grid;
   gap: 0.74rem;
+  align-content: start;
+  align-items: start;
+  align-self: start;
 }
 
 .neris-risk-reduction-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.62rem;
+  align-content: start;
+  align-items: start;
+  height: auto;
 }
 
 .neris-risk-reduction-field {
   display: grid;
   gap: 0.3rem;
+  align-content: start;
+  align-items: start;
+  height: auto;
 }
 
 .neris-risk-reduction-field label {
@@ -4740,11 +4756,17 @@ body.resource-personnel-modal-open {
 .neris-risk-reduction-layout .neris-single-choice-row {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
+  align-self: start;
   gap: 0.3rem;
+  height: auto;
 }
 
 .neris-risk-reduction-layout .neris-single-choice-button {
   flex: 0 0 auto;
+  align-self: center;
+  height: auto;
+  min-height: 0;
   font-size: 0.68rem;
   padding: 0.24rem 0.46rem;
 }
@@ -4782,6 +4804,8 @@ body.resource-personnel-modal-open {
 .neris-risk-reduction-conditional-layout {
   display: grid;
   gap: 0.62rem;
+  align-content: start;
+  align-items: start;
 }
 
 .neris-risk-reduction-question-card {
@@ -5407,8 +5431,17 @@ body.resource-personnel-modal-open {
 .neris-form-actions {
   display: flex;
   justify-content: flex-end;
+  align-items: center;
+  align-self: start;
   flex-wrap: wrap;
   gap: 0.45rem;
+  grid-column: 1 / -1;
+  height: auto;
+}
+
+.neris-form-actions button {
+  height: auto;
+  align-self: center;
 }
 
 .validation-issue-list {

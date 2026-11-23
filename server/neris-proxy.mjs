@@ -1593,8 +1593,143 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
   if (medicalDetails.length > 0) {
     payload.medical_details = medicalDetails;
   }
+  const riskReductionModules = buildRiskReductionModules(formValues, additionalAidEntries);
+  if (riskReductionModules.smoke_alarm) payload.smoke_alarm = riskReductionModules.smoke_alarm;
+  if (riskReductionModules.fire_alarm) payload.fire_alarm = riskReductionModules.fire_alarm;
+  if (riskReductionModules.other_alarm) payload.other_alarm = riskReductionModules.other_alarm;
+  if (riskReductionModules.fire_suppression) payload.fire_suppression = riskReductionModules.fire_suppression;
+  if (riskReductionModules.cooking_fire_suppression) {
+    payload.cooking_fire_suppression = riskReductionModules.cooking_fire_suppression;
+  }
 
   return payload;
+}
+
+function presenceType(raw) {
+  const value = normalizeEnumValue(raw);
+  if (value === "YES") return "PRESENT";
+  if (value === "NO") return "NOT_PRESENT";
+  if (value === "UNKNOWN") return "NOT_APPLICABLE";
+  return "";
+}
+
+function mapEnumList(raw, aliases, allowed) {
+  return csvToEnumValues(raw)
+    .map((value) => aliases[value] || value)
+    .filter((value) => allowed.has(value));
+}
+
+function structureFireProtectionExemptOnExport(formValues, additionalAidEntries) {
+  if (normalizeEnumValue(formValues.incident_has_aid) !== "YES") return false;
+  const rows = [];
+  if (normalizeEnumValue(formValues.incident_aid_agency_type) === "FIRE_DEPARTMENT") {
+    rows.push({
+      type: normalizeEnumValue(formValues.incident_aid_type),
+      direction: normalizeEnumValue(formValues.incident_aid_direction),
+    });
+  }
+  (Array.isArray(additionalAidEntries) ? additionalAidEntries : []).forEach((entry) => {
+    if (!entry || typeof entry !== "object") return;
+    rows.push({
+      type: normalizeEnumValue(entry.aidType),
+      direction: normalizeEnumValue(entry.aidDirection),
+    });
+  });
+  if (rows.length === 0) return false;
+  return rows.every((row) => row.type === "SUPPORT_AID" && row.direction === "GIVEN");
+}
+
+function alarmModule(rawPresence, presentExtras) {
+  const type = presenceType(rawPresence);
+  if (!type) return null;
+  if (type !== "PRESENT") return { presence: { type } };
+  return { presence: { type: "PRESENT", ...presentExtras } };
+}
+
+function buildRiskReductionModules(formValues, additionalAidEntries) {
+  if (structureFireProtectionExemptOnExport(formValues, additionalAidEntries)) return {};
+  const smokeTypes = mapEnumList(formValues.risk_reduction_smoke_alarm_types, {
+    COMBINATION_SMOKE_CO: "COMBINATION",
+    HARD_OF_HEARING_STROBE: "HARD_OF_HEARING_WITH_STROBE",
+  }, new Set([
+    "BED_SHAKER",
+    "COMBINATION",
+    "HARDWIRED",
+    "HARD_OF_HEARING_WITH_STROBE",
+    "INTERCONNECTED",
+    "LONG_LIFE_BATTERY_POWERED",
+    "REPLACEABLE_BATTERY_POWERED",
+    "UNKNOWN",
+  ]));
+  const smokeWorking = yesNoToBoolean(formValues.risk_reduction_smoke_alarm_working);
+  const smoke = alarmModule(formValues.risk_reduction_smoke_alarm_present, {
+    ...(smokeTypes.length ? { alarm_types: smokeTypes } : {}),
+    ...(typeof smokeWorking === "boolean" ? { working: smokeWorking } : {}),
+  });
+  const fireTypes = mapEnumList(
+    formValues.risk_reduction_fire_alarm_types,
+    {},
+    new Set(["AUTOMATIC", "MANUAL", "MANUAL_AND_AUTOMATIC"]),
+  );
+  const fire = alarmModule(formValues.risk_reduction_fire_alarm_present, {
+    ...(fireTypes.length ? { alarm_types: fireTypes } : {}),
+  });
+  const otherTypes = mapEnumList(
+    formValues.risk_reduction_other_alarm_types,
+    {},
+    new Set(["CARBON_MONOXIDE", "HEAT_DETECTOR", "NATURAL_GAS", "OTHER_CHEMICAL_DETECTOR"]),
+  );
+  const other = alarmModule(formValues.risk_reduction_other_alarm_present, {
+    ...(otherTypes.length ? { alarm_types: otherTypes } : {}),
+  });
+  const suppressionSystems = parseJsonArray(formValues.risk_reduction_fire_suppression_systems_json);
+  const suppressionTypes = suppressionSystems
+    .map((system) => {
+      if (!system || typeof system !== "object") return null;
+      const type = normalizeEnumValue(system.suppressionType);
+      const allowedSuppression = new Set([
+        "CLEAN_AGENT_SYSTEM",
+        "DELUGE_SYSTEM",
+        "DRY_PIPE_SPRINKLER_SYSTEM",
+        "INDUSTRIAL_DRY_CHEM_SYSTEM",
+        "OTHER",
+        "PRE_ACTION_SYSTEM",
+        "UNKNOWN",
+        "WET_PIPE_SPRINKLER_SYSTEM",
+      ]);
+      if (!allowedSuppression.has(type)) return null;
+      const coverage = normalizeEnumValue(system.suppressionCoverage);
+      const fullPartial = coverage === "UNKNOWN" ? "EXTENT_UNKNOWN" : coverage;
+      const entry = { type };
+      if (fullPartial === "FULL" || fullPartial === "PARTIAL" || fullPartial === "EXTENT_UNKNOWN") {
+        entry.full_partial = fullPartial;
+      }
+      return entry;
+    })
+    .filter((entry) => entry);
+  const suppression = alarmModule(formValues.risk_reduction_fire_suppression_present, {
+    ...(suppressionTypes.length ? { suppression_types: suppressionTypes } : {}),
+  });
+  const cookingTypes = mapEnumList(formValues.risk_reduction_cooking_suppression_types, {
+    RESIDENTIAL_HOOD_MOUNTED_SUPPRESSION_DEVICE: "RESIDENTIAL_HOOD_MOUNTED",
+    TEMPERATURE_LIMITING_STOVE_BURNER: "TEMPERATURE_LIMITING_STOVE",
+  }, new Set([
+    "COMMERCIAL_HOOD_SUPPRESSION",
+    "ELECTRIC_POWER_CUTOFF_DEVICE",
+    "OTHER",
+    "RESIDENTIAL_HOOD_MOUNTED",
+    "TEMPERATURE_LIMITING_STOVE",
+  ]));
+  const cooking = alarmModule(formValues.risk_reduction_cooking_suppression_present, {
+    ...(cookingTypes.length ? { suppression_types: cookingTypes } : {}),
+  });
+  return {
+    smoke_alarm: smoke,
+    fire_alarm: fire,
+    other_alarm: other,
+    fire_suppression: suppression,
+    cooking_fire_suppression: cooking,
+  };
 }
 
 const PLATFORM_ADMIN_KEY = trimValue(process.env.PLATFORM_ADMIN_KEY);

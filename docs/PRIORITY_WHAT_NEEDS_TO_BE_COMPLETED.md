@@ -1,6 +1,6 @@
 # What needs to be completed
 
-**Updated:** 2026-11-17, evening America/Chicago (N12 Not sent passed).  
+**Updated:** 2026-11-22, afternoon America/Chicago (N19 structure-fire protection waiting on click check).  
 **Branch:** `submenu/neris-golive-cifpd`.  
 **How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
@@ -25,6 +25,7 @@
 | N10 | Open | Hazards **Save**, **Back**, and **Next** are oblong. Match the buttons used on the rest of the NERIS report. |
 | N13 | Review findings | Live schema is **1.5.x** (OpenAPI `1.5.3`), not 2.0. Version 2 is still planned for later. Our form matches pre–1.5 lists. Findings: `docs/plans/NERIS_N13_SCHEMA_VERSION_FINDINGS.md`. Do not change the form until you pick which 1.5 fields Crescent needs. |
 | N17 | Open | The primary responding unit is whichever unit is first in the Resources list. It is not the unit with the earliest on-scene time. NERIS export uses that first unit as the primary unit ID, type, staffing, and response mode. Preferred rule: the unit that arrived on scene first. A checkbox is the fallback when a time is missing or two units share the same time. Do not change it until named. |
+| N19 | Waiting on click check | Structure fires require smoke alarm, fire alarm, other alarm, and fire suppression answers, with an asterisk, and those answers are sent on export. Show Required Fields Only keeps a field hidden until a condition makes it required. Was aid given or received is required. Risk Reduction Back, Save, and Next stay normal button height. |
 
 ---
 
@@ -188,7 +189,7 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Waiting on click check:** E2. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
+- **Waiting on click check:** E2, N19. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
 - **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

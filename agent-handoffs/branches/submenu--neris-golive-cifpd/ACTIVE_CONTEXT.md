@@ -15,6 +15,7 @@
 - **F5 (2026-11-17 evening):** Done. Dispatched and canceled en route fills Dispatch, Canceled, and Clear with the call arrival time.
 - **G2 (2026-11-17 evening):** Done. The Fire Recovery preview opens after NERIS accepted the export. Incident type and Alarm fit without scrolling, and **Confirm and send** is a second click.
 - **N12 (2026-11-17 evening):** Done. On View Exports, **Not sent** opens the bill preview for a billable motor-vehicle call. **Confirm and send** is a second click. A non-billable call shows a grey long dash and is not clickable.
+- **N19 (2026-11-22):** Waiting on click check. Structure fires require the four Risk Reduction presence answers, export sends those NERIS modules, Show Required Fields Only hides a field until it is required, and Was aid given or received is required.
 - **G3 (2026-11-17 evening):** Done. A second **Confirm and send** does not create a second bill. The tracking ID and the export date stay the same.
 - **NERIS re-export:** a second export updates the same incident. It does not create a second one. The re-export-then-bill button is not approved.
 - **Fire Recovery email (2026-11-17):** Follow-up sent covering A2 cleared time, A3 Is Resident No, A4 commercial trucking, A5 lost tracking ID, A6 billing status timing. Status: **Open / Waiting on Email Reply**. Do not change mappings until they answer.

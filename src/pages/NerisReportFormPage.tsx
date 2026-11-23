@@ -619,7 +619,10 @@ function NerisReportFormPage({
   );
 
   useEffect(() => {
-    if (!callNumber) return;
+    if (!callNumber || !isAdminOrHigher(role)) {
+      setChangeHistory([]);
+      return;
+    }
     let cancelled = false;
     getNerisDraftHistory(callNumber)
       .then((rows) => {
@@ -631,7 +634,7 @@ function NerisReportFormPage({
     return () => {
       cancelled = true;
     };
-  }, [callNumber, reportStatus, lastSavedAt]);
+  }, [callNumber, reportStatus, lastSavedAt, role]);
   const [additionalAidEntries, setAdditionalAidEntries] = useState<AidEntry[]>(() =>
     (persistedDraft?.additionalAidEntries ?? []).map((entry) => ({
       aidDirection: entry.aidDirection,
@@ -1421,6 +1424,23 @@ function NerisReportFormPage({
     });
   }, [riskReductionSuppressionSystems]);
 
+  const validationValues = useMemo(
+    () => ({
+      ...formValues,
+      incident_aid_extra_json: JSON.stringify(
+        additionalAidEntries.map((entry) => ({
+          aidType: entry.aidType,
+          aidDirection: entry.aidDirection,
+        })),
+      ),
+    }),
+    [formValues, additionalAidEntries],
+  );
+  const protectionFieldRequired = (fieldId: string) => {
+    const field = getNerisFieldsForSection("riskReduction").find((entry) => entry.id === fieldId);
+    return field ? isFieldEffectivelyRequired(field, validationValues, adminRequiredFieldIds) : false;
+  };
+
   const primaryIncidentCategory = useMemo(() => {
     const normalizedPrimaryIncidentType = normalizeNerisEnumValue(
       formValues.primary_incident_type ?? "",
@@ -1460,12 +1480,12 @@ function NerisReportFormPage({
         if (section.id === "personOwner" || section.id === "fireRecoveryBilling") return true;
         const fields = getNerisFieldsForSection(section.id);
         return fields.some((field) =>
-          isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
+          isFieldEffectivelyRequired(field, validationValues, adminRequiredFieldIds),
         );
       });
     }
     return sections;
-  }, [primaryIncidentCategory, showRequiredOnly, formValues, adminRequiredFieldIds]);
+  }, [primaryIncidentCategory, showRequiredOnly, formValues, validationValues, adminRequiredFieldIds]);
   const activeVisibleSectionId =
     visibleNerisSections.find((section) => section.id === activeSectionId)?.id ??
     visibleNerisSections[0]?.id ??
@@ -1529,9 +1549,9 @@ function NerisReportFormPage({
     return displayedSectionFields.filter(
       (field) =>
         locationParts.has(field.id) ||
-        isFieldEffectivelyRequired(field, formValues, adminRequiredFieldIds),
+        isFieldEffectivelyRequired(field, validationValues, adminRequiredFieldIds),
     );
-  }, [showRequiredOnly, displayedSectionFields, formValues, adminRequiredFieldIds]);
+  }, [showRequiredOnly, displayedSectionFields, validationValues, adminRequiredFieldIds]);
   const allNerisFields = useMemo(
     () => NERIS_FORM_SECTIONS.flatMap((section) => getNerisFieldsForSection(section.id)),
     [],
@@ -2945,12 +2965,21 @@ function NerisReportFormPage({
 
   const buildValidationSnapshot = () => {
     const syncedValues = ensureStructuredLocations(formValues);
+    const requiredCheckValues = {
+      ...syncedValues,
+      incident_aid_extra_json: JSON.stringify(
+        additionalAidEntries.map((entry) => ({
+          aidType: entry.aidType,
+          aidDirection: entry.aidDirection,
+        })),
+      ),
+    };
     const mergedErrors: Record<string, string> = {};
     const customIssueLabelsByFieldId: Record<string, string> = {};
     for (const section of NERIS_FORM_SECTIONS) {
       const validation = validateNerisSection(
         section.id,
-        syncedValues,
+        requiredCheckValues,
         adminRequiredFieldIds,
       );
       Object.assign(mergedErrors, validation.errors);
@@ -3031,9 +3060,7 @@ function NerisReportFormPage({
     });
     setReportStatus("Draft");
     setSaveMessage("");
-    setErrorMessage(
-      "Validation incomplete. Complete the required fields listed below.",
-    );
+    setErrorMessage("");
     setValidationModal({
       mode: "issues",
       issues: issueLabels,
@@ -5039,7 +5066,10 @@ function NerisReportFormPage({
         {isAidGivenQuestionField ? (
           <div className="neris-aid-block">
             <div className="neris-aid-question">
-              <label>Was aid given or received?</label>
+              <label>
+                Was aid given or received?
+                {isRequired ? " *" : ""}
+              </label>
               <div className="neris-single-choice-row" role="group" aria-label="Was aid given or received?">
                 {getNerisValueOptions("yes_no").map((option) => {
                   const isSelected = option.value === (formValues.incident_has_aid ?? "");
@@ -5483,6 +5513,31 @@ function NerisReportFormPage({
     unmappedFilledFieldLabels.length - visibleUnmappedFieldLabels.length,
   );
 
+  const recordIncidentNumber = String(
+    detail?.incidentNumber ?? detail?.incident_internal_id ?? "",
+  ).trim();
+  const formIncidentNumber = String(formValues.incident_internal_id ?? "").trim();
+  const headerIncidentNumber =
+    (formIncidentNumber && formIncidentNumber !== callNumber ? formIncidentNumber : "") ||
+    (recordIncidentNumber && recordIncidentNumber !== callNumber ? recordIncidentNumber : "") ||
+    "Not set";
+  const headerIncidentType = (() => {
+    const normalized = normalizeNerisEnumValue(formValues.primary_incident_type ?? "");
+    const lastSegment =
+      normalized
+        .split("||")
+        .map((segment) => segment.trim())
+        .filter((segment) => segment.length > 0)
+        .at(-1) ?? "";
+    if (!lastSegment) {
+      return detail?.incidentType || "Not set";
+    }
+    return lastSegment
+      .toLowerCase()
+      .replace(/_/g, " ")
+      .replace(/\b\w/g, (character) => character.toUpperCase());
+  })();
+
   if (!detail) {
     return (
       <section className="page-section">
@@ -5505,9 +5560,14 @@ function NerisReportFormPage({
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>{detail.callNumber}</h1>
+          <div className="neris-report-title-row">
+            <h1>{headerIncidentNumber}</h1>
+            <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
+              {reportStatus}
+            </span>
+          </div>
           <p>
-            <strong>{detail.incidentType}</strong> at {detail.address}
+            <strong>{headerIncidentType}</strong> at {detail.address}
           </p>
           {persistedDraft?.reportRemoved ? (
             <p className="field-hint">
@@ -5522,15 +5582,10 @@ function NerisReportFormPage({
             <span>
               Last saved <strong>{lastSavedAt}</strong>
             </span>
-            <span>
-              Status{" "}
-              <strong className={toToneClass(toneFromNerisStatus(reportStatus))}>
-                {reportStatus}
-              </strong>
-            </span>
           </div>
           {saveMessage ? <p className="save-message neris-header-feedback">{saveMessage}</p> : null}
           {errorMessage ? <p className="auth-error neris-header-feedback">{errorMessage}</p> : null}
+          {isAdminOrHigher(role) ? (
           <details className="panel neris-change-history">
             <summary>Change history</summary>
             {changeHistory.length === 0 ? (
@@ -5562,6 +5617,7 @@ function NerisReportFormPage({
               </ul>
             )}
           </details>
+          ) : null}
           {incidentCompareRows.length > 0 ? (
             <section className="neris-incident-compare panel" aria-live="polite">
               <div className="neris-incident-compare-header">
@@ -5712,9 +5768,6 @@ function NerisReportFormPage({
               Unlock
             </button>
           ) : null}
-          <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
-            {reportStatus}
-          </span>
         </div>
       </header>
 
@@ -6108,6 +6161,8 @@ function NerisReportFormPage({
               <section className="field-span-two neris-risk-reduction-layout">
                 <div className="neris-core-field-heading">RISK REDUCTION</div>
 
+                {showRequiredOnly ? null : (
+                <>
                 <div className="neris-risk-reduction-grid">
                   <div className="neris-risk-reduction-field">
                     <label>Risk reduction completed</label>
@@ -6257,11 +6312,19 @@ function NerisReportFormPage({
                     </div>
                   </section>
                 ) : null}
+                </>
+                )}
 
-                {riskReductionCompletedValue === "YES" ? (
+                {riskReductionCompletedValue === "YES" ||
+                protectionFieldRequired("risk_reduction_smoke_alarm_present") ||
+                protectionFieldRequired("risk_reduction_cooking_suppression_present") ? (
                   <div className="neris-risk-reduction-conditional-layout">
+                    {!showRequiredOnly || protectionFieldRequired("risk_reduction_smoke_alarm_present") ? (
                     <section className="neris-risk-reduction-question-card">
-                      <label>Was there at least one smoke alarm present?</label>
+                      <label>
+                        Was there at least one smoke alarm present?
+                        {protectionFieldRequired("risk_reduction_smoke_alarm_present") ? " *" : ""}
+                      </label>
                       <div
                         className="neris-single-choice-row"
                         role="group"
@@ -6288,7 +6351,7 @@ function NerisReportFormPage({
                         })}
                       </div>
 
-                      {riskReductionSmokeAlarmPresentValue === "YES" ? (
+                      {riskReductionSmokeAlarmPresentValue === "YES" && !showRequiredOnly ? (
                         <div className="neris-risk-reduction-subfields">
                           <div>
                             <label>
@@ -6342,9 +6405,14 @@ function NerisReportFormPage({
                         </div>
                       ) : null}
                     </section>
+                    ) : null}
 
+                    {!showRequiredOnly || protectionFieldRequired("risk_reduction_fire_alarm_present") ? (
                     <section className="neris-risk-reduction-question-card">
-                      <label>Was there at least one fire alarm present?</label>
+                      <label>
+                        Was there at least one fire alarm present?
+                        {protectionFieldRequired("risk_reduction_fire_alarm_present") ? " *" : ""}
+                      </label>
                       <div
                         className="neris-single-choice-row"
                         role="group"
@@ -6370,7 +6438,7 @@ function NerisReportFormPage({
                           );
                         })}
                       </div>
-                      {riskReductionFireAlarmPresentValue === "YES" ? (
+                      {riskReductionFireAlarmPresentValue === "YES" && !showRequiredOnly ? (
                         <div className="neris-risk-reduction-subfields">
                           <div>
                             <label>Fire Alarm Type(s)</label>
@@ -6388,9 +6456,14 @@ function NerisReportFormPage({
                         </div>
                       ) : null}
                     </section>
+                    ) : null}
 
+                    {!showRequiredOnly || protectionFieldRequired("risk_reduction_other_alarm_present") ? (
                     <section className="neris-risk-reduction-question-card">
-                      <label>Were there any other alarms present?</label>
+                      <label>
+                        Were there any other alarms present?
+                        {protectionFieldRequired("risk_reduction_other_alarm_present") ? " *" : ""}
+                      </label>
                       <div
                         className="neris-single-choice-row"
                         role="group"
@@ -6416,7 +6489,7 @@ function NerisReportFormPage({
                           );
                         })}
                       </div>
-                      {riskReductionOtherAlarmPresentValue === "YES" ? (
+                      {riskReductionOtherAlarmPresentValue === "YES" && !showRequiredOnly ? (
                         <div className="neris-risk-reduction-subfields">
                           <div>
                             <label>Other Alarm Type(s)</label>
@@ -6434,9 +6507,14 @@ function NerisReportFormPage({
                         </div>
                       ) : null}
                     </section>
+                    ) : null}
 
+                    {!showRequiredOnly || protectionFieldRequired("risk_reduction_fire_suppression_present") ? (
                     <section className="neris-risk-reduction-question-card">
-                      <label>Were there any fire suppresion systems present?</label>
+                      <label>
+                        Were there any fire suppression systems present?
+                        {protectionFieldRequired("risk_reduction_fire_suppression_present") ? " *" : ""}
+                      </label>
                       <div
                         className="neris-single-choice-row"
                         role="group"
@@ -6474,7 +6552,7 @@ function NerisReportFormPage({
                         })}
                       </div>
 
-                      {riskReductionFireSuppressionPresentValue === "YES" ? (
+                      {riskReductionFireSuppressionPresentValue === "YES" && !showRequiredOnly ? (
                         <div className="neris-risk-reduction-subfields">
                           {riskReductionSuppressionSystems.map((system, systemIndex) => (
                             <div
@@ -6556,10 +6634,13 @@ function NerisReportFormPage({
                         </div>
                       ) : null}
                     </section>
+                    ) : null}
 
+                    {!showRequiredOnly || protectionFieldRequired("risk_reduction_cooking_suppression_present") ? (
                     <section className="neris-risk-reduction-question-card">
                       <label>
                         Was there at least one cooking fire suppression system present?
+                        {protectionFieldRequired("risk_reduction_cooking_suppression_present") ? " *" : ""}
                       </label>
                       <div
                         className="neris-single-choice-row"
@@ -6590,7 +6671,7 @@ function NerisReportFormPage({
                           );
                         })}
                       </div>
-                      {riskReductionCookingSuppressionPresentValue === "YES" ? (
+                      {riskReductionCookingSuppressionPresentValue === "YES" && !showRequiredOnly ? (
                         <div className="neris-risk-reduction-subfields">
                           <div>
                             <label>Cooking Fire Suppression Type(s)</label>
@@ -6611,6 +6692,7 @@ function NerisReportFormPage({
                         </div>
                       ) : null}
                     </section>
+                    ) : null}
                   </div>
                 ) : null}
               </section>
