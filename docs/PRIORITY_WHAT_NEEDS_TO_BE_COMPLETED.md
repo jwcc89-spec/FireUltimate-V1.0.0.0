@@ -1,6 +1,6 @@
 # What needs to be completed
 
-**Updated:** 2026-11-22, afternoon America/Chicago (N19 structure-fire protection waiting on click check).  
+**Updated:** 2026-11-23, evening America/Chicago (N6 incident number on NERIS export waiting on click check).  
 **Branch:** `submenu/neris-golive-cifpd`.  
 **How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
@@ -18,7 +18,7 @@
 | N3 | Open | Reporting → NERIS needs a **Configure Table** button with the same drag-and-drop column layout as Incidents. |
 | N4 | Open | NERIS dropdowns are cut off at the bottom of a short window. The open list must stay fully visible and scrollable. Primary location use now opens above the form and scrolls. Primary incident type and the other long lists still need the same treatment. |
 | N5 | Open | After a primary incident type is chosen, the form should show only the last name (for example Motor Vehicle Collision), not the full path. Keep sending the full NERIS code. The reporting table already shows the last segment; the form field still shows the full path. |
-| N6 | Open | NERIS export is sending the dispatch number. It must send the incident number. Mapping and display of the other number stay as they are unless the operator says otherwise. |
+| N6 | Waiting on click check | NERIS export sends the department incident number (for example 27-001) as the incident number. The dispatch number stays on the dispatch field. The form still shows both numbers. |
 | N7 | Open | NERIS table dates show `year-month-day T HH:MM:SS`. Show `MM/DD/YY HH:MM` in 24-hour time. |
 | N8 | Open | Add Person needs a **Save** button at the top and the bottom, so Close is not the only choice when an address is missing. |
 | N9 | Open | On the Motor Vehicle Collision tab, hide the call fields that are copied from earlier sections: run date, time alarm received, time call cleared, run number, total personnel on scene, law enforcement agency report number, street, city, state, and ZIP. Keep sending them. Do not remove the mapping. |
@@ -189,7 +189,7 @@ Explained in the 2026-11-13 review. Not on the build list until the operator sch
 ## Now vs Later
 
 - **Now:** open rows above, one item at a time, after you name it. Prefer NERIS and Fire Recovery first unless you say otherwise.
-- **Waiting on click check:** E2, N19. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
+- **Waiting on click check:** E2, N6, N19. Steps are in `docs/click_by_click_checks.md`. After a pass, mark Done. After a fail, move back to Open.
 - **Waiting on email reply (sent 2026-11-17):** A2, A3, A4, A5, A6, A11.
 - **Later:** F8 and anything under Not scheduled, until you say to schedule it.
 - **CAD:** listed because it is not done. Coding waits until you name the first CAD step and lift the hold.

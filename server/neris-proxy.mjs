@@ -15,6 +15,7 @@ import {
   runCadRulePipeline,
 } from "./cadDispatchRuleEngine.mjs";
 import { cadIngestGuard, configuredCadIngestSecret } from "./cad/ingestGuard.mjs";
+import { chooseNerisIncidentNumbers } from "./nerisIncidentNumbers.mjs";
 import {
   buildFireRecoveryPayload,
   isMotorVehicleIncident,
@@ -1123,9 +1124,15 @@ function buildIncidentPayload(exportRequestBody, config, entityId) {
       : 0;
 
   const callNumber = trimValue(body.callNumber);
-  const incidentNumber = trimValue(formValues.incident_internal_id) || callNumber;
-  const dispatchIncidentNumber =
-    trimValue(formValues.dispatch_internal_id) || incidentNumber || callNumber;
+  const chosenNumbers = chooseNerisIncidentNumbers({
+    formIncidentNumber: formValues.incident_internal_id,
+    formDispatchNumber: formValues.dispatch_internal_id,
+    recordIncidentNumber: incidentSnapshot.incidentNumber,
+    recordDispatchNumber: incidentSnapshot.dispatchNumber,
+    callNumber,
+  });
+  const incidentNumber = chosenNumbers.incidentNumber;
+  const dispatchIncidentNumber = chosenNumbers.dispatchNumber;
   const reportDepartmentNerisId = trimValue(formValues.fd_neris_id);
   const configDepartmentNerisId = trimValue(config.defaultDepartmentNerisId);
   let departmentNerisId = NERIS_DEPARTMENT_ID_PATTERN.test(reportDepartmentNerisId)

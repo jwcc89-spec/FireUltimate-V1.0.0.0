@@ -4,7 +4,22 @@ Use this list when the priority file status is **Waiting on click check**.
 
 Each check has an ID, the item, and numbered steps. After you run a check, tell the agent pass or fail so the priority status can move to Done or back to Open.
 
-**Updated:** 2026-11-22, afternoon America/Chicago. N19 is waiting on a click check after the next staging deploy.
+**Updated:** 2026-11-23, evening America/Chicago. N6 is waiting on a click check after the next staging deploy.
+
+---
+
+## N6 — NERIS export incident number
+
+**Item:** Export sends the department incident number, such as `27-001`. The dispatch number stays on the dispatch field. The form still shows both.
+
+1. Wait until Render finishes this branch, then hard-refresh `https://cifpdil.staging.fireultimate.app`.
+2. Open a Draft NERIS report whose incident number is `27-001` and whose dispatch number is the CAD number, such as `26017731`.
+3. On the Core section, confirm **Incident Number** still shows `27-001` and **Dispatch Number** still shows the CAD number.
+4. Export the report.
+5. In the comparison list, confirm **Incident Number** is `27-001` and **Dispatch Incident Number** is the CAD number.
+
+**Pass:** NERIS receives `27-001` as the incident number and the CAD number as the dispatch incident number. The two boxes on the form are unchanged.  
+**Fail:** Incident Number in the comparison is the CAD number, or the form boxes swapped.
 
 ---
 

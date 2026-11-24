@@ -3288,6 +3288,8 @@ function NerisReportFormPage({
         address: detailForSideEffects.address,
         receivedAt: detailForSideEffects.receivedAt,
         assignedUnits: detailForSideEffects.assignedUnits,
+        incidentNumber: String(detail?.incidentNumber ?? detail?.incident_internal_id ?? "").trim(),
+        dispatchNumber: String(detail?.dispatchNumber ?? detail?.dispatch_internal_id ?? "").trim(),
       },
       integration: {
         entityId: vendorCode,
