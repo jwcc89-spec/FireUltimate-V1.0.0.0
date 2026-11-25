@@ -385,7 +385,27 @@ git push -u origin feature/demo-modules
 - **Add Vendor from a search:** `NerisFlatSingleOptionSelect` has a `createOption` prop. Cost-line and Performed By vendor searches offer "Add Vendor" when nothing matches. This needs `maintenance.manage`, because vendor writes already require it.
 - **Down Time by Record** has a Cost column.
 
-**Apparatus round 3, proposed, waiting for operator approval of the schema:** one additive migration.
+**Apparatus round 3 as built (2026-11-25; overrides the proposal below where they differ):**
+- **Migration** `20261126110000_add_parts_pm_inspections`, additive only. `PmSchedule` also got `lastServiceDate`. `ChecklistSubmission` has `submissionNumber` (`INS-YY-NNNN`), `repairCount`, `resultsJson` and `detailsJson` (officer, station, vehicle make, readings including generator hours, last service mileage and engine hours, comments).
+- **Preventive Maintenance:**
+  - The tab is now second, after Maintenance.
+  - Add PM Task has Tracked By (Engine Hours, Pump Hours, Miles, Date). Reading-based tasks have Interval, Last Service Reading, Last Service Date, Early Warning and a read-only Current Reading. Date tasks have Frequency, Last Service Date, Next Due and Early Warning in days.
+  - The PM Schedule table shows Apparatus, Service, Basis, Last Service, Next Due, Current, Status (Overdue, Approaching, Current or Not Set, with "X hours remaining/overdue"), plus History and + Work Order. The status math is `pmStatus()` in `maintenanceUtils.ts`. The default early warning is 10% of the interval, or 30 days.
+  - + Work Order opens New Maintenance with the apparatus, category, a description and that PM task already checked.
+  - **Preventive Maintenance Performed** panel at the bottom of an apparatus ticket: the unit's PM tasks with a checkbox, an actual reading and the status. Stored in `detailsJson.pmPerformed`. When the ticket becomes Completed, checked tasks reset in the same transaction: reading tasks get the typed reading (or the ticket's reading for that meter) and date tasks get Next Due = completed date + frequency.
+  - Current readings come from `GET /api/maintenance/apparatus-status`, which now also reads inspection readings.
+- **Inspections** (`/apparatus/inspections`, routes in `server/modules/inspections.mjs`):
+  - The default template "Engine / Truck Apparatus Inspection" is seeded per department the first time the page loads. It has 8 sections; Aerials defaults to N/A. **The item wording was written by the agent** because the screenshot items were not saved in the repo. Change `server/modules/inspectionDefaults.mjs` if the operator wants different wording (existing departments keep version 1 until a template editor exists).
+  - The form requires every item to have a result ("Mark Unchecked as OK" fills the rest). X opens New Maintenance as a popup (Deficiency plus the apparatus and readings) and saves the new record id on the item.
+  - The next inspection of that unit shows "Not corrected: <record #> <description>" next to the item while that record is open. Other open Deficiency records on the unit are listed above the checklist.
+  - Report view (Open Report) is read-only with a Print button. No editing; delete is a route only (`maintenance.manage`).
+- **Fleet Overview:** Recent Activity was replaced by an Inspections table (10 most recent: Apparatus, Date, # Repair Issues, Open Report). There is a New Inspection button next to New Maintenance. The PM card now counts Approaching and Overdue from `pmStatus()`.
+- **Parts** (`server/modules/parts.mjs`):
+  - Parts Log tab after Vendors: inventory with on hand, Reorder At and status; a Reorder Alerts card filters the table; Receive or Adjust stock; spend for this month, this year or all time, by month (purchased and used), purchased by vendor, and used by apparatus.
+  - Ticket Parts tab: search a part (shows on hand) or "Add Part" from the search. Saving the ticket replaces its `used` stock rows, so changing the quantity or removing a part puts stock back. The unit cost is fixed when the part is first saved on the ticket. Parts are not added to the ticket's Costs total.
+  - Permissions: `POST /api/maintenance/parts` needs `maintenance.submit`; part edits, deletes and `POST /api/maintenance/parts/:id/stock` need `maintenance.manage`; `POST /api/inspections` needs `maintenance.submit`; `DELETE /api/inspections/:id` needs `maintenance.manage`. No new permission keys.
+
+**Apparatus round 3, original proposal (approved 2026-11-25):** one additive migration.
 - **`Part`:** id, tenantId, partNumber, description, vendorId?, unitCost Decimal(12,2), reorderLevel Int, storageLocation, audit columns, deletedAt. Index on tenantId.
 - **`PartTransaction`:**
   - Columns: id, tenantId, partId, kind (`received`, `used` or `adjusted`), quantity Int (positive when received, negative when used), unitCost Decimal(12,2), recordId? (maintenance record), note, createdAt, createdBy, deletedAt.
