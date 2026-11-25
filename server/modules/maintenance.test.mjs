@@ -313,6 +313,77 @@ test("apparatus status comes from open out-of-service records, per department", 
   }
 });
 
+test("PM tasks track by hours or date and reset when the ticket is completed", async () => {
+  const { call, close } = await startServer();
+  try {
+    const noInterval = await call("POST", "/api/maintenance/schedules", {
+      role: "admin",
+      body: { name: "Oil change", assetRef: "E1", trackingBasis: "engineHours" },
+    });
+    assert.equal(noInterval.status, 400);
+
+    const oil = await call("POST", "/api/maintenance/schedules", {
+      role: "admin",
+      body: {
+        name: "Oil change",
+        assetRef: "E1",
+        trackingBasis: "engineHours",
+        intervalValue: "250",
+        lastServiceReading: "3100",
+        earlyWarning: 25,
+      },
+    });
+    assert.equal(oil.status, 201);
+    assert.equal(oil.json.data.intervalValue, 250);
+    assert.equal(oil.json.data.lastServiceReading, 3100);
+    const ladder = await call("POST", "/api/maintenance/schedules", {
+      role: "admin",
+      body: { name: "Ladder test", assetRef: "E1", trackingBasis: "date", frequency: "Annual" },
+    });
+    const otherDept = await call("POST", "/api/maintenance/schedules", {
+      tenant: "tenantB",
+      role: "admin",
+      body: { name: "Other", assetRef: "E1", trackingBasis: "mileage", intervalValue: 5000, lastServiceReading: 10 },
+    });
+
+    const record = await call("POST", "/api/maintenance/records", {
+      body: {
+        assets: [{ ref: "E1", label: "Engine 1" }],
+        description: "Service",
+        pmPerformed: [
+          { scheduleId: oil.json.data.id, reading: "" },
+          { scheduleId: ladder.json.data.id },
+          { scheduleId: otherDept.json.data.id, reading: 99 },
+        ],
+      },
+    });
+    assert.equal(record.json.data.pmPerformed.length, 3);
+
+    const completed = await call("PATCH", `/api/maintenance/records/${record.json.data.id}`, {
+      user: "chief",
+      role: "admin",
+      body: {
+        status: "Completed",
+        completedDate: "2026-11-25",
+        performedByName: "Alice Adams",
+        readings: { mileage: 45210, engineHours: 3352 },
+      },
+    });
+    assert.equal(completed.status, 200);
+
+    const schedules = (await call("GET", "/api/maintenance/schedules")).json.data;
+    const oilAfter = schedules.find((row) => row.id === oil.json.data.id);
+    assert.equal(oilAfter.lastServiceReading, 3352);
+    assert.equal(oilAfter.lastServiceDate, "2026-11-25");
+    const ladderAfter = schedules.find((row) => row.id === ladder.json.data.id);
+    assert.equal(ladderAfter.nextDueAt, "2027-11-25");
+    const otherAfter = (await call("GET", "/api/maintenance/schedules", { tenant: "tenantB" })).json.data[0];
+    assert.equal(otherAfter.lastServiceReading, 10);
+  } finally {
+    await close();
+  }
+});
+
 test("vendors and equipment are scoped to the department", async () => {
   const { call, close } = await startServer();
   try {

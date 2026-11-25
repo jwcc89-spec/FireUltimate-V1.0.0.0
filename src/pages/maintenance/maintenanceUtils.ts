@@ -1,6 +1,9 @@
 import {
   OPEN_MAINTENANCE_STATUSES,
+  PM_TRACKING_BASES,
+  type MaintenanceReadings,
   type MaintenanceRecordSummary,
+  type PmSchedule,
 } from "../../api/maintenance";
 import type { NerisValueOption } from "../../nerisMetadata";
 
@@ -67,6 +70,95 @@ export function formatHours(hours: number): string {
   if (hours < 48) return `${Math.round(hours * 10) / 10} h`;
   const days = Math.floor(hours / 24);
   return `${days} d ${Math.round(hours - days * 24)} h`;
+}
+
+export type PmStatusLabel = "Overdue" | "Approaching" | "Current" | "Not Set";
+
+export interface PmStatusInfo {
+  basisLabel: string;
+  unit: string;
+  /** Formatted for display: a reading ("3,350") or a date ("11/25/2026"). */
+  lastService: string;
+  nextDue: string;
+  current: string;
+  status: PmStatusLabel;
+  /** "50 hours remaining", "12 days overdue". */
+  detail: string;
+  tone: Tone;
+}
+
+const FREQUENCY_DAYS: Record<string, number> = {
+  Weekly: 7,
+  Monthly: 30,
+  Quarterly: 91,
+  "Semi-Annual": 182,
+  Annual: 365,
+  "5 Years": 1826,
+};
+
+function daysBetween(fromKey: string, toKey: string): number {
+  const [fy, fm, fd] = fromKey.split("-").map(Number);
+  const [ty, tm, td] = toKey.split("-").map(Number);
+  return Math.round((Date.UTC(ty, tm - 1, td) - Date.UTC(fy, fm - 1, fd)) / 86_400_000);
+}
+
+export function formatReading(value: number | null): string {
+  return value === null ? "" : value.toLocaleString("en-US", { maximumFractionDigits: 1 });
+}
+
+/**
+ * Where a PM task stands. Reading-based tasks are due at last service + interval and compare against
+ * the apparatus's latest recorded meter; date tasks compare Next Due against today. Approaching starts
+ * at the task's early warning, or 10% of the interval (30 days for date tasks) when none is set.
+ */
+export function pmStatus(schedule: PmSchedule, readings: MaintenanceReadings | null, today = todayKey()): PmStatusInfo {
+  const basis = PM_TRACKING_BASES.find((entry) => entry.value === schedule.trackingBasis) ?? PM_TRACKING_BASES[3];
+  const result = (status: PmStatusLabel, detail: string, values: Partial<PmStatusInfo>): PmStatusInfo => ({
+    basisLabel: basis.label,
+    unit: basis.unit,
+    lastService: "",
+    nextDue: "",
+    current: "",
+    status,
+    detail,
+    tone: status === "Overdue" ? "critical" : status === "Approaching" ? "warning" : status === "Current" ? "positive" : "neutral",
+    ...values,
+  });
+  const pluralize = (amount: number) => {
+    const rounded = Math.round(Math.abs(amount) * 10) / 10;
+    const unit = rounded === 1 ? basis.unit.replace(/s$/, "") : basis.unit;
+    return `${rounded.toLocaleString("en-US")} ${unit}`;
+  };
+  const decide = (remaining: number, warning: number, values: Partial<PmStatusInfo>) => {
+    if (remaining < 0) return result("Overdue", `${pluralize(remaining)} overdue`, values);
+    if (remaining <= warning) return result("Approaching", `${pluralize(remaining)} remaining`, values);
+    return result("Current", `${pluralize(remaining)} remaining`, values);
+  };
+
+  if (schedule.trackingBasis === "date") {
+    const nextDue =
+      schedule.nextDueAt ||
+      (schedule.lastServiceDate ? addDaysKey(schedule.lastServiceDate, FREQUENCY_DAYS[schedule.frequency] ?? 365) : "");
+    const values = {
+      lastService: formatDateKey(schedule.lastServiceDate),
+      nextDue: formatDateKey(nextDue),
+      current: formatDateKey(today),
+    };
+    if (!nextDue) return result("Not Set", "Set Next Due or Last Service", values);
+    return decide(daysBetween(today, nextDue), schedule.earlyWarning ?? 30, values);
+  }
+
+  const current = readings ? readings[schedule.trackingBasis] : null;
+  const interval = schedule.intervalValue ?? 0;
+  const nextDue = schedule.lastServiceReading === null || interval <= 0 ? null : schedule.lastServiceReading + interval;
+  const values = {
+    lastService: formatReading(schedule.lastServiceReading),
+    nextDue: formatReading(nextDue),
+    current: formatReading(current),
+  };
+  if (nextDue === null) return result("Not Set", "Set Last Service and Interval", values);
+  if (current === null) return result("Not Set", `No ${basis.label.toLowerCase()} recorded yet`, values);
+  return decide(nextDue - current, schedule.earlyWarning ?? interval * 0.1, values);
 }
 
 export function formatMoney(amount: number): string {

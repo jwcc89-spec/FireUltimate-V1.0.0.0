@@ -83,6 +83,7 @@ export interface MaintenanceRecordSummary {
   completedAt: string;
   assignedTo: string;
   readings: MaintenanceReadings;
+  pmPerformed: PmPerformedEntry[];
   location: string;
   locationDetails: string;
   costTotal: number;
@@ -116,6 +117,7 @@ export interface MaintenanceRecordInput {
   outOfServiceAt: string;
   assignedTo: string;
   readings: MaintenanceReadings;
+  pmPerformed: PmPerformedEntry[];
   location: string;
   locationDetails: string;
   costs: MaintenanceCostLine[];
@@ -143,6 +145,15 @@ export interface Vendor {
   services: string;
 }
 
+export type PmTrackingBasis = "date" | "engineHours" | "pumpHours" | "mileage";
+
+export const PM_TRACKING_BASES: { value: PmTrackingBasis; label: string; unit: string }[] = [
+  { value: "engineHours", label: "Engine Hours", unit: "hours" },
+  { value: "pumpHours", label: "Pump Hours", unit: "hours" },
+  { value: "mileage", label: "Miles", unit: "miles" },
+  { value: "date", label: "Date", unit: "days" },
+];
+
 export interface PmSchedule {
   id: string;
   name: string;
@@ -151,7 +162,19 @@ export interface PmSchedule {
   assetRef: string;
   frequency: string;
   nextDueAt: string;
+  trackingBasis: PmTrackingBasis;
+  /** Hours or miles between services (reading-based tasks). */
+  intervalValue: number | null;
+  lastServiceReading: number | null;
+  lastServiceDate: string;
+  /** Hours, miles or days before due to show Approaching. */
+  earlyWarning: number | null;
   active: boolean;
+}
+
+export interface PmPerformedEntry {
+  scheduleId: string;
+  reading: number | null;
 }
 
 export interface EquipmentItem {

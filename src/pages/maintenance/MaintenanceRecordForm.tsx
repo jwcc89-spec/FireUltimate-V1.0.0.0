@@ -11,11 +11,14 @@ import {
   updateMaintenanceRecord,
   type MaintenanceAssetKind,
   type MaintenanceComment,
+  type MaintenanceReadings,
   type MaintenanceRecordInput,
   type MaintenanceType,
+  type PmSchedule,
   type Vendor,
 } from "../../api/maintenance";
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
+import { PmPerformedPanel } from "./MaintenancePmTab";
 import { AddVendorDialog } from "./MaintenanceSetupTabs";
 import type { NerisValueOption } from "../../nerisMetadata";
 import {
@@ -35,6 +38,10 @@ const MAX_ATTACHMENT_BYTES = 1_500_000;
 
 interface MaintenanceRecordFormProps {
   recordId: string | null;
+  /** Starting values for a new record, for example from a PM task's Work Order button. */
+  prefill?: Partial<MaintenanceRecordInput>;
+  schedules: PmSchedule[];
+  readingsByUnit: Map<string, MaintenanceReadings>;
   assetKind: MaintenanceAssetKind;
   username: string;
   canManage: boolean;
@@ -64,6 +71,7 @@ function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
     outOfServiceAt: "",
     assignedTo: "",
     readings: { ...EMPTY_READINGS },
+    pmPerformed: [],
     location: "",
     locationDetails: "",
     costs: [],
@@ -75,6 +83,9 @@ type FormTab = "details" | "costs" | "attachments";
 
 export function MaintenanceRecordForm({
   recordId,
+  prefill,
+  schedules,
+  readingsByUnit,
   assetKind,
   username,
   canManage,
@@ -87,7 +98,7 @@ export function MaintenanceRecordForm({
   onClose,
 }: MaintenanceRecordFormProps) {
   const [vendorPrompt, setVendorPrompt] = useState<{ costIndex: number; name: string } | null>(null);
-  const [form, setForm] = useState<MaintenanceRecordInput>(() => emptyInput(assetKind));
+  const [form, setForm] = useState<MaintenanceRecordInput>(() => ({ ...emptyInput(assetKind), ...prefill }));
   const [currentId, setCurrentId] = useState<string | null>(recordId);
   const [recordNumber, setRecordNumber] = useState("");
   const [createdBy, setCreatedBy] = useState(username);
@@ -125,6 +136,7 @@ export function MaintenanceRecordForm({
           outOfServiceAt: record.outOfServiceAt,
           assignedTo: record.assignedTo,
           readings: record.readings ?? { ...EMPTY_READINGS },
+          pmPerformed: record.pmPerformed ?? [],
           location: record.location,
           locationDetails: record.locationDetails,
           costs: record.costs,
@@ -181,6 +193,14 @@ export function MaintenanceRecordForm({
   const outOfServiceParts = isoToLocalParts(form.outOfServiceAt);
   const assetLabel = assetKind === "apparatus" ? "Apparatus" : "Equipment";
   const costTotal = form.costs.reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
+  const pmReadings = useMemo((): MaintenanceReadings | null => {
+    const latest = primaryAsset ? readingsByUnit.get(primaryAsset.ref) : undefined;
+    const pick = (key: keyof MaintenanceReadings) => {
+      const values = [form.readings[key], latest?.[key] ?? null].filter((value): value is number => value !== null);
+      return values.length ? Math.max(...values) : null;
+    };
+    return { mileage: pick("mileage"), engineHours: pick("engineHours"), pumpHours: pick("pumpHours") };
+  }, [form.readings, primaryAsset, readingsByUnit]);
 
   const update = <K extends keyof MaintenanceRecordInput>(key: K, value: MaintenanceRecordInput[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -615,6 +635,17 @@ export function MaintenanceRecordForm({
               )}
             </article>
           </section>
+          {assetKind === "apparatus" ? (
+            <PmPerformedPanel
+              schedules={schedules.filter((schedule) => schedule.assetKind === assetKind)}
+              assetRef={primaryAsset?.ref ?? ""}
+              readings={pmReadings}
+              value={form.pmPerformed}
+              completed={savedStatus === "Completed"}
+              disabled={!canEdit}
+              onChange={(next) => update("pmPerformed", next)}
+            />
+          ) : null}
         </>
       ) : null}
 

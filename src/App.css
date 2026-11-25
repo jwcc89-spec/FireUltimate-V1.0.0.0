@@ -7752,6 +7752,50 @@ button.personnel-schedule-open-token-claim {
   color: #991b1b;
 }
 
+.maintenance-warning-text {
+  color: #92400e;
+}
+
+.pm-status,
+.pm-service {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-start;
+}
+
+.pm-status .field-hint,
+.pm-service .field-hint {
+  font-size: 0.78rem;
+}
+
+.pm-performed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.pm-performed-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 160px 180px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+}
+
+.pm-performed-row-checked {
+  border-color: #93c5fd;
+  background: #eff6ff;
+}
+
+@media (max-width: 760px) {
+  .pm-performed-row {
+    grid-template-columns: 1fr;
+  }
+}
+
 .maintenance-inline-badge {
   margin-right: 0.35rem;
 }

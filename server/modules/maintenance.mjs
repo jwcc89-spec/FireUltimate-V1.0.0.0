@@ -55,6 +55,67 @@ function formatDateOnly(date) {
   return date instanceof Date ? date.toISOString().slice(0, 10) : "";
 }
 
+function parseDecimal(value, label) {
+  if (value === null || value === undefined || String(value).trim() === "") return null;
+  const number = Number(value);
+  if (!Number.isFinite(number) || number < 0 || number > 10_000_000) {
+    throw new PublicError(`${label} must be a number of 0 or more.`);
+  }
+  return Math.round(number * 10) / 10;
+}
+
+function decimalOrNull(value) {
+  return value === null || value === undefined ? null : Number(value);
+}
+
+const PM_BASES = ["date", "engineHours", "pumpHours", "mileage"];
+const FREQUENCY_MONTHS = { Monthly: 1, Quarterly: 3, "Semi-Annual": 6, Annual: 12, "5 Years": 60 };
+
+function addFrequency(date, frequency) {
+  const next = new Date(date.getTime());
+  if (frequency === "Weekly") next.setUTCDate(next.getUTCDate() + 7);
+  else next.setUTCMonth(next.getUTCMonth() + (FREQUENCY_MONTHS[frequency] ?? 12));
+  return next;
+}
+
+/** PM tasks the person completing a ticket checked as done: [{ scheduleId, reading }]. */
+function cleanPmPerformed(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const rows = [];
+  for (const entry of raw.slice(0, 50)) {
+    const scheduleId = text(entry?.scheduleId, 60);
+    if (!scheduleId || seen.has(scheduleId)) continue;
+    seen.add(scheduleId);
+    rows.push({ scheduleId, reading: parseDecimal(entry?.reading, "The PM reading") });
+  }
+  return rows;
+}
+
+/**
+ * Resets the PM tasks checked on a ticket that just became Completed. Reading-based tasks take the
+ * reading typed on the PM line, or else the ticket's reading for that meter.
+ */
+async function applyPmPerformed(tx, { tenantId, actor, assetRefs, pmPerformed, readings, completedDate }) {
+  for (const entry of pmPerformed) {
+    const schedule = await tx.pmSchedule.findFirst({
+      where: { id: entry.scheduleId, tenantId, deletedAt: null },
+    });
+    if (!schedule || (schedule.assetRef && !assetRefs.includes(schedule.assetRef))) continue;
+    const data = { lastServiceDate: completedDate, updatedBy: actor };
+    if (schedule.trackingBasis === "date") {
+      data.nextDueAt = addFrequency(completedDate, schedule.frequency);
+    } else {
+      const reading = entry.reading ?? readings[schedule.trackingBasis] ?? null;
+      if (reading === null) {
+        throw new PublicError(`Enter the reading for the PM task "${schedule.name}" before completing.`);
+      }
+      data.lastServiceReading = reading;
+    }
+    await tx.pmSchedule.updateMany({ where: { id: schedule.id, tenantId }, data });
+  }
+}
+
 const READING_FIELDS = [
   ["mileage", "Mileage"],
   ["engineHours", "Engine Hours"],
@@ -233,6 +294,7 @@ function serializeRecord(row, { includeDetail = false } = {}) {
     completedAt: text(details.completedAt, 40),
     assignedTo: text(details.assignedTo, 200),
     readings: readingsOf(details),
+    pmPerformed: cleanPmPerformed(details.pmPerformed),
     location: text(details.location, 200),
     locationDetails: text(details.locationDetails, 300),
     costTotal: costs.reduce((sum, cost) => sum + Number(cost.amount), 0),
@@ -442,6 +504,7 @@ function registerRecordRoutes(app, prisma) {
         assets,
         assignedTo: text(body.assignedTo, 200),
         readings,
+        pmPerformed: cleanPmPerformed(body.pmPerformed),
         outOfServiceAt: outOfService ? parseTimestamp(body.outOfServiceAt, "Taken Out of Service") || new Date().toISOString() : "",
         completedAt: completing ? new Date().toISOString() : "",
         location: text(body.location, 200),
@@ -453,7 +516,8 @@ function registerRecordRoutes(app, prisma) {
       for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
         const recordNumber = await nextRecordNumber(prisma, tenantId);
         try {
-          created = await prisma.maintenanceRecord.create({
+          created = await prisma.$transaction(async (tx) => {
+            const row = await tx.maintenanceRecord.create({
             data: {
               tenantId,
               recordNumber,
@@ -477,6 +541,18 @@ function registerRecordRoutes(app, prisma) {
               },
             },
             include: RECORD_INCLUDE,
+            });
+            if (completing) {
+              await applyPmPerformed(tx, {
+                tenantId,
+                actor,
+                assetRefs: assets.map((asset) => asset.ref),
+                pmPerformed: details.pmPerformed,
+                readings,
+                completedDate,
+              });
+            }
+            return row;
           });
         } catch (error) {
           if (!isUniqueViolation(error) || attempt === 2) throw error;
@@ -504,6 +580,7 @@ function registerRecordRoutes(app, prisma) {
       const status = body.status === undefined ? existing.status : oneOf(body.status, RECORD_STATUSES, existing.status);
       const wasClosed = CLOSED_STATUSES.includes(existing.status);
       const closing = CLOSED_STATUSES.includes(status) && status !== existing.status;
+      const completingNow = status === "Completed" && existing.status !== "Completed";
       const ownRecord = existing.createdBy === actor;
       if ((wasClosed || closing || !ownRecord) && !(await canManage(prisma, request))) {
         response.status(403).json({
@@ -540,7 +617,8 @@ function registerRecordRoutes(app, prisma) {
       }
       if (has("assignedTo")) nextDetails.assignedTo = text(body.assignedTo, 200);
       if (has("readings")) nextDetails.readings = cleanReadings(body.readings);
-      if (status === "Completed" && existing.status !== "Completed") {
+      if (has("pmPerformed")) nextDetails.pmPerformed = cleanPmPerformed(body.pmPerformed);
+      if (completingNow) {
         const readingsError = missingReadingsError(existing.assetKind, readingsOf(nextDetails));
         if (readingsError) throw new PublicError(readingsError);
       }
@@ -548,7 +626,7 @@ function registerRecordRoutes(app, prisma) {
       const outOfService = data.outOfService ?? existing.outOfService;
       if (outOfService && !nextDetails.outOfServiceAt) nextDetails.outOfServiceAt = new Date().toISOString();
       if (!outOfService && has("outOfService")) nextDetails.outOfServiceAt = "";
-      if (status === "Completed" && existing.status !== "Completed") {
+      if (completingNow) {
         nextDetails.completedAt = new Date().toISOString();
         data.completedDate =
           parseDateOnly(body.completedDate, "Completed Date") ??
@@ -591,6 +669,19 @@ function registerRecordRoutes(app, prisma) {
           }
         }
         await tx.maintenanceRecord.updateMany({ where: { id: existing.id, tenantId }, data });
+        if (completingNow) {
+          await applyPmPerformed(tx, {
+            tenantId,
+            actor,
+            assetRefs: [
+              data.assetRef ?? existing.assetRef,
+              ...(Array.isArray(nextDetails.assets) ? nextDetails.assets.map((asset) => asset?.ref) : []),
+            ].filter(Boolean),
+            pmPerformed: cleanPmPerformed(nextDetails.pmPerformed),
+            readings: readingsOf(nextDetails),
+            completedDate: data.completedDate,
+          });
+        }
         return tx.maintenanceRecord.findFirst({ where: { id: existing.id, tenantId }, include: RECORD_INCLUDE });
       });
       const comments = await loadCommentsFor(prisma, tenantId, existing.id);
@@ -813,6 +904,7 @@ function registerSimpleList(app, prisma, { path, model, label, fields, serialize
       else if (field.kind === "date") data[field.key] = parseDateOnly(value, field.label);
       else if (field.kind === "enum") data[field.key] = oneOf(value, field.values, field.fallback);
       else if (field.kind === "id") data[field.key] = text(value, 60) || null;
+      else if (field.kind === "decimal") data[field.key] = parseDecimal(value, field.label);
       else data[field.key] = text(value, field.max ?? 300);
     }
     return data;
@@ -925,10 +1017,19 @@ export function register(app, prisma) {
       { key: "assetRef", max: 200 },
       { key: "frequency", kind: "enum", values: FREQUENCIES.filter(Boolean), fallback: "Annual" },
       { key: "nextDueAt", kind: "date", label: "Next Due" },
+      { key: "trackingBasis", kind: "enum", values: PM_BASES, fallback: "date" },
+      { key: "intervalValue", kind: "decimal", label: "Interval" },
+      { key: "lastServiceReading", kind: "decimal", label: "Last Service Reading" },
+      { key: "lastServiceDate", kind: "date", label: "Last Service Date" },
+      { key: "earlyWarning", kind: "decimal", label: "Early Warning" },
       { key: "active", kind: "bool", fallback: true },
     ],
-    validate: (db, tenantId, data) =>
-      assertBelongsToTenant(db, "maintenanceType", data.typeId, tenantId, "The maintenance task"),
+    validate: async (db, tenantId, data) => {
+      await assertBelongsToTenant(db, "maintenanceType", data.typeId, tenantId, "The category");
+      if (data.trackingBasis && data.trackingBasis !== "date" && !(data.intervalValue > 0)) {
+        throw new PublicError("Enter the interval (hours or miles between services).");
+      }
+    },
     serialize: (row) => ({
       id: row.id,
       name: row.name,
@@ -937,6 +1038,11 @@ export function register(app, prisma) {
       assetRef: row.assetRef,
       frequency: row.frequency,
       nextDueAt: formatDateOnly(row.nextDueAt),
+      trackingBasis: row.trackingBasis ?? "date",
+      intervalValue: decimalOrNull(row.intervalValue),
+      lastServiceReading: decimalOrNull(row.lastServiceReading),
+      lastServiceDate: formatDateOnly(row.lastServiceDate),
+      earlyWarning: decimalOrNull(row.earlyWarning),
       active: row.active,
     }),
   });

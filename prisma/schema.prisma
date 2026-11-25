@@ -44,6 +44,11 @@ model Tenant {
   maintenanceCosts            MaintenanceCost[]
   pmSchedules                 PmSchedule[]
   equipment                   Equipment[]
+  parts                       Part[]
+  partTransactions            PartTransaction[]
+  checklistTemplates          ChecklistTemplate[]
+  checklistTemplateVersions   ChecklistTemplateVersion[]
+  checklistSubmissions        ChecklistSubmission[]
 }
 
 /// A maintenance request or work record for an apparatus or a piece of equipment.
@@ -78,10 +83,11 @@ model MaintenanceRecord {
   updatedBy       String    @default("")
   deletedAt       DateTime?
 
-  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
-  type   MaintenanceType?  @relation(fields: [typeId], references: [id], onDelete: SetNull)
-  vendor Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
-  costs  MaintenanceCost[]
+  tenant           Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type             MaintenanceType?  @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  vendor           Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  costs            MaintenanceCost[]
+  partTransactions PartTransaction[]
 
   @@unique([tenantId, recordNumber])
   @@index([tenantId])
@@ -133,6 +139,7 @@ model Vendor {
   tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   records MaintenanceRecord[]
   costs   MaintenanceCost[]
+  parts   Part[]
 
   @@index([tenantId])
 }
@@ -167,20 +174,154 @@ model PmSchedule {
   typeId    String?
   assetKind String    @default("apparatus")
   assetRef  String    @default("")
-  /// Weekly, Monthly, Quarterly, Semi-Annual, Annual or 5 Years.
-  frequency String    @default("Annual")
-  nextDueAt DateTime? @db.Date
-  active    Boolean   @default(true)
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  createdBy String    @default("")
-  updatedBy String    @default("")
-  deletedAt DateTime?
+  /// Weekly, Monthly, Quarterly, Semi-Annual, Annual or 5 Years. Used when trackingBasis is "date".
+  frequency          String    @default("Annual")
+  nextDueAt          DateTime? @db.Date
+  /// "date", "engineHours", "pumpHours" or "mileage".
+  trackingBasis      String    @default("date")
+  /// Hours or miles between services, for the reading-based bases.
+  intervalValue      Decimal?  @db.Decimal(12, 1)
+  /// The reading at the last service. Next due = lastServiceReading + intervalValue.
+  lastServiceReading Decimal?  @db.Decimal(12, 1)
+  lastServiceDate    DateTime? @db.Date
+  /// Warn this many hours, miles or days before due.
+  earlyWarning       Decimal?  @db.Decimal(12, 1)
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+  createdBy          String    @default("")
+  updatedBy          String    @default("")
+  deletedAt          DateTime?
 
   tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   type   MaintenanceType? @relation(fields: [typeId], references: [id], onDelete: SetNull)
 
   @@index([tenantId])
+}
+
+/// A stocked part. Quantity on hand is the sum of its PartTransaction rows.
+model Part {
+  id              String    @id @default(cuid())
+  tenantId        String
+  partNumber      String    @default("")
+  description     String    @default("")
+  vendorId        String?
+  unitCost        Decimal   @default(0) @db.Decimal(12, 2)
+  /// Warn when quantity on hand drops to this or below. 0 turns the warning off.
+  reorderLevel    Int       @default(0)
+  storageLocation String    @default("")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String    @default("")
+  updatedBy       String    @default("")
+  deletedAt       DateTime?
+
+  tenant       Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  vendor       Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  transactions PartTransaction[]
+
+  @@index([tenantId])
+}
+
+/// Stock movement: received (positive), used on a maintenance record (negative) or adjusted (either).
+model PartTransaction {
+  id        String    @id @default(cuid())
+  tenantId  String
+  partId    String
+  /// "received", "used" or "adjusted".
+  kind      String
+  quantity  Int
+  unitCost  Decimal   @default(0) @db.Decimal(12, 2)
+  recordId  String?
+  note      String    @default("")
+  createdAt DateTime  @default(now())
+  createdBy String    @default("")
+  deletedAt DateTime?
+
+  tenant Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  part   Part               @relation(fields: [partId], references: [id], onDelete: Cascade)
+  record MaintenanceRecord? @relation(fields: [recordId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, partId])
+  @@index([tenantId, recordId])
+}
+
+/// A checklist (apparatus inspection now; station checklists in W4). Items live in ChecklistTemplateVersion.
+model ChecklistTemplate {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  /// What the checklist is filled out for: "apparatus" for now.
+  subjectKind String    @default("apparatus")
+  isSystem    Boolean   @default(false)
+  enabled     Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String    @default("")
+  updatedBy   String    @default("")
+  deletedAt   DateTime?
+
+  tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  versions    ChecklistTemplateVersion[]
+  submissions ChecklistSubmission[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+/// A frozen copy of a template's sections and items, so old submissions keep the wording they were filled with.
+model ChecklistTemplateVersion {
+  id         String   @id @default(cuid())
+  tenantId   String
+  templateId String
+  version    Int
+  /// [{ id, title, items: [{ id, label }] }]
+  itemsJson  Json     @default("[]")
+  createdAt  DateTime @default(now())
+  createdBy  String   @default("")
+
+  tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template    ChecklistTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  submissions ChecklistSubmission[]
+
+  @@unique([templateId, version])
+  @@index([tenantId])
+}
+
+/// One completed checklist, for example an apparatus inspection.
+model ChecklistSubmission {
+  id                String    @id @default(cuid())
+  tenantId          String
+  /// Numbered per department per year, for example INS-26-0001.
+  submissionNumber  String
+  templateId        String
+  templateVersionId String
+  subjectKind       String    @default("apparatus")
+  /// The unit ID for apparatus.
+  subjectRef        String    @default("")
+  completedOn       DateTime  @db.Date
+  completedByName   String    @default("")
+  /// "Submitted" for now.
+  status            String    @default("Submitted")
+  repairCount       Int       @default(0)
+  /// { [itemId]: { result, note, recordId } }
+  resultsJson       Json      @default("{}")
+  /// Inspection header fields still changing: officer, station, readings, comments.
+  detailsJson       Json      @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  createdBy         String    @default("")
+  updatedBy         String    @default("")
+  deletedAt         DateTime?
+
+  tenant          Tenant                   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template        ChecklistTemplate        @relation(fields: [templateId], references: [id], onDelete: Restrict)
+  templateVersion ChecklistTemplateVersion @relation(fields: [templateVersionId], references: [id], onDelete: Restrict)
+
+  @@unique([tenantId, submissionNumber])
+  @@index([tenantId])
+  @@index([tenantId, subjectKind, subjectRef])
 }
 
 /// Equipment registry (SCBA, hose, ladders, extinguishers and so on).
