@@ -288,13 +288,13 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Equipment List",
         path: "/apparatus/equipment-list",
         summary: "Equipment inventory by unit and station.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Equipment Maintenance",
         path: "/apparatus/equipment-maintenance",
         summary: "Maintenance records, schedules, and compliance for equipment.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Fuel Logs",
@@ -306,7 +306,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Maintenance Logs",
         path: "/apparatus/maintenance-logs",
         summary: "Maintenance records and service history tracking.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Mileage Logs",

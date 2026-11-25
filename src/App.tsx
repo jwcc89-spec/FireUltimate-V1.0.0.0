@@ -119,6 +119,8 @@ import {
 } from "./fireRecovery/billingRequirements";
 import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
 import { PersonnelTradesPage } from "./PersonnelTradesPage";
+import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
+import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
@@ -14344,6 +14346,12 @@ function RouteResolver({
     }
   } else if (path === "/personnel/trades") {
     content = <PersonnelTradesPage />;
+  } else if (path === "/apparatus/maintenance-logs") {
+    content = <MaintenancePage key="maintenance-apparatus" assetKind="apparatus" username={username} />;
+  } else if (path === "/apparatus/equipment-maintenance") {
+    content = <MaintenancePage key="maintenance-equipment" assetKind="equipment" username={username} />;
+  } else if (path === "/apparatus/equipment-list") {
+    content = <EquipmentListPage />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/customization") {

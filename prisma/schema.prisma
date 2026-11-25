@@ -38,6 +38,171 @@ model Tenant {
   tradeRequests               TradeRequest[]
   qualificationOverrideRequests QualificationOverrideRequest[]
   comments                    Comment[]
+  maintenanceRecords          MaintenanceRecord[]
+  maintenanceTypes            MaintenanceType[]
+  vendors                     Vendor[]
+  maintenanceCosts            MaintenanceCost[]
+  pmSchedules                 PmSchedule[]
+  equipment                   Equipment[]
+}
+
+/// A maintenance request or work record for an apparatus or a piece of equipment.
+model MaintenanceRecord {
+  id              String    @id @default(cuid())
+  tenantId        String
+  /// Numbered per department per year, for example MR-2026-0001.
+  recordNumber    String
+  /// "apparatus" or "equipment".
+  assetKind       String    @default("apparatus")
+  /// The first linked asset (unit ID or Equipment id), for sorting and search. The full list is in detailsJson.assets.
+  assetRef        String    @default("")
+  typeId          String?
+  description     String    @default("")
+  /// Open, Assigned, In Progress, Completed or Cancelled.
+  status          String    @default("Open")
+  /// Low, Medium, High or Urgent.
+  priority        String    @default("Medium")
+  dueDate         DateTime? @db.Date
+  completedDate   DateTime? @db.Date
+  /// "personnel" or "vendor".
+  performedByKind String    @default("personnel")
+  performedByName String    @default("")
+  vendorId        String?
+  /// Shown on the display board's apparatus panel while the record is open.
+  outOfService    Boolean   @default(false)
+  /// Fields still changing: assets, location, location details, attachments.
+  detailsJson     Json      @default("{}")
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String    @default("")
+  updatedBy       String    @default("")
+  deletedAt       DateTime?
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type   MaintenanceType?  @relation(fields: [typeId], references: [id], onDelete: SetNull)
+  vendor Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+  costs  MaintenanceCost[]
+
+  @@unique([tenantId, recordNumber])
+  @@index([tenantId])
+  @@index([tenantId, assetKind, status])
+}
+
+/// Maintenance categories. Each department gets its own copy of the NFPA defaults (isSystem) and can add its own.
+model MaintenanceType {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String
+  /// "Preventive" or "Corrective".
+  category         String    @default("Preventive")
+  nfpaStandard     String    @default("")
+  defaultFrequency String    @default("")
+  description      String    @default("")
+  isSystem         Boolean   @default(false)
+  enabled          Boolean   @default(true)
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String    @default("")
+  updatedBy        String    @default("")
+  deletedAt        DateTime?
+
+  tenant      Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  records     MaintenanceRecord[]
+  pmSchedules PmSchedule[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+/// Outside companies that do maintenance work, shared by apparatus and equipment maintenance.
+model Vendor {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  contact   String    @default("")
+  phone     String    @default("")
+  email     String    @default("")
+  website   String    @default("")
+  services  String    @default("")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String    @default("")
+  updatedBy String    @default("")
+  deletedAt DateTime?
+
+  tenant  Tenant              @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  records MaintenanceRecord[]
+  costs   MaintenanceCost[]
+
+  @@index([tenantId])
+}
+
+/// One cost line on a maintenance record.
+model MaintenanceCost {
+  id          String    @id @default(cuid())
+  tenantId    String
+  recordId    String
+  description String    @default("")
+  amount      Decimal   @default(0) @db.Decimal(12, 2)
+  vendorId    String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String    @default("")
+  updatedBy   String    @default("")
+  deletedAt   DateTime?
+
+  tenant Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  record MaintenanceRecord @relation(fields: [recordId], references: [id], onDelete: Cascade)
+  vendor Vendor?           @relation(fields: [vendorId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, recordId])
+}
+
+/// A recurring preventive maintenance rule.
+model PmSchedule {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  typeId    String?
+  assetKind String    @default("apparatus")
+  assetRef  String    @default("")
+  /// Weekly, Monthly, Quarterly, Semi-Annual, Annual or 5 Years.
+  frequency String    @default("Annual")
+  nextDueAt DateTime? @db.Date
+  active    Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String    @default("")
+  updatedBy String    @default("")
+  deletedAt DateTime?
+
+  tenant Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  type   MaintenanceType? @relation(fields: [typeId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+}
+
+/// Equipment registry (SCBA, hose, ladders, extinguishers and so on).
+model Equipment {
+  id            String    @id @default(cuid())
+  tenantId      String
+  name          String
+  equipmentType String    @default("")
+  serialNumber  String    @default("")
+  /// The unit or station the equipment is kept on, as a name until apparatus and stations get real tables.
+  locationRef   String    @default("")
+  /// In Service, Out of Service or Retired.
+  status        String    @default("In Service")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String    @default("")
+  updatedBy     String    @default("")
+  deletedAt     DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 /// A note on any record in the operations modules (maintenance, inspections, policies and so on).
