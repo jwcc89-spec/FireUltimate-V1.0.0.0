@@ -1,15 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { BarChart3, CircleCheck, Plus, RefreshCw, Store, Tag, Wrench } from "lucide-react";
+import { BarChart3, CircleCheck, Package, Plus, RefreshCw, Store, Tag, Wrench } from "lucide-react";
 import {
+  getApparatusStatus,
   getEquipment,
   getMaintenanceRecords,
   getMaintenanceTypes,
+  getParts,
   getPmSchedules,
   getVendors,
   type EquipmentItem,
   type MaintenanceAssetKind,
+  type MaintenanceReadings,
+  type MaintenanceRecordInput,
   type MaintenanceRecordSummary,
   type MaintenanceType,
+  type Part,
   type PmSchedule,
   type Vendor,
 } from "../../api/maintenance";
@@ -19,7 +24,9 @@ import type { NerisValueOption } from "../../nerisMetadata";
 import { useMyPermissions } from "../../useMyPermissions";
 import { MaintenanceRecordForm } from "./MaintenanceRecordForm";
 import { MaintenanceAnalyticsTab, MaintenanceComplianceTab } from "./MaintenanceReportTabs";
-import { MaintenanceSchedulesTab, MaintenanceTypesTab, MaintenanceVendorsTab } from "./MaintenanceSetupTabs";
+import { MaintenancePartsTab } from "./MaintenancePartsTab";
+import { MaintenancePmTab } from "./MaintenancePmTab";
+import { MaintenanceTypesTab, MaintenanceVendorsTab } from "./MaintenanceSetupTabs";
 import {
   assetsText,
   errorText,
@@ -31,14 +38,15 @@ import {
   todayKey,
 } from "./maintenanceUtils";
 
-type PageTab = "records" | "types" | "vendors" | "schedules" | "compliance" | "analytics";
+type PageTab = "records" | "types" | "vendors" | "parts" | "schedules" | "compliance" | "analytics";
 type RecordFilter = "myOpen" | "open" | "overdue" | "outOfService" | "complete" | "all";
 
 const PAGE_TABS: { id: PageTab; label: string; Icon: typeof Wrench }[] = [
   { id: "records", label: "Maintenance", Icon: Wrench },
+  { id: "schedules", label: "Preventive Maintenance", Icon: RefreshCw },
   { id: "types", label: "Types", Icon: Tag },
   { id: "vendors", label: "Vendors", Icon: Store },
-  { id: "schedules", label: "Preventive Maintenance", Icon: RefreshCw },
+  { id: "parts", label: "Parts Log", Icon: Package },
   { id: "compliance", label: "Compliance", Icon: CircleCheck },
   { id: "analytics", label: "Analytics", Icon: BarChart3 },
 ];
@@ -87,11 +95,15 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
   const [tab, setTab] = useState<PageTab>(linkParams.tab);
   const [filter, setFilter] = useState<RecordFilter>(linkParams.filter);
   const [typeFilter, setTypeFilter] = useState<string>(linkParams.typeFilter);
-  const [editing, setEditing] = useState<{ id: string | null } | null>(linkParams.editing);
+  const [editing, setEditing] = useState<{ id: string | null; prefill?: Partial<MaintenanceRecordInput> } | null>(
+    linkParams.editing,
+  );
+  const [readingsByUnit, setReadingsByUnit] = useState<Map<string, MaintenanceReadings>>(new Map());
   const [records, setRecords] = useState<MaintenanceRecordSummary[]>([]);
   const [types, setTypes] = useState<MaintenanceType[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [schedules, setSchedules] = useState<PmSchedule[]>([]);
+  const [parts, setParts] = useState<Part[]>([]);
   const [equipment, setEquipment] = useState<EquipmentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -103,6 +115,14 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
   const loadTypes = useCallback(() => getMaintenanceTypes().then(setTypes), []);
   const loadVendors = useCallback(() => getVendors().then(setVendors), []);
   const loadSchedules = useCallback(() => getPmSchedules().then(setSchedules), []);
+  const loadParts = useCallback(() => getParts().then(setParts), []);
+  const loadReadings = useCallback(
+    () =>
+      assetKind === "apparatus"
+        ? getApparatusStatus().then((units) => setReadingsByUnit(new Map(units.map((unit) => [unit.unitId, unit.readings]))))
+        : Promise.resolve(),
+    [assetKind],
+  );
 
   const reload = useCallback(
     (work: () => Promise<unknown>) => {
@@ -119,6 +139,8 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
       loadTypes(),
       loadVendors(),
       loadSchedules(),
+      loadParts(),
+      loadReadings(),
       assetKind === "equipment" ? getEquipment().then(setEquipment) : Promise.resolve(),
     ])
       .catch((loadError) => {
@@ -130,7 +152,7 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
     return () => {
       active = false;
     };
-  }, [assetKind, loadRecords, loadSchedules, loadTypes, loadVendors]);
+  }, [assetKind, loadParts, loadReadings, loadRecords, loadSchedules, loadTypes, loadVendors]);
 
   const assetOptions: NerisValueOption[] = useMemo(
     () =>
@@ -250,6 +272,11 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
       <MaintenanceRecordForm
         key={editing.id ?? "new"}
         recordId={editing.id}
+        prefill={editing.prefill}
+        schedules={schedules}
+        readingsByUnit={readingsByUnit}
+        parts={parts}
+        onPartCreated={(part) => setParts((previous) => [...previous, part])}
         assetKind={assetKind}
         username={username}
         canManage={canManage}
@@ -263,7 +290,7 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
         }
         onClose={(changed) => {
           setEditing(null);
-          if (changed) reload(loadRecords);
+          if (changed) reload(() => Promise.all([loadRecords(), loadSchedules(), loadReadings(), loadParts()]));
         }}
       />
     );
@@ -360,14 +387,42 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
       {!loading && tab === "vendors" ? (
         <MaintenanceVendorsTab vendors={vendors} canManage={canManage} onChanged={() => reload(loadVendors)} />
       ) : null}
+      {!loading && tab === "parts" ? (
+        <MaintenancePartsTab
+          parts={parts}
+          vendors={vendors}
+          records={records}
+          assetLabel={assetLabel}
+          canManage={canManage}
+          canSubmit={canSubmit}
+          onChanged={() => reload(loadParts)}
+          onOpenRecord={(id) => setEditing({ id })}
+        />
+      ) : null}
       {!loading && tab === "schedules" ? (
-        <MaintenanceSchedulesTab
+        <MaintenancePmTab
           schedules={schedules}
           types={types}
+          records={records}
+          readingsByUnit={readingsByUnit}
           assetKind={assetKind}
           assetOptions={assetOptions}
           canManage={canManage}
+          canSubmit={canSubmit}
           onChanged={() => reload(loadSchedules)}
+          onOpenRecord={(id) => setEditing({ id })}
+          onCreateWorkOrder={(schedule) => {
+            const label = assetOptions.find((option) => option.value === schedule.assetRef)?.label ?? schedule.assetRef;
+            setEditing({
+              id: null,
+              prefill: {
+                assets: schedule.assetRef ? [{ kind: assetKind, ref: schedule.assetRef, label }] : [],
+                typeId: schedule.typeId,
+                description: `Preventive maintenance: ${schedule.name}`,
+                pmPerformed: [{ scheduleId: schedule.id, reading: null }],
+              },
+            });
+          }}
         />
       ) : null}
       {!loading && tab === "compliance" ? (

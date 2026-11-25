@@ -1,5 +1,5 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
-import { MessageSquare, Plus, Trash2 } from "lucide-react";
+import { MessageSquare, Package, Plus, Trash2 } from "lucide-react";
 import {
   EMPTY_READINGS,
   MAINTENANCE_PRIORITIES,
@@ -11,11 +11,17 @@ import {
   updateMaintenanceRecord,
   type MaintenanceAssetKind,
   type MaintenanceComment,
+  type MaintenanceReadings,
   type MaintenanceRecordInput,
   type MaintenanceType,
+  type Part,
+  type PmSchedule,
+  type RecordPartLine,
   type Vendor,
 } from "../../api/maintenance";
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
+import { AddPartDialog } from "./MaintenancePartsTab";
+import { PmPerformedPanel } from "./MaintenancePmTab";
 import { AddVendorDialog } from "./MaintenanceSetupTabs";
 import type { NerisValueOption } from "../../nerisMetadata";
 import {
@@ -26,6 +32,7 @@ import {
   isoToLocalParts,
   localPartsToIso,
   normalizeTime24,
+  partLabel,
   readFileAsDataUrl,
   toOptions,
   todayKey,
@@ -35,6 +42,13 @@ const MAX_ATTACHMENT_BYTES = 1_500_000;
 
 interface MaintenanceRecordFormProps {
   recordId: string | null;
+  /** Starting values for a new record, for example from a PM task's Work Order button. */
+  prefill?: Partial<MaintenanceRecordInput>;
+  schedules: PmSchedule[];
+  readingsByUnit: Map<string, MaintenanceReadings>;
+  /** Parts inventory for the Parts tab. */
+  parts?: Part[];
+  onPartCreated?: (part: Part) => void;
   assetKind: MaintenanceAssetKind;
   username: string;
   canManage: boolean;
@@ -45,6 +59,8 @@ interface MaintenanceRecordFormProps {
   personnel: string[];
   onVendorCreated: (vendor: Vendor) => void;
   onClose: (changed: boolean) => void;
+  /** Called after each successful save, for example so an inspection can link the new record. */
+  onSaved?: (record: { id: string; recordNumber: string; description: string }) => void;
 }
 
 function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
@@ -64,6 +80,7 @@ function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
     outOfServiceAt: "",
     assignedTo: "",
     readings: { ...EMPTY_READINGS },
+    pmPerformed: [],
     location: "",
     locationDetails: "",
     costs: [],
@@ -71,10 +88,15 @@ function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
   };
 }
 
-type FormTab = "details" | "costs" | "attachments";
+type FormTab = "details" | "costs" | "parts" | "attachments";
 
 export function MaintenanceRecordForm({
   recordId,
+  prefill,
+  schedules,
+  readingsByUnit,
+  parts = [],
+  onPartCreated,
   assetKind,
   username,
   canManage,
@@ -85,9 +107,13 @@ export function MaintenanceRecordForm({
   personnel,
   onVendorCreated,
   onClose,
+  onSaved,
 }: MaintenanceRecordFormProps) {
   const [vendorPrompt, setVendorPrompt] = useState<{ costIndex: number; name: string } | null>(null);
-  const [form, setForm] = useState<MaintenanceRecordInput>(() => emptyInput(assetKind));
+  const [partPrompt, setPartPrompt] = useState<{ lineIndex: number; text: string } | null>(null);
+  const [partLines, setPartLines] = useState<RecordPartLine[]>([]);
+  const [partsChanged, setPartsChanged] = useState(false);
+  const [form, setForm] = useState<MaintenanceRecordInput>(() => ({ ...emptyInput(assetKind), ...prefill }));
   const [currentId, setCurrentId] = useState<string | null>(recordId);
   const [recordNumber, setRecordNumber] = useState("");
   const [createdBy, setCreatedBy] = useState(username);
@@ -125,6 +151,7 @@ export function MaintenanceRecordForm({
           outOfServiceAt: record.outOfServiceAt,
           assignedTo: record.assignedTo,
           readings: record.readings ?? { ...EMPTY_READINGS },
+          pmPerformed: record.pmPerformed ?? [],
           location: record.location,
           locationDetails: record.locationDetails,
           costs: record.costs,
@@ -135,6 +162,7 @@ export function MaintenanceRecordForm({
         setSavedStatus(record.status);
         setCompletedAt(record.completedAt);
         setComments(record.comments);
+        setPartLines(record.parts ?? []);
       })
       .catch((loadError) => {
         if (active) setError(errorText(loadError, "Could not load the record."));
@@ -181,6 +209,28 @@ export function MaintenanceRecordForm({
   const outOfServiceParts = isoToLocalParts(form.outOfServiceAt);
   const assetLabel = assetKind === "apparatus" ? "Apparatus" : "Equipment";
   const costTotal = form.costs.reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
+  const pmReadings = useMemo((): MaintenanceReadings | null => {
+    const latest = primaryAsset ? readingsByUnit.get(primaryAsset.ref) : undefined;
+    const pick = (key: keyof MaintenanceReadings) => {
+      const values = [form.readings[key], latest?.[key] ?? null].filter((value): value is number => value !== null);
+      return values.length ? Math.max(...values) : null;
+    };
+    return { mileage: pick("mileage"), engineHours: pick("engineHours"), pumpHours: pick("pumpHours") };
+  }, [form.readings, primaryAsset, readingsByUnit]);
+
+  const partsTotal = partLines.reduce((sum, line) => sum + line.unitCost * line.quantity, 0);
+  const partOptions = (line: RecordPartLine) => {
+    const options = parts.map((part) => ({ value: part.id, label: `${partLabel(part)} (${part.onHand} on hand)` }));
+    if (line.partId && !parts.some((part) => part.id === line.partId)) {
+      options.unshift({ value: line.partId, label: partLabel(line) || "Removed part" });
+    }
+    return options;
+  };
+  const setPartLine = (index: number, patch: Partial<RecordPartLine>) => {
+    setPartLines((previous) => previous.map((line, lineIndex) => (lineIndex === index ? { ...line, ...patch } : line)));
+    setPartsChanged(true);
+    setNotice("");
+  };
 
   const update = <K extends keyof MaintenanceRecordInput>(key: K, value: MaintenanceRecordInput[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
@@ -224,6 +274,9 @@ export function MaintenanceRecordForm({
         ...form,
         completedDate: form.status === "Completed" && !form.completedDate ? todayKey() : form.completedDate,
         costs: form.costs.map((cost) => ({ ...cost, amount: Number(cost.amount) || 0 })),
+        ...(partsChanged
+          ? { parts: partLines.filter((line) => line.partId).map((line) => ({ partId: line.partId, quantity: Math.max(1, Math.round(line.quantity)) })) }
+          : {}),
       };
       const saved = currentId
         ? await updateMaintenanceRecord(currentId, payload)
@@ -234,6 +287,8 @@ export function MaintenanceRecordForm({
       setSavedStatus(saved.status);
       setCompletedAt(saved.completedAt);
       setComments(saved.comments);
+      setPartLines(saved.parts ?? []);
+      setPartsChanged(false);
       setForm((previous) => ({
         ...previous,
         attachments: saved.attachments,
@@ -243,6 +298,7 @@ export function MaintenanceRecordForm({
       }));
       setChanged(true);
       setNotice(`Saved ${saved.recordNumber}.`);
+      onSaved?.(saved);
     } catch (saveError) {
       setError(errorText(saveError, "Could not save the record."));
     } finally {
@@ -312,14 +368,20 @@ export function MaintenanceRecordForm({
       {notice ? <p className="cad-dispatch-save-ok" role="status">{notice}</p> : null}
 
       <div className="department-editor-toolbar-actions">
-        {(["details", "costs", "attachments"] as FormTab[]).map((value) => (
+        {(["details", "costs", "parts", "attachments"] as FormTab[]).map((value) => (
           <button
             key={value}
             type="button"
             className={`secondary-button compact-button ${tab === value ? "department-toggle-active" : ""}`}
             onClick={() => setTab(value)}
           >
-            {value === "details" ? "Details" : value === "costs" ? `Costs (${form.costs.length})` : `Attachments (${form.attachments.length})`}
+            {value === "details"
+              ? "Details"
+              : value === "costs"
+                ? `Costs (${form.costs.length})`
+                : value === "parts"
+                  ? `Parts (${partLines.length})`
+                  : `Attachments (${form.attachments.length})`}
           </button>
         ))}
       </div>
@@ -615,6 +677,17 @@ export function MaintenanceRecordForm({
               )}
             </article>
           </section>
+          {assetKind === "apparatus" ? (
+            <PmPerformedPanel
+              schedules={schedules.filter((schedule) => schedule.assetKind === assetKind)}
+              assetRef={primaryAsset?.ref ?? ""}
+              readings={pmReadings}
+              value={form.pmPerformed}
+              completed={savedStatus === "Completed"}
+              disabled={!canEdit}
+              onChange={(next) => update("pmPerformed", next)}
+            />
+          ) : null}
         </>
       ) : null}
 
@@ -705,6 +778,107 @@ export function MaintenanceRecordForm({
           ) : null}
           <p className="field-hint">Cost changes are kept when you click Save.</p>
         </article>
+      ) : null}
+
+      {tab === "parts" ? (
+        <article className="panel">
+          <div className="panel-header">
+            <h3>Parts Used</h3>
+            <strong>Parts {formatMoney(partsTotal)}</strong>
+          </div>
+          {partLines.length === 0 ? <p className="field-hint">No parts on this ticket yet.</p> : null}
+          <div className="maintenance-cost-list">
+            {partLines.map((line, index) => {
+              const part = parts.find((entry) => entry.id === line.partId);
+              return (
+                <div key={`${line.partId}-${index}`} className="maintenance-cost-row maintenance-part-row">
+                  <NerisFlatSingleOptionSelect
+                    inputId={`maintenance-part-${index}`}
+                    usePortal
+                    value={line.partId}
+                    options={partOptions(line)}
+                    placeholder="Search part number or description..."
+                    searchPlaceholder="Search parts..."
+                    disabled={!canEdit}
+                    createOption={{ label: "Add Part", onCreate: (text) => setPartPrompt({ lineIndex: index, text }) }}
+                    onChange={(value) => {
+                      const picked = parts.find((entry) => entry.id === value);
+                      setPartLine(index, {
+                        partId: value,
+                        partNumber: picked?.partNumber ?? "",
+                        description: picked?.description ?? "",
+                        unitCost: picked?.unitCost ?? 0,
+                      });
+                    }}
+                  />
+                  <label className="maintenance-inline-field">
+                    Qty
+                    <input
+                      type="number"
+                      min={1}
+                      step={1}
+                      value={line.quantity || ""}
+                      disabled={!canEdit}
+                      onChange={(event) => setPartLine(index, { quantity: Math.max(0, Math.round(Number(event.target.value) || 0)) })}
+                    />
+                  </label>
+                  <span className="field-hint">
+                    {formatMoney(line.unitCost * line.quantity)}
+                    {part ? ` · ${part.onHand} on hand` : ""}
+                  </span>
+                  {canEdit ? (
+                    <button
+                      type="button"
+                      className="icon-button"
+                      aria-label="Remove part"
+                      onClick={() => {
+                        setPartLines((previous) => previous.filter((_, lineIndex) => lineIndex !== index));
+                        setPartsChanged(true);
+                      }}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  ) : null}
+                </div>
+              );
+            })}
+          </div>
+          {canEdit ? (
+            <div>
+              <button
+                type="button"
+                className="secondary-button compact-button maintenance-icon-button"
+                onClick={() => {
+                  setPartLines((previous) => [...previous, { partId: "", partNumber: "", description: "", quantity: 1, unitCost: 0 }]);
+                  setPartsChanged(true);
+                }}
+              >
+                <Package size={14} aria-hidden="true" /> Add Part Used
+              </button>
+            </div>
+          ) : null}
+          <p className="field-hint">
+            Saving takes these parts out of stock (Parts Log). Removing a part or lowering the quantity puts it back.
+          </p>
+        </article>
+      ) : null}
+
+      {partPrompt ? (
+        <AddPartDialog
+          initialText={partPrompt.text}
+          vendors={vendors}
+          onCancel={() => setPartPrompt(null)}
+          onSaved={(part) => {
+            onPartCreated?.(part);
+            setPartLine(partPrompt.lineIndex, {
+              partId: part.id,
+              partNumber: part.partNumber,
+              description: part.description,
+              unitCost: part.unitCost,
+            });
+            setPartPrompt(null);
+          }}
+        />
       ) : null}
 
       {tab === "attachments" ? (

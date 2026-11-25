@@ -3,9 +3,25 @@
  * Reads are open to any signed-in member of the department. Writes are mapped in permissionForRequest;
  * closing, reopening or changing someone else's record also needs maintenance.manage (checked here).
  */
-import { minimumRoleFor, roleLevel } from "../auth/permissions.mjs";
-import { PublicError, publicErrorMessage } from "../http/publicError.mjs";
+import { PublicError } from "../http/publicError.mjs";
 import { DEFAULT_MAINTENANCE_TYPES } from "./maintenanceDefaults.mjs";
+import {
+  actorOf,
+  assertBelongsToTenant,
+  canManage,
+  decimalOrNull,
+  detailsOf,
+  formatDateOnly,
+  fullNameFor,
+  isUniqueViolation,
+  oneOf,
+  parseDateOnly,
+  parseDecimal,
+  sendError,
+  tenantIdOf,
+  text,
+} from "./moduleHelpers.mjs";
+import { cleanPartsUsed, loadRecordParts, replaceRecordParts } from "./parts.mjs";
 
 const OPEN_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
@@ -20,39 +36,52 @@ const COMMENT_OWNER_TYPE = "maintenanceRecord";
 const MAX_ATTACHMENT_CHARS = 2_000_000;
 const MAX_ATTACHMENTS_TOTAL_CHARS = 3_000_000;
 
-function tenantIdOf(request, response) {
-  const tenantId = request.tenant?.id;
-  if (!tenantId) {
-    response.status(400).json({ ok: false, message: "Department not found for this address." });
-    return null;
+const PM_BASES = ["date", "engineHours", "pumpHours", "mileage"];
+const FREQUENCY_MONTHS = { Monthly: 1, Quarterly: 3, "Semi-Annual": 6, Annual: 12, "5 Years": 60 };
+
+function addFrequency(date, frequency) {
+  const next = new Date(date.getTime());
+  if (frequency === "Weekly") next.setUTCDate(next.getUTCDate() + 7);
+  else next.setUTCMonth(next.getUTCMonth() + (FREQUENCY_MONTHS[frequency] ?? 12));
+  return next;
+}
+
+/** PM tasks the person completing a ticket checked as done: [{ scheduleId, reading }]. */
+function cleanPmPerformed(raw) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const rows = [];
+  for (const entry of raw.slice(0, 50)) {
+    const scheduleId = text(entry?.scheduleId, 60);
+    if (!scheduleId || seen.has(scheduleId)) continue;
+    seen.add(scheduleId);
+    rows.push({ scheduleId, reading: parseDecimal(entry?.reading, "The PM reading") });
   }
-  return tenantId;
+  return rows;
 }
 
-function actorOf(request) {
-  return String(request.auth?.username ?? "").slice(0, 200);
-}
-
-function text(value, max = 500) {
-  return String(value ?? "").trim().slice(0, max);
-}
-
-function oneOf(value, allowed, fallback) {
-  const candidate = String(value ?? "").trim();
-  return allowed.includes(candidate) ? candidate : fallback;
-}
-
-function parseDateOnly(value, label) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new PublicError(`${label} must be a date.`);
-  const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new PublicError(`${label} must be a date.`);
-  return date;
-}
-
-function formatDateOnly(date) {
-  return date instanceof Date ? date.toISOString().slice(0, 10) : "";
+/**
+ * Resets the PM tasks checked on a ticket that just became Completed. Reading-based tasks take the
+ * reading typed on the PM line, or else the ticket's reading for that meter.
+ */
+async function applyPmPerformed(tx, { tenantId, actor, assetRefs, pmPerformed, readings, completedDate }) {
+  for (const entry of pmPerformed) {
+    const schedule = await tx.pmSchedule.findFirst({
+      where: { id: entry.scheduleId, tenantId, deletedAt: null },
+    });
+    if (!schedule || (schedule.assetRef && !assetRefs.includes(schedule.assetRef))) continue;
+    const data = { lastServiceDate: completedDate, updatedBy: actor };
+    if (schedule.trackingBasis === "date") {
+      data.nextDueAt = addFrequency(completedDate, schedule.frequency);
+    } else {
+      const reading = entry.reading ?? readings[schedule.trackingBasis] ?? null;
+      if (reading === null) {
+        throw new PublicError(`Enter the reading for the PM task "${schedule.name}" before completing.`);
+      }
+      data.lastServiceReading = reading;
+    }
+    await tx.pmSchedule.updateMany({ where: { id: schedule.id, tenantId }, data });
+  }
 }
 
 const READING_FIELDS = [
@@ -80,7 +109,7 @@ function cleanReadings(raw) {
   return readings;
 }
 
-function readingsOf(details) {
+export function readingsOf(details) {
   return cleanReadings(details.readings);
 }
 
@@ -98,41 +127,6 @@ function parseTimestamp(value, label) {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) throw new PublicError(`${label} must be a date and time.`);
   return date.toISOString();
-}
-
-function detailsOf(row) {
-  const raw = row?.detailsJson;
-  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-}
-
-async function canManage(prisma, request) {
-  const minimum = await minimumRoleFor(prisma, request.tenant.id, "maintenance.manage");
-  return minimum != null && roleLevel(request.auth?.role) >= roleLevel(minimum);
-}
-
-async function fullNameFor(prisma, tenantId, username) {
-  const details = await prisma.departmentDetails.findUnique({
-    where: { tenantId },
-    select: { payloadJson: true },
-  });
-  const names = details?.payloadJson?.userFullNames;
-  if (names && typeof names === "object" && !Array.isArray(names)) {
-    const match = Object.entries(names).find(
-      ([key]) => key.trim().toLowerCase() === username.trim().toLowerCase(),
-    );
-    const fullName = text(match?.[1], 200);
-    if (fullName) return fullName;
-  }
-  return username;
-}
-
-function sendError(response, error, fallback) {
-  const status = error instanceof PublicError ? 400 : 500;
-  response.status(status).json({ ok: false, message: publicErrorMessage(error, fallback) });
-}
-
-function isUniqueViolation(error) {
-  return error?.code === "P2002";
 }
 
 // ----- Records -----
@@ -199,12 +193,6 @@ function cleanCosts(raw) {
   });
 }
 
-async function assertBelongsToTenant(prisma, model, id, tenantId, label) {
-  if (!id) return;
-  const row = await prisma[model].findFirst({ where: { id, tenantId, deletedAt: null }, select: { id: true } });
-  if (!row) throw new PublicError(`${label} was not found.`);
-}
-
 function serializeRecord(row, { includeDetail = false } = {}) {
   const details = detailsOf(row);
   const attachments = Array.isArray(details.attachments) ? details.attachments : [];
@@ -233,6 +221,7 @@ function serializeRecord(row, { includeDetail = false } = {}) {
     completedAt: text(details.completedAt, 40),
     assignedTo: text(details.assignedTo, 200),
     readings: readingsOf(details),
+    pmPerformed: cleanPmPerformed(details.pmPerformed),
     location: text(details.location, 200),
     locationDetails: text(details.locationDetails, 300),
     costTotal: costs.reduce((sum, cost) => sum + Number(cost.amount), 0),
@@ -341,6 +330,16 @@ function registerRecordRoutes(app, prisma) {
         }
         return units.get(ref);
       };
+      const applyReadings = (unit, readings, readAt) => {
+        for (const key of ["mileage", "engineHours", "pumpHours"]) {
+          const timeKey = `${key}At`;
+          if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
+            unit.readings[key] = readings[key];
+            unit.readings[timeKey] = readAt;
+            if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
+          }
+        }
+      };
       for (const row of rows) {
         const details = detailsOf(row);
         const refs = (Array.isArray(details.assets) ? details.assets : []).map((asset) => text(asset?.ref, 200)).filter(Boolean);
@@ -363,15 +362,16 @@ function registerRecordRoutes(app, prisma) {
               }
             }
           }
-          for (const key of ["mileage", "engineHours", "pumpHours"]) {
-            const timeKey = `${key}At`;
-            if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
-              unit.readings[key] = readings[key];
-              unit.readings[timeKey] = readAt;
-              if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
-            }
-          }
+          applyReadings(unit, readings, readAt);
         }
+      }
+      const inspections = await prisma.checklistSubmission.findMany({
+        where: { tenantId, deletedAt: null, subjectKind: "apparatus" },
+        select: { subjectRef: true, detailsJson: true, createdAt: true },
+      });
+      for (const inspection of inspections) {
+        const ref = text(inspection.subjectRef, 200);
+        if (ref) applyReadings(unitFor(ref), readingsOf(detailsOf(inspection)), inspection.createdAt.toISOString());
       }
       const data = Array.from(units.values()).map((unit) => ({
         ...unit,
@@ -401,7 +401,8 @@ function registerRecordRoutes(app, prisma) {
         return;
       }
       const comments = await loadCommentsFor(prisma, tenantId, row.id);
-      response.json({ ok: true, data: { ...serializeRecord(row, { includeDetail: true }), comments } });
+      const parts = await loadRecordParts(prisma, tenantId, row.id);
+      response.json({ ok: true, data: { ...serializeRecord(row, { includeDetail: true }), comments, parts } });
     } catch (error) {
       sendError(response, error, "Could not load the maintenance record.");
     }
@@ -425,6 +426,7 @@ function registerRecordRoutes(app, prisma) {
       await assertBelongsToTenant(prisma, "vendor", vendorId, tenantId, "The vendor");
       const assets = cleanAssets(body.assets, assetKind);
       const costs = cleanCosts(body.costs) ?? [];
+      const partsUsed = cleanPartsUsed(body.parts) ?? [];
       for (const cost of costs) await assertBelongsToTenant(prisma, "vendor", cost.vendorId, tenantId, "The cost vendor");
       const performedByKind = oneOf(body.performedByKind, PERFORMED_BY_KINDS, "personnel");
       const performedByName = text(body.performedByName, 200);
@@ -442,6 +444,7 @@ function registerRecordRoutes(app, prisma) {
         assets,
         assignedTo: text(body.assignedTo, 200),
         readings,
+        pmPerformed: cleanPmPerformed(body.pmPerformed),
         outOfServiceAt: outOfService ? parseTimestamp(body.outOfServiceAt, "Taken Out of Service") || new Date().toISOString() : "",
         completedAt: completing ? new Date().toISOString() : "",
         location: text(body.location, 200),
@@ -453,7 +456,8 @@ function registerRecordRoutes(app, prisma) {
       for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
         const recordNumber = await nextRecordNumber(prisma, tenantId);
         try {
-          created = await prisma.maintenanceRecord.create({
+          created = await prisma.$transaction(async (tx) => {
+            const row = await tx.maintenanceRecord.create({
             data: {
               tenantId,
               recordNumber,
@@ -477,12 +481,28 @@ function registerRecordRoutes(app, prisma) {
               },
             },
             include: RECORD_INCLUDE,
+            });
+            if (partsUsed.length > 0) {
+              await replaceRecordParts(tx, { tenantId, recordId: row.id, actor, partsUsed });
+            }
+            if (completing) {
+              await applyPmPerformed(tx, {
+                tenantId,
+                actor,
+                assetRefs: assets.map((asset) => asset.ref),
+                pmPerformed: details.pmPerformed,
+                readings,
+                completedDate,
+              });
+            }
+            return row;
           });
         } catch (error) {
           if (!isUniqueViolation(error) || attempt === 2) throw error;
         }
       }
-      response.status(201).json({ ok: true, data: { ...serializeRecord(created, { includeDetail: true }), comments: [] } });
+      const parts = await loadRecordParts(prisma, tenantId, created.id);
+      response.status(201).json({ ok: true, data: { ...serializeRecord(created, { includeDetail: true }), comments: [], parts } });
     } catch (error) {
       sendError(response, error, "Could not save the maintenance record.");
     }
@@ -504,6 +524,7 @@ function registerRecordRoutes(app, prisma) {
       const status = body.status === undefined ? existing.status : oneOf(body.status, RECORD_STATUSES, existing.status);
       const wasClosed = CLOSED_STATUSES.includes(existing.status);
       const closing = CLOSED_STATUSES.includes(status) && status !== existing.status;
+      const completingNow = status === "Completed" && existing.status !== "Completed";
       const ownRecord = existing.createdBy === actor;
       if ((wasClosed || closing || !ownRecord) && !(await canManage(prisma, request))) {
         response.status(403).json({
@@ -540,7 +561,8 @@ function registerRecordRoutes(app, prisma) {
       }
       if (has("assignedTo")) nextDetails.assignedTo = text(body.assignedTo, 200);
       if (has("readings")) nextDetails.readings = cleanReadings(body.readings);
-      if (status === "Completed" && existing.status !== "Completed") {
+      if (has("pmPerformed")) nextDetails.pmPerformed = cleanPmPerformed(body.pmPerformed);
+      if (completingNow) {
         const readingsError = missingReadingsError(existing.assetKind, readingsOf(nextDetails));
         if (readingsError) throw new PublicError(readingsError);
       }
@@ -548,7 +570,7 @@ function registerRecordRoutes(app, prisma) {
       const outOfService = data.outOfService ?? existing.outOfService;
       if (outOfService && !nextDetails.outOfServiceAt) nextDetails.outOfServiceAt = new Date().toISOString();
       if (!outOfService && has("outOfService")) nextDetails.outOfServiceAt = "";
-      if (status === "Completed" && existing.status !== "Completed") {
+      if (completingNow) {
         nextDetails.completedAt = new Date().toISOString();
         data.completedDate =
           parseDateOnly(body.completedDate, "Completed Date") ??
@@ -573,6 +595,7 @@ function registerRecordRoutes(app, prisma) {
       );
       if (closeError) throw new PublicError(closeError);
 
+      const partsUsed = cleanPartsUsed(body.parts);
       const costs = cleanCosts(body.costs);
       if (costs) {
         for (const cost of costs) await assertBelongsToTenant(prisma, "vendor", cost.vendorId, tenantId, "The cost vendor");
@@ -591,10 +614,25 @@ function registerRecordRoutes(app, prisma) {
           }
         }
         await tx.maintenanceRecord.updateMany({ where: { id: existing.id, tenantId }, data });
+        if (partsUsed) await replaceRecordParts(tx, { tenantId, recordId: existing.id, actor, partsUsed });
+        if (completingNow) {
+          await applyPmPerformed(tx, {
+            tenantId,
+            actor,
+            assetRefs: [
+              data.assetRef ?? existing.assetRef,
+              ...(Array.isArray(nextDetails.assets) ? nextDetails.assets.map((asset) => asset?.ref) : []),
+            ].filter(Boolean),
+            pmPerformed: cleanPmPerformed(nextDetails.pmPerformed),
+            readings: readingsOf(nextDetails),
+            completedDate: data.completedDate,
+          });
+        }
         return tx.maintenanceRecord.findFirst({ where: { id: existing.id, tenantId }, include: RECORD_INCLUDE });
       });
       const comments = await loadCommentsFor(prisma, tenantId, existing.id);
-      response.json({ ok: true, data: { ...serializeRecord(updated, { includeDetail: true }), comments } });
+      const parts = await loadRecordParts(prisma, tenantId, existing.id);
+      response.json({ ok: true, data: { ...serializeRecord(updated, { includeDetail: true }), comments, parts } });
     } catch (error) {
       sendError(response, error, "Could not save the maintenance record.");
     }
@@ -813,6 +851,7 @@ function registerSimpleList(app, prisma, { path, model, label, fields, serialize
       else if (field.kind === "date") data[field.key] = parseDateOnly(value, field.label);
       else if (field.kind === "enum") data[field.key] = oneOf(value, field.values, field.fallback);
       else if (field.kind === "id") data[field.key] = text(value, 60) || null;
+      else if (field.kind === "decimal") data[field.key] = parseDecimal(value, field.label);
       else data[field.key] = text(value, field.max ?? 300);
     }
     return data;
@@ -925,10 +964,19 @@ export function register(app, prisma) {
       { key: "assetRef", max: 200 },
       { key: "frequency", kind: "enum", values: FREQUENCIES.filter(Boolean), fallback: "Annual" },
       { key: "nextDueAt", kind: "date", label: "Next Due" },
+      { key: "trackingBasis", kind: "enum", values: PM_BASES, fallback: "date" },
+      { key: "intervalValue", kind: "decimal", label: "Interval" },
+      { key: "lastServiceReading", kind: "decimal", label: "Last Service Reading" },
+      { key: "lastServiceDate", kind: "date", label: "Last Service Date" },
+      { key: "earlyWarning", kind: "decimal", label: "Early Warning" },
       { key: "active", kind: "bool", fallback: true },
     ],
-    validate: (db, tenantId, data) =>
-      assertBelongsToTenant(db, "maintenanceType", data.typeId, tenantId, "The maintenance task"),
+    validate: async (db, tenantId, data) => {
+      await assertBelongsToTenant(db, "maintenanceType", data.typeId, tenantId, "The category");
+      if (data.trackingBasis && data.trackingBasis !== "date" && !(data.intervalValue > 0)) {
+        throw new PublicError("Enter the interval (hours or miles between services).");
+      }
+    },
     serialize: (row) => ({
       id: row.id,
       name: row.name,
@@ -937,6 +985,11 @@ export function register(app, prisma) {
       assetRef: row.assetRef,
       frequency: row.frequency,
       nextDueAt: formatDateOnly(row.nextDueAt),
+      trackingBasis: row.trackingBasis ?? "date",
+      intervalValue: decimalOrNull(row.intervalValue),
+      lastServiceReading: decimalOrNull(row.lastServiceReading),
+      lastServiceDate: formatDateOnly(row.lastServiceDate),
+      earlyWarning: decimalOrNull(row.earlyWarning),
       active: row.active,
     }),
   });

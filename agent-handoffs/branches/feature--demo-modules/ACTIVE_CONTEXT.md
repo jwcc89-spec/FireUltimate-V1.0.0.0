@@ -30,16 +30,21 @@
   - Dropdowns open upward when there isn't room below.
   - The top-bar breadcrumb menu name opens the sidebar menu.
   - Details are in the plan's "W1 polish round" note.
-- **Operator still applies both migrations to staging** (`20261126090000_add_comment` and `20261126100000_add_maintenance`):
+- **Apparatus round 2 done** (`5cdf331`, merged as `27f257e`, no schema): Fleet Overview at `/apparatus`, `GET /api/maintenance/apparatus-status`, readings needed to complete, the Deficiency type, Add Vendor from search, Preventive Maintenance wording.
+- **Apparatus round 3 done** (operator approved the migration on 2026-11-25). Commits: `1d96cf9` (migration and PM tracking), `491f427` (inspections and Fleet Overview), `7c0fb57` (parts).
+  - Migration `20261126110000_add_parts_pm_inspections` is additive only. It adds `Part`, `PartTransaction`, `ChecklistTemplate`, `ChecklistTemplateVersion` and `ChecklistSubmission`, plus five nullable or defaulted `PmSchedule` columns.
+  - New server modules: `server/modules/parts.mjs`, `inspections.mjs`, `inspectionDefaults.mjs` and `moduleHelpers.mjs` (shared helpers moved out of `maintenance.mjs`).
+  - Details are in the plan's "Apparatus round 3 as built" note.
+- **Operator still applies all three migrations to staging** (`20261126090000_add_comment`, `20261126100000_add_maintenance`, `20261126110000_add_parts_pm_inspections`):
   1. Back up Neon first.
   2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.
-  - Until then, the three maintenance pages show "Could not load maintenance data." Nothing else is affected.
+  - Until then, the maintenance, inspection and Fleet Overview pages show load errors. Nothing else is affected.
 - **Next: W2** (maps, overlays and geofences). It needs the operator's Google Maps browser key (`VITE_GOOGLE_MAPS_API_KEY`) first.
 
 ## Rules that matter here
 - Demo menu items keep `isBuilt: false` until their real page lands. Only superadmins can click those items, so CIFPD users on staging never see blank pages.
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks.
-- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other 81 pass.
+- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other 86 pass.
 - Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.

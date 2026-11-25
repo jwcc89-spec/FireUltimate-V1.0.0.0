@@ -83,6 +83,7 @@ export interface MaintenanceRecordSummary {
   completedAt: string;
   assignedTo: string;
   readings: MaintenanceReadings;
+  pmPerformed: PmPerformedEntry[];
   location: string;
   locationDetails: string;
   costTotal: number;
@@ -98,6 +99,42 @@ export interface MaintenanceRecordDetail extends MaintenanceRecordSummary {
   costs: MaintenanceCostLine[];
   attachments: MaintenanceAttachment[];
   comments: MaintenanceComment[];
+  parts: RecordPartLine[];
+}
+
+/** A part used on a record. quantity is how many were used; unitCost is fixed when first saved. */
+export interface RecordPartLine {
+  partId: string;
+  partNumber: string;
+  description: string;
+  quantity: number;
+  unitCost: number;
+}
+
+export interface Part {
+  id: string;
+  partNumber: string;
+  description: string;
+  vendorId: string;
+  vendorName: string;
+  unitCost: number;
+  reorderLevel: number;
+  storageLocation: string;
+  onHand: number;
+}
+
+export type PartInput = Pick<Part, "partNumber" | "description" | "vendorId" | "unitCost" | "reorderLevel" | "storageLocation">;
+
+export interface PartTransaction {
+  id: string;
+  partId: string;
+  kind: "received" | "used" | "adjusted";
+  quantity: number;
+  unitCost: number;
+  recordId: string;
+  note: string;
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface MaintenanceRecordInput {
@@ -116,10 +153,13 @@ export interface MaintenanceRecordInput {
   outOfServiceAt: string;
   assignedTo: string;
   readings: MaintenanceReadings;
+  pmPerformed: PmPerformedEntry[];
   location: string;
   locationDetails: string;
   costs: MaintenanceCostLine[];
   attachments: MaintenanceAttachment[];
+  /** Sent only when the parts list changed; replaces the record's parts. */
+  parts?: { partId: string; quantity: number }[];
 }
 
 export interface MaintenanceType {
@@ -143,6 +183,15 @@ export interface Vendor {
   services: string;
 }
 
+export type PmTrackingBasis = "date" | "engineHours" | "pumpHours" | "mileage";
+
+export const PM_TRACKING_BASES: { value: PmTrackingBasis; label: string; unit: string }[] = [
+  { value: "engineHours", label: "Engine Hours", unit: "hours" },
+  { value: "pumpHours", label: "Pump Hours", unit: "hours" },
+  { value: "mileage", label: "Miles", unit: "miles" },
+  { value: "date", label: "Date", unit: "days" },
+];
+
 export interface PmSchedule {
   id: string;
   name: string;
@@ -151,7 +200,19 @@ export interface PmSchedule {
   assetRef: string;
   frequency: string;
   nextDueAt: string;
+  trackingBasis: PmTrackingBasis;
+  /** Hours or miles between services (reading-based tasks). */
+  intervalValue: number | null;
+  lastServiceReading: number | null;
+  lastServiceDate: string;
+  /** Hours, miles or days before due to show Approaching. */
+  earlyWarning: number | null;
   active: boolean;
+}
+
+export interface PmPerformedEntry {
+  scheduleId: string;
+  reading: number | null;
 }
 
 export interface EquipmentItem {
@@ -163,7 +224,7 @@ export interface EquipmentItem {
   status: string;
 }
 
-async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
+export async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -175,7 +236,7 @@ async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   return json?.data as T;
 }
 
-const send = (method: string, body?: unknown): RequestInit => ({
+export const send = (method: string, body?: unknown): RequestInit => ({
   method,
   body: body === undefined ? undefined : JSON.stringify(body),
 });
@@ -220,6 +281,17 @@ export const updatePmSchedule = (id: string, input: Omit<PmSchedule, "id">) =>
   apiJson<PmSchedule>(`/api/maintenance/schedules/${encodeURIComponent(id)}`, send("PATCH", input));
 export const deletePmSchedule = (id: string) =>
   apiJson<void>(`/api/maintenance/schedules/${encodeURIComponent(id)}`, send("DELETE"));
+
+export const getParts = () => apiJson<Part[]>("/api/maintenance/parts");
+export const getPartTransactions = () => apiJson<PartTransaction[]>("/api/maintenance/parts/transactions");
+export const createPart = (input: PartInput) => apiJson<Part>("/api/maintenance/parts", send("POST", input));
+export const updatePart = (id: string, input: PartInput) =>
+  apiJson<Part>(`/api/maintenance/parts/${encodeURIComponent(id)}`, send("PATCH", input));
+export const deletePart = (id: string) => apiJson<void>(`/api/maintenance/parts/${encodeURIComponent(id)}`, send("DELETE"));
+export const changePartStock = (
+  id: string,
+  input: { kind: "received" | "adjusted"; quantity: number; unitCost?: number; note: string },
+) => apiJson<Part>(`/api/maintenance/parts/${encodeURIComponent(id)}/stock`, send("POST", input));
 
 export const getEquipment = () => apiJson<EquipmentItem[]>("/api/equipment");
 export const createEquipment = (input: Omit<EquipmentItem, "id">) =>

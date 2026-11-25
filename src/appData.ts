@@ -297,6 +297,12 @@ export const MAIN_MENUS: MainMenu[] = [
         isBuilt: true,
       },
       {
+        label: "Inspections",
+        path: "/apparatus/inspections",
+        summary: "Apparatus inspections with deficiencies sent to maintenance.",
+        isBuilt: true,
+      },
+      {
         label: "Fuel Logs",
         path: "/apparatus/fuel-logs",
         summary: "Fuel usage and accountability logs.",

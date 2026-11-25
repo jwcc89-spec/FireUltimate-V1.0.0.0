@@ -122,6 +122,7 @@ import { PersonnelTradesPage } from "./PersonnelTradesPage";
 import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
 import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage";
+import { InspectionsPage } from "./pages/maintenance/InspectionsPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
@@ -14379,6 +14380,8 @@ function RouteResolver({
     content = <MaintenancePage key="maintenance-equipment" assetKind="equipment" username={username} />;
   } else if (path === "/apparatus/equipment-list") {
     content = <EquipmentListPage />;
+  } else if (path === "/apparatus/inspections") {
+    content = <InspectionsPage username={username} />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/customization") {
