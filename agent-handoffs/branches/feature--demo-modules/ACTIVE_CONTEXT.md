@@ -20,6 +20,16 @@
   - Pages: Apparatus > Maintenance Logs, Equipment Maintenance, and Equipment List, all now `isBuilt: true`.
   - Details are in the plan's "W0b and W1 as built" note.
 - **Merged into `submenu/neris-golive-cifpd` and pushed** after W1.
+- **W1 polish done** (`dc7cef9`, merged as `6e7c4b8`). This round came from the operator's first click-through and needed no migration:
+  - Record numbers are now `YY-NNNN`.
+  - New status Parts Ordered.
+  - Assigned To and Taken Out of Service were added. The completion time is stamped automatically, which gives down time.
+  - The Apparatus dropdown is the first field on the form.
+  - The table has new default columns, no filter boxes, and Edit Columns on the chip row.
+  - Analytics has a Cost and Down Time page.
+  - Dropdowns open upward when there isn't room below.
+  - The top-bar breadcrumb menu name opens the sidebar menu.
+  - Details are in the plan's "W1 polish round" note.
 - **Operator still applies both migrations to staging** (`20261126090000_add_comment` and `20261126100000_add_maintenance`):
   1. Back up Neon first.
   2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.
@@ -31,4 +41,5 @@
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks.
 - `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other 81 pass.
+- Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.

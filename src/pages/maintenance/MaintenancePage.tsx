@@ -32,13 +32,13 @@ import {
 } from "./maintenanceUtils";
 
 type PageTab = "records" | "types" | "vendors" | "schedules" | "compliance" | "analytics";
-type RecordFilter = "myOpen" | "open" | "overdue" | "complete" | "all";
+type RecordFilter = "myOpen" | "open" | "overdue" | "outOfService" | "complete" | "all";
 
 const PAGE_TABS: { id: PageTab; label: string; Icon: typeof Wrench }[] = [
   { id: "records", label: "Maintenance", Icon: Wrench },
   { id: "types", label: "Types", Icon: Tag },
   { id: "vendors", label: "Vendors", Icon: Store },
-  { id: "schedules", label: "Schedules", Icon: RefreshCw },
+  { id: "schedules", label: "Preventive Maintenance", Icon: RefreshCw },
   { id: "compliance", label: "Compliance", Icon: CircleCheck },
   { id: "analytics", label: "Analytics", Icon: BarChart3 },
 ];
@@ -47,12 +47,29 @@ const RECORD_FILTERS: { id: RecordFilter; label: string }[] = [
   { id: "myOpen", label: "My Open" },
   { id: "open", label: "Open" },
   { id: "overdue", label: "Overdue" },
+  { id: "outOfService", label: "Out of Service" },
   { id: "complete", label: "Complete" },
   { id: "all", label: "All" },
 ];
 
 const ALL_TYPES = "__all__";
 const NO_TYPE = "__none__";
+const TYPE_NAME_PREFIX = "name:";
+
+/** Links from the Apparatus overview: ?new=1, ?record=<id>, ?filter=<chip>, ?category=<type name>, ?tab=<tab>. */
+function readLinkParams() {
+  const params = new URLSearchParams(window.location.search);
+  const filter = params.get("filter");
+  const tab = params.get("tab");
+  const category = params.get("category");
+  const record = params.get("record");
+  return {
+    editing: record ? { id: record } : params.get("new") === "1" ? { id: null } : null,
+    filter: RECORD_FILTERS.some((entry) => entry.id === filter) ? (filter as RecordFilter) : "open",
+    tab: PAGE_TABS.some((entry) => entry.id === tab) ? (tab as PageTab) : "records",
+    typeFilter: category ? `${TYPE_NAME_PREFIX}${category}` : ALL_TYPES,
+  };
+}
 
 interface MaintenancePageProps {
   assetKind: MaintenanceAssetKind;
@@ -66,10 +83,11 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
   const lookups = useModuleLookups();
   const myName = fullNameForUsername(lookups, username);
 
-  const [tab, setTab] = useState<PageTab>("records");
-  const [filter, setFilter] = useState<RecordFilter>("open");
-  const [typeFilter, setTypeFilter] = useState<string>(ALL_TYPES);
-  const [editing, setEditing] = useState<{ id: string | null } | null>(null);
+  const [linkParams] = useState(readLinkParams);
+  const [tab, setTab] = useState<PageTab>(linkParams.tab);
+  const [filter, setFilter] = useState<RecordFilter>(linkParams.filter);
+  const [typeFilter, setTypeFilter] = useState<string>(linkParams.typeFilter);
+  const [editing, setEditing] = useState<{ id: string | null } | null>(linkParams.editing);
   const [records, setRecords] = useState<MaintenanceRecordSummary[]>([]);
   const [types, setTypes] = useState<MaintenanceType[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
@@ -131,8 +149,13 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
   const filteredRecords = useMemo(
     () =>
       records.filter((record) => {
-        if (typeFilter === NO_TYPE && record.typeId) return false;
-        if (typeFilter !== ALL_TYPES && typeFilter !== NO_TYPE && record.typeId !== typeFilter) return false;
+        if (typeFilter.startsWith(TYPE_NAME_PREFIX)) {
+          if (record.typeName !== typeFilter.slice(TYPE_NAME_PREFIX.length)) return false;
+        } else if (typeFilter === NO_TYPE) {
+          if (record.typeId) return false;
+        } else if (typeFilter !== ALL_TYPES && record.typeId !== typeFilter) {
+          return false;
+        }
         if (filter === "myOpen") {
           return (
             isOpenStatus(record.status) &&
@@ -142,6 +165,7 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
         }
         if (filter === "open") return isOpenStatus(record.status);
         if (filter === "overdue") return isOverdue(record, today);
+        if (filter === "outOfService") return record.outOfService && isOpenStatus(record.status);
         if (filter === "complete") return record.status === "Completed";
         return true;
       }),
@@ -234,6 +258,9 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
         assetOptions={assetOptions}
         stations={lookups.stations}
         personnel={lookups.personnel}
+        onVendorCreated={(vendor) =>
+          setVendors((previous) => [...previous, vendor].sort((a, b) => a.name.localeCompare(b.name)))
+        }
         onClose={(changed) => {
           setEditing(null);
           if (changed) reload(loadRecords);
@@ -295,7 +322,7 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
                 <button
                   key={id}
                   type="button"
-                  className={typeFilter === id ? "active" : ""}
+                  className={typeFilter === id || typeFilter === `${TYPE_NAME_PREFIX}${entry.name}` ? "active" : ""}
                   onClick={() => setTypeFilter(id)}
                 >
                   {entry.name} ({entry.count})

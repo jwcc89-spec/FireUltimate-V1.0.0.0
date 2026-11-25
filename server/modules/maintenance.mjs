@@ -55,6 +55,43 @@ function formatDateOnly(date) {
   return date instanceof Date ? date.toISOString().slice(0, 10) : "";
 }
 
+const READING_FIELDS = [
+  ["mileage", "Mileage"],
+  ["engineHours", "Engine Hours"],
+  ["pumpHours", "Pump Hours"],
+];
+
+/** Odometer and hour meter readings: { mileage, engineHours, pumpHours }, each a number or null. */
+function cleanReadings(raw) {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  const readings = {};
+  for (const [key, label] of READING_FIELDS) {
+    const value = source[key];
+    if (value === null || value === undefined || String(value).trim() === "") {
+      readings[key] = null;
+      continue;
+    }
+    const number = Number(value);
+    if (!Number.isFinite(number) || number < 0 || number > 10_000_000) {
+      throw new PublicError(`${label} must be a number of 0 or more.`);
+    }
+    readings[key] = Math.round(number * 10) / 10;
+  }
+  return readings;
+}
+
+function readingsOf(details) {
+  return cleanReadings(details.readings);
+}
+
+function missingReadingsError(assetKind, readings) {
+  if (assetKind !== "apparatus") return null;
+  if (readings.mileage === null || readings.engineHours === null) {
+    return "Enter the Mileage and Engine Hours before completing this record.";
+  }
+  return null;
+}
+
 function parseTimestamp(value, label) {
   const raw = String(value ?? "").trim();
   if (!raw) return "";
@@ -195,6 +232,7 @@ function serializeRecord(row, { includeDetail = false } = {}) {
     outOfServiceAt: text(details.outOfServiceAt, 40),
     completedAt: text(details.completedAt, 40),
     assignedTo: text(details.assignedTo, 200),
+    readings: readingsOf(details),
     location: text(details.location, 200),
     locationDetails: text(details.locationDetails, 300),
     costTotal: costs.reduce((sum, cost) => sum + Number(cost.amount), 0),
@@ -273,6 +311,83 @@ function registerRecordRoutes(app, prisma) {
     }
   });
 
+  /**
+   * Current status of each apparatus, worked out from maintenance records: out of service while an open
+   * record is marked Out of Service. Display boards and dashboards should read status from here.
+   */
+  app.get("/api/maintenance/apparatus-status", async (request, response) => {
+    const tenantId = tenantIdOf(request, response);
+    if (!tenantId) return;
+    try {
+      const rows = await prisma.maintenanceRecord.findMany({
+        where: { tenantId, deletedAt: null, assetKind: "apparatus" },
+        include: { type: { select: { name: true } } },
+        orderBy: { createdAt: "asc" },
+      });
+      const units = new Map();
+      const unitFor = (ref) => {
+        if (!units.has(ref)) {
+          units.set(ref, {
+            unitId: ref,
+            status: "In Service",
+            outOfServiceSince: "",
+            outOfServiceRecordId: "",
+            outOfServiceRecordNumber: "",
+            outOfServiceReason: "",
+            openRecords: 0,
+            openDeficiencies: 0,
+            readings: { mileage: null, engineHours: null, pumpHours: null, recordedAt: "" },
+          });
+        }
+        return units.get(ref);
+      };
+      for (const row of rows) {
+        const details = detailsOf(row);
+        const refs = (Array.isArray(details.assets) ? details.assets : []).map((asset) => text(asset?.ref, 200)).filter(Boolean);
+        const open = OPEN_STATUSES.includes(row.status);
+        const readings = readingsOf(details);
+        const readAt = text(details.completedAt, 40) || row.updatedAt.toISOString();
+        for (const ref of refs) {
+          const unit = unitFor(ref);
+          if (open) {
+            unit.openRecords += 1;
+            if (row.type?.name === "Deficiency") unit.openDeficiencies += 1;
+            if (row.outOfService) {
+              const since = text(details.outOfServiceAt, 40) || row.createdAt.toISOString();
+              if (!unit.outOfServiceSince || since < unit.outOfServiceSince) {
+                unit.status = "Out of Service";
+                unit.outOfServiceSince = since;
+                unit.outOfServiceRecordId = row.id;
+                unit.outOfServiceRecordNumber = row.recordNumber;
+                unit.outOfServiceReason = text(row.description, 200);
+              }
+            }
+          }
+          for (const key of ["mileage", "engineHours", "pumpHours"]) {
+            const timeKey = `${key}At`;
+            if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
+              unit.readings[key] = readings[key];
+              unit.readings[timeKey] = readAt;
+              if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
+            }
+          }
+        }
+      }
+      const data = Array.from(units.values()).map((unit) => ({
+        ...unit,
+        readings: {
+          mileage: unit.readings.mileage,
+          engineHours: unit.readings.engineHours,
+          pumpHours: unit.readings.pumpHours,
+          recordedAt: unit.readings.recordedAt,
+        },
+      }));
+      response.json({ ok: true, data });
+    } catch (error) {
+      sendError(response, error, "Could not load apparatus status.");
+    }
+  });
+
   app.get("/api/maintenance/records/:id", async (request, response) => {
     const tenantId = tenantIdOf(request, response);
     if (!tenantId) return;
@@ -316,6 +431,9 @@ function registerRecordRoutes(app, prisma) {
       const closeError = closeRequirementsError(status, performedByKind, performedByName, vendorId);
       if (closeError) throw new PublicError(closeError);
       const completing = status === "Completed";
+      const readings = cleanReadings(body.readings);
+      const readingsError = completing ? missingReadingsError(assetKind, readings) : null;
+      if (readingsError) throw new PublicError(readingsError);
       const completedDate = completing
         ? parseDateOnly(body.completedDate, "Completed Date") ?? parseDateOnly(new Date().toISOString().slice(0, 10), "Completed Date")
         : null;
@@ -323,6 +441,7 @@ function registerRecordRoutes(app, prisma) {
       const details = {
         assets,
         assignedTo: text(body.assignedTo, 200),
+        readings,
         outOfServiceAt: outOfService ? parseTimestamp(body.outOfServiceAt, "Taken Out of Service") || new Date().toISOString() : "",
         completedAt: completing ? new Date().toISOString() : "",
         location: text(body.location, 200),
@@ -420,6 +539,11 @@ function registerRecordRoutes(app, prisma) {
         data.assetRef = nextDetails.assets[0]?.ref ?? "";
       }
       if (has("assignedTo")) nextDetails.assignedTo = text(body.assignedTo, 200);
+      if (has("readings")) nextDetails.readings = cleanReadings(body.readings);
+      if (status === "Completed" && existing.status !== "Completed") {
+        const readingsError = missingReadingsError(existing.assetKind, readingsOf(nextDetails));
+        if (readingsError) throw new PublicError(readingsError);
+      }
       if (has("outOfServiceAt")) nextDetails.outOfServiceAt = parseTimestamp(body.outOfServiceAt, "Taken Out of Service");
       const outOfService = data.outOfService ?? existing.outOfService;
       if (outOfService && !nextDetails.outOfServiceAt) nextDetails.outOfServiceAt = new Date().toISOString();
@@ -544,11 +668,14 @@ function serializeType(row) {
   };
 }
 
+/** Adds any default type the department doesn't have a row for yet, so new defaults reach existing departments. */
 async function ensureDefaultTypes(prisma, tenantId) {
-  const existing = await prisma.maintenanceType.count({ where: { tenantId, isSystem: true } });
-  if (existing > 0) return;
+  const existing = await prisma.maintenanceType.findMany({ where: { tenantId }, select: { name: true } });
+  const names = new Set(existing.map((row) => row.name.trim().toLowerCase()));
+  const missing = DEFAULT_MAINTENANCE_TYPES.filter((item) => !names.has(item.name.toLowerCase()));
+  if (missing.length === 0) return;
   await prisma.maintenanceType.createMany({
-    data: DEFAULT_MAINTENANCE_TYPES.map((item) => ({
+    data: missing.map((item) => ({
       tenantId,
       name: item.name,
       category: item.category,

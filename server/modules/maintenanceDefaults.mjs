@@ -33,4 +33,9 @@ export const DEFAULT_MAINTENANCE_TYPES = [
   { name: "Electrical Repair", category: "Corrective" },
   { name: "Body and Collision Repair", category: "Corrective" },
   { name: "General Repair", category: "Corrective" },
+  {
+    name: "Deficiency",
+    category: "Corrective",
+    description: "Problem found during an apparatus inspection or reported by a member",
+  },
 ];

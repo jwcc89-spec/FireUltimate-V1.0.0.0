@@ -435,6 +435,7 @@ function MaintenanceCostBreakdown({
                 <th>Out of Service</th>
                 <th>Back in Service</th>
                 <th>Down Time</th>
+                <th>Cost</th>
               </tr>
             </thead>
             <tbody>
@@ -445,6 +446,7 @@ function MaintenanceCostBreakdown({
                   <td>{formatTimestamp24(record.outOfServiceAt)}</td>
                   <td>{record.completedAt ? formatTimestamp24(record.completedAt) : "Still out of service"}</td>
                   <td>{formatHours(hours)}</td>
+                  <td>{formatMoney(record.costTotal)}</td>
                 </tr>
               ))}
             </tbody>

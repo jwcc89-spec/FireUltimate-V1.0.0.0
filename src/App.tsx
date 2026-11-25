@@ -121,6 +121,7 @@ import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelS
 import { PersonnelTradesPage } from "./PersonnelTradesPage";
 import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
 import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
+import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
@@ -14370,6 +14371,8 @@ function RouteResolver({
     }
   } else if (path === "/personnel/trades") {
     content = <PersonnelTradesPage />;
+  } else if (path === "/apparatus") {
+    content = <ApparatusOverviewPage />;
   } else if (path === "/apparatus/maintenance-logs") {
     content = <MaintenancePage key="maintenance-apparatus" assetKind="apparatus" username={username} />;
   } else if (path === "/apparatus/equipment-maintenance") {

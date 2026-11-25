@@ -8,6 +8,26 @@ export const MAINTENANCE_PRIORITIES = ["Low", "Medium", "High", "Urgent"] as con
 export const MAINTENANCE_FREQUENCIES = ["Weekly", "Monthly", "Quarterly", "Semi-Annual", "Annual", "5 Years"] as const;
 export const EQUIPMENT_STATUSES = ["In Service", "Out of Service", "Retired"] as const;
 
+export interface MaintenanceReadings {
+  mileage: number | null;
+  engineHours: number | null;
+  pumpHours: number | null;
+}
+
+export const EMPTY_READINGS: MaintenanceReadings = { mileage: null, engineHours: null, pumpHours: null };
+
+export interface ApparatusStatus {
+  unitId: string;
+  status: "In Service" | "Out of Service";
+  outOfServiceSince: string;
+  outOfServiceRecordId: string;
+  outOfServiceRecordNumber: string;
+  outOfServiceReason: string;
+  openRecords: number;
+  openDeficiencies: number;
+  readings: MaintenanceReadings & { recordedAt: string };
+}
+
 export interface MaintenanceAsset {
   kind: MaintenanceAssetKind;
   ref: string;
@@ -62,6 +82,7 @@ export interface MaintenanceRecordSummary {
   outOfServiceAt: string;
   completedAt: string;
   assignedTo: string;
+  readings: MaintenanceReadings;
   location: string;
   locationDetails: string;
   costTotal: number;
@@ -94,6 +115,7 @@ export interface MaintenanceRecordInput {
   outOfService: boolean;
   outOfServiceAt: string;
   assignedTo: string;
+  readings: MaintenanceReadings;
   location: string;
   locationDetails: string;
   costs: MaintenanceCostLine[];
@@ -160,6 +182,7 @@ const send = (method: string, body?: unknown): RequestInit => ({
 
 export const getMaintenanceRecords = (assetKind: MaintenanceAssetKind) =>
   apiJson<MaintenanceRecordSummary[]>(`/api/maintenance/records?assetKind=${assetKind}`);
+export const getApparatusStatus = () => apiJson<ApparatusStatus[]>("/api/maintenance/apparatus-status");
 export const getMaintenanceRecord = (id: string) =>
   apiJson<MaintenanceRecordDetail>(`/api/maintenance/records/${encodeURIComponent(id)}`);
 export const createMaintenanceRecord = (input: MaintenanceRecordInput) =>
