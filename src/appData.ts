@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  BookOpen,
   CalendarDays,
   FileStack,
   GraduationCap,
@@ -25,6 +26,7 @@ export type MainMenuId =
   | "calendar"
   | "fileCenter"
   | "firePrevention"
+  | "policies"
   | "training"
   | "adminFunctions"
   | "messaging";
@@ -289,6 +291,12 @@ export const MAIN_MENUS: MainMenu[] = [
         isBuilt: false,
       },
       {
+        label: "Equipment Maintenance",
+        path: "/apparatus/equipment-maintenance",
+        summary: "Maintenance records, schedules, and compliance for equipment.",
+        isBuilt: false,
+      },
+      {
         label: "Fuel Logs",
         path: "/apparatus/fuel-logs",
         summary: "Fuel usage and accountability logs.",
@@ -426,6 +434,34 @@ export const MAIN_MENUS: MainMenu[] = [
     ],
   },
   {
+    id: "policies",
+    title: "Policies",
+    path: "/policies",
+    icon: BookOpen,
+    summary: "Department policy manual, Daily Training Bulletins, and policy authoring.",
+    submenus: [
+      {
+        label: "Manual",
+        path: "/policies/manual",
+        summary: "Published department policies by category and chapter.",
+        isBuilt: false,
+      },
+      {
+        label: "DTB's",
+        path: "/policies/dtbs",
+        summary: "Daily Training Bulletins assigned to you for review and acknowledgment.",
+        isBuilt: false,
+      },
+      {
+        label: "Policy Builder",
+        path: "/policies/builder",
+        summary: "Write, publish, and assign policies and DTBs.",
+        isBuilt: false,
+        adminOnly: true,
+      },
+    ],
+  },
+  {
     id: "training",
     title: "Training",
     path: "/training",
@@ -535,6 +571,13 @@ export const MAIN_MENUS: MainMenu[] = [
         path: "/admin-functions/audit-logs",
         summary: "Incident and system audit log views.",
         isBuilt: true,
+        adminOnly: true,
+      },
+      {
+        label: "Displays",
+        path: "/admin-functions/displays",
+        summary: "Station TV display boards, announcements, and emergency call takeover.",
+        isBuilt: false,
         adminOnly: true,
       },
     ],

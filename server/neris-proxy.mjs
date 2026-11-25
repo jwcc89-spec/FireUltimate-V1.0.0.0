@@ -73,6 +73,7 @@ import {
 } from "./auth/permissions.mjs";
 import { tradeRequestBlockReasonFromStored } from "./trades/eligibility.mjs";
 import { applyAcceptedTrade, rowsFromScheduleChange } from "./trades/applySchedule.mjs";
+import { registerModuleRoutes } from "./modules/registerModuleRoutes.mjs";
 
 let databaseUrl = trimValue(process.env.DATABASE_URL);
 
@@ -8756,6 +8757,8 @@ app.post("/api/neris/export", async (request, response) => {
     });
   }
 });
+
+registerModuleRoutes(app, prisma);
 
 const config = getProxyConfig();
 const __filename = fileURLToPath(import.meta.url);

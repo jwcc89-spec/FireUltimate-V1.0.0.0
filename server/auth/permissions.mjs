@@ -16,6 +16,18 @@ export const PERMISSIONS = [
   { key: "cad.rules", label: "Change CAD rules", minimumRole: "admin" },
   { key: "cad.emails.view", label: "View CAD emails", minimumRole: "admin" },
   { key: "schedule.edit", label: "Edit the schedule", minimumRole: "user" },
+  { key: "maintenance.submit", label: "Submit maintenance requests", minimumRole: "user" },
+  { key: "maintenance.manage", label: "Manage maintenance records, types and vendors", minimumRole: "admin" },
+  { key: "maps.manage", label: "Edit map markers and geofences", minimumRole: "admin" },
+  { key: "displays.manage", label: "Manage station displays and announcements", minimumRole: "admin" },
+  { key: "inventory.complete", label: "Complete checklists", minimumRole: "user" },
+  { key: "inventory.manage", label: "Build checklists and kits", minimumRole: "admin" },
+  { key: "policies.acknowledge", label: "Acknowledge policies and DTBs", minimumRole: "user" },
+  { key: "policies.manage", label: "Write, publish and assign policies", minimumRole: "admin" },
+  { key: "prevention.manage", label: "Manage properties, pre-plans and inspections", minimumRole: "admin" },
+  { key: "timesheets.submit", label: "Submit time entries", minimumRole: "user" },
+  { key: "timesheets.approve", label: "Approve timesheets", minimumRole: "admin" },
+  { key: "pay.view", label: "View wages and pay totals", minimumRole: "admin" },
 ];
 
 const PERMISSION_BY_KEY = new Map(PERMISSIONS.map((item) => [item.key, item]));
