@@ -26,6 +26,18 @@ async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   return json.data as T;
 }
 
+export function cadEmailIngestNotice(
+  headers: unknown,
+): { status: "failed" | "warning"; message: string } | null {
+  if (!headers || typeof headers !== "object" || Array.isArray(headers)) return null;
+  const notice = (headers as { _fuIngest?: { status?: unknown; message?: unknown } })._fuIngest;
+  if (!notice || (notice.status !== "failed" && notice.status !== "warning")) return null;
+  return {
+    status: notice.status,
+    message: typeof notice.message === "string" ? notice.message : "",
+  };
+}
+
 export async function getCadEmails(
   limit = 50,
   offset = 0,

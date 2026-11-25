@@ -1326,6 +1326,13 @@ tbody tr:last-of-type td {
   white-space: nowrap;
 }
 
+.cad-email-notice {
+  margin: 0;
+  padding: 0.15rem 0.75rem 0.55rem;
+  color: #92400e;
+  font-size: 0.8rem;
+}
+
 .cad-email-body-panel {
   padding: 0.75rem 1rem;
   background: #fff;
