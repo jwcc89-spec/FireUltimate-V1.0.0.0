@@ -7,14 +7,14 @@ import {
   useState,
 } from "react";
 
-/** CLICKABLE-LIST table for the operations modules: TH-SORT headers, drag-to-resize, column reorder, per-column filters. */
+/** CLICKABLE-LIST table for the operations modules: TH-SORT headers, drag-to-resize, column reorder. */
 
 export interface ModuleTableColumn<T> {
   id: string;
   label: string;
   width?: number;
   render: (row: T) => ReactNode;
-  /** Value used for sorting and the filter box. Leave out to make the column neither sortable nor filterable. */
+  /** Value used for sorting. Leave out to make the column unsortable. */
   value?: (row: T) => string | number;
 }
 
@@ -25,8 +25,9 @@ interface ModuleTableProps<T> {
   rowKey: (row: T) => string;
   onRowClick?: (row: T) => void;
   emptyText: string;
-  showFilters?: boolean;
   defaultSort?: { id: string; direction: "asc" | "desc" };
+  /** Shown on the left of the Edit Columns row, for example filter chips. */
+  toolbarStart?: ReactNode;
 }
 
 interface StoredLayout {
@@ -61,12 +62,11 @@ export function ModuleTable<T>({
   rowKey,
   onRowClick,
   emptyText,
-  showFilters = true,
   defaultSort,
+  toolbarStart,
 }: ModuleTableProps<T>) {
   const [layout, setLayout] = useState<StoredLayout>(() => readLayout(tableId));
   const [sort, setSort] = useState<{ id: string; direction: "asc" | "desc" } | null>(defaultSort ?? null);
-  const [filters, setFilters] = useState<Record<string, string>>({});
   const [editorOpen, setEditorOpen] = useState(false);
   const [dragColumnId, setDragColumnId] = useState<string | null>(null);
   const resizeRef = useRef<{ id: string; startX: number; startWidth: number } | null>(null);
@@ -140,31 +140,22 @@ export function ModuleTable<T>({
   };
 
   const visibleRows = useMemo(() => {
-    const activeFilters = Object.entries(filters).filter(([, term]) => term.trim().length > 0);
-    const filtered = rows.filter((row) =>
-      activeFilters.every(([columnId, term]) => {
-        const column = columns.find((entry) => entry.id === columnId);
-        const value = column?.value ? String(column.value(row)) : "";
-        return value.toLowerCase().includes(term.trim().toLowerCase());
-      }),
-    );
-    if (!sort) return filtered;
+    if (!sort) return rows;
     const column = columns.find((entry) => entry.id === sort.id);
-    if (!column?.value) return filtered;
+    if (!column?.value) return rows;
     const factor = sort.direction === "asc" ? 1 : -1;
-    return [...filtered].sort((a, b) => {
+    return [...rows].sort((a, b) => {
       const left = column.value!(a);
       const right = column.value!(b);
       if (typeof left === "number" && typeof right === "number") return (left - right) * factor;
       return String(left).localeCompare(String(right), undefined, { numeric: true }) * factor;
     });
-  }, [columns, filters, rows, sort]);
-
-  const hasFilters = showFilters && orderedColumns.some((column) => column.value);
+  }, [columns, rows, sort]);
 
   return (
     <div className="module-table">
       <div className="module-table-toolbar">
+        <div className="module-table-toolbar-start">{toolbarStart}</div>
         <button
           type="button"
           className={`secondary-button compact-button ${editorOpen ? "department-toggle-active" : ""}`}
@@ -214,7 +205,7 @@ export function ModuleTable<T>({
                     {column.value ? (
                       <button
                         type="button"
-                        className={`table-sort-button ${sort?.id === column.id ? "table-sort-button-active" : ""}`}
+                        className={`table-sort-button module-table-sort-button ${sort?.id === column.id ? "table-sort-button-active" : ""}`}
                         onClick={() => handleSort(column.id)}
                         aria-label={`Sort by ${column.label}`}
                       >
@@ -244,24 +235,6 @@ export function ModuleTable<T>({
                 </th>
               ))}
             </tr>
-            {hasFilters ? (
-              <tr className="module-table-filter-row">
-                {orderedColumns.map((column) => (
-                  <th key={`filter-${column.id}`}>
-                    {column.value ? (
-                      <input
-                        type="search"
-                        value={filters[column.id] ?? ""}
-                        aria-label={`Filter ${column.label}`}
-                        onChange={(event) =>
-                          setFilters((previous) => ({ ...previous, [column.id]: event.target.value }))
-                        }
-                      />
-                    ) : null}
-                  </th>
-                ))}
-              </tr>
-            ) : null}
           </thead>
           <tbody>
             {visibleRows.length === 0 ? (
@@ -294,11 +267,7 @@ export function ModuleTable<T>({
           </tbody>
         </table>
       </div>
-      <p className="field-hint">
-        {visibleRows.length === rows.length
-          ? `${rows.length} ${rows.length === 1 ? "item" : "items"}`
-          : `${visibleRows.length} of ${rows.length} items`}
-      </p>
+      <p className="field-hint">{`${rows.length} ${rows.length === 1 ? "item" : "items"}`}</p>
     </div>
   );
 }

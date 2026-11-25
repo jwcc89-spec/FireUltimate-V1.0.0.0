@@ -467,7 +467,7 @@ export function MaintenanceSchedulesTab({
     },
     {
       id: "asset",
-      label: "Asset",
+      label: assetKind === "apparatus" ? "Apparatus" : "Equipment",
       value: (row) => assetLabelByRef.get(row.assetRef) ?? row.assetRef,
       render: (row) => assetLabelByRef.get(row.assetRef) ?? (row.assetRef || "All"),
     },

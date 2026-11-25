@@ -7,7 +7,7 @@ import { minimumRoleFor, roleLevel } from "../auth/permissions.mjs";
 import { PublicError, publicErrorMessage } from "../http/publicError.mjs";
 import { DEFAULT_MAINTENANCE_TYPES } from "./maintenanceDefaults.mjs";
 
-const OPEN_STATUSES = ["Open", "Assigned", "In Progress"];
+const OPEN_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
 const RECORD_STATUSES = [...OPEN_STATUSES, ...CLOSED_STATUSES];
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"];
@@ -53,6 +53,14 @@ function parseDateOnly(value, label) {
 
 function formatDateOnly(date) {
   return date instanceof Date ? date.toISOString().slice(0, 10) : "";
+}
+
+function parseTimestamp(value, label) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) throw new PublicError(`${label} must be a date and time.`);
+  return date.toISOString();
 }
 
 function detailsOf(row) {
@@ -184,9 +192,13 @@ function serializeRecord(row, { includeDetail = false } = {}) {
     vendorId: row.vendorId ?? "",
     vendorName: row.vendor?.name ?? "",
     outOfService: row.outOfService,
+    outOfServiceAt: text(details.outOfServiceAt, 40),
+    completedAt: text(details.completedAt, 40),
+    assignedTo: text(details.assignedTo, 200),
     location: text(details.location, 200),
     locationDetails: text(details.locationDetails, 300),
     costTotal: costs.reduce((sum, cost) => sum + Number(cost.amount), 0),
+    costLines: costs.map((cost) => ({ amount: Number(cost.amount), vendorId: cost.vendorId ?? "" })),
     attachmentCount: attachments.length,
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -213,8 +225,7 @@ const RECORD_INCLUDE = {
 };
 
 async function nextRecordNumber(prisma, tenantId) {
-  const year = new Date().getUTCFullYear();
-  const prefix = `MR-${year}-`;
+  const prefix = `${String(new Date().getUTCFullYear()).slice(-2)}-`;
   const last = await prisma.maintenanceRecord.findFirst({
     where: { tenantId, recordNumber: { startsWith: prefix } },
     orderBy: { recordNumber: "desc" },
@@ -224,9 +235,8 @@ async function nextRecordNumber(prisma, tenantId) {
   return `${prefix}${String(lastNumber + 1).padStart(4, "0")}`;
 }
 
-function closeRequirementsError(status, completedDate, performedByKind, performedByName, vendorId) {
+function closeRequirementsError(status, performedByKind, performedByName, vendorId) {
   if (status !== "Completed") return null;
-  if (!completedDate) return "Enter the Completed Date before completing this record.";
   if (performedByKind === "vendor" ? !vendorId : !performedByName) {
     return "Enter who performed the work before completing this record.";
   }
@@ -303,11 +313,18 @@ function registerRecordRoutes(app, prisma) {
       for (const cost of costs) await assertBelongsToTenant(prisma, "vendor", cost.vendorId, tenantId, "The cost vendor");
       const performedByKind = oneOf(body.performedByKind, PERFORMED_BY_KINDS, "personnel");
       const performedByName = text(body.performedByName, 200);
-      const completedDate = parseDateOnly(body.completedDate, "Completed Date");
-      const closeError = closeRequirementsError(status, completedDate, performedByKind, performedByName, vendorId);
+      const closeError = closeRequirementsError(status, performedByKind, performedByName, vendorId);
       if (closeError) throw new PublicError(closeError);
+      const completing = status === "Completed";
+      const completedDate = completing
+        ? parseDateOnly(body.completedDate, "Completed Date") ?? parseDateOnly(new Date().toISOString().slice(0, 10), "Completed Date")
+        : null;
+      const outOfService = body.outOfService === true;
       const details = {
         assets,
+        assignedTo: text(body.assignedTo, 200),
+        outOfServiceAt: outOfService ? parseTimestamp(body.outOfServiceAt, "Taken Out of Service") || new Date().toISOString() : "",
+        completedAt: completing ? new Date().toISOString() : "",
         location: text(body.location, 200),
         locationDetails: text(body.locationDetails, 300),
         attachments: cleanAttachments(body.attachments, [], actor),
@@ -332,7 +349,7 @@ function registerRecordRoutes(app, prisma) {
               performedByKind,
               performedByName,
               vendorId,
-              outOfService: body.outOfService === true,
+              outOfService,
               detailsJson: details,
               createdBy: actor,
               updatedBy: actor,
@@ -402,6 +419,20 @@ function registerRecordRoutes(app, prisma) {
         nextDetails.assets = cleanAssets(body.assets, existing.assetKind);
         data.assetRef = nextDetails.assets[0]?.ref ?? "";
       }
+      if (has("assignedTo")) nextDetails.assignedTo = text(body.assignedTo, 200);
+      if (has("outOfServiceAt")) nextDetails.outOfServiceAt = parseTimestamp(body.outOfServiceAt, "Taken Out of Service");
+      const outOfService = data.outOfService ?? existing.outOfService;
+      if (outOfService && !nextDetails.outOfServiceAt) nextDetails.outOfServiceAt = new Date().toISOString();
+      if (!outOfService && has("outOfService")) nextDetails.outOfServiceAt = "";
+      if (status === "Completed" && existing.status !== "Completed") {
+        nextDetails.completedAt = new Date().toISOString();
+        data.completedDate =
+          parseDateOnly(body.completedDate, "Completed Date") ??
+          parseDateOnly(new Date().toISOString().slice(0, 10), "Completed Date");
+      } else if (wasClosed && OPEN_STATUSES.includes(status)) {
+        nextDetails.completedAt = "";
+        data.completedDate = null;
+      }
       if (has("location")) nextDetails.location = text(body.location, 200);
       if (has("locationDetails")) nextDetails.locationDetails = text(body.locationDetails, 300);
       if (has("attachments")) {
@@ -412,7 +443,6 @@ function registerRecordRoutes(app, prisma) {
 
       const closeError = closeRequirementsError(
         status,
-        data.completedDate === undefined ? existing.completedDate : data.completedDate,
         data.performedByKind ?? existing.performedByKind,
         data.performedByName ?? existing.performedByName,
         data.vendorId === undefined ? existing.vendorId : data.vendorId,

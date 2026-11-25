@@ -5,12 +5,16 @@ import {
   MAINTENANCE_STATUSES,
   type MaintenanceRecordSummary,
   type MaintenanceType,
+  type Vendor,
 } from "../../api/maintenance";
 import {
   NFPA_STANDARD_NAMES,
   addDaysKey,
+  assetsText,
   formatDateKey,
+  formatHours,
   formatMoney,
+  formatTimestamp24,
   isOpenStatus,
   isOverdue,
   priorityTone,
@@ -42,9 +46,11 @@ type ComplianceView = "overview" | "regulation" | "asset" | "overdue";
 export function MaintenanceComplianceTab({
   records,
   types,
+  assetLabel,
 }: {
   records: MaintenanceRecordSummary[];
   types: MaintenanceType[];
+  assetLabel: string;
 }) {
   const [view, setView] = useState<ComplianceView>("overview");
   const today = todayKey();
@@ -84,7 +90,7 @@ export function MaintenanceComplianceTab({
   const views: { id: ComplianceView; label: string }[] = [
     { id: "overview", label: "Overview" },
     { id: "regulation", label: "By Regulation" },
-    { id: "asset", label: "By Asset" },
+    { id: "asset", label: `By ${assetLabel}` },
     { id: "overdue", label: `Overdue (${summary.overdue.length})` },
   ];
 
@@ -98,7 +104,7 @@ export function MaintenanceComplianceTab({
       </header>
       <div className="stat-grid">
         <article className="stat-card">
-          <p>Total Assets</p>
+          <p>Total {assetLabel}</p>
           <strong>{summary.assets.size}</strong>
           <p>Tracked for compliance</p>
         </article>
@@ -176,8 +182,10 @@ export function MaintenanceComplianceTab({
         ) : null}
         {view === "asset" ? (
           <>
-            <h3>By Asset</h3>
-            {summary.byAsset.length === 0 ? <p className="field-hint">No assets have NFPA records yet.</p> : null}
+            <h3>By {assetLabel}</h3>
+            {summary.byAsset.length === 0 ? (
+              <p className="field-hint">No {assetLabel.toLowerCase()} has NFPA records yet.</p>
+            ) : null}
             <ul className="progress-list">
               {summary.byAsset.map((row) => (
                 <BarRow
@@ -209,7 +217,7 @@ export function MaintenanceComplianceTab({
                     <strong>
                       {record.recordNumber} · {record.typeName}
                     </strong>
-                    <p>{record.assets.map((asset) => asset.label).join(", ") || "No asset"}</p>
+                    <p>{record.assets.map((asset) => asset.label).join(", ") || `No ${assetLabel.toLowerCase()}`}</p>
                   </div>
                   <span className="tone tone-critical">Due {formatDateKey(record.dueDate)}</span>
                 </li>
@@ -222,9 +230,243 @@ export function MaintenanceComplianceTab({
   );
 }
 
+// ----- Cost and downtime breakdown -----
+
+type CostPeriod = "month" | "year" | "all";
+
+const COST_PERIODS: { id: CostPeriod; label: string }[] = [
+  { id: "month", label: "This Month" },
+  { id: "year", label: "This Year" },
+  { id: "all", label: "All Time" },
+];
+
+function costDateOf(record: MaintenanceRecordSummary): string {
+  return record.completedDate || record.createdAt.slice(0, 10);
+}
+
+function periodStartMs(period: CostPeriod, now: Date): number {
+  if (period === "month") return new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+  if (period === "year") return new Date(now.getFullYear(), 0, 1).getTime();
+  return 0;
+}
+
+/** Hours out of service that fall inside [fromMs, toMs]. */
+function downtimeWithin(record: MaintenanceRecordSummary, fromMs: number, toMs: number): number {
+  if (!record.outOfServiceAt) return 0;
+  const start = new Date(record.outOfServiceAt).getTime();
+  const end = record.completedAt
+    ? new Date(record.completedAt).getTime()
+    : record.outOfService && isOpenStatus(record.status)
+      ? toMs
+      : start;
+  const overlap = Math.min(end, toMs) - Math.max(start, fromMs);
+  return Number.isFinite(overlap) && overlap > 0 ? overlap / 3_600_000 : 0;
+}
+
+interface BreakdownRow {
+  key: string;
+  label: string;
+  records: number;
+  cost: number;
+  downtime: number;
+}
+
+function addTo(map: Map<string, BreakdownRow>, key: string, label: string, cost: number, downtime: number, recordId: string, seen: Set<string>) {
+  const row = map.get(key) ?? { key, label, records: 0, cost: 0, downtime: 0 };
+  row.cost += cost;
+  row.downtime += downtime;
+  const seenKey = `${key}|${recordId}`;
+  if (!seen.has(seenKey)) {
+    seen.add(seenKey);
+    row.records += 1;
+  }
+  map.set(key, row);
+}
+
+function MaintenanceCostBreakdown({
+  records,
+  vendors,
+  assetLabel,
+  onBack,
+}: {
+  records: MaintenanceRecordSummary[];
+  vendors: Vendor[];
+  assetLabel: string;
+  onBack: () => void;
+}) {
+  const [period, setPeriod] = useState<CostPeriod>("month");
+
+  const data = useMemo(() => {
+    const now = new Date();
+    const nowMs = now.getTime();
+    const fromMs = periodStartMs(period, now);
+    const today = todayKey();
+    const prefix = period === "month" ? today.slice(0, 7) : period === "year" ? today.slice(0, 4) : "";
+    const vendorNames = new Map(vendors.map((vendor) => [vendor.id, vendor.name]));
+    const byVendor = new Map<string, BreakdownRow>();
+    const byAsset = new Map<string, BreakdownRow>();
+    const seenVendor = new Set<string>();
+    const seenAsset = new Set<string>();
+    const downtimeRows: { record: MaintenanceRecordSummary; hours: number }[] = [];
+    let totalCost = 0;
+    let totalDowntime = 0;
+
+    for (const record of records) {
+      const assetName = assetsText(record) || `No ${assetLabel.toLowerCase()}`;
+      const inCostPeriod = costDateOf(record).startsWith(prefix);
+      const hours = downtimeWithin(record, fromMs, nowMs);
+      if (inCostPeriod) {
+        for (const line of record.costLines) {
+          const vendorId = line.vendorId || (record.performedByKind === "vendor" ? record.vendorId : "");
+          const vendorName = vendorId ? vendorNames.get(vendorId) ?? "Removed vendor" : "No vendor";
+          addTo(byVendor, vendorId || "__none__", vendorName, line.amount, 0, record.id, seenVendor);
+          totalCost += line.amount;
+        }
+      }
+      const cost = inCostPeriod ? record.costTotal : 0;
+      if (cost > 0 || hours > 0) addTo(byAsset, assetName, assetName, cost, hours, record.id, seenAsset);
+      if (hours > 0) {
+        downtimeRows.push({ record, hours });
+        totalDowntime += hours;
+      }
+    }
+    const sortRows = (map: Map<string, BreakdownRow>) =>
+      Array.from(map.values()).sort((a, b) => b.cost - a.cost || b.downtime - a.downtime);
+    downtimeRows.sort((a, b) => b.hours - a.hours);
+    return { vendorRows: sortRows(byVendor), assetRows: sortRows(byAsset), downtimeRows, totalCost, totalDowntime };
+  }, [assetLabel, period, records, vendors]);
+
+  const periodLabel = COST_PERIODS.find((entry) => entry.id === period)?.label ?? "";
+
+  return (
+    <section className="page-section">
+      <div className="maintenance-breadcrumb">
+        <button type="button" className="edit-display-link" onClick={onBack}>
+          Analytics
+        </button>
+        <span>&gt; Cost and Downtime</span>
+      </div>
+      <div className="department-editor-toolbar-actions">
+        {COST_PERIODS.map((entry) => (
+          <button
+            key={entry.id}
+            type="button"
+            className={`secondary-button compact-button ${period === entry.id ? "department-toggle-active" : ""}`}
+            onClick={() => setPeriod(entry.id)}
+          >
+            {entry.label}
+          </button>
+        ))}
+      </div>
+      <div className="stat-grid">
+        <article className="stat-card">
+          <p>
+            <DollarSign size={14} aria-hidden="true" /> Cost, {periodLabel}
+          </p>
+          <strong>{formatMoney(data.totalCost)}</strong>
+          <p>By Completed Date, or entry date while open</p>
+        </article>
+        <article className="stat-card">
+          <p>
+            <Clock size={14} aria-hidden="true" /> Down Time, {periodLabel}
+          </p>
+          <strong>{formatHours(data.totalDowntime)}</strong>
+          <p>From Taken Out of Service to Completed</p>
+        </article>
+      </div>
+      <section className="panel-grid two-column">
+        <article className="panel">
+          <h3>Cost by Vendor</h3>
+          {data.vendorRows.length === 0 ? <p className="field-hint">No costs in this period.</p> : null}
+          <table className="module-table-grid">
+            <thead>
+              <tr>
+                <th>Vendor</th>
+                <th>Records</th>
+                <th>Cost</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.vendorRows.map((row) => (
+                <tr key={row.key}>
+                  <td>{row.label}</td>
+                  <td>{row.records}</td>
+                  <td>{formatMoney(row.cost)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+        <article className="panel">
+          <h3>Cost and Down Time by {assetLabel}</h3>
+          {data.assetRows.length === 0 ? <p className="field-hint">No costs or down time in this period.</p> : null}
+          <table className="module-table-grid">
+            <thead>
+              <tr>
+                <th>{assetLabel}</th>
+                <th>Records</th>
+                <th>Cost</th>
+                <th>Down Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.assetRows.map((row) => (
+                <tr key={row.key}>
+                  <td>{row.label}</td>
+                  <td>{row.records}</td>
+                  <td>{formatMoney(row.cost)}</td>
+                  <td>{formatHours(row.downtime)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </article>
+      </section>
+      <article className="panel">
+        <h3>Down Time by Record</h3>
+        {data.downtimeRows.length === 0 ? (
+          <p className="field-hint">Nothing was out of service in this period.</p>
+        ) : (
+          <table className="module-table-grid">
+            <thead>
+              <tr>
+                <th>Record #</th>
+                <th>{assetLabel}</th>
+                <th>Out of Service</th>
+                <th>Back in Service</th>
+                <th>Down Time</th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.downtimeRows.map(({ record, hours }) => (
+                <tr key={record.id}>
+                  <td>{record.recordNumber}</td>
+                  <td>{assetsText(record) || "—"}</td>
+                  <td>{formatTimestamp24(record.outOfServiceAt)}</td>
+                  <td>{record.completedAt ? formatTimestamp24(record.completedAt) : "Still out of service"}</td>
+                  <td>{formatHours(hours)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </article>
+    </section>
+  );
+}
+
 // ----- Analytics -----
 
-export function MaintenanceAnalyticsTab({ records }: { records: MaintenanceRecordSummary[] }) {
+export function MaintenanceAnalyticsTab({
+  records,
+  vendors,
+  assetLabel,
+}: {
+  records: MaintenanceRecordSummary[];
+  vendors: Vendor[];
+  assetLabel: string;
+}) {
+  const [showCosts, setShowCosts] = useState(false);
   const stats = useMemo(() => {
     const today = todayKey();
     const monthPrefix = today.slice(0, 7);
@@ -232,7 +474,7 @@ export function MaintenanceAnalyticsTab({ records }: { records: MaintenanceRecor
     const last30 = addDaysKey(today, -30);
     const prior30 = addDaysKey(today, -60);
     const completed = records.filter((record) => record.status === "Completed");
-    const costDate = (record: MaintenanceRecordSummary) => record.completedDate || record.createdAt.slice(0, 10);
+    const costDate = costDateOf;
     const byStatus = MAINTENANCE_STATUSES.map((status) => ({
       status,
       count: records.filter((record) => record.status === status).length,
@@ -277,6 +519,17 @@ export function MaintenanceAnalyticsTab({ records }: { records: MaintenanceRecor
         ? `${stats.completedLast30 - stats.completedPrior30} more than the 30 days before`
         : `${stats.completedPrior30 - stats.completedLast30} fewer than the 30 days before`;
 
+  if (showCosts) {
+    return (
+      <MaintenanceCostBreakdown
+        records={records}
+        vendors={vendors}
+        assetLabel={assetLabel}
+        onBack={() => setShowCosts(false)}
+      />
+    );
+  }
+
   return (
     <section className="page-section">
       <header className="page-header">
@@ -307,13 +560,13 @@ export function MaintenanceAnalyticsTab({ records }: { records: MaintenanceRecor
           <strong>{stats.completedMonth}</strong>
           <p>{stats.completedYear} this year, by Completed Date</p>
         </article>
-        <article className="stat-card">
+        <button type="button" className="stat-card maintenance-cost-summary" onClick={() => setShowCosts(true)}>
           <p>
             <DollarSign size={14} aria-hidden="true" /> Cost This Month
           </p>
           <strong>{formatMoney(stats.costMonth)}</strong>
-          <p>{formatMoney(stats.costYear)} this year, by Completed Date or entry date</p>
-        </article>
+          <p>{formatMoney(stats.costYear)} this year · click for cost and down time breakdown</p>
+        </button>
       </div>
       <section className="panel-grid two-column">
         <article className="panel">

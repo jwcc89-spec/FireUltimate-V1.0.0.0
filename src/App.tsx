@@ -3421,6 +3421,19 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
 
   const expandedMenuForRender = expandedMenuId ?? activeMenu?.id;
 
+  const revealActiveMenu = () => {
+    if (!activeMenu) return;
+    setExpandedMenuId(activeMenu.id);
+    if (window.matchMedia("(max-width: 1024px)").matches) {
+      setMobileNavOpen(true);
+      return;
+    }
+    if (sidebarHidden) {
+      setSidebarHidden(false);
+      writeShellSidebarHidden(false);
+    }
+  };
+
   const handleLogout = () => {
     onLogout();
     setSettingsOpen(false);
@@ -3673,7 +3686,18 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
             </button>
 
             <div className="breadcrumb">
-              <span>{breadcrumb.primary}</span>
+              {activeMenu && breadcrumb.primary === activeMenu.title ? (
+                <button
+                  type="button"
+                  className="breadcrumb-link"
+                  title={`Show the ${activeMenu.title} menu`}
+                  onClick={revealActiveMenu}
+                >
+                  {breadcrumb.primary}
+                </button>
+              ) : (
+                <span>{breadcrumb.primary}</span>
+              )}
               {breadcrumb.secondary ? (
                 <>
                   <ChevronRight size={14} />

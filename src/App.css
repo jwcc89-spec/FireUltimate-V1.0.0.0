@@ -3219,6 +3219,16 @@ tbody tr:last-of-type td {
   z-index: 100000;
 }
 
+.neris-single-select-panel-portal {
+  display: flex;
+  flex-direction: column;
+}
+
+.neris-single-select-panel-portal .neris-incident-type-options-scroll {
+  flex: 0 1 auto;
+  min-height: 0;
+}
+
 .neris-incident-type-select-panel-portal .neris-incident-type-options-scroll {
   flex: 1 1 0;
   min-height: 0;
@@ -7461,7 +7471,21 @@ button.personnel-schedule-open-token-claim {
 
 .module-table-toolbar {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.module-table-toolbar-start {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  min-width: 0;
+}
+
+.module-table-toolbar > .secondary-button {
+  margin-left: auto;
 }
 
 .module-table-grid {
@@ -7473,17 +7497,17 @@ button.personnel-schedule-open-token-claim {
   text-overflow: ellipsis;
 }
 
-.module-table-filter-row th {
-  padding-top: 0.2rem;
+.module-table-sort-button {
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-start;
+  align-self: stretch;
 }
 
-.module-table-filter-row input {
-  width: 100%;
-  border: 1px solid #cbd5e1;
-  border-radius: 8px;
-  background-color: #f8fafc;
-  padding: 0.3rem 0.45rem;
-  font-size: 0.78rem;
+.module-table-sort-button > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .module-table-empty {
@@ -7494,7 +7518,6 @@ button.personnel-schedule-open-token-claim {
 
 .maintenance-tabs .secondary-button,
 .module-table-toolbar .secondary-button,
-.maintenance-asset-picker .secondary-button,
 .maintenance-icon-button {
   display: inline-flex;
   align-items: center;
@@ -7549,6 +7572,58 @@ button.personnel-schedule-open-token-claim {
   color: #334155;
 }
 
+.department-edit-grid .maintenance-checkbox-row input {
+  width: auto;
+  flex: none;
+  margin: 0;
+}
+
+.maintenance-fieldset .department-edit-grid > label,
+.maintenance-fieldset .department-edit-grid > .maintenance-field {
+  align-content: start;
+}
+
+.maintenance-time-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 5.5rem;
+  gap: 0.4rem;
+}
+
+.maintenance-layout {
+  grid-template-columns: minmax(126px, 156px) minmax(0, 1fr);
+}
+
+.maintenance-layout .neris-section-nav button {
+  overflow-wrap: anywhere;
+}
+
+.maintenance-cost-summary {
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.maintenance-cost-summary:hover,
+.maintenance-cost-summary:focus-visible {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2px #dbeafe;
+}
+
+.breadcrumb-link {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.breadcrumb-link:hover,
+.breadcrumb-link:focus-visible {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
 .maintenance-textarea-label textarea {
   width: 100%;
   border: 1px solid #cbd5e1;
@@ -7572,17 +7647,6 @@ button.personnel-schedule-open-token-claim {
   gap: 0.4rem;
   padding: 1.4rem 0;
   color: #94a3b8;
-}
-
-.maintenance-asset-picker {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: min(100%, 22rem);
-}
-
-.maintenance-asset-picker > :first-child {
-  flex: 1;
 }
 
 .maintenance-cost-list {

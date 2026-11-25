@@ -34,6 +34,41 @@ export function formatTimestamp24(iso: string): string {
   return `${pad(date.getMonth() + 1)}/${pad(date.getDate())}/${date.getFullYear()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
+/** Typed 24-hour time ("930", "0930", "9:30", "14:30") to HH:MM, or "" when it isn't a valid time. */
+export function normalizeTime24(raw: string): string {
+  const digits = raw.replace(/[^0-9]/g, "");
+  if (digits.length < 3 || digits.length > 4) return "";
+  const hours = Number(digits.slice(0, digits.length - 2));
+  const minutes = Number(digits.slice(-2));
+  if (hours > 23 || minutes > 59) return "";
+  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
+}
+
+/** ISO timestamp to local { date: YYYY-MM-DD, time: HH:MM }. */
+export function isoToLocalParts(iso: string): { date: string; time: string } {
+  const date = new Date(iso);
+  if (!iso || Number.isNaN(date.getTime())) return { date: "", time: "" };
+  const pad = (value: number) => String(value).padStart(2, "0");
+  return {
+    date: `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`,
+    time: `${pad(date.getHours())}:${pad(date.getMinutes())}`,
+  };
+}
+
+/** Local date (YYYY-MM-DD) and HH:MM to an ISO timestamp, or "" when the date is missing. */
+export function localPartsToIso(dateKey: string, time: string): string {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey)) return "";
+  const date = new Date(`${dateKey}T${normalizeTime24(time) || "00:00"}:00`);
+  return Number.isNaN(date.getTime()) ? "" : date.toISOString();
+}
+
+export function formatHours(hours: number): string {
+  if (hours <= 0) return "0 h";
+  if (hours < 48) return `${Math.round(hours * 10) / 10} h`;
+  const days = Math.floor(hours / 24);
+  return `${days} d ${Math.round(hours - days * 24)} h`;
+}
+
 export function formatMoney(amount: number): string {
   return amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }
@@ -49,7 +84,7 @@ export function isOverdue(record: MaintenanceRecordSummary, today = todayKey()):
 export function statusTone(status: string): Tone {
   if (status === "Completed") return "positive";
   if (status === "Cancelled") return "neutral";
-  if (status === "In Progress" || status === "Assigned") return "warning";
+  if (status === "In Progress" || status === "Assigned" || status === "Parts Ordered") return "warning";
   return "critical";
 }
 

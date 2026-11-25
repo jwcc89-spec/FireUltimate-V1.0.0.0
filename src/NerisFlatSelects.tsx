@@ -386,6 +386,18 @@ export function NerisFlatSingleOptionSelect({
     if (!isOpen || !usePortal || !triggerRef.current) return;
     const rect = triggerRef.current.getBoundingClientRect();
     const spaceBelow = window.innerHeight - rect.bottom - 12;
+    const spaceAbove = rect.top - 12;
+    if (spaceBelow < 280 && spaceAbove > spaceBelow) {
+      setPanelStyle({
+        position: "fixed",
+        bottom: window.innerHeight - rect.top + 4,
+        left: rect.left,
+        width: rect.width,
+        maxHeight: `${Math.min(480, spaceAbove)}px`,
+        zIndex: 100000,
+      });
+      return;
+    }
     const maxPanelHeight = Math.min(480, Math.max(280, spaceBelow));
     setPanelStyle({
       position: "fixed",
@@ -464,7 +476,7 @@ export function NerisFlatSingleOptionSelect({
           createPortal(
             <div
               ref={panelRef}
-              className="neris-incident-type-select-panel"
+              className="neris-incident-type-select-panel neris-single-select-panel-portal"
               style={panelStyle}
               onWheel={(e) => e.stopPropagation()}
             >
