@@ -15,6 +15,7 @@ function createFakePrisma() {
     pmSchedule: [],
     equipment: [],
     comment: [],
+    checklistSubmission: [],
   };
   let nextId = 1;
   const matches = (row, where = {}) =>

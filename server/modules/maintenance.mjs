@@ -3,9 +3,24 @@
  * Reads are open to any signed-in member of the department. Writes are mapped in permissionForRequest;
  * closing, reopening or changing someone else's record also needs maintenance.manage (checked here).
  */
-import { minimumRoleFor, roleLevel } from "../auth/permissions.mjs";
-import { PublicError, publicErrorMessage } from "../http/publicError.mjs";
+import { PublicError } from "../http/publicError.mjs";
 import { DEFAULT_MAINTENANCE_TYPES } from "./maintenanceDefaults.mjs";
+import {
+  actorOf,
+  assertBelongsToTenant,
+  canManage,
+  decimalOrNull,
+  detailsOf,
+  formatDateOnly,
+  fullNameFor,
+  isUniqueViolation,
+  oneOf,
+  parseDateOnly,
+  parseDecimal,
+  sendError,
+  tenantIdOf,
+  text,
+} from "./moduleHelpers.mjs";
 
 const OPEN_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
@@ -19,54 +34,6 @@ const EQUIPMENT_STATUSES = ["In Service", "Out of Service", "Retired"];
 const COMMENT_OWNER_TYPE = "maintenanceRecord";
 const MAX_ATTACHMENT_CHARS = 2_000_000;
 const MAX_ATTACHMENTS_TOTAL_CHARS = 3_000_000;
-
-function tenantIdOf(request, response) {
-  const tenantId = request.tenant?.id;
-  if (!tenantId) {
-    response.status(400).json({ ok: false, message: "Department not found for this address." });
-    return null;
-  }
-  return tenantId;
-}
-
-function actorOf(request) {
-  return String(request.auth?.username ?? "").slice(0, 200);
-}
-
-function text(value, max = 500) {
-  return String(value ?? "").trim().slice(0, max);
-}
-
-function oneOf(value, allowed, fallback) {
-  const candidate = String(value ?? "").trim();
-  return allowed.includes(candidate) ? candidate : fallback;
-}
-
-function parseDateOnly(value, label) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(raw)) throw new PublicError(`${label} must be a date.`);
-  const date = new Date(`${raw}T00:00:00.000Z`);
-  if (Number.isNaN(date.getTime())) throw new PublicError(`${label} must be a date.`);
-  return date;
-}
-
-function formatDateOnly(date) {
-  return date instanceof Date ? date.toISOString().slice(0, 10) : "";
-}
-
-function parseDecimal(value, label) {
-  if (value === null || value === undefined || String(value).trim() === "") return null;
-  const number = Number(value);
-  if (!Number.isFinite(number) || number < 0 || number > 10_000_000) {
-    throw new PublicError(`${label} must be a number of 0 or more.`);
-  }
-  return Math.round(number * 10) / 10;
-}
-
-function decimalOrNull(value) {
-  return value === null || value === undefined ? null : Number(value);
-}
 
 const PM_BASES = ["date", "engineHours", "pumpHours", "mileage"];
 const FREQUENCY_MONTHS = { Monthly: 1, Quarterly: 3, "Semi-Annual": 6, Annual: 12, "5 Years": 60 };
@@ -141,7 +108,7 @@ function cleanReadings(raw) {
   return readings;
 }
 
-function readingsOf(details) {
+export function readingsOf(details) {
   return cleanReadings(details.readings);
 }
 
@@ -159,41 +126,6 @@ function parseTimestamp(value, label) {
   const date = new Date(raw);
   if (Number.isNaN(date.getTime())) throw new PublicError(`${label} must be a date and time.`);
   return date.toISOString();
-}
-
-function detailsOf(row) {
-  const raw = row?.detailsJson;
-  return raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
-}
-
-async function canManage(prisma, request) {
-  const minimum = await minimumRoleFor(prisma, request.tenant.id, "maintenance.manage");
-  return minimum != null && roleLevel(request.auth?.role) >= roleLevel(minimum);
-}
-
-async function fullNameFor(prisma, tenantId, username) {
-  const details = await prisma.departmentDetails.findUnique({
-    where: { tenantId },
-    select: { payloadJson: true },
-  });
-  const names = details?.payloadJson?.userFullNames;
-  if (names && typeof names === "object" && !Array.isArray(names)) {
-    const match = Object.entries(names).find(
-      ([key]) => key.trim().toLowerCase() === username.trim().toLowerCase(),
-    );
-    const fullName = text(match?.[1], 200);
-    if (fullName) return fullName;
-  }
-  return username;
-}
-
-function sendError(response, error, fallback) {
-  const status = error instanceof PublicError ? 400 : 500;
-  response.status(status).json({ ok: false, message: publicErrorMessage(error, fallback) });
-}
-
-function isUniqueViolation(error) {
-  return error?.code === "P2002";
 }
 
 // ----- Records -----
@@ -258,12 +190,6 @@ function cleanCosts(raw) {
       vendorId: text(entry?.vendorId, 60) || null,
     };
   });
-}
-
-async function assertBelongsToTenant(prisma, model, id, tenantId, label) {
-  if (!id) return;
-  const row = await prisma[model].findFirst({ where: { id, tenantId, deletedAt: null }, select: { id: true } });
-  if (!row) throw new PublicError(`${label} was not found.`);
 }
 
 function serializeRecord(row, { includeDetail = false } = {}) {
@@ -403,6 +329,16 @@ function registerRecordRoutes(app, prisma) {
         }
         return units.get(ref);
       };
+      const applyReadings = (unit, readings, readAt) => {
+        for (const key of ["mileage", "engineHours", "pumpHours"]) {
+          const timeKey = `${key}At`;
+          if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
+            unit.readings[key] = readings[key];
+            unit.readings[timeKey] = readAt;
+            if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
+          }
+        }
+      };
       for (const row of rows) {
         const details = detailsOf(row);
         const refs = (Array.isArray(details.assets) ? details.assets : []).map((asset) => text(asset?.ref, 200)).filter(Boolean);
@@ -425,15 +361,16 @@ function registerRecordRoutes(app, prisma) {
               }
             }
           }
-          for (const key of ["mileage", "engineHours", "pumpHours"]) {
-            const timeKey = `${key}At`;
-            if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
-              unit.readings[key] = readings[key];
-              unit.readings[timeKey] = readAt;
-              if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
-            }
-          }
+          applyReadings(unit, readings, readAt);
         }
+      }
+      const inspections = await prisma.checklistSubmission.findMany({
+        where: { tenantId, deletedAt: null, subjectKind: "apparatus" },
+        select: { subjectRef: true, detailsJson: true, createdAt: true },
+      });
+      for (const inspection of inspections) {
+        const ref = text(inspection.subjectRef, 200);
+        if (ref) applyReadings(unitFor(ref), readingsOf(detailsOf(inspection)), inspection.createdAt.toISOString());
       }
       const data = Array.from(units.values()).map((unit) => ({
         ...unit,

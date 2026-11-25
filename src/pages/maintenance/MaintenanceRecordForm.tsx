@@ -52,6 +52,8 @@ interface MaintenanceRecordFormProps {
   personnel: string[];
   onVendorCreated: (vendor: Vendor) => void;
   onClose: (changed: boolean) => void;
+  /** Called after each successful save, for example so an inspection can link the new record. */
+  onSaved?: (record: { id: string; recordNumber: string; description: string }) => void;
 }
 
 function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
@@ -96,6 +98,7 @@ export function MaintenanceRecordForm({
   personnel,
   onVendorCreated,
   onClose,
+  onSaved,
 }: MaintenanceRecordFormProps) {
   const [vendorPrompt, setVendorPrompt] = useState<{ costIndex: number; name: string } | null>(null);
   const [form, setForm] = useState<MaintenanceRecordInput>(() => ({ ...emptyInput(assetKind), ...prefill }));
@@ -263,6 +266,7 @@ export function MaintenanceRecordForm({
       }));
       setChanged(true);
       setNotice(`Saved ${saved.recordNumber}.`);
+      onSaved?.(saved);
     } catch (saveError) {
       setError(errorText(saveError, "Could not save the record."));
     } finally {

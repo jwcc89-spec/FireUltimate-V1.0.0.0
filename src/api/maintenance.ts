@@ -186,7 +186,7 @@ export interface EquipmentItem {
   status: string;
 }
 
-async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
+export async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(url, {
     ...options,
     headers: { "Content-Type": "application/json", ...options?.headers },
@@ -198,7 +198,7 @@ async function apiJson<T>(url: string, options?: RequestInit): Promise<T> {
   return json?.data as T;
 }
 
-const send = (method: string, body?: unknown): RequestInit => ({
+export const send = (method: string, body?: unknown): RequestInit => ({
   method,
   body: body === undefined ? undefined : JSON.stringify(body),
 });
