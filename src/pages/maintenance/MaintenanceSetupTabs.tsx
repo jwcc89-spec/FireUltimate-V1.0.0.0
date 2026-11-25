@@ -316,6 +316,15 @@ export function MaintenanceTypesTab({
 
 const EMPTY_VENDOR: Omit<Vendor, "id"> = { name: "", contact: "", phone: "", email: "", website: "", services: "" };
 
+const VENDOR_FIELDS: { key: keyof Omit<Vendor, "id">; label: string }[] = [
+  { key: "name", label: "Name" },
+  { key: "contact", label: "Contact Name" },
+  { key: "phone", label: "Phone" },
+  { key: "email", label: "Email" },
+  { key: "website", label: "Website" },
+  { key: "services", label: "Services" },
+];
+
 export function MaintenanceVendorsTab({
   vendors,
   canManage,
@@ -360,14 +369,7 @@ export function MaintenanceVendorsTab({
     }
   };
 
-  const fields: { key: keyof Omit<Vendor, "id">; label: string }[] = [
-    { key: "name", label: "Name" },
-    { key: "contact", label: "Contact Name" },
-    { key: "phone", label: "Phone" },
-    { key: "email", label: "Email" },
-    { key: "website", label: "Website" },
-    { key: "services", label: "Services" },
-  ];
+  const fields = VENDOR_FIELDS;
 
   return (
     <section className="page-section">
@@ -426,6 +428,41 @@ export function MaintenanceVendorsTab({
   );
 }
 
+/** Add Vendor popup opened from other screens, for example a cost line's vendor search. */
+export function AddVendorDialog({
+  initialName,
+  onCancel,
+  onSaved,
+}: {
+  initialName: string;
+  onCancel: () => void;
+  onSaved: (vendor: Vendor) => void;
+}) {
+  const [draft, setDraft] = useState<Omit<Vendor, "id">>({ ...EMPTY_VENDOR, name: initialName });
+  const dialog = useDialogSave();
+  const save = async () => {
+    let created: Vendor | null = null;
+    const ok = await dialog.run(async () => {
+      created = await createVendor(draft);
+    }, "Could not save the vendor.");
+    if (ok && created) onSaved(created);
+  };
+  return (
+    <EditDialog title="Add Vendor" error={dialog.error} saving={dialog.saving} onSave={() => void save()} onCancel={onCancel}>
+      {VENDOR_FIELDS.map((field) => (
+        <label key={field.key}>
+          {field.label}
+          <input
+            type="text"
+            value={draft[field.key]}
+            onChange={(event) => setDraft({ ...draft, [field.key]: event.target.value })}
+          />
+        </label>
+      ))}
+    </EditDialog>
+  );
+}
+
 // ----- PM Schedules -----
 
 type ScheduleDraft = Omit<PmSchedule, "id"> & { id: string | null };
@@ -457,10 +494,10 @@ export function MaintenanceSchedulesTab({
   const assetLabelByRef = new Map(assetOptions.map((option) => [option.value, option.label]));
 
   const columns: ModuleTableColumn<PmSchedule>[] = [
-    { id: "name", label: "Schedule Name", width: 190, value: (row) => row.name, render: (row) => <strong>{row.name}</strong> },
+    { id: "name", label: "Service Type", width: 190, value: (row) => row.name, render: (row) => <strong>{row.name}</strong> },
     {
       id: "task",
-      label: "Maintenance Task",
+      label: "Category",
       width: 200,
       value: (row) => typeNameById.get(row.typeId) ?? "",
       render: (row) => typeNameById.get(row.typeId) ?? "—",
@@ -524,7 +561,7 @@ export function MaintenanceSchedulesTab({
 
   return (
     <section className="page-section">
-      <p className="field-hint">Manage preventive maintenance schedules.</p>
+      <p className="field-hint">Preventive maintenance schedules for each {assetKind === "apparatus" ? "apparatus" : "piece of equipment"}.</p>
       <div className="stat-grid">
         <article className="stat-card">
           <p>
@@ -565,7 +602,7 @@ export function MaintenanceSchedulesTab({
               });
             }}
           >
-            <Plus size={14} aria-hidden="true" /> New PM Schedule
+            <Plus size={14} aria-hidden="true" /> Add PM Task
           </button>
         ) : null}
       </div>
@@ -585,7 +622,7 @@ export function MaintenanceSchedulesTab({
       </article>
       {draft ? (
         <EditDialog
-          title={draft.id ? (canManage ? "Edit PM Schedule" : "PM Schedule") : "New PM Schedule"}
+          title={draft.id ? (canManage ? "Edit PM Task" : "PM Task") : "Add Preventive Maintenance Task"}
           error={dialog.error}
           saving={dialog.saving}
           readOnly={!canManage}
@@ -594,11 +631,29 @@ export function MaintenanceSchedulesTab({
           onDelete={draft.id ? () => void remove() : undefined}
         >
           <label>
-            Schedule Name
-            <input type="text" value={draft.name} onChange={(event) => setDraft({ ...draft, name: event.target.value })} />
+            {assetKind === "apparatus" ? "Apparatus" : "Equipment"}
+            <NerisFlatSingleOptionSelect
+              inputId="pm-schedule-asset"
+              value={draft.assetRef}
+              options={assetOptions}
+              usePortal
+              allowClear
+              disabled={!canManage}
+              placeholder="All"
+              onChange={(value) => setDraft({ ...draft, assetRef: value })}
+            />
           </label>
           <label>
-            Maintenance Task
+            Service Type
+            <input
+              type="text"
+              placeholder="e.g. Engine oil and filter"
+              value={draft.name}
+              onChange={(event) => setDraft({ ...draft, name: event.target.value })}
+            />
+          </label>
+          <label>
+            Category
             <NerisFlatSingleOptionSelect
               inputId="pm-schedule-type"
               value={draft.typeId}
@@ -616,19 +671,6 @@ export function MaintenanceSchedulesTab({
                   name: draft.name || type?.name || "",
                 });
               }}
-            />
-          </label>
-          <label>
-            Asset
-            <NerisFlatSingleOptionSelect
-              inputId="pm-schedule-asset"
-              value={draft.assetRef}
-              options={assetOptions}
-              usePortal
-              allowClear
-              disabled={!canManage}
-              placeholder="All"
-              onChange={(value) => setDraft({ ...draft, assetRef: value })}
             />
           </label>
           <label>

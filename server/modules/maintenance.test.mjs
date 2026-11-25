@@ -192,12 +192,26 @@ test("only maintenance managers can close, reopen or change someone else's recor
     });
     assert.equal(missingDetails.status, 400);
 
+    const noReadings = await call("PATCH", `/api/maintenance/records/${id}`, {
+      user: "chief",
+      role: "admin",
+      body: { status: "Completed", performedByName: "Alice Adams" },
+    });
+    assert.equal(noReadings.status, 400);
+    assert.match(noReadings.json.message, /Mileage and Engine Hours/);
+
     const completed = await call("PATCH", `/api/maintenance/records/${id}`, {
       user: "chief",
       role: "admin",
-      body: { status: "Completed", completedDate: "2026-11-25", performedByName: "Alice Adams" },
+      body: {
+        status: "Completed",
+        completedDate: "2026-11-25",
+        performedByName: "Alice Adams",
+        readings: { mileage: "45210", engineHours: 3365.5, pumpHours: "" },
+      },
     });
     assert.equal(completed.status, 200);
+    assert.deepEqual(completed.json.data.readings, { mileage: 45210, engineHours: 3365.5, pumpHours: null });
     assert.equal(completed.json.data.completedDate, "2026-11-25");
     assert.ok(completed.json.data.completedAt > "2026-11-24T14:30:00.000Z");
     assert.equal(completed.json.data.outOfServiceAt, "2026-11-24T14:30:00.000Z");
@@ -249,6 +263,51 @@ test("each department gets its own copy of the default types", async () => {
 
     const typesAgain = await call("GET", "/api/maintenance/types");
     assert.equal(typesAgain.json.data.length, DEFAULT_MAINTENANCE_TYPES.length);
+  } finally {
+    await close();
+  }
+});
+
+test("apparatus status comes from open out-of-service records, per department", async () => {
+  const { call, close } = await startServer();
+  try {
+    const types = await call("GET", "/api/maintenance/types");
+    const deficiency = types.json.data.find((type) => type.name === "Deficiency");
+    assert.ok(deficiency);
+    const record = await call("POST", "/api/maintenance/records", {
+      body: {
+        assets: [{ ref: "E1", label: "Engine 1" }],
+        typeId: deficiency.id,
+        description: "Coolant leak",
+        outOfService: true,
+        outOfServiceAt: "2026-11-20T08:00:00.000Z",
+        readings: { mileage: 1000, engineHours: 200 },
+      },
+    });
+    await call("POST", "/api/maintenance/records", {
+      body: { assets: [{ ref: "L1", label: "Ladder 1" }], description: "Mirror", readings: { mileage: 50 } },
+    });
+
+    const status = await call("GET", "/api/maintenance/apparatus-status");
+    const engine = status.json.data.find((unit) => unit.unitId === "E1");
+    assert.equal(engine.status, "Out of Service");
+    assert.equal(engine.outOfServiceRecordId, record.json.data.id);
+    assert.equal(engine.openDeficiencies, 1);
+    assert.equal(engine.readings.engineHours, 200);
+    const ladder = status.json.data.find((unit) => unit.unitId === "L1");
+    assert.equal(ladder.status, "In Service");
+    assert.equal(ladder.readings.mileage, 50);
+    assert.equal(ladder.readings.engineHours, null);
+
+    assert.deepEqual((await call("GET", "/api/maintenance/apparatus-status", { tenant: "tenantB" })).json.data, []);
+
+    await call("PATCH", `/api/maintenance/records/${record.json.data.id}`, {
+      user: "chief",
+      role: "admin",
+      body: { status: "Completed", performedByName: "Alice Adams" },
+    });
+    const after = await call("GET", "/api/maintenance/apparatus-status");
+    assert.equal(after.json.data.find((unit) => unit.unitId === "E1").status, "In Service");
   } finally {
     await close();
   }

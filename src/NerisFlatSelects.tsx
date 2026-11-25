@@ -347,6 +347,8 @@ interface NerisFlatSingleOptionSelectProps {
   disabled?: boolean;
   isOptionDisabled?: (optionValue: string) => boolean;
   allowClear?: boolean;
+  /** Offered when a search finds nothing, for example "Add Vendor". Receives the typed search text. */
+  createOption?: { label: string; onCreate: (searchTerm: string) => void };
 }
 
 export function NerisFlatSingleOptionSelect({
@@ -360,6 +362,7 @@ export function NerisFlatSingleOptionSelect({
   disabled = false,
   isOptionDisabled,
   allowClear = false,
+  createOption,
 }: NerisFlatSingleOptionSelectProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const triggerRef = useRef<HTMLButtonElement | null>(null);
@@ -374,6 +377,27 @@ export function NerisFlatSingleOptionSelect({
     options.find((option) => option.value === value) ??
     options.find((option) => option.value === normalizedValue);
   const normalizedSearch = searchTerm.trim().toLowerCase();
+  const emptyState =
+    createOption && searchTerm.trim() ? (
+      <div className="neris-single-select-create-row">
+        <p className="neris-incident-type-empty">No options match your search.</p>
+        <button
+          type="button"
+          className="secondary-button compact-button"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            const typed = searchTerm.trim();
+            setIsOpen(false);
+            setSearchTerm("");
+            createOption.onCreate(typed);
+          }}
+        >
+          + {createOption.label} "{searchTerm.trim()}"
+        </button>
+      </div>
+    ) : (
+      <p className="neris-incident-type-empty">No options match your search.</p>
+    );
   const filteredOptions = normalizedSearch
     ? options.filter(
         (option) =>
@@ -551,7 +575,7 @@ export function NerisFlatSingleOptionSelect({
                     })}
                   </div>
                 ) : (
-                  <p className="neris-incident-type-empty">No options match your search.</p>
+                  emptyState
                 )}
               </div>
             </div>,
@@ -632,7 +656,7 @@ export function NerisFlatSingleOptionSelect({
                   })}
                 </div>
               ) : (
-                <p className="neris-incident-type-empty">No options match your search.</p>
+                emptyState
               )}
             </div>
           </div>

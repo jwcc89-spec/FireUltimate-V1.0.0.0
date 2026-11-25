@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { MessageSquare, Plus, Trash2 } from "lucide-react";
 import {
+  EMPTY_READINGS,
   MAINTENANCE_PRIORITIES,
   MAINTENANCE_STATUSES,
   addMaintenanceComment,
@@ -15,6 +16,7 @@ import {
   type Vendor,
 } from "../../api/maintenance";
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
+import { AddVendorDialog } from "./MaintenanceSetupTabs";
 import type { NerisValueOption } from "../../nerisMetadata";
 import {
   errorText,
@@ -41,6 +43,7 @@ interface MaintenanceRecordFormProps {
   assetOptions: NerisValueOption[];
   stations: string[];
   personnel: string[];
+  onVendorCreated: (vendor: Vendor) => void;
   onClose: (changed: boolean) => void;
 }
 
@@ -60,6 +63,7 @@ function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
     outOfService: false,
     outOfServiceAt: "",
     assignedTo: "",
+    readings: { ...EMPTY_READINGS },
     location: "",
     locationDetails: "",
     costs: [],
@@ -79,8 +83,10 @@ export function MaintenanceRecordForm({
   assetOptions,
   stations,
   personnel,
+  onVendorCreated,
   onClose,
 }: MaintenanceRecordFormProps) {
+  const [vendorPrompt, setVendorPrompt] = useState<{ costIndex: number; name: string } | null>(null);
   const [form, setForm] = useState<MaintenanceRecordInput>(() => emptyInput(assetKind));
   const [currentId, setCurrentId] = useState<string | null>(recordId);
   const [recordNumber, setRecordNumber] = useState("");
@@ -118,6 +124,7 @@ export function MaintenanceRecordForm({
           outOfService: record.outOfService,
           outOfServiceAt: record.outOfServiceAt,
           assignedTo: record.assignedTo,
+          readings: record.readings ?? { ...EMPTY_READINGS },
           location: record.location,
           locationDetails: record.locationDetails,
           costs: record.costs,
@@ -445,6 +452,34 @@ export function MaintenanceRecordForm({
                   ) : (
                     <div />
                   )}
+                  {assetKind === "apparatus" ? (
+                    <>
+                      {(
+                        [
+                          ["mileage", "Mileage", true],
+                          ["engineHours", "Engine Hours", true],
+                          ["pumpHours", "Pump Hours", false],
+                        ] as const
+                      ).map(([key, label, required]) => (
+                        <label key={key}>
+                          {label}
+                          {required ? " (needed to complete)" : ""}
+                          <input
+                            type="number"
+                            min={0}
+                            step={key === "mileage" ? 1 : 0.1}
+                            value={form.readings[key] ?? ""}
+                            onChange={(event) =>
+                              update("readings", {
+                                ...form.readings,
+                                [key]: event.target.value === "" ? null : Number(event.target.value),
+                              })
+                            }
+                          />
+                        </label>
+                      ))}
+                    </>
+                  ) : null}
                   <div className="maintenance-field">
                     <span className="maintenance-field-label">Completed</span>
                     <span className="field-hint">
@@ -455,8 +490,7 @@ export function MaintenanceRecordForm({
                           : "Stamped automatically when saved as Completed"}
                     </span>
                   </div>
-                  <div />
-                
+                  {assetKind === "apparatus" ? null : <div />}
                   <label>
                     Location
                     <NerisFlatSingleOptionSelect
@@ -503,9 +537,15 @@ export function MaintenanceRecordForm({
                         value={form.vendorId}
                         options={vendorOptions}
                         onChange={(value) => update("vendorId", value)}
-                        placeholder={vendorOptions.length ? "Select vendor..." : "Add vendors in the Vendors tab"}
+                        placeholder={vendorOptions.length ? "Select vendor..." : "Search or add a vendor"}
+                        searchPlaceholder="Search vendors..."
                         allowClear
                         disabled={!canEdit}
+                        createOption={
+                          canManage
+                            ? { label: "Add Vendor", onCreate: (name) => setVendorPrompt({ costIndex: -1, name }) }
+                            : undefined
+                        }
                       />
                     ) : (
                       <NerisFlatSingleOptionSelect
@@ -608,8 +648,14 @@ export function MaintenanceRecordForm({
                   value={cost.vendorId}
                   options={vendorOptions}
                   placeholder="Vendor (optional)"
+                  searchPlaceholder="Search vendors..."
                   allowClear
                   disabled={!canEdit}
+                  createOption={
+                    canManage
+                      ? { label: "Add Vendor", onCreate: (name) => setVendorPrompt({ costIndex: index, name }) }
+                      : undefined
+                  }
                   onChange={(value) =>
                     update(
                       "costs",
@@ -697,6 +743,27 @@ export function MaintenanceRecordForm({
           ) : null}
           <p className="field-hint">New attachments are kept when you click Save.</p>
         </article>
+      ) : null}
+
+      {vendorPrompt ? (
+        <AddVendorDialog
+          initialName={vendorPrompt.name}
+          onCancel={() => setVendorPrompt(null)}
+          onSaved={(vendor) => {
+            onVendorCreated(vendor);
+            if (vendorPrompt.costIndex < 0) {
+              update("vendorId", vendor.id);
+            } else {
+              update(
+                "costs",
+                form.costs.map((entry, entryIndex) =>
+                  entryIndex === vendorPrompt.costIndex ? { ...entry, vendorId: vendor.id } : entry,
+                ),
+              );
+            }
+            setVendorPrompt(null);
+          }}
+        />
       ) : null}
 
       {confirmDelete ? (
