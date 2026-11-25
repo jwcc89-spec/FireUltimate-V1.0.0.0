@@ -30,6 +30,8 @@
   - Dropdowns open upward when there isn't room below.
   - The top-bar breadcrumb menu name opens the sidebar menu.
   - Details are in the plan's "W1 polish round" note.
+- **Apparatus round 2 done** (`5cdf331`, merged as `27f257e`, no schema): Fleet Overview at `/apparatus`, `GET /api/maintenance/apparatus-status`, readings needed to complete, the Deficiency type, Add Vendor from search, Preventive Maintenance wording.
+- **Apparatus round 3 is waiting for the operator to approve one migration** (Part, PartTransaction, PmSchedule tracking columns, and inspections on the W4 checklist tables). The full design is in the plan under "Apparatus round 3". Do not start it before approval.
 - **Operator still applies both migrations to staging** (`20261126090000_add_comment` and `20261126100000_add_maintenance`):
   1. Back up Neon first.
   2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.

@@ -375,6 +375,37 @@ git push -u origin feature/demo-modules
   - The single-choice dropdown (`NerisFlatSingleOptionSelect` with `usePortal`) now opens upward when there isn't room below. Its list also shrinks to fit the panel instead of being cut off.
   - Clicking the menu name in the top-bar breadcrumb (for example "Apparatus") shows the sidebar and expands that menu. On phones it opens the menu.
 
+**Apparatus round 2, no schema (2026-11-25, `5cdf331`, merged as `27f257e`):**
+- **Fleet Overview:** Apparatus (`/apparatus`) now opens a Fleet Overview instead of menu cards: stat cards that link into Maintenance Logs, Recent Maintenance, Recent Activity, and Apparatus Status.
+- **New route `GET /api/maintenance/apparatus-status`:** one row per unit, worked out from maintenance records, with status, the out-of-service record, open record and deficiency counts, and the latest readings. **Display boards and dashboards must read apparatus status from this route.** Nothing is written to `payloadJson`.
+- **Readings:** `detailsJson.readings` holds `{ mileage, engineHours, pumpHours }`. An apparatus record needs Mileage and Engine Hours when it moves to Completed.
+- **Deficiency type:** added as a default type (Corrective). `ensureDefaultTypes` now adds any missing default by name, so existing departments get it.
+- **Maintenance Logs links:** the page accepts `?new=1`, `?record=<id>`, `?filter=<chip>`, `?category=<type name>` and `?tab=<tab>`. There is a new Out of Service chip.
+- **Wording:** Schedules is now "Preventive Maintenance". The PM dialog is Apparatus, Service Type, Category, Frequency, Next Due.
+- **Add Vendor from a search:** `NerisFlatSingleOptionSelect` has a `createOption` prop. Cost-line and Performed By vendor searches offer "Add Vendor" when nothing matches. This needs `maintenance.manage`, because vendor writes already require it.
+- **Down Time by Record** has a Cost column.
+
+**Apparatus round 3, proposed, waiting for operator approval of the schema:** one additive migration.
+- **`Part`:** id, tenantId, partNumber, description, vendorId?, unitCost Decimal(12,2), reorderLevel Int, storageLocation, audit columns, deletedAt. Index on tenantId.
+- **`PartTransaction`:**
+  - Columns: id, tenantId, partId, kind (`received`, `used` or `adjusted`), quantity Int (positive when received, negative when used), unitCost Decimal(12,2), recordId? (maintenance record), note, createdAt, createdBy, deletedAt.
+  - Quantity on hand is the sum of a part's transactions. Saving parts on a maintenance record replaces that record's `used` rows in one transaction.
+  - Receiving stock needs `maintenance.manage`; using parts on a record needs `maintenance.submit`.
+- **`PmSchedule` new columns:** trackingBasis (`date`, `engineHours`, `pumpHours` or `mileage`), intervalValue, lastServiceReading, earlyWarning. These are nullable, so existing rows keep working as date schedules.
+  - Next Due = last service reading + interval. Current comes from the apparatus-status readings.
+  - Status is Overdue, Approaching (within the early warning) or Current.
+  - Completing a record with the same category on that apparatus updates lastServiceReading.
+- **Apparatus inspections**, built on W4's checklist tables (`ChecklistTemplate`, `ChecklistTemplateVersion.itemsJson`, `ChecklistSubmission.resultsJson`) plus subjectKind/subjectRef and readings on the submission:
+  - A default "Engine / Truck Apparatus Inspection" template is seeded per department, with 8 sections from the operator's screenshots. Results are OK, X Repair Needed, O Repair Made and N/A.
+  - Choosing X opens New Maintenance as a popup, with category Deficiency and the inspection's apparatus filled in. The new record id is saved on that checklist item.
+  - On the next inspection of that unit, any item whose deficiency is still open shows the record number and description next to its result.
+  - Inspection mileage and hours count as readings for PM.
+- **Pages:**
+  - Apparatus > Inspections: a new submenu with completed inspections, newest first, plus New Apparatus Inspection.
+  - A Parts Log tab next to Vendors: inventory on hand, below-reorder alerts, receive stock, and spend analytics by month, vendor and apparatus.
+  - A Parts section on the maintenance form: search existing parts, or add a new one with part number, description and vendor, then set quantity used.
+  - The Preventive Maintenance table matches the screenshot: Apparatus, Service, Basis, Last Service, Next Due, Current, Status, and a + Work Order action.
+
 ### W2. Maps, overlays and geofences (about 2.5 hours)
 - **Summary:** a shared Google `MapView` with layers you can toggle, custom markers, and geofences drawn on the map that link to a pre-plan.
 - **Details:**
