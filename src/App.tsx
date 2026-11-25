@@ -18,6 +18,8 @@ import {
   LogOut,
   Menu,
   Palette,
+  PanelLeftClose,
+  PanelLeftOpen,
   Settings,
   Shield,
   ShieldCheck,
@@ -117,6 +119,8 @@ import {
 } from "./fireRecovery/billingRequirements";
 import { PersonnelSchedulePage as PersonnelSchedulePageView } from "./PersonnelSchedulePage";
 import { PersonnelTradesPage } from "./PersonnelTradesPage";
+import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
+import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
@@ -2691,6 +2695,22 @@ function readShellSidebarWidth(): number {
   );
 }
 
+const SHELL_SIDEBAR_HIDDEN_STORAGE_KEY = "fu.sidebarHidden";
+
+function readShellSidebarHidden(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  return window.localStorage.getItem(SHELL_SIDEBAR_HIDDEN_STORAGE_KEY) === "true";
+}
+
+function writeShellSidebarHidden(hidden: boolean): void {
+  if (typeof window === "undefined") {
+    return;
+  }
+  window.localStorage.setItem(SHELL_SIDEBAR_HIDDEN_STORAGE_KEY, hidden ? "true" : "false");
+}
+
 function writeShellSidebarWidth(width: number): void {
   if (typeof window === "undefined") {
     return;
@@ -3324,6 +3344,15 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   const [sidebarWidth, setSidebarWidth] = useState<number>(() =>
     readShellSidebarWidth(),
   );
+  const [sidebarHidden, setSidebarHidden] = useState<boolean>(() =>
+    readShellSidebarHidden(),
+  );
+  const toggleSidebarHidden = () => {
+    setSidebarHidden((previous) => {
+      writeShellSidebarHidden(!previous);
+      return !previous;
+    });
+  };
   const [expandedMenuId, setExpandedMenuId] = useState<MainMenuId | null>(
     "incidentsMapping",
   );
@@ -3466,7 +3495,10 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
   } as CSSProperties;
 
   return (
-    <div className="shell-layout" style={shellLayoutStyle}>
+    <div
+      className={`shell-layout${sidebarHidden ? " sidebar-hidden" : ""}`}
+      style={shellLayoutStyle}
+    >
       {mobileNavOpen ? (
         <button
           type="button"
@@ -3627,6 +3659,17 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               onClick={() => setMobileNavOpen(true)}
             >
               <Menu size={18} />
+            </button>
+
+            <button
+              type="button"
+              className="icon-button sidebar-hide-toggle"
+              aria-label={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+              aria-pressed={sidebarHidden}
+              title={sidebarHidden ? "Show sidebar" : "Hide sidebar"}
+              onClick={toggleSidebarHidden}
+            >
+              {sidebarHidden ? <PanelLeftOpen size={16} /> : <PanelLeftClose size={16} />}
             </button>
 
             <div className="breadcrumb">
@@ -14303,6 +14346,12 @@ function RouteResolver({
     }
   } else if (path === "/personnel/trades") {
     content = <PersonnelTradesPage />;
+  } else if (path === "/apparatus/maintenance-logs") {
+    content = <MaintenancePage key="maintenance-apparatus" assetKind="apparatus" username={username} />;
+  } else if (path === "/apparatus/equipment-maintenance") {
+    content = <MaintenancePage key="maintenance-equipment" assetKind="equipment" username={username} />;
+  } else if (path === "/apparatus/equipment-list") {
+    content = <EquipmentListPage />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/customization") {

@@ -139,6 +139,17 @@ export function permissionForRequest(method, path, body) {
   }
 
   if (verb === "POST" && route === "/api/schedule-assignments") return "schedule.edit";
+
+  if (verb === "POST" && route === "/api/maintenance/records") return "maintenance.submit";
+  if (verb === "PATCH" && /^\/api\/maintenance\/records\/[^/]+$/.test(route)) return "maintenance.submit";
+  if (verb === "POST" && /^\/api\/maintenance\/records\/[^/]+\/comments$/.test(route)) return "maintenance.submit";
+  if (verb === "DELETE" && /^\/api\/maintenance\/records\/[^/]+$/.test(route)) return "maintenance.manage";
+  if (
+    verb !== "GET" &&
+    /^\/api\/(maintenance\/(types|vendors|schedules)|equipment)(\/[^/]+)?$/.test(route)
+  ) {
+    return "maintenance.manage";
+  }
   return null;
 }
 

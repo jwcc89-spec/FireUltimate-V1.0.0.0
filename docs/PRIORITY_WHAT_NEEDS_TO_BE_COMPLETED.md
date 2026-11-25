@@ -1,7 +1,7 @@
 # What needs to be completed
 
-**Updated:** 2026-11-23, evening America/Chicago (N6 incident number on NERIS export waiting on click check).  
-**Branch:** `submenu/neris-golive-cifpd`.  
+**Updated:** 2026-11-25, afternoon America/Chicago (CAD repeat-email, blank-fill, and Raw Email notices waiting on click check).  
+**Branch:** `feature/demo-modules`. Staging still builds `submenu/neris-golive-cifpd`.  
 **How to use this file:** open work from the plan review, grouped by topic. Do not start coding an item until the operator names it. Each ID appears once. Rows marked **Waiting on click check** are listed with steps in `docs/click_by_click_checks.md`. Older incident and NERIS UX history (items 2–11) stays in `docs/completed/BACKLOG_INCIDENTS_NERIS_UX.md`.
 
 **Group order:** NERIS → Fire Recovery → Incidents and dashboard → UI and layout → Roles, admin, and security → Scheduling → CAD → Waiting on Fire Recovery → Much later → Not scheduled → Marked done.
@@ -100,13 +100,13 @@ Every CAD item below is still open. Do not start coding until the operator names
 
 | ID | Status | Item |
 |----|--------|------|
-| C1 | Open | Ignore a repeat delivery of the same email (fingerprint by message ID and contents so five deliveries act like one). |
+| C1 | Waiting on click check | The same message id or the same email body is stored once. A repeat delivery does not create a second row or update the incident again. Two copies that arrive at the same instant can still both land. |
 | C2 | Open | One incident per call number, including both Crescent email shapes (short dispatch and closing summary). Needs an approved database rule. |
-| C3 | Open | CAD updates its own incidents without blanking fields, duplicating notes, or recreating a deleted or hand-made incident. Users do not edit CAD-created incidents; corrections go on the run report. Matching emails on hand-made or deleted rows show a warning for an admin. |
-| C4 | Open | The first CAD email creates the run report. Later emails fill only blank or still-CAD fields. If a person changed a field, show that CAD has newer information instead of overwriting. In Review and Exported reports stay unchanged. |
+| C3 | Waiting on click check | A later CAD email fills only blank fields, does not append the same note twice, and does not create a new incident when that dispatch number is deleted. A different incoming value is left as saved, and Raw Email says CAD has newer information. Locking the incident screen so people edit the run report instead is still open. |
+| C4 | Waiting on click check | Later emails fill only blank fields. A field that already has a value stays, and Raw Email says CAD has newer information. In Review and Exported reports are not changed. Any filled field is left alone, because the app does not record who typed it. |
 | C5 | Open | Refuse broken or unsafe parsing rules when they are saved, with a clear message and a run-time limit. |
 | C6 | Open | An admin screen for allowed senders. An empty list already rejects everyone. Crescent’s sender `dispatch@co.iroquois.il.us` is already saved. Do not delete that row. |
-| C7 | Open | A holding area and an alert when a dispatch email fails, plus safer handling of very large emails (Cloudflare has no dead-letter queue today). |
+| C7 | Waiting on click check | A failed or warning ingest is written on the email and shown on Dispatch Parsing → Raw Email. An email over 1.5 million characters keeps the first part, is marked failed, and is not parsed. There is no separate holding inbox. Cloudflare still has no dead-letter queue. |
 | C8 | Open | Separate switches for “create new incidents” and “update existing incidents” (Batch J). Needs an approved database change. |
 | C9 | Open | The admin preview and a real inbound email use the same engine and the same result, tested on Crescent’s sample emails. |
 | C10 | Open | Finish Crescent’s parsing rules, pass the staging checklist, then point the Cloudflare Worker at production (`CAD_INGEST_API_URL`). |

@@ -10,10 +10,10 @@ todos:
     status: completed
   - id: w0b-ui-shell
     content: 'W0b: Hide-sidebar toggle in ShellLayout'
-    status: pending
+    status: completed
   - id: w1-maintenance
-    content: 'W1: Apparatus and Equipment Maintenance screens (records, types, vendors, schedules, compliance and analytics counts, out-of-service flag)'
-    status: pending
+    content: 'W1: Apparatus and Equipment Maintenance screens (records, types, vendors, schedules, compliance and analytics counts, out-of-service flag) (operator still applies the maintenance migration to staging)'
+    status: completed
   - id: w2-maps
     content: 'W2: Google MapView, Map View layers, Map Markers, geofences with Terra Draw linked to pre-plans, district auto-fill'
     status: pending
@@ -333,6 +333,27 @@ git push -u origin feature/demo-modules
   - **Schedules tab:** list plus the Active, Due This Week and Overdue counts.
   - **Compliance and Analytics tabs:** simple counts computed from the records.
   - **Equipment List:** a simple registry (name, type, serial, location), stored in the `Equipment` table.
+
+**W0b and W1 as built (2026-11-25, branch `feature/demo-modules`).** Where this differs from the text above, this wins:
+- **W0b:** the hide-sidebar button sits in the top bar, left of the page title. It only shows on screens wider than 1024 px; the phone/tablet menu is unchanged. The choice is saved in localStorage under `fu.sidebarHidden`.
+- **Migration** `20261126100000_add_maintenance`: six new tables (`MaintenanceRecord`, `MaintenanceType`, `Vendor`, `MaintenanceCost`, `PmSchedule`, `Equipment`). Purely additive. The operator applies it to staging (see the session note).
+- **Two differences from the table list above:**
+  - `MaintenanceType` always has a `tenantId`. The NFPA defaults are copied into each department's own rows (`isSystem: true`) the first time it opens Maintenance, instead of shared rows with an empty tenant. Shared rows would let one department turn a type off for every department.
+  - `MaintenanceRecord` has a real `description` column (the list shows and searches it), and `MaintenanceType` has a `description` column (shown under the name in the Types tab).
+- **Several assets per record:** the full list is in `detailsJson.assets` (`[{ kind, ref, label }]`). `assetRef` holds the first one for sorting. W3's display board should read `detailsJson.assets` for out-of-service units. `detailsJson` also holds `location`, `locationDetails` and `attachments` (data URLs, up to about 1.5 MB each and 2 MB per record, until R2).
+- **Pages:** Apparatus > Maintenance Logs (apparatus records), Apparatus > Equipment Maintenance (the same screen for equipment, with assets picked from the Equipment List), and Apparatus > Equipment List. All three now have `isBuilt: true`.
+- **Who can do what:**
+  - Any signed-in member can view everything and add comments.
+  - Members with `maintenance.submit` can create records and edit their own open records.
+  - Only `maintenance.manage` can close or reopen a record, edit someone else's record, delete records, or change types, vendors, schedules and equipment.
+  - Completing a record needs a Completed Date and a Performed By.
+- **Server:** `server/modules/maintenance.mjs` (routes) and `server/modules/maintenanceDefaults.mjs` (the 24 default types). Route tests are in `server/modules/maintenance.test.mjs`, which runs in `npm test` with an in-memory database and checks tenant isolation and the close rules.
+- **Frontend:**
+  - `src/pages/maintenance/` holds the pages and tabs.
+  - `src/components/ModuleTable.tsx` is the reusable `CLICKABLE-LIST` table (sort, drag-to-resize, Edit Columns reorder, filter row). Later modules should reuse it.
+  - `src/api/maintenance.ts` is the API client.
+  - `src/moduleLookups.ts` (`useModuleLookups`) reads apparatus, stations and personnel from `GET /api/department-details`. It reads `masterApparatusRecords`, falling back to legacy `apparatusRecords`, rather than importing `readApparatusFromDepartmentDetails`, because pages can't import from `App.tsx` without a circular import.
+- **Deferred:** PM schedules do not create records automatically yet. The "Test Form" field from the reference screenshot is left out until Inventory checklists (W4) exist.
 
 ### W2. Maps, overlays and geofences (about 2.5 hours)
 - **Summary:** a shared Google `MapView` with layers you can toggle, custom markers, and geofences drawn on the map that link to a pre-plan.

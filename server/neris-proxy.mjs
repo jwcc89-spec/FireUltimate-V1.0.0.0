@@ -17,6 +17,13 @@ import {
 import { cadIngestGuard, configuredCadIngestSecret } from "./cad/ingestGuard.mjs";
 import { chooseNerisIncidentNumbers } from "./nerisIncidentNumbers.mjs";
 import {
+  appendCadNote,
+  cadIngestIdentity,
+  cadIngestIsDuplicate,
+  cadNewerInformationMessage,
+  fillBlankIncidentFields,
+} from "./cadIngestSafety.mjs";
+import {
   buildFireRecoveryPayload,
   isMotorVehicleIncident,
   missingFireRecoveryFields,
@@ -2692,6 +2699,24 @@ async function findIncidentForCadDispatch(tenantId, cadNumber) {
   });
 }
 
+async function findDeletedIncidentForCadDispatch(tenantId, cadNumber) {
+  return prisma.incident.findFirst({
+    where: { tenantId, dispatchNumber: cadNumber, deletedAt: { not: null } },
+  });
+}
+
+async function cadReportIsLocked(tenantId, incident) {
+  if (!incident) return false;
+  const keys = [incident.id];
+  const currentNumber = trimValue(incident.incidentNumber);
+  if (currentNumber && currentNumber !== incident.id) keys.push(currentNumber);
+  const drafts = await prisma.nerisDraft.findMany({
+    where: { tenantId, callNumber: { in: keys } },
+  });
+  const active = drafts.find((row) => !isReportRemoved(row.payload));
+  return Boolean(active && reportStatusOf(active.payload) !== "Draft");
+}
+
 function incidentNumberOverridesFromSettings(settings) {
   const raw = settings?.incidentNumberExtractJson;
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
@@ -3007,12 +3032,22 @@ async function cadIngestApplyFollowUpIncident(
   const units = unitsMatchingApparatus(plain, apparatusNames);
   const nature = cadLabeledValue(plain, "Nature");
   const existing = await findIncidentForCadDispatch(tenantId, callNumber);
-  const combined = [trimValue(existing?.dispatchNotes), notes]
-    .filter(Boolean)
-    .join("\n\n--- CAD dispatch ---\n")
-    .slice(0, 20000);
-  const updateFields = { dispatchNotes: combined };
-  if (units) updateFields.assignedUnits = units;
+  if (!existing && (await findDeletedIncidentForCadDispatch(tenantId, callNumber))) {
+    return {
+      status: "warning",
+      message: "This dispatch number was deleted. The email was saved and did not create a new incident.",
+    };
+  }
+  if (await cadReportIsLocked(tenantId, existing)) {
+    return { status: "warning", message: "This report is In Review or Exported, so the email did not change it." };
+  }
+  const filled = fillBlankIncidentFields(existing, {
+    incidentType: nature || "",
+    assignedUnits: units || "",
+  });
+  const notesValue = appendCadNote(existing?.dispatchNotes, notes);
+  const updateFields = { ...filled.data };
+  if (notesValue && notesValue !== trimValue(existing?.dispatchNotes)) updateFields.dispatchNotes = notesValue;
   const incidentId = await saveMatchedCadIncident(
     tenantId,
     callNumber,
@@ -3026,7 +3061,12 @@ async function cadIngestApplyFollowUpIncident(
     },
     access,
   );
+  if (!incidentId) {
+    return { status: "stored", message: "This email matched a call, and create or update is turned off." };
+  }
   await applyCadTimes(tenantId, incidentId, plain, timeMap, apparatusRecords);
+  const message = cadNewerInformationMessage(filled.newer);
+  return { status: message ? "warning" : "stored", message };
 }
 
 function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
@@ -3048,10 +3088,10 @@ function buildCadMappedIncidentFields(slots, fieldMap, pipelineText) {
 
 /**
  * Loads tenant parsing settings; if enableIncidentCreation and rules yield a merge key, creates or updates Incident.
- * Errors are logged; ingest HTTP response stays successful if email row was stored.
+ * Returns a status the Raw Email list can show. The HTTP ingest response stays successful when the email row was stored.
  */
 async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverride = null) {
-  if (!tenantId) return;
+  if (!tenantId) return { status: "failed", message: "No department was found for this address." };
 
   const settings = await prisma.cadParsingSettings.findUnique({
     where: { tenantId },
@@ -3062,11 +3102,15 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverrid
   const allowUpdate = accessOverride
     ? Boolean(accessOverride.allowUpdate)
     : Boolean(settings?.enableIncidentUpdate);
-  if (!settings || (!allowCreate && !allowUpdate)) return;
+  if (!settings || (!allowCreate && !allowUpdate)) {
+    return { status: "stored", message: "Automatic incident creation is turned off." };
+  }
 
   const plain = getDispatchPlainTextFromRawBody(rawBody);
-  if (!plain) return;
-  if (cadEmailIsExcluded(plain, settings)) return;
+  if (!plain) return { status: "failed", message: "The email had no dispatch text." };
+  if (cadEmailIsExcluded(plain, settings)) {
+    return { status: "stored", message: "This email is excluded and did not create an incident." };
+  }
 
   const incidentNumberFormat = incidentNumberFormatFromSettings(settings);
   const sectionSeparator = separatorFromSettings(settings);
@@ -3077,7 +3121,7 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverrid
   const access = { allowCreate, allowUpdate };
   const followUpNumber = cadFollowUpCallNumber(plain);
   if (followUpNumber) {
-    await cadIngestApplyFollowUpIncident(
+    return cadIngestApplyFollowUpIncident(
       tenantId,
       plain,
       followUpNumber,
@@ -3088,7 +3132,6 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverrid
       timeMap,
       apparatusRecords,
     );
-    return;
   }
 
   let rules;
@@ -3096,13 +3139,13 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverrid
     rules = parseCadRulesJson(settings.incidentRulesJson);
   } catch (e) {
     console.warn("[CAD ingest] incident rules invalid:", e instanceof Error ? e.message : e);
-    return;
+    return { status: "failed", message: "The incident parsing rules could not be read." };
   }
 
   const result = runCadRulePipeline(plain, rules);
   if (!result.ok) {
     console.warn("[CAD ingest] rule pipeline failed:", result.error);
-    return;
+    return { status: "failed", message: result.error || "The incident rules could not read this email." };
   }
 
   const fieldMap =
@@ -3116,41 +3159,74 @@ async function cadIngestApplyIncidentAutomation(tenantId, rawBody, accessOverrid
   const mergeKey = trimValue(mapped.dispatchNumber) || cadDispatchMatchNumber(plain, sectionSeparator);
   if (!mergeKey) {
     console.warn("[CAD ingest] no CAD dispatch number found to match this email to an incident.");
-    return;
+    return { status: "failed", message: "No dispatch number was found." };
   }
   const existing = await findIncidentForCadDispatch(tenantId, mergeKey);
+  if (!existing && (await findDeletedIncidentForCadDispatch(tenantId, mergeKey))) {
+    return {
+      status: "warning",
+      message: "This dispatch number was deleted. The email was saved and did not create a new incident.",
+    };
+  }
+  if (await cadReportIsLocked(tenantId, existing)) {
+    return { status: "warning", message: "This report is In Review or Exported, so the email did not change it." };
+  }
   const newBlock = trimValue(mapped.dispatchNotes) || trimValue(result.text) || "";
-  const combined = [trimValue(existing?.dispatchNotes), newBlock]
-    .filter(Boolean)
-    .join("\n\n--- CAD dispatch ---\n")
-    .slice(0, 20000);
-  const updateFields = { dispatchNotes: combined };
-  if (trimValue(mapped.address)) updateFields.address = mapped.address;
-  if (trimValue(mapped.incidentType)) updateFields.incidentType = mapped.incidentType;
-  if (trimValue(mapped.priority)) updateFields.priority = mapped.priority;
-  if (trimValue(mapped.stillDistrict)) updateFields.stillDistrict = mapped.stillDistrict;
   const keptUnits = filterNamedUnits(mapped.assignedUnits, apparatusNames);
-  if (keptUnits) updateFields.assignedUnits = keptUnits;
-  if (trimValue(mapped.reportedBy)) updateFields.reportedBy = mapped.reportedBy;
-  if (trimValue(mapped.callbackNumber)) updateFields.callbackNumber = mapped.callbackNumber;
-  const updatedDispatchCode = trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference);
-  if (updatedDispatchCode) updateFields.mapReference = updatedDispatchCode;
-  if (trimValue(mapped.dispatchInfo)) updateFields.dispatchInfo = mapped.dispatchInfo;
-  if (trimValue(mapped.receivedAt)) updateFields.receivedAt = mapped.receivedAt;
+  const incoming = {
+    address: trimValue(mapped.address),
+    incidentType: trimValue(mapped.incidentType),
+    priority: trimValue(mapped.priority),
+    stillDistrict: trimValue(mapped.stillDistrict),
+    assignedUnits: keptUnits,
+    reportedBy: trimValue(mapped.reportedBy),
+    callbackNumber: trimValue(mapped.callbackNumber),
+    mapReference: trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference),
+    dispatchInfo: trimValue(mapped.dispatchInfo),
+    receivedAt: trimValue(mapped.receivedAt),
+  };
+  const filled = fillBlankIncidentFields(existing, incoming);
+  const notesValue = appendCadNote(existing?.dispatchNotes, newBlock);
+  const updateFields = { ...filled.data };
+  if (notesValue && notesValue !== trimValue(existing?.dispatchNotes)) updateFields.dispatchNotes = notesValue;
   const incidentId = await saveMatchedCadIncident(tenantId, mergeKey, reset, incidentNumberFormat, updateFields, {
-    incidentType: trimValue(mapped.incidentType) || "",
-    priority: trimValue(mapped.priority) || "",
-    address: trimValue(mapped.address) || "",
-    stillDistrict: trimValue(mapped.stillDistrict) || "",
-    assignedUnits: filterNamedUnits(mapped.assignedUnits, apparatusNames),
-    reportedBy: trimValue(mapped.reportedBy) || null,
-    callbackNumber: trimValue(mapped.callbackNumber) || null,
-    dispatchNotes: trimValue(mapped.dispatchNotes) || null,
-    mapReference: trimValue(mapped.initialDispatchCode) || trimValue(mapped.mapReference) || null,
-    receivedAt: trimValue(mapped.receivedAt) || "",
-    dispatchInfo: trimValue(mapped.dispatchInfo) || "CAD email ingest",
+    incidentType: incoming.incidentType || "",
+    priority: incoming.priority || "",
+    address: incoming.address || "",
+    stillDistrict: incoming.stillDistrict || "",
+    assignedUnits: incoming.assignedUnits || "",
+    reportedBy: incoming.reportedBy || null,
+    callbackNumber: incoming.callbackNumber || null,
+    dispatchNotes: newBlock || null,
+    mapReference: incoming.mapReference || null,
+    receivedAt: incoming.receivedAt || "",
+    dispatchInfo: incoming.dispatchInfo || "CAD email ingest",
   }, access);
+  if (!incidentId) {
+    return { status: "stored", message: "This email matched a call, and create or update is turned off." };
+  }
   await applyCadTimes(tenantId, incidentId, plain, timeMap, apparatusRecords);
+  const message = cadNewerInformationMessage(filled.newer);
+  return { status: message ? "warning" : "stored", message };
+}
+
+async function stampCadIngestResult(id, status, message) {
+  const row = await prisma.cadEmailIngest.findUnique({
+    where: { id },
+    select: { headersJson: true },
+  });
+  const headers =
+    row?.headersJson && typeof row.headersJson === "object" && !Array.isArray(row.headersJson)
+      ? { ...row.headersJson }
+      : {};
+  headers._fuIngest = {
+    status: status === "failed" || status === "warning" ? status : "stored",
+    message: trimValue(message).slice(0, 500),
+  };
+  await prisma.cadEmailIngest.update({
+    where: { id },
+    data: { headersJson: headers },
+  });
 }
 
 // ----- /api/cad/inbound-email (CAD email ingest from Cloudflare Worker; tenant from body.to) -----
@@ -3192,28 +3268,72 @@ app.post("/api/cad/inbound-email", async (request, response) => {
       return;
     }
 
+    const identity = cadIngestIdentity(headersJson, rawBody);
+    if (tenantId) {
+      const priors = await prisma.cadEmailIngest.findMany({
+        where: { tenantId },
+        orderBy: { createdAt: "desc" },
+        take: 500,
+        select: { headersJson: true, rawBody: true },
+      });
+      const priorIdentities = priors.map((row) => {
+        const stored =
+          row.headersJson && typeof row.headersJson === "object" ? row.headersJson._fuIdentity : null;
+        if (stored?.bodyHash || stored?.messageId) return stored;
+        return cadIngestIdentity(row.headersJson, row.rawBody);
+      });
+      if (cadIngestIsDuplicate(identity, priorIdentities)) {
+        response.status(200).json({ ok: true, duplicate: true });
+        return;
+      }
+    }
+
+    const tooLarge = rawBody.length > 1_500_000;
+    const sourceHeaders =
+      headersJson && typeof headersJson === "object" && !Array.isArray(headersJson) ? headersJson : {};
     const ingestRow = await prisma.cadEmailIngest.create({
       data: {
         tenantId,
         fromAddress,
         toAddress,
-        rawBody,
-        headersJson,
+        rawBody: tooLarge ? rawBody.slice(0, 20000) : rawBody,
+        headersJson: { ...sourceHeaders, _fuIdentity: identity },
       },
       select: { id: true },
     });
 
-    try {
-      await cadIngestApplyMessagePipeline(tenantId, rawBody, ingestRow.id);
-    } catch (msgErr) {
-      console.error("[CAD ingest] message pipeline error:", msgErr);
+    let ingestResult = { status: "stored", message: "" };
+    if (tooLarge) {
+      ingestResult = {
+        status: "failed",
+        message: "This email is too large to parse. The first part was saved.",
+      };
+    } else {
+      try {
+        await cadIngestApplyMessagePipeline(tenantId, rawBody, ingestRow.id);
+      } catch (msgErr) {
+        console.error("[CAD ingest] message pipeline error:", msgErr);
+        ingestResult = {
+          status: "failed",
+          message: publicErrorMessage(msgErr, "The email was saved but the message could not be read."),
+        };
+      }
+      try {
+        const auto = await cadIngestApplyIncidentAutomation(tenantId, rawBody);
+        if (auto?.status === "failed" || (auto?.status === "warning" && ingestResult.status !== "failed")) {
+          ingestResult = auto;
+        } else if (auto?.message && !ingestResult.message) {
+          ingestResult = auto;
+        }
+      } catch (autoErr) {
+        console.error("[CAD ingest] incident automation error:", autoErr);
+        ingestResult = {
+          status: "failed",
+          message: publicErrorMessage(autoErr, "The email was saved but the incident was not updated."),
+        };
+      }
     }
-
-    try {
-      await cadIngestApplyIncidentAutomation(tenantId, rawBody);
-    } catch (autoErr) {
-      console.error("[CAD ingest] incident automation error:", autoErr);
-    }
+    await stampCadIngestResult(ingestRow.id, ingestResult.status, ingestResult.message);
 
     response.status(200).json({ ok: true });
   } catch (error) {

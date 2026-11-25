@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
-import { getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
+import { cadEmailIngestNotice, getCadEmails, type CadEmailIngestRow } from "../api/cadEmails";
 import {
   getDispatchPlainTextFromRawBody,
   tryDecodeRawBody,
@@ -225,7 +225,9 @@ function DispatchParsingRawEmailPanel() {
             </p>
           ) : (
             <div className="cad-email-list">
-              {emails.map((row) => (
+              {emails.map((row) => {
+                const notice = cadEmailIngestNotice(row.headersJson);
+                return (
                 <div
                   key={row.id}
                   className="cad-email-item"
@@ -245,13 +247,19 @@ function DispatchParsingRawEmailPanel() {
                       {formatDate(row.createdAt)}
                     </span>
                   </button>
+                  {notice?.message ? (
+                    <p className={notice.status === "failed" ? "field-error cad-email-notice" : "cad-email-notice"}>
+                      {notice.message}
+                    </p>
+                  ) : null}
                   {expandedId === row.id ? (
                     <div className="cad-email-body-panel">
                       <RawEmailExpandedBody row={row} />
                     </div>
                   ) : null}
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
         </article>
