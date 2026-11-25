@@ -7452,9 +7452,24 @@ button.personnel-schedule-open-token-claim {
   }
 }
 
+@media (min-width: 1025px) {
+  .shell-layout.sidebar-hidden {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .shell-layout.sidebar-hidden > .sidebar,
+  .shell-layout.sidebar-hidden > .sidebar-resizer {
+    display: none;
+  }
+}
+
 @media (max-width: 1024px) {
   .shell-layout {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .sidebar-hide-toggle {
+    display: none;
   }
 
   .sidebar-resizer {
