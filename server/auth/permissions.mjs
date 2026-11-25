@@ -150,6 +150,8 @@ export function permissionForRequest(method, path, body) {
   ) {
     return "maintenance.manage";
   }
+  if (verb === "POST" && route === "/api/maintenance/parts") return "maintenance.submit";
+  if (verb !== "GET" && /^\/api\/maintenance\/parts\/[^/]+(\/stock)?$/.test(route)) return "maintenance.manage";
   if (verb === "POST" && route === "/api/inspections") return "maintenance.submit";
   if (verb === "DELETE" && /^\/api\/inspections\/[^/]+$/.test(route)) return "maintenance.manage";
   return null;

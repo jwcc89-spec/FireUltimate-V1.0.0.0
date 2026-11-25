@@ -16,6 +16,8 @@ function createFakePrisma() {
     equipment: [],
     comment: [],
     checklistSubmission: [],
+    part: [],
+    partTransaction: [],
   };
   let nextId = 1;
   const matches = (row, where = {}) =>

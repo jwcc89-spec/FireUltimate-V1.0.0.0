@@ -161,6 +161,10 @@ export function pmStatus(schedule: PmSchedule, readings: MaintenanceReadings | n
   return decide(nextDue - current, schedule.earlyWarning ?? interval * 0.1, values);
 }
 
+export function partLabel(part: { partNumber: string; description: string }): string {
+  return [part.partNumber, part.description].filter(Boolean).join(" — ");
+}
+
 export function formatMoney(amount: number): string {
   return amount.toLocaleString("en-US", { style: "currency", currency: "USD" });
 }

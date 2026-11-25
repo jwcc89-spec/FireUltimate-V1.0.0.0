@@ -7796,6 +7796,31 @@ button.personnel-schedule-open-token-claim {
   }
 }
 
+/* Parts */
+.maintenance-cost-row.maintenance-part-row {
+  grid-template-columns: minmax(0, 2.4fr) 110px minmax(120px, 1fr) auto;
+}
+
+.maintenance-inline-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.maintenance-inline-field input {
+  width: 70px;
+}
+
+.parts-spend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+
+.parts-spend-grid h4 {
+  margin: 0 0 6px;
+}
+
 /* Apparatus inspections */
 .maintenance-record-modal {
   width: min(78rem, 96vw);

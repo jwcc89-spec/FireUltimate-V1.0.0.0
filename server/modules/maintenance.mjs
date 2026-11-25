@@ -21,6 +21,7 @@ import {
   tenantIdOf,
   text,
 } from "./moduleHelpers.mjs";
+import { cleanPartsUsed, loadRecordParts, replaceRecordParts } from "./parts.mjs";
 
 const OPEN_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
@@ -400,7 +401,8 @@ function registerRecordRoutes(app, prisma) {
         return;
       }
       const comments = await loadCommentsFor(prisma, tenantId, row.id);
-      response.json({ ok: true, data: { ...serializeRecord(row, { includeDetail: true }), comments } });
+      const parts = await loadRecordParts(prisma, tenantId, row.id);
+      response.json({ ok: true, data: { ...serializeRecord(row, { includeDetail: true }), comments, parts } });
     } catch (error) {
       sendError(response, error, "Could not load the maintenance record.");
     }
@@ -424,6 +426,7 @@ function registerRecordRoutes(app, prisma) {
       await assertBelongsToTenant(prisma, "vendor", vendorId, tenantId, "The vendor");
       const assets = cleanAssets(body.assets, assetKind);
       const costs = cleanCosts(body.costs) ?? [];
+      const partsUsed = cleanPartsUsed(body.parts) ?? [];
       for (const cost of costs) await assertBelongsToTenant(prisma, "vendor", cost.vendorId, tenantId, "The cost vendor");
       const performedByKind = oneOf(body.performedByKind, PERFORMED_BY_KINDS, "personnel");
       const performedByName = text(body.performedByName, 200);
@@ -479,6 +482,9 @@ function registerRecordRoutes(app, prisma) {
             },
             include: RECORD_INCLUDE,
             });
+            if (partsUsed.length > 0) {
+              await replaceRecordParts(tx, { tenantId, recordId: row.id, actor, partsUsed });
+            }
             if (completing) {
               await applyPmPerformed(tx, {
                 tenantId,
@@ -495,7 +501,8 @@ function registerRecordRoutes(app, prisma) {
           if (!isUniqueViolation(error) || attempt === 2) throw error;
         }
       }
-      response.status(201).json({ ok: true, data: { ...serializeRecord(created, { includeDetail: true }), comments: [] } });
+      const parts = await loadRecordParts(prisma, tenantId, created.id);
+      response.status(201).json({ ok: true, data: { ...serializeRecord(created, { includeDetail: true }), comments: [], parts } });
     } catch (error) {
       sendError(response, error, "Could not save the maintenance record.");
     }
@@ -588,6 +595,7 @@ function registerRecordRoutes(app, prisma) {
       );
       if (closeError) throw new PublicError(closeError);
 
+      const partsUsed = cleanPartsUsed(body.parts);
       const costs = cleanCosts(body.costs);
       if (costs) {
         for (const cost of costs) await assertBelongsToTenant(prisma, "vendor", cost.vendorId, tenantId, "The cost vendor");
@@ -606,6 +614,7 @@ function registerRecordRoutes(app, prisma) {
           }
         }
         await tx.maintenanceRecord.updateMany({ where: { id: existing.id, tenantId }, data });
+        if (partsUsed) await replaceRecordParts(tx, { tenantId, recordId: existing.id, actor, partsUsed });
         if (completingNow) {
           await applyPmPerformed(tx, {
             tenantId,
@@ -622,7 +631,8 @@ function registerRecordRoutes(app, prisma) {
         return tx.maintenanceRecord.findFirst({ where: { id: existing.id, tenantId }, include: RECORD_INCLUDE });
       });
       const comments = await loadCommentsFor(prisma, tenantId, existing.id);
-      response.json({ ok: true, data: { ...serializeRecord(updated, { includeDetail: true }), comments } });
+      const parts = await loadRecordParts(prisma, tenantId, existing.id);
+      response.json({ ok: true, data: { ...serializeRecord(updated, { includeDetail: true }), comments, parts } });
     } catch (error) {
       sendError(response, error, "Could not save the maintenance record.");
     }

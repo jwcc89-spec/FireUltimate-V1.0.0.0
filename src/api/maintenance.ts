@@ -99,6 +99,42 @@ export interface MaintenanceRecordDetail extends MaintenanceRecordSummary {
   costs: MaintenanceCostLine[];
   attachments: MaintenanceAttachment[];
   comments: MaintenanceComment[];
+  parts: RecordPartLine[];
+}
+
+/** A part used on a record. quantity is how many were used; unitCost is fixed when first saved. */
+export interface RecordPartLine {
+  partId: string;
+  partNumber: string;
+  description: string;
+  quantity: number;
+  unitCost: number;
+}
+
+export interface Part {
+  id: string;
+  partNumber: string;
+  description: string;
+  vendorId: string;
+  vendorName: string;
+  unitCost: number;
+  reorderLevel: number;
+  storageLocation: string;
+  onHand: number;
+}
+
+export type PartInput = Pick<Part, "partNumber" | "description" | "vendorId" | "unitCost" | "reorderLevel" | "storageLocation">;
+
+export interface PartTransaction {
+  id: string;
+  partId: string;
+  kind: "received" | "used" | "adjusted";
+  quantity: number;
+  unitCost: number;
+  recordId: string;
+  note: string;
+  createdAt: string;
+  createdBy: string;
 }
 
 export interface MaintenanceRecordInput {
@@ -122,6 +158,8 @@ export interface MaintenanceRecordInput {
   locationDetails: string;
   costs: MaintenanceCostLine[];
   attachments: MaintenanceAttachment[];
+  /** Sent only when the parts list changed; replaces the record's parts. */
+  parts?: { partId: string; quantity: number }[];
 }
 
 export interface MaintenanceType {
@@ -243,6 +281,17 @@ export const updatePmSchedule = (id: string, input: Omit<PmSchedule, "id">) =>
   apiJson<PmSchedule>(`/api/maintenance/schedules/${encodeURIComponent(id)}`, send("PATCH", input));
 export const deletePmSchedule = (id: string) =>
   apiJson<void>(`/api/maintenance/schedules/${encodeURIComponent(id)}`, send("DELETE"));
+
+export const getParts = () => apiJson<Part[]>("/api/maintenance/parts");
+export const getPartTransactions = () => apiJson<PartTransaction[]>("/api/maintenance/parts/transactions");
+export const createPart = (input: PartInput) => apiJson<Part>("/api/maintenance/parts", send("POST", input));
+export const updatePart = (id: string, input: PartInput) =>
+  apiJson<Part>(`/api/maintenance/parts/${encodeURIComponent(id)}`, send("PATCH", input));
+export const deletePart = (id: string) => apiJson<void>(`/api/maintenance/parts/${encodeURIComponent(id)}`, send("DELETE"));
+export const changePartStock = (
+  id: string,
+  input: { kind: "received" | "adjusted"; quantity: number; unitCost?: number; note: string },
+) => apiJson<Part>(`/api/maintenance/parts/${encodeURIComponent(id)}/stock`, send("POST", input));
 
 export const getEquipment = () => apiJson<EquipmentItem[]>("/api/equipment");
 export const createEquipment = (input: Omit<EquipmentItem, "id">) =>

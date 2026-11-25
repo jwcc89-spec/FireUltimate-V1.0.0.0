@@ -5,6 +5,7 @@ import { permissionForRequest } from "../auth/permissions.mjs";
 import { DEFAULT_INSPECTION_SECTIONS } from "./inspectionDefaults.mjs";
 import { register as registerInspections } from "./inspections.mjs";
 import { register as registerMaintenance } from "./maintenance.mjs";
+import { register as registerParts } from "./parts.mjs";
 
 /** In-memory stand-in for the Prisma calls the inspection and maintenance routes make. */
 function createFakePrisma() {
@@ -19,6 +20,8 @@ function createFakePrisma() {
     checklistTemplate: [],
     checklistTemplateVersion: [],
     checklistSubmission: [],
+    part: [],
+    partTransaction: [],
   };
   let nextId = 1;
   const matches = (row, where = {}) =>
@@ -94,6 +97,7 @@ async function startServer() {
     next();
   });
   registerMaintenance(app, prisma);
+  registerParts(app, prisma);
   registerInspections(app, prisma);
   const server = await new Promise((resolve) => {
     const listening = app.listen(0, () => resolve(listening));
@@ -176,7 +180,69 @@ test("inspections seed the default checklist and stay inside the department", as
   }
 });
 
-test("inspection routes map to the right permissions", () => {
+test("parts stock goes up when received and down when used on a record", async () => {
+  const { call, close } = await startServer();
+  try {
+    const vendor = await call("POST", "/api/maintenance/vendors", { role: "admin", body: { name: "Midwest Fire" } });
+    const part = await call("POST", "/api/maintenance/parts", {
+      body: { partNumber: "LF-9009", description: "Oil filter", vendorId: vendor.json.data.id, unitCost: "18.5", reorderLevel: 2 },
+    });
+    assert.equal(part.status, 201);
+    assert.equal(part.json.data.onHand, 0);
+    const partId = part.json.data.id;
+
+    const crossVendor = await call("POST", "/api/maintenance/parts", {
+      tenant: "tenantB",
+      body: { partNumber: "x", vendorId: vendor.json.data.id },
+    });
+    assert.equal(crossVendor.status, 400);
+
+    const received = await call("POST", `/api/maintenance/parts/${partId}/stock`, {
+      role: "admin",
+      body: { kind: "received", quantity: 10, unitCost: 20 },
+    });
+    assert.equal(received.json.data.onHand, 10);
+    assert.equal(received.json.data.unitCost, 20);
+    assert.equal(
+      (await call("POST", `/api/maintenance/parts/${partId}/stock`, { role: "admin", body: { kind: "received", quantity: -3 } })).status,
+      400,
+    );
+
+    const record = await call("POST", "/api/maintenance/records", {
+      body: { assets: [{ ref: "E1", label: "Engine 1" }], description: "Oil change", parts: [{ partId, quantity: 1 }] },
+    });
+    assert.equal(record.status, 201);
+    assert.deepEqual(record.json.data.parts.map((entry) => [entry.partNumber, entry.quantity, entry.unitCost]), [["LF-9009", 1, 20]]);
+    let parts = (await call("GET", "/api/maintenance/parts")).json.data;
+    assert.equal(parts[0].onHand, 9);
+
+    const edited = await call("PATCH", `/api/maintenance/records/${record.json.data.id}`, {
+      body: { parts: [{ partId, quantity: 2 }] },
+    });
+    assert.equal(edited.json.data.parts[0].quantity, 2);
+    parts = (await call("GET", "/api/maintenance/parts")).json.data;
+    assert.equal(parts[0].onHand, 8);
+
+    const otherDept = await call("POST", "/api/maintenance/records", {
+      tenant: "tenantB",
+      body: { description: "x", parts: [{ partId, quantity: 1 }] },
+    });
+    assert.equal(otherDept.status, 400);
+    assert.deepEqual((await call("GET", "/api/maintenance/parts", { tenant: "tenantB" })).json.data, []);
+    assert.equal(
+      (await call("POST", `/api/maintenance/parts/${partId}/stock`, { tenant: "tenantB", role: "admin", body: { quantity: 5 } })).status,
+      404,
+    );
+  } finally {
+    await close();
+  }
+});
+
+test("inspection and parts routes map to the right permissions", () => {
+  assert.equal(permissionForRequest("POST", "/api/maintenance/parts"), "maintenance.submit");
+  assert.equal(permissionForRequest("PATCH", "/api/maintenance/parts/abc"), "maintenance.manage");
+  assert.equal(permissionForRequest("POST", "/api/maintenance/parts/abc/stock"), "maintenance.manage");
+  assert.equal(permissionForRequest("GET", "/api/maintenance/parts/transactions"), null);
   assert.equal(permissionForRequest("GET", "/api/inspections"), null);
   assert.equal(permissionForRequest("POST", "/api/inspections"), "maintenance.submit");
   assert.equal(permissionForRequest("DELETE", "/api/inspections/abc"), "maintenance.manage");
