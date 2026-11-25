@@ -136,7 +136,8 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
         if (filter === "myOpen") {
           return (
             isOpenStatus(record.status) &&
-            (record.createdBy === username || (myName !== "" && record.performedByName === myName))
+            (record.createdBy === username ||
+              (myName !== "" && (record.assignedTo === myName || record.performedByName === myName)))
           );
         }
         if (filter === "open") return isOpenStatus(record.status);
@@ -158,18 +159,28 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
     return Array.from(counts.entries()).sort((a, b) => a[1].name.localeCompare(b[1].name));
   }, [records]);
 
+  const assetLabel = assetKind === "apparatus" ? "Apparatus" : "Equipment";
   const columns: ModuleTableColumn<MaintenanceRecordSummary>[] = [
     {
       id: "recordNumber",
       label: "Record #",
-      width: 140,
-      value: (row) => row.recordNumber,
+      width: 90,
+      value: (row) => row.createdAt,
       render: (row) => <span className="call-number-text">{row.recordNumber}</span>,
     },
     {
+      id: "status",
+      label: "Status",
+      width: 110,
+      value: (row) => row.status,
+      render: (row) => <span className={`tone tone-${statusTone(row.status)}`}>{row.status}</span>,
+    },
+    { id: "assets", label: assetLabel, width: 80, value: assetsText, render: (row) => assetsText(row) || "—" },
+    { id: "category", label: "Category", width: 100, value: (row) => row.typeName, render: (row) => row.typeName || "—" },
+    {
       id: "description",
       label: "Description",
-      width: 260,
+      width: 290,
       value: (row) => row.description,
       render: (row) => (
         <span className="dispatch-field" title={row.description}>
@@ -180,26 +191,24 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
         </span>
       ),
     },
-    { id: "category", label: "Category", width: 190, value: (row) => row.typeName, render: (row) => row.typeName || "—" },
-    { id: "assets", label: "Assets", width: 180, value: assetsText, render: (row) => assetsText(row) || "—" },
-    {
-      id: "status",
-      label: "Status",
-      width: 120,
-      value: (row) => row.status,
-      render: (row) => <span className={`tone tone-${statusTone(row.status)}`}>{row.status}</span>,
-    },
     {
       id: "priority",
       label: "Priority",
-      width: 100,
+      width: 80,
       value: (row) => ["Low", "Medium", "High", "Urgent"].indexOf(row.priority),
       render: (row) => <span className={`tone tone-${priorityTone(row.priority)}`}>{row.priority}</span>,
     },
     {
+      id: "assignedTo",
+      label: "Assigned",
+      width: 120,
+      value: (row) => row.assignedTo,
+      render: (row) => row.assignedTo || "—",
+    },
+    {
       id: "dueDate",
       label: "Due Date",
-      width: 110,
+      width: 90,
       value: (row) => row.dueDate,
       render: (row) =>
         row.dueDate ? (
@@ -268,7 +277,7 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
       {loading ? <p className="field-hint">Loading...</p> : null}
 
       {!loading && tab === "records" ? (
-        <section className="neris-report-layout">
+        <section className="neris-report-layout maintenance-layout">
           <aside className="panel neris-sidebar">
             <div className="neris-sidebar-header">
               <h2>Types</h2>
@@ -295,8 +304,9 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
             </nav>
           </aside>
           <article className="panel maintenance-records-panel">
-            <div className="department-editor-toolbar-actions">
-              {RECORD_FILTERS.map((entry) => (
+            <ModuleTable
+              tableId={`maintenance-records-v2-${assetKind}`}
+              toolbarStart={RECORD_FILTERS.map((entry) => (
                 <button
                   key={entry.id}
                   type="button"
@@ -306,9 +316,6 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
                   {entry.label}
                 </button>
               ))}
-            </div>
-            <ModuleTable
-              tableId={`maintenance-records-${assetKind}`}
               columns={columns}
               rows={filteredRecords}
               rowKey={(row) => row.id}
@@ -336,8 +343,12 @@ export function MaintenancePage({ assetKind, username }: MaintenancePageProps) {
           onChanged={() => reload(loadSchedules)}
         />
       ) : null}
-      {!loading && tab === "compliance" ? <MaintenanceComplianceTab records={records} types={types} /> : null}
-      {!loading && tab === "analytics" ? <MaintenanceAnalyticsTab records={records} /> : null}
+      {!loading && tab === "compliance" ? (
+        <MaintenanceComplianceTab records={records} types={types} assetLabel={assetLabel} />
+      ) : null}
+      {!loading && tab === "analytics" ? (
+        <MaintenanceAnalyticsTab records={records} vendors={vendors} assetLabel={assetLabel} />
+      ) : null}
     </section>
   );
 }

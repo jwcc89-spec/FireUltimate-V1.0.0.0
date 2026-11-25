@@ -123,7 +123,7 @@ test("maintenance routes keep each department's records separate", async () => {
       body: { assetKind: "apparatus", description: "Knox box cable", assets: [{ ref: "E1", label: "Engine 1" }] },
     });
     assert.equal(created.status, 201);
-    assert.match(created.json.data.recordNumber, /^MR-\d{4}-0001$/);
+    assert.match(created.json.data.recordNumber, /^\d{2}-0001$/);
     assert.equal(created.json.data.assetRef, "E1");
     const id = created.json.data.id;
 
@@ -157,7 +157,20 @@ test("maintenance routes keep each department's records separate", async () => {
 test("only maintenance managers can close, reopen or change someone else's record", async () => {
   const { call, close } = await startServer();
   try {
-    const created = await call("POST", "/api/maintenance/records", { body: { description: "Brake noise" } });
+    const created = await call("POST", "/api/maintenance/records", {
+      body: {
+        description: "Brake noise",
+        status: "Parts Ordered",
+        assignedTo: "Bob Brown",
+        outOfService: true,
+        outOfServiceAt: "2026-11-24T14:30:00.000Z",
+      },
+    });
+    assert.equal(created.status, 201);
+    assert.equal(created.json.data.status, "Parts Ordered");
+    assert.equal(created.json.data.assignedTo, "Bob Brown");
+    assert.equal(created.json.data.outOfServiceAt, "2026-11-24T14:30:00.000Z");
+    assert.equal(created.json.data.completedAt, "");
     const id = created.json.data.id;
 
     const closedByUser = await call("PATCH", `/api/maintenance/records/${id}`, { body: { status: "Completed" } });
@@ -186,9 +199,27 @@ test("only maintenance managers can close, reopen or change someone else's recor
     });
     assert.equal(completed.status, 200);
     assert.equal(completed.json.data.completedDate, "2026-11-25");
+    assert.ok(completed.json.data.completedAt > "2026-11-24T14:30:00.000Z");
+    assert.equal(completed.json.data.outOfServiceAt, "2026-11-24T14:30:00.000Z");
 
     const reopenByUser = await call("PATCH", `/api/maintenance/records/${id}`, { body: { status: "Open" } });
     assert.equal(reopenByUser.status, 403);
+
+    const reopened = await call("PATCH", `/api/maintenance/records/${id}`, {
+      user: "chief",
+      role: "admin",
+      body: { status: "Open" },
+    });
+    assert.equal(reopened.json.data.completedAt, "");
+    assert.equal(reopened.json.data.completedDate, "");
+
+    const stampedToday = await call("PATCH", `/api/maintenance/records/${id}`, {
+      user: "chief",
+      role: "admin",
+      body: { status: "Completed" },
+    });
+    assert.equal(stampedToday.status, 200);
+    assert.match(stampedToday.json.data.completedDate, /^\d{4}-\d{2}-\d{2}$/);
 
     const createClosed = await call("POST", "/api/maintenance/records", { body: { status: "Completed" } });
     assert.equal(createClosed.status, 403);

@@ -355,6 +355,26 @@ git push -u origin feature/demo-modules
   - `src/moduleLookups.ts` (`useModuleLookups`) reads apparatus, stations and personnel from `GET /api/department-details`. It reads `masterApparatusRecords`, falling back to legacy `apparatusRecords`, rather than importing `readApparatusFromDepartmentDetails`, because pages can't import from `App.tsx` without a circular import.
 - **Deferred:** PM schedules do not create records automatically yet. The "Test Form" field from the reference screenshot is left out until Inventory checklists (W4) exist.
 
+**W1 polish round (2026-11-25, after the operator's first click-through).** Where this differs from the W1 notes above, this wins:
+- **Record numbers** are now `YY-NNNN` (for example `26-0001`), numbered per department per year. Records made earlier keep their `MR-2026-NNNN` number.
+- **New status "Parts Ordered"** counts as open.
+- **New `detailsJson` fields (no migration):**
+  - `assignedTo` holds a personnel name picked from the department's personnel list.
+  - `outOfServiceAt` is an ISO timestamp, entered as a date plus a typed 24-hour `HH:MM`.
+  - `completedAt` is an ISO timestamp the server stamps when a record becomes Completed and clears on reopen.
+  - Down time runs from `outOfServiceAt` to `completedAt`, or to now while the unit is still out of service. W3's display board can use `outOfServiceAt`.
+- **Completing no longer needs a Completed Date typed in.** The server fills `completedDate` with today and stamps `completedAt`. Completing still needs a Performed By.
+- **Form:** the Apparatus (or Equipment) dropdown is now the first field in General Information, replacing the Assets panel. Records with several assets keep the extras, shown as "Also linked". Assigned To and Taken Out of Service were added.
+- **List:**
+  - Default columns are Record #, Status, Apparatus, Category, Description, Priority, Assigned and Due Date. The saved layout key changed to `fu.table.maintenance-records-v2-*`, so old saved widths don't apply.
+  - The per-column filter boxes were removed from `ModuleTable`. Clicking anywhere on a header sorts by it.
+  - Edit Columns now sits on the same row as the filter chips.
+  - The Types sidebar is about 60% of its old width.
+- **Analytics:** clicking Cost This Month opens a Cost and Down Time page with This Month, This Year and All Time choices. It shows cost by vendor (the cost line's vendor, else the record's vendor), cost and down time by apparatus, and down time per record.
+- **Shared fixes:**
+  - The single-choice dropdown (`NerisFlatSingleOptionSelect` with `usePortal`) now opens upward when there isn't room below. Its list also shrinks to fit the panel instead of being cut off.
+  - Clicking the menu name in the top-bar breadcrumb (for example "Apparatus") shows the sidebar and expands that menu. On phones it opens the menu.
+
 ### W2. Maps, overlays and geofences (about 2.5 hours)
 - **Summary:** a shared Google `MapView` with layers you can toggle, custom markers, and geofences drawn on the map that link to a pre-plan.
 - **Details:**

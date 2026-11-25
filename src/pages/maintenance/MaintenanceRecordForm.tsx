@@ -21,8 +21,12 @@ import {
   formatMoney,
   formatTimestamp24,
   isOpenStatus,
+  isoToLocalParts,
+  localPartsToIso,
+  normalizeTime24,
   readFileAsDataUrl,
   toOptions,
+  todayKey,
 } from "./maintenanceUtils";
 
 const MAX_ATTACHMENT_BYTES = 1_500_000;
@@ -54,6 +58,8 @@ function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
     performedByName: "",
     vendorId: "",
     outOfService: false,
+    outOfServiceAt: "",
+    assignedTo: "",
     location: "",
     locationDetails: "",
     costs: [],
@@ -80,9 +86,9 @@ export function MaintenanceRecordForm({
   const [recordNumber, setRecordNumber] = useState("");
   const [createdBy, setCreatedBy] = useState(username);
   const [savedStatus, setSavedStatus] = useState("Open");
+  const [completedAt, setCompletedAt] = useState("");
   const [comments, setComments] = useState<MaintenanceComment[]>([]);
   const [commentDraft, setCommentDraft] = useState("");
-  const [assetToAdd, setAssetToAdd] = useState("");
   const [tab, setTab] = useState<FormTab>("details");
   const [loading, setLoading] = useState(Boolean(recordId));
   const [saving, setSaving] = useState(false);
@@ -110,6 +116,8 @@ export function MaintenanceRecordForm({
           performedByName: record.performedByName,
           vendorId: record.vendorId,
           outOfService: record.outOfService,
+          outOfServiceAt: record.outOfServiceAt,
+          assignedTo: record.assignedTo,
           location: record.location,
           locationDetails: record.locationDetails,
           costs: record.costs,
@@ -118,6 +126,7 @@ export function MaintenanceRecordForm({
         setRecordNumber(record.recordNumber);
         setCreatedBy(record.createdBy);
         setSavedStatus(record.status);
+        setCompletedAt(record.completedAt);
         setComments(record.comments);
       })
       .catch((loadError) => {
@@ -150,11 +159,20 @@ export function MaintenanceRecordForm({
     if (form.performedByName) names.add(form.performedByName);
     return toOptions(Array.from(names));
   }, [form.performedByName, personnel]);
+  const assignedToOptions = useMemo(() => {
+    const names = new Set(personnel);
+    if (form.assignedTo) names.add(form.assignedTo);
+    return toOptions(Array.from(names));
+  }, [form.assignedTo, personnel]);
   const stationOptions = useMemo(() => toOptions(stations), [stations]);
-  const availableAssets = useMemo(
-    () => assetOptions.filter((option) => !form.assets.some((asset) => asset.ref === option.value)),
-    [assetOptions, form.assets],
-  );
+  const primaryAsset = form.assets[0];
+  const extraAssets = form.assets.slice(1);
+  const primaryAssetOptions = useMemo(() => {
+    if (!primaryAsset || assetOptions.some((option) => option.value === primaryAsset.ref)) return assetOptions;
+    return [{ value: primaryAsset.ref, label: primaryAsset.label || primaryAsset.ref }, ...assetOptions];
+  }, [assetOptions, primaryAsset]);
+  const outOfServiceParts = isoToLocalParts(form.outOfServiceAt);
+  const assetLabel = assetKind === "apparatus" ? "Apparatus" : "Equipment";
   const costTotal = form.costs.reduce((sum, cost) => sum + (Number(cost.amount) || 0), 0);
 
   const update = <K extends keyof MaintenanceRecordInput>(key: K, value: MaintenanceRecordInput[K]) => {
@@ -162,11 +180,18 @@ export function MaintenanceRecordForm({
     setNotice("");
   };
 
-  const addAsset = () => {
-    const option = assetOptions.find((entry) => entry.value === assetToAdd);
-    if (!option) return;
-    update("assets", [...form.assets, { kind: assetKind, ref: option.value, label: option.label }]);
-    setAssetToAdd("");
+  const selectPrimaryAsset = (ref: string) => {
+    const option = primaryAssetOptions.find((entry) => entry.value === ref);
+    update("assets", option ? [{ kind: assetKind, ref: option.value, label: option.label }, ...extraAssets] : extraAssets);
+  };
+
+  const setOutOfService = (checked: boolean) => {
+    setForm((previous) => ({
+      ...previous,
+      outOfService: checked,
+      outOfServiceAt: checked ? previous.outOfServiceAt || new Date().toISOString() : "",
+    }));
+    setNotice("");
   };
 
   const handleFiles = async (event: ChangeEvent<HTMLInputElement>) => {
@@ -190,6 +215,7 @@ export function MaintenanceRecordForm({
     try {
       const payload = {
         ...form,
+        completedDate: form.status === "Completed" && !form.completedDate ? todayKey() : form.completedDate,
         costs: form.costs.map((cost) => ({ ...cost, amount: Number(cost.amount) || 0 })),
       };
       const saved = currentId
@@ -199,8 +225,15 @@ export function MaintenanceRecordForm({
       setRecordNumber(saved.recordNumber);
       setCreatedBy(saved.createdBy);
       setSavedStatus(saved.status);
+      setCompletedAt(saved.completedAt);
       setComments(saved.comments);
-      setForm((previous) => ({ ...previous, attachments: saved.attachments, costs: saved.costs }));
+      setForm((previous) => ({
+        ...previous,
+        attachments: saved.attachments,
+        costs: saved.costs,
+        completedDate: saved.completedDate,
+        outOfServiceAt: saved.outOfServiceAt,
+      }));
       setChanged(true);
       setNotice(`Saved ${saved.recordNumber}.`);
     } catch (saveError) {
@@ -292,6 +325,30 @@ export function MaintenanceRecordForm({
               <fieldset className="maintenance-fieldset" disabled={!canEdit}>
                 <div className="department-edit-grid">
                   <label>
+                    {assetLabel}
+                    <NerisFlatSingleOptionSelect
+                      inputId="maintenance-asset"
+                      usePortal
+                      value={primaryAsset?.ref ?? ""}
+                      options={primaryAssetOptions}
+                      onChange={selectPrimaryAsset}
+                      placeholder={
+                        assetOptions.length
+                          ? `Select ${assetLabel.toLowerCase()}...`
+                          : assetKind === "apparatus"
+                            ? "No apparatus in Department Details"
+                            : "No equipment in Equipment List"
+                      }
+                      allowClear
+                      disabled={!canEdit}
+                    />
+                    {extraAssets.length > 0 ? (
+                      <span className="field-hint">
+                        Also linked: {extraAssets.map((asset) => asset.label || asset.ref).join(", ")}
+                      </span>
+                    ) : null}
+                  </label>
+                  <label>
                     Category
                     <NerisFlatSingleOptionSelect
                       inputId="maintenance-category"
@@ -327,29 +384,79 @@ export function MaintenanceRecordForm({
                       disabled={!canEdit}
                     />
                   </label>
-                  <label className="maintenance-checkbox-label">
-                    <span>Out of Service</span>
-                    <span className="maintenance-checkbox-row">
-                      <input
-                        type="checkbox"
-                        checked={form.outOfService}
-                        onChange={(event) => update("outOfService", event.target.checked)}
-                      />
-                      Take the asset out of service while this record is open
-                    </span>
-                  </label>
                   <label>
-                    Completed Date
-                    <input
-                      type="date"
-                      value={form.completedDate}
-                      onChange={(event) => update("completedDate", event.target.value)}
+                    Assigned To
+                    <NerisFlatSingleOptionSelect
+                      inputId="maintenance-assigned-to"
+                      usePortal
+                      value={form.assignedTo}
+                      options={assignedToOptions}
+                      onChange={(value) => update("assignedTo", value)}
+                      placeholder="Select personnel..."
+                      allowClear
+                      disabled={!canEdit}
                     />
                   </label>
                   <label>
                     Due Date
                     <input type="date" value={form.dueDate} onChange={(event) => update("dueDate", event.target.value)} />
                   </label>
+                  <label className="maintenance-checkbox-label">
+                    Out of Service
+                    <span className="maintenance-checkbox-row">
+                      <input
+                        type="checkbox"
+                        checked={form.outOfService}
+                        onChange={(event) => setOutOfService(event.target.checked)}
+                      />
+                      {assetKind === "apparatus" ? "Unit is out of service" : "Out of service"}
+                    </span>
+                  </label>
+                  {form.outOfService ? (
+                    <div className="maintenance-field">
+                      <span className="maintenance-field-label">Taken Out of Service (24-hour)</span>
+                      <div className="maintenance-time-row">
+                        <input
+                          type="date"
+                          aria-label="Taken out of service date"
+                          value={outOfServiceParts.date}
+                          onChange={(event) =>
+                            update("outOfServiceAt", localPartsToIso(event.target.value, outOfServiceParts.time))
+                          }
+                        />
+                        <input
+                          key={form.outOfServiceAt}
+                          type="text"
+                          inputMode="numeric"
+                          placeholder="HH:MM"
+                          aria-label="Taken out of service time"
+                          defaultValue={outOfServiceParts.time}
+                          onBlur={(event) => {
+                            const time = normalizeTime24(event.currentTarget.value);
+                            if (time && outOfServiceParts.date) {
+                              update("outOfServiceAt", localPartsToIso(outOfServiceParts.date, time));
+                            } else {
+                              event.currentTarget.value = outOfServiceParts.time;
+                            }
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ) : (
+                    <div />
+                  )}
+                  <div className="maintenance-field">
+                    <span className="maintenance-field-label">Completed</span>
+                    <span className="field-hint">
+                      {completedAt
+                        ? formatTimestamp24(completedAt)
+                        : form.status === "Completed"
+                          ? "Stamped with the date and time when you click Save"
+                          : "Stamped automatically when saved as Completed"}
+                    </span>
+                  </div>
+                  <div />
+                
                   <label>
                     Location
                     <NerisFlatSingleOptionSelect
@@ -468,60 +575,6 @@ export function MaintenanceRecordForm({
               )}
             </article>
           </section>
-
-          <article className="panel">
-            <div className="panel-header">
-              <h3>Assets</h3>
-              {canEdit ? (
-                <div className="maintenance-asset-picker">
-                  <NerisFlatSingleOptionSelect
-                    inputId="maintenance-asset-picker"
-                    usePortal
-                    value={assetToAdd}
-                    options={availableAssets}
-                    onChange={setAssetToAdd}
-                    placeholder={
-                      assetOptions.length
-                        ? assetKind === "apparatus"
-                          ? "Select apparatus..."
-                          : "Select equipment..."
-                        : assetKind === "apparatus"
-                          ? "No apparatus in Department Details"
-                          : "No equipment in Equipment List"
-                    }
-                  />
-                  <button
-                    type="button"
-                    className="secondary-button compact-button"
-                    disabled={!assetToAdd}
-                    onClick={addAsset}
-                  >
-                    <Plus size={14} aria-hidden="true" /> Add Asset
-                  </button>
-                </div>
-              ) : null}
-            </div>
-            {form.assets.length === 0 ? (
-              <p className="field-hint">No assets linked to this record.</p>
-            ) : (
-              <ul className="list-card">
-                {form.assets.map((asset) => (
-                  <li key={asset.ref}>
-                    <strong>{asset.label || asset.ref}</strong>
-                    {canEdit ? (
-                      <button
-                        type="button"
-                        className="secondary-button compact-button"
-                        onClick={() => update("assets", form.assets.filter((entry) => entry.ref !== asset.ref))}
-                      >
-                        Remove
-                      </button>
-                    ) : null}
-                  </li>
-                ))}
-              </ul>
-            )}
-          </article>
         </>
       ) : null}
 

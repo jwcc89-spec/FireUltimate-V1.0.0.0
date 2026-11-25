@@ -2,7 +2,7 @@
 
 export type MaintenanceAssetKind = "apparatus" | "equipment";
 
-export const OPEN_MAINTENANCE_STATUSES = ["Open", "Assigned", "In Progress"] as const;
+export const OPEN_MAINTENANCE_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"] as const;
 export const MAINTENANCE_STATUSES = [...OPEN_MAINTENANCE_STATUSES, "Completed", "Cancelled"] as const;
 export const MAINTENANCE_PRIORITIES = ["Low", "Medium", "High", "Urgent"] as const;
 export const MAINTENANCE_FREQUENCIES = ["Weekly", "Monthly", "Quarterly", "Semi-Annual", "Annual", "5 Years"] as const;
@@ -58,9 +58,14 @@ export interface MaintenanceRecordSummary {
   vendorId: string;
   vendorName: string;
   outOfService: boolean;
+  /** ISO timestamps; blank when not set. */
+  outOfServiceAt: string;
+  completedAt: string;
+  assignedTo: string;
   location: string;
   locationDetails: string;
   costTotal: number;
+  costLines: { amount: number; vendorId: string }[];
   attachmentCount: number;
   createdAt: string;
   updatedAt: string;
@@ -87,6 +92,8 @@ export interface MaintenanceRecordInput {
   performedByName: string;
   vendorId: string;
   outOfService: boolean;
+  outOfServiceAt: string;
+  assignedTo: string;
   location: string;
   locationDetails: string;
   costs: MaintenanceCostLine[];
