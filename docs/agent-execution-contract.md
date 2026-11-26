@@ -49,6 +49,7 @@ Whenever a response tells the user to **test**, **verify**, **migrate**, **deplo
 - **What to click** (buttons, sidebar items, row expand).
 - **What to paste** — for **shell**, include the **full** `cd` using the **absolute project path** when known, plus the **exact** command(s) on their own lines (copy-paste ready). Do **not** substitute vague “go to the repo folder” / “project root” without a literal `cd /path/to/project`.
 - **What success looks like** (message text, HTTP status, UI state).
+- **Test on staging, not locally.** The operator does all click-through testing on staging (`https://cifpdil.staging.fireultimate.app`, built by Render from `submenu/neris-golive-cifpd`). Write checks for staging, including the merge or migration that has to happen first. Ask the user to run the app locally only when there is no other way, and say why.
 Optional link to **`docs/procedures/EMAIL_AND_CAD_SETUP.md`** for background; **chat steps must be complete by themselves**.
 
 **Chat vs repo docs:** Instructions in chat so the user can **test or continue** do **not** require updating implementation plans or **`EMAIL_AND_CAD_SETUP.md`** unless the user explicitly asked to change those documents.
