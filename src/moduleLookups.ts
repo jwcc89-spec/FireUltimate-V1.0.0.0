@@ -8,6 +8,11 @@ export interface ApparatusLookup {
   unitId: string;
   label: string;
   unitType: string;
+  make: string;
+  model: string;
+  year: string;
+  /** From the scheduler's apparatus list in Department Details, when the unit is assigned to a station. */
+  station: string;
 }
 
 export interface ModuleLookups {
@@ -37,6 +42,11 @@ function uniqueSorted(values: string[]): string[] {
 function readLookups(data: RawRecord): ModuleLookups {
   const master = asRecords(data.masterApparatusRecords);
   const apparatusSource = master.length > 0 ? master : asRecords(data.apparatusRecords);
+  const stationByApparatus = new Map<string, string>();
+  for (const record of asRecords(data.schedulerApparatusRecords)) {
+    const name = str(record.apparatus);
+    if (name && str(record.station)) stationByApparatus.set(name, str(record.station));
+  }
   const seen = new Set<string>();
   const apparatus: ApparatusLookup[] = [];
   for (const record of apparatusSource) {
@@ -49,6 +59,10 @@ function readLookups(data: RawRecord): ModuleLookups {
       unitId: key,
       label: commonName && commonName !== unitId && unitId ? `${unitId} - ${commonName}` : key,
       unitType: str(record.unitType),
+      make: str(record.make),
+      model: str(record.model),
+      year: str(record.year),
+      station: stationByApparatus.get(unitId) ?? stationByApparatus.get(commonName) ?? "",
     });
   }
   apparatus.sort((a, b) => a.unitId.localeCompare(b.unitId, undefined, { numeric: true }));

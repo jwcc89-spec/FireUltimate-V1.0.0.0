@@ -5546,7 +5546,7 @@ function NerisReportFormPage({
       <section className="page-section">
         <header className="page-header">
           <div>
-            <h1>NERIS report not found</h1>
+            <h1 className="page-title-keep">NERIS report not found</h1>
             <p>No matching incident exists for report ID {callNumber}.</p>
           </div>
           <div className="header-actions">
@@ -5564,7 +5564,7 @@ function NerisReportFormPage({
       <header className="page-header">
         <div>
           <div className="neris-report-title-row">
-            <h1>{headerIncidentNumber}</h1>
+            <h1 className="page-title-keep">{headerIncidentNumber}</h1>
             <span className={`neris-status-pill ${toToneClass(toneFromNerisStatus(reportStatus))}`}>
               {reportStatus}
             </span>
@@ -5894,7 +5894,7 @@ function NerisReportFormPage({
       {printSummaryOpen ? (
         <div className="neris-print-root" aria-hidden>
           <div className="neris-print-header">
-            <h1>NERIS Report Summary</h1>
+            <h1 className="page-title-keep">NERIS Report Summary</h1>
             <p>
               {detailForSideEffects.callNumber}
               {detailForSideEffects.address ? ` • ${detailForSideEffects.address}` : ""}

@@ -99,7 +99,7 @@ export function FireRecoveryIncidentDetailPage({
       <section className="page-section">
         <header className="page-header">
           <div>
-            <h1>Fire Recovery — not found</h1>
+            <h1 className="page-title-keep">Fire Recovery — not found</h1>
             <p>No Fire Recovery billing record for this incident yet.</p>
           </div>
           <div className="header-actions">
@@ -120,7 +120,7 @@ export function FireRecoveryIncidentDetailPage({
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Fire Recovery | {incident ? getIncidentDisplayNumber(incident) : callNumber}</h1>
+          <h1 className="page-title-keep">Fire Recovery | {incident ? getIncidentDisplayNumber(incident) : callNumber}</h1>
           <p>
             Billing data from Fire Recovery USA. Use Update to refresh from the vendor (Get Incident
             Billing Status).

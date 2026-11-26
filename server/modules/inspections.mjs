@@ -242,6 +242,14 @@ export function register(app, prisma) {
         }
       }
       const details = cleanDetails(body.details);
+      const missing = [
+        !details.officer && "Officer / OOR",
+        !details.station && "Station",
+        details.readings.mileage === null && "Mileage",
+        details.readings.engineHours === null && "Engine Hours",
+        details.readings.pumpHours === null && "Pump Hours",
+      ].filter(Boolean);
+      if (missing.length > 0) throw new PublicError(`Fill in the required fields: ${missing.join(", ")}.`);
       const repairCount = Object.values(results).filter((entry) => entry.result === "X").length;
 
       let created = null;

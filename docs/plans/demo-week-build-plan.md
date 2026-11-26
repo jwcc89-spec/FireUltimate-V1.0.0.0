@@ -405,6 +405,16 @@ git push -u origin feature/demo-modules
   - Ticket Parts tab: search a part (shows on hand) or "Add Part" from the search. Saving the ticket replaces its `used` stock rows, so changing the quantity or removing a part puts stock back. The unit cost is fixed when the part is first saved on the ticket. Parts are not added to the ticket's Costs total.
   - Permissions: `POST /api/maintenance/parts` needs `maintenance.submit`; part edits, deletes and `POST /api/maintenance/parts/:id/stock` need `maintenance.manage`; `POST /api/inspections` needs `maintenance.submit`; `DELETE /api/inspections/:id` needs `maintenance.manage`. No new permission keys.
 
+**Round 3 follow-up (2026-11-25, no schema change):**
+- **Page titles:** the top-bar breadcrumb is now the page title (bigger font). A CSS rule hides `.page-header h1` unless it has the `page-title-keep` class. Detail views keep their own h1: incident detail, NERIS report and export, Fire Recovery detail, the inspection form and report, and the not-found and error pages. New pages that need their own title must add `page-title-keep`.
+- **Apparatus submenu order:** Inspections, Maintenance Logs, Equipment List, Equipment Maintenance, Units, Fuel Logs, Mileage Logs.
+- **Dropdown jump fix:** `NerisFlatSelects` focuses the search box with `preventScroll`, because the portal panel is briefly at the end of `<body>` before it is positioned. That jump affected every portal dropdown.
+- **Inspections:**
+  - Sections collapse, with an answered/repair summary and Collapse All / Expand All. The report view collapses too.
+  - Required fields, checked by both client and server: apparatus, date, firefighter/driver, officer, station, mileage, engine hours and pump hours.
+  - Picking an apparatus fills Vehicle (Year Make Model) from Admin Functions > Apparatus (`masterApparatusRecords` make/model/year, now in `ApparatusLookup`). It fills Station from the scheduler apparatus list when one is set.
+  - It also fills Last Service Mileage and Last Service Engine Hours from the last oil change: the newest Completed maintenance record whose category or description matches /oil/, then any PM task named /oil/ (its last service reading for that meter).
+
 **Apparatus round 3, original proposal (approved 2026-11-25):** one additive migration.
 - **`Part`:** id, tenantId, partNumber, description, vendorId?, unitCost Decimal(12,2), reorderLevel Int, storageLocation, audit columns, deletedAt. Index on tenantId.
 - **`PartTransaction`:**
