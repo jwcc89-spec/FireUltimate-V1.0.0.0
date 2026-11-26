@@ -4325,12 +4325,6 @@ function IncidentsListPage({
   const incidentDisplaySettingsRef = useRef(incidentDisplaySettings);
   const onSaveIncidentDisplaySettingsRef = useRef(onSaveIncidentDisplaySettings);
 
-  const canSeeUnmappedIncidentStats = isSuperadmin(role);
-  const visibleStats = canSeeUnmappedIncidentStats
-    ? INCIDENT_QUEUE_STATS.filter(
-        (stat) => !incidentDisplaySettings.hiddenStatIds.includes(stat.id),
-      )
-    : [];
   const visibleCallFieldOrder = dedupeCallFieldOrder(
     incidentDisplaySettings.callFieldOrder.filter((fieldId) =>
       VALID_CALL_FIELD_IDS.has(fieldId) &&
@@ -4676,28 +4670,6 @@ function IncidentsListPage({
           ) : null}
         </div>
       </header>
-
-      {canSeeUnmappedIncidentStats ? (
-        visibleStats.length > 0 ? (
-          <section className="stat-grid">
-            {visibleStats.map((stat) => (
-              <article key={stat.id} className="stat-card stat-card-unmapped-warning">
-                <p>{stat.label}</p>
-                <strong>{stat.value}</strong>
-                <span className={toToneClass(stat.tone)}>{stat.detail}</span>
-              </article>
-            ))}
-          </section>
-        ) : (
-          <section className="panel-grid">
-            <article className="panel">
-              <p className="panel-description">
-                All incident stat cards are currently hidden by customization.
-              </p>
-            </article>
-          </section>
-        )
-      ) : null}
 
       <section className="panel-grid">
         <article className="panel">
