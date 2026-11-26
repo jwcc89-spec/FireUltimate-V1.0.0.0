@@ -33,7 +33,7 @@ import { fullNameForUsername, useModuleLookups } from "../../moduleLookups";
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
 import { useMyPermissions } from "../../useMyPermissions";
 import { MaintenanceRecordForm } from "./MaintenanceRecordForm";
-import { errorText, formatDateKey, formatReading, toOptions, todayKey } from "./maintenanceUtils";
+import { errorText, formatDateKey, formatReading, isOilChangeType, toOptions, todayKey } from "./maintenanceUtils";
 
 const MAINTENANCE_PATH = "/apparatus/maintenance-logs";
 
@@ -76,29 +76,32 @@ function numberOrNull(raw: string): number | null {
   return Number.isFinite(value) ? value : null;
 }
 
-const OIL_CHANGE = /\boil\b/i;
+const OIL_WORD = /\boil\b/i;
 
 /**
- * Last oil change for a unit: the newest completed maintenance record whose category or description
- * mentions oil, then any "oil" PM task's last service reading for whichever meter is still missing.
+ * Last oil change for a unit: the newest completed "Oil and Filter Change" ticket (older tickets that only
+ * mention oil in the category or description count when there is none), then the last service reading
+ * of an oil change PM task for whichever meter is still missing.
  */
-function lastOilService(unitId: string, records: MaintenanceRecordSummary[], schedules: PmSchedule[]) {
+function lastOilService(unitId: string, records: MaintenanceRecordSummary[], schedules: PmSchedule[], types: MaintenanceType[]) {
   const result: { mileage: number | null; engineHours: number | null; source: string } = { mileage: null, engineHours: null, source: "" };
-  const record = records
-    .filter(
-      (entry) =>
-        entry.status === "Completed" &&
-        (entry.assetRef === unitId || entry.assets.some((asset) => asset.ref === unitId)) &&
-        (OIL_CHANGE.test(entry.typeName) || OIL_CHANGE.test(entry.description)),
-    )
-    .sort((a, b) => (b.completedAt || b.completedDate).localeCompare(a.completedAt || a.completedDate))[0];
+  const newestFirst = (a: MaintenanceRecordSummary, b: MaintenanceRecordSummary) =>
+    (b.completedAt || b.completedDate).localeCompare(a.completedAt || a.completedDate);
+  const completedForUnit = records.filter(
+    (entry) => entry.status === "Completed" && (entry.assetRef === unitId || entry.assets.some((asset) => asset.ref === unitId)),
+  );
+  const record =
+    completedForUnit.filter((entry) => isOilChangeType(entry.typeName)).sort(newestFirst)[0] ??
+    completedForUnit.filter((entry) => OIL_WORD.test(entry.typeName) || OIL_WORD.test(entry.description)).sort(newestFirst)[0];
+  const oilTypeIds = new Set(types.filter((type) => isOilChangeType(type.name)).map((type) => type.id));
   if (record) {
     result.mileage = record.readings.mileage;
     result.engineHours = record.readings.engineHours;
     result.source = `${record.recordNumber}${record.completedDate ? ` on ${formatDateKey(record.completedDate)}` : ""}`;
   }
   for (const schedule of schedules) {
-    if (schedule.assetRef !== unitId || !OIL_CHANGE.test(schedule.name) || schedule.lastServiceReading === null) continue;
+    const isOilTask = oilTypeIds.has(schedule.typeId) || OIL_WORD.test(schedule.name);
+    if (schedule.assetRef !== unitId || !isOilTask || schedule.lastServiceReading === null) continue;
     if (schedule.trackingBasis === "mileage" && result.mileage === null) result.mileage = schedule.lastServiceReading;
     if (schedule.trackingBasis === "engineHours" && result.engineHours === null) result.engineHours = schedule.lastServiceReading;
     if (!result.source && (result.mileage !== null || result.engineHours !== null)) result.source = `PM task "${schedule.name}"`;
@@ -150,16 +153,18 @@ function SectionToggleAll({ ids, sections }: { ids: string[]; sections: ReturnTy
   );
 }
 
+/** Sections start collapsed; only the ones opened are tracked. */
 function useCollapsedSections() {
-  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const collapsed = { has: (id: string) => !expanded.has(id) };
   const toggle = (id: string) =>
-    setCollapsed((previous) => {
+    setExpanded((previous) => {
       const next = new Set(previous);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  const setAll = (ids: string[], value: boolean) => setCollapsed(value ? new Set(ids) : new Set());
+  const setAll = (ids: string[], collapse: boolean) => setExpanded(collapse ? new Set() : new Set(ids));
   return { collapsed, toggle, setAll };
 }
 
@@ -431,7 +436,7 @@ function InspectionForm({
   const selectApparatus = (ref: string) => {
     setSubjectRef(ref);
     const unit = lookups.apparatus.find((entry) => entry.unitId === ref);
-    const oil = ref ? lastOilService(ref, records, schedules) : { mileage: null, engineHours: null, source: "" };
+    const oil = ref ? lastOilService(ref, records, schedules, types) : { mileage: null, engineHours: null, source: "" };
     setLastServiceSource(oil.source);
     setDetails((previous) => ({
       ...previous,
@@ -609,7 +614,7 @@ function InspectionForm({
           <p className="field-hint">
             {lastServiceSource
               ? `Last Service is the last oil change, filled from ${lastServiceSource}.`
-              : "No oil change logged for this apparatus yet. Last Service fills in from a completed Maintenance Log or PM task with \"oil\" in its category, description or name."}
+              : "No oil change logged for this apparatus yet. Last Service fills in from a completed Oil and Filter Change ticket or an oil change PM task."}
           </p>
         ) : null}
       </article>

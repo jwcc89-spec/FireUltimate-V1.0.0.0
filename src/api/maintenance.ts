@@ -58,6 +58,15 @@ export interface MaintenanceComment {
   createdAt: string;
 }
 
+/** Extra fields on an "Oil and Filter Change" ticket. The oil change mileage and hours are the ticket's readings. */
+export interface OilChangeDetails {
+  oilType: string;
+  quarts: number | null;
+  filterPartNumber: string;
+}
+
+export const EMPTY_OIL_CHANGE: OilChangeDetails = { oilType: "", quarts: null, filterPartNumber: "" };
+
 export interface MaintenanceRecordSummary {
   id: string;
   recordNumber: string;
@@ -84,6 +93,7 @@ export interface MaintenanceRecordSummary {
   assignedTo: string;
   readings: MaintenanceReadings;
   pmPerformed: PmPerformedEntry[];
+  oilChange: OilChangeDetails;
   location: string;
   locationDetails: string;
   costTotal: number;
@@ -154,6 +164,7 @@ export interface MaintenanceRecordInput {
   assignedTo: string;
   readings: MaintenanceReadings;
   pmPerformed: PmPerformedEntry[];
+  oilChange: OilChangeDetails;
   location: string;
   locationDetails: string;
   costs: MaintenanceCostLine[];

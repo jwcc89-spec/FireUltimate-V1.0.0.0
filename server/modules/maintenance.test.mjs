@@ -211,9 +211,11 @@ test("only maintenance managers can close, reopen or change someone else's recor
         completedDate: "2026-11-25",
         performedByName: "Alice Adams",
         readings: { mileage: "45210", engineHours: 3365.5, pumpHours: "" },
+        oilChange: { oilType: "15W-40", quarts: "24", filterPartNumber: "LF9009", extra: "dropped" },
       },
     });
     assert.equal(completed.status, 200);
+    assert.deepEqual(completed.json.data.oilChange, { oilType: "15W-40", quarts: 24, filterPartNumber: "LF9009" });
     assert.deepEqual(completed.json.data.readings, { mileage: 45210, engineHours: 3365.5, pumpHours: null });
     assert.equal(completed.json.data.completedDate, "2026-11-25");
     assert.ok(completed.json.data.completedAt > "2026-11-24T14:30:00.000Z");

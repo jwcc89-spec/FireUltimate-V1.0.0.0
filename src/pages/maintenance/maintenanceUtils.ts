@@ -223,3 +223,10 @@ export const NFPA_STANDARD_NAMES: Record<string, string> = {
   "NFPA 1989": "Breathing Air Quality",
   DOT: "Cylinder Hydrostatic Testing",
 };
+
+/** The category that marks a ticket or PM task as an oil change; inspections take Last Service from it. */
+export const OIL_CHANGE_TYPE_NAME = "Oil and Filter Change";
+
+export function isOilChangeType(name: string | undefined): boolean {
+  return (name ?? "").trim().toLowerCase() === OIL_CHANGE_TYPE_NAME.toLowerCase();
+}

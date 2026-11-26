@@ -1,6 +1,7 @@
 import { type ChangeEvent, useEffect, useMemo, useState } from "react";
 import { MessageSquare, Package, Plus, Trash2 } from "lucide-react";
 import {
+  EMPTY_OIL_CHANGE,
   EMPTY_READINGS,
   MAINTENANCE_PRIORITIES,
   MAINTENANCE_STATUSES,
@@ -28,6 +29,7 @@ import {
   errorText,
   formatMoney,
   formatTimestamp24,
+  isOilChangeType,
   isOpenStatus,
   isoToLocalParts,
   localPartsToIso,
@@ -81,6 +83,7 @@ function emptyInput(assetKind: MaintenanceAssetKind): MaintenanceRecordInput {
     assignedTo: "",
     readings: { ...EMPTY_READINGS },
     pmPerformed: [],
+    oilChange: { ...EMPTY_OIL_CHANGE },
     location: "",
     locationDetails: "",
     costs: [],
@@ -152,6 +155,7 @@ export function MaintenanceRecordForm({
           assignedTo: record.assignedTo,
           readings: record.readings ?? { ...EMPTY_READINGS },
           pmPerformed: record.pmPerformed ?? [],
+          oilChange: record.oilChange ?? { ...EMPTY_OIL_CHANGE },
           location: record.location,
           locationDetails: record.locationDetails,
           costs: record.costs,
@@ -234,6 +238,31 @@ export function MaintenanceRecordForm({
 
   const update = <K extends keyof MaintenanceRecordInput>(key: K, value: MaintenanceRecordInput[K]) => {
     setForm((previous) => ({ ...previous, [key]: value }));
+    setNotice("");
+  };
+
+  const isOilChange = isOilChangeType(types.find((type) => type.id === form.typeId)?.name);
+
+  /** Picking the oil change category also checks the unit's oil change PM tasks, so completing the ticket resets them. */
+  const selectType = (typeId: string) => {
+    setForm((previous) => {
+      if (!isOilChangeType(types.find((type) => type.id === typeId)?.name)) return { ...previous, typeId };
+      const unitRef = previous.assets[0]?.ref ?? "";
+      const checked = new Set(previous.pmPerformed.map((entry) => entry.scheduleId));
+      const oilTasks = schedules.filter(
+        (schedule) =>
+          schedule.active &&
+          schedule.assetKind === assetKind &&
+          schedule.assetRef === unitRef &&
+          schedule.typeId === typeId &&
+          !checked.has(schedule.id),
+      );
+      return {
+        ...previous,
+        typeId,
+        pmPerformed: [...previous.pmPerformed, ...oilTasks.map((schedule) => ({ scheduleId: schedule.id, reading: null }))],
+      };
+    });
     setNotice("");
   };
 
@@ -424,7 +453,7 @@ export function MaintenanceRecordForm({
                       usePortal
                       value={form.typeId}
                       options={typeOptions}
-                      onChange={(value) => update("typeId", value)}
+                      onChange={selectType}
                       placeholder="Select category..."
                       allowClear
                       disabled={!canEdit}
@@ -677,6 +706,50 @@ export function MaintenanceRecordForm({
               )}
             </article>
           </section>
+          {isOilChange ? (
+            <article className="panel oil-change-panel">
+              <h3>Oil Change</h3>
+              <p className="field-hint">
+                {assetKind === "apparatus"
+                  ? "When this ticket is Completed, its Mileage and Engine Hours become the Last Service on this unit's next inspection."
+                  : "Record what went in. The oil change is logged when this ticket is Completed."}
+              </p>
+              <fieldset className="department-edit-grid" disabled={!canEdit}>
+                <label>
+                  Oil Type / Weight
+                  <input
+                    type="text"
+                    placeholder="e.g. 15W-40"
+                    value={form.oilChange.oilType}
+                    onChange={(event) => update("oilChange", { ...form.oilChange, oilType: event.target.value })}
+                  />
+                </label>
+                <label>
+                  Quarts
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.1"
+                    value={form.oilChange.quarts ?? ""}
+                    onChange={(event) =>
+                      update("oilChange", {
+                        ...form.oilChange,
+                        quarts: event.target.value === "" ? null : Number(event.target.value),
+                      })
+                    }
+                  />
+                </label>
+                <label>
+                  Oil Filter Part #
+                  <input
+                    type="text"
+                    value={form.oilChange.filterPartNumber}
+                    onChange={(event) => update("oilChange", { ...form.oilChange, filterPartNumber: event.target.value })}
+                  />
+                </label>
+              </fieldset>
+            </article>
+          ) : null}
           {assetKind === "apparatus" ? (
             <PmPerformedPanel
               schedules={schedules.filter((schedule) => schedule.assetKind === assetKind)}

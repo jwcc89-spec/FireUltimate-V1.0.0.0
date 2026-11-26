@@ -60,6 +60,16 @@ function cleanPmPerformed(raw) {
   return rows;
 }
 
+/** Extra fields shown when the category is "Oil and Filter Change". The oil change readings are the ticket's readings. */
+function cleanOilChange(raw) {
+  const source = raw && typeof raw === "object" && !Array.isArray(raw) ? raw : {};
+  return {
+    oilType: text(source.oilType, 100),
+    quarts: parseDecimal(source.quarts, "Quarts"),
+    filterPartNumber: text(source.filterPartNumber, 100),
+  };
+}
+
 /**
  * Resets the PM tasks checked on a ticket that just became Completed. Reading-based tasks take the
  * reading typed on the PM line, or else the ticket's reading for that meter.
@@ -222,6 +232,7 @@ function serializeRecord(row, { includeDetail = false } = {}) {
     assignedTo: text(details.assignedTo, 200),
     readings: readingsOf(details),
     pmPerformed: cleanPmPerformed(details.pmPerformed),
+    oilChange: cleanOilChange(details.oilChange),
     location: text(details.location, 200),
     locationDetails: text(details.locationDetails, 300),
     costTotal: costs.reduce((sum, cost) => sum + Number(cost.amount), 0),
@@ -445,6 +456,7 @@ function registerRecordRoutes(app, prisma) {
         assignedTo: text(body.assignedTo, 200),
         readings,
         pmPerformed: cleanPmPerformed(body.pmPerformed),
+        oilChange: cleanOilChange(body.oilChange),
         outOfServiceAt: outOfService ? parseTimestamp(body.outOfServiceAt, "Taken Out of Service") || new Date().toISOString() : "",
         completedAt: completing ? new Date().toISOString() : "",
         location: text(body.location, 200),
@@ -562,6 +574,7 @@ function registerRecordRoutes(app, prisma) {
       if (has("assignedTo")) nextDetails.assignedTo = text(body.assignedTo, 200);
       if (has("readings")) nextDetails.readings = cleanReadings(body.readings);
       if (has("pmPerformed")) nextDetails.pmPerformed = cleanPmPerformed(body.pmPerformed);
+      if (has("oilChange")) nextDetails.oilChange = cleanOilChange(body.oilChange);
       if (completingNow) {
         const readingsError = missingReadingsError(existing.assetKind, readingsOf(nextDetails));
         if (readingsError) throw new PublicError(readingsError);
