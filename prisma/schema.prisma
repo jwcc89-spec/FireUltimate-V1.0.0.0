@@ -49,6 +49,9 @@ model Tenant {
   checklistTemplates          ChecklistTemplate[]
   checklistTemplateVersions   ChecklistTemplateVersion[]
   checklistSubmissions        ChecklistSubmission[]
+  mapMarkerTypes              MapMarkerType[]
+  mapMarkers                  MapMarker[]
+  geofences                   Geofence[]
 }
 
 /// A maintenance request or work record for an apparatus or a piece of equipment.
@@ -363,6 +366,80 @@ model Comment {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@index([tenantId, ownerType, ownerId])
+}
+
+/// Icon and color for a kind of map marker (hydrant, Knox box, hazard, and so on).
+model MapMarkerType {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  /// hydrant, fdc, knox, hazard, firehouse, preplan, landing, shutoff, standpipe, donotenter, marker
+  icon      String    @default("marker")
+  color     String    @default("#16a34a")
+  isSystem  Boolean   @default(false)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String    @default("")
+  updatedBy String    @default("")
+  deletedAt DateTime?
+
+  tenant  Tenant      @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  markers MapMarker[]
+
+  @@unique([tenantId, name])
+  @@index([tenantId])
+}
+
+/// A point the department placed itself. The coordinates are the pin someone dropped, not a stored Google result.
+model MapMarker {
+  id           String    @id @default(cuid())
+  tenantId     String
+  markerTypeId String?
+  latitude     Float
+  longitude    Float
+  label        String    @default("")
+  /// notes, address, flowGpm, documents
+  detailsJson  Json      @default("{}")
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String    @default("")
+  updatedBy    String    @default("")
+  deletedAt    DateTime?
+
+  tenant     Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  markerType MapMarkerType? @relation(fields: [markerTypeId], references: [id], onDelete: SetNull)
+
+  @@index([tenantId])
+  @@index([tenantId, markerTypeId])
+}
+
+/// A department-drawn area. geometryJson is GeoJSON the department drew (Terra Draw), not a Google shape.
+model Geofence {
+  id               String    @id @default(cuid())
+  tenantId         String
+  name             String
+  description      String    @default("")
+  /// district, station, subsection, mutualAid, hazard, custom
+  kind             String    @default("custom")
+  color            String    @default("#dc2626")
+  parentId         String?
+  geometryJson     Json
+  linkedPropertyId String    @default("")
+  linkedPrePlanId  String    @default("")
+  /// documents and other fields that are still changing
+  detailsJson      Json      @default("{}")
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  createdBy        String    @default("")
+  updatedBy        String    @default("")
+  deletedAt        DateTime?
+
+  tenant   Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  parent   Geofence?  @relation("GeofenceTree", fields: [parentId], references: [id], onDelete: SetNull)
+  children Geofence[] @relation("GeofenceTree")
+
+  @@index([tenantId])
+  @@index([tenantId, kind])
 }
 
 /// One row per shift trade request. Names match Scheduler Settings → Personnel; usernames decide who may see and act on it.

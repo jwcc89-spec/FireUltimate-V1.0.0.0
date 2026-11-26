@@ -212,14 +212,14 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Map View",
         path: "/incidents-mapping/map-view",
         summary: "Live operational map for incidents and unit positioning.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Map Markers",
         path: "/incidents-mapping/map-markers",
         summary:
           "Overlay marker management for zones, hazards, and response layers.",
-        isBuilt: false,
+        isBuilt: true,
       },
     ],
   },

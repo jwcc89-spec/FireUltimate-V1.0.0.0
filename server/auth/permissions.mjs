@@ -154,6 +154,12 @@ export function permissionForRequest(method, path, body) {
   if (verb !== "GET" && /^\/api\/maintenance\/parts\/[^/]+(\/stock)?$/.test(route)) return "maintenance.manage";
   if (verb === "POST" && route === "/api/inspections") return "maintenance.submit";
   if (verb === "DELETE" && /^\/api\/inspections\/[^/]+$/.test(route)) return "maintenance.manage";
+
+  // Viewing the map, looking up an address, and checking a district are open to any signed-in member.
+  // Geocode and district stay unmapped on purpose: they do not save anything.
+  if (verb !== "GET" && /^\/api\/maps\/marker-types(\/[^/]+)?$/.test(route)) return "maps.manage";
+  if (verb !== "GET" && /^\/api\/maps\/markers(\/[^/]+)?$/.test(route)) return "maps.manage";
+  if (verb !== "GET" && /^\/api\/geofences(\/[^/]+)?$/.test(route)) return "maps.manage";
   return null;
 }
 
