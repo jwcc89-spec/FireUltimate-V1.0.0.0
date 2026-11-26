@@ -15,8 +15,8 @@ todos:
     content: 'W1: Apparatus and Equipment Maintenance screens (records, types, vendors, schedules, compliance and analytics counts, out-of-service flag) (operator still applies the maintenance migration to staging)'
     status: completed
   - id: w2-maps
-    content: 'W2: Google MapView, Map View layers, Map Markers, geofences with Terra Draw linked to pre-plans, district auto-fill'
-    status: pending
+    content: 'W2: Google MapView, Map View layers, Map Markers, geofences with Terra Draw, district auto-fill (operator still applies the maps migration to staging)'
+    status: completed
   - id: w3-display
     content: 'W3: Displays admin and the /display/:boardId page matching the reference photo, 60s takeover with sound, all-calls or district filter'
     status: pending
@@ -476,6 +476,21 @@ git push -u origin feature/demo-modules
     - **Clicking a geofence** opens the same two-tab popup, so the trailer park opens its pre-plan and lot layout.
   - **"USNG" and "Transfer Hydrants" buttons** appear as "Coming soon" for the demo.
   - **District auto-fill:** uses the free US Census lookup plus Turf `booleanPointInPolygon` on the server. For the demo, the district can be picked by hand instead.
+
+**W2 as built (2026-11-25, `28f2cda`, branch `feature/demo-modules`).** Where this differs from the W2 text above, this wins:
+- **Migration** `20261126140000_add_maps` adds `MapMarkerType`, `MapMarker` and `Geofence`. It is additive only. The operator applies it to staging after a Neon backup. **Incident `latitude`, `longitude` and `geocodedAt` are not in this migration.** Those columns stay for W3.
+- **Google is map tiles only.** The browser key is `VITE_GOOGLE_MAPS_API_KEY`. It is not stored in the repo. Search, station pins and call pins use the free US Census geocoder. Call pins are not saved (the map looks up at most 12 recent calls that have an address). Station pins come from the department's station addresses and are not saved. A Fire House marker is the saved station point.
+- **District check** is `POST /api/maps/district`. It uses the Census point, or a latitude and longitude the caller already has, then Turf `booleanPointInPolygon` against this department's geofences. Map View can also pick a district geofence by hand. Neither path writes an incident.
+- **Documents** live in `detailsJson` (PDF, JPEG, PNG or WebP, about 1.5 MB each, about 2 MB total) until R2. Linked property and linked pre-plan are optional text until Fire Prevention (W7).
+- **Drawing an area:** polygon, rectangle or circle (Terra Draw), saved as a GeoJSON Feature. Changing the outline means deleting the area and drawing it again. Vertex editing is deferred.
+- **Default marker types** are copied into each department the first time the map loads: Hydrant, FDC, Knox Box, Hazard, Fire House, Pre-Plan, Landing Zone, Shut-off, Standpipe and Do Not Enter. A type that was deleted stays deleted. A hydrant with a flow under 500 GPM is blue (`#2563eb`); 500 or more is green (`#16a34a`); a blank flow uses the type color.
+- **Layers:** Our Hydrants (hydrant icon), Our Markers (every other icon), Our Apparatus (Fire House markers plus the looked-up station pins), Our Geofences, Our Individuals and Our Residential Plans. Individuals and Residential Plans only show a coming-soon note. USNG and Transfer Hydrants buttons do the same. Map View also has an Incidents layer, on by default.
+- **Map Markers** (`/incidents-mapping/map-markers`) is the editor: right-click or Add marker, click to select, click again to edit, drag a selected marker, delete at the bottom of the form. Search checks markers and areas first, then the Census. Measure, full screen, and satellite or road. The map opens on Kankakee (41.12, -87.861) and then fits the department's pins once.
+- **Who can do what:** any signed-in member can view the map and call geocode or district. Creating, editing or deleting marker types, markers or geofences needs `maps.manage` (already added in W0; admin is the minimum). No new permission key.
+- **Pages:** Incidents & Mapping > Map View and Map Markers are now `isBuilt: true`.
+- **Server:** `server/modules/maps.mjs`, `mapsGeometry.mjs` and `mapDefaults.mjs`. `server/modules/maps.test.mjs` checks tenant isolation, the permission mapping, a closed outline, and the Census parser. It runs in `npm test`.
+- **Frontend:** `src/pages/maps/` and `src/api/maps.ts`. `useModuleLookups()` now also returns `stationRecords` (name, address, city, state). The old `stations` name list is unchanged.
+- **Deferred:** USNG, Transfer Hydrants, personnel home addresses, residential plans, editing an outline's corners, saved incident coordinates (W3), and real property or pre-plan links (W7).
 
 ### W3. Display Board (about 2 hours)
 - **Summary:** a full-screen board like your reference photo, with several boards per station, the 60-second emergency takeover with sound, and an "all calls" or "my district" setting.

@@ -37,11 +37,13 @@
   - Details are in the plan's "Apparatus round 3 as built" note.
 - **Round 3 follow-up done** (no schema change): the breadcrumb is the page title, and big h1s are hidden unless they have `page-title-keep`. Also: the Apparatus submenu was reordered, the dropdown scroll jump is fixed, inspection sections collapse, and inspections have required fields and fill from the apparatus and its last oil change. See the plan's "Round 3 follow-up" note.
 - **Round 3 follow-up 2 done** (no schema change): inspection categories start collapsed. "Oil and Filter Change" is the dedicated oil change category, with an Oil Change panel on tickets and Log Oil Change on PM tasks, and it feeds the inspection's Last Service. See the plan's "Round 3 follow-up 2" note.
-- **Operator still applies all three migrations to staging** (`20261126090000_add_comment`, `20261126100000_add_maintenance`, `20261126110000_add_parts_pm_inspections`):
+- **W2 done** (`28f2cda`). Migration `20261126140000_add_maps` adds `MapMarkerType`, `MapMarker` and `Geofence`. Map View and Map Markers are `isBuilt: true`. Google is tiles only (`VITE_GOOGLE_MAPS_API_KEY`, not in the repo). District, search, station pins and call pins use the US Census geocoder. Call pins are not saved. Incident latitude columns stay for W3. Details are in the plan's "W2 as built" note.
+- **Operator still applies all four migrations to staging** (`20261126090000_add_comment`, `20261126100000_add_maintenance`, `20261126110000_add_parts_pm_inspections`, `20261126140000_add_maps`):
   1. Back up Neon first.
   2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.
-  - Until then, the maintenance, inspection and Fleet Overview pages show load errors. Nothing else is affected.
-- **Next: W2** (maps, overlays and geofences). It needs the operator's Google Maps browser key (`VITE_GOOGLE_MAPS_API_KEY`) first.
+  - Until then, the maintenance, inspection, Fleet Overview and map pages show load errors. Nothing else is affected.
+  - The staging build also needs `VITE_GOOGLE_MAPS_API_KEY`. Without it the map pages still open, but they show the form instead of tiles.
+- **Next: W3** (Display Board). Restate its scope and the incident latitude migration before building it. Do not start it in the same breath as a half-finished map fix.
 
 ## Rules that matter here
 - Demo menu items keep `isBuilt: false` until their real page lands. Only superadmins can click those items, so CIFPD users on staging never see blank pages.
