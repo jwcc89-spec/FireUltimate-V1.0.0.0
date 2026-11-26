@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { ClipboardCheck, Plus } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronDown, ChevronRight, ClipboardCheck, Plus } from "lucide-react";
 import {
   INSPECTION_RESULTS,
   createInspection,
@@ -18,10 +18,12 @@ import {
 } from "../../api/inspections";
 import {
   getApparatusStatus,
+  getMaintenanceRecords,
   getMaintenanceTypes,
   getPmSchedules,
   getVendors,
   type MaintenanceReadings,
+  type MaintenanceRecordSummary,
   type MaintenanceType,
   type PmSchedule,
   type Vendor,
@@ -72,6 +74,93 @@ function numberOrNull(raw: string): number | null {
   if (raw.trim() === "") return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
+}
+
+const OIL_CHANGE = /\boil\b/i;
+
+/**
+ * Last oil change for a unit: the newest completed maintenance record whose category or description
+ * mentions oil, then any "oil" PM task's last service reading for whichever meter is still missing.
+ */
+function lastOilService(unitId: string, records: MaintenanceRecordSummary[], schedules: PmSchedule[]) {
+  const result: { mileage: number | null; engineHours: number | null; source: string } = { mileage: null, engineHours: null, source: "" };
+  const record = records
+    .filter(
+      (entry) =>
+        entry.status === "Completed" &&
+        (entry.assetRef === unitId || entry.assets.some((asset) => asset.ref === unitId)) &&
+        (OIL_CHANGE.test(entry.typeName) || OIL_CHANGE.test(entry.description)),
+    )
+    .sort((a, b) => (b.completedAt || b.completedDate).localeCompare(a.completedAt || a.completedDate))[0];
+  if (record) {
+    result.mileage = record.readings.mileage;
+    result.engineHours = record.readings.engineHours;
+    result.source = `${record.recordNumber}${record.completedDate ? ` on ${formatDateKey(record.completedDate)}` : ""}`;
+  }
+  for (const schedule of schedules) {
+    if (schedule.assetRef !== unitId || !OIL_CHANGE.test(schedule.name) || schedule.lastServiceReading === null) continue;
+    if (schedule.trackingBasis === "mileage" && result.mileage === null) result.mileage = schedule.lastServiceReading;
+    if (schedule.trackingBasis === "engineHours" && result.engineHours === null) result.engineHours = schedule.lastServiceReading;
+    if (!result.source && (result.mileage !== null || result.engineHours !== null)) result.source = `PM task "${schedule.name}"`;
+  }
+  return result;
+}
+
+function InspectionSectionPanel({
+  section,
+  summary,
+  collapsed,
+  onToggle,
+  children,
+}: {
+  section: InspectionSection;
+  summary: string;
+  collapsed: boolean;
+  onToggle: () => void;
+  children: ReactNode;
+}) {
+  return (
+    <article className="panel inspection-section">
+      <button type="button" className="inspection-section-toggle" aria-expanded={!collapsed} onClick={onToggle}>
+        {collapsed ? <ChevronRight size={18} aria-hidden="true" /> : <ChevronDown size={18} aria-hidden="true" />}
+        <h3>{section.title}</h3>
+        <span className="field-hint">{summary}</span>
+      </button>
+      {collapsed ? null : children}
+    </article>
+  );
+}
+
+function sectionSummary(section: InspectionSection, results: Record<string, InspectionItemResult>, showProgress: boolean): string {
+  const entries = section.items.map((item) => results[item.id]);
+  const repairs = entries.filter((entry) => entry?.result === "X").length;
+  const parts = [];
+  if (showProgress) parts.push(`${entries.filter(Boolean).length} of ${section.items.length} answered`);
+  if (repairs > 0) parts.push(`${repairs} repair needed`);
+  else if (!showProgress) parts.push("No repairs needed");
+  return parts.join(" · ");
+}
+
+function SectionToggleAll({ ids, sections }: { ids: string[]; sections: ReturnType<typeof useCollapsedSections> }) {
+  const allCollapsed = ids.length > 0 && ids.every((id) => sections.collapsed.has(id));
+  return (
+    <button type="button" className="secondary-button compact-button" onClick={() => sections.setAll(ids, !allCollapsed)}>
+      {allCollapsed ? "Expand All" : "Collapse All"}
+    </button>
+  );
+}
+
+function useCollapsedSections() {
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const toggle = (id: string) =>
+    setCollapsed((previous) => {
+      const next = new Set(previous);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const setAll = (ids: string[], value: boolean) => setCollapsed(value ? new Set(ids) : new Set());
+  return { collapsed, toggle, setAll };
 }
 
 /** Apparatus > Inspections: completed inspections, newest first, plus the inspection form and report. */
@@ -251,7 +340,10 @@ function InspectionForm({
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [schedules, setSchedules] = useState<PmSchedule[]>([]);
   const [readingsByUnit, setReadingsByUnit] = useState<Map<string, MaintenanceReadings>>(new Map());
+  const [records, setRecords] = useState<MaintenanceRecordSummary[]>([]);
+  const [lastServiceSource, setLastServiceSource] = useState("");
   const [subjectRef, setSubjectRef] = useState("");
+  const sections = useCollapsedSections();
   const [completedOn, setCompletedOn] = useState(todayKey());
   const [chosenDriver, setCompletedByName] = useState<string | null>(null);
   const completedByName = chosenDriver ?? fullNameForUsername(lookups, username);
@@ -270,8 +362,15 @@ function InspectionForm({
 
   useEffect(() => {
     let active = true;
-    Promise.all([getInspectionTemplate(), getMaintenanceTypes(), getVendors(), getPmSchedules(), getApparatusStatus()])
-      .then(([nextTemplate, nextTypes, nextVendors, nextSchedules, statuses]) => {
+    Promise.all([
+      getInspectionTemplate(),
+      getMaintenanceTypes(),
+      getVendors(),
+      getPmSchedules(),
+      getApparatusStatus(),
+      getMaintenanceRecords("apparatus"),
+    ])
+      .then(([nextTemplate, nextTypes, nextVendors, nextSchedules, statuses, nextRecords]) => {
         if (!active) return;
         setTemplate(nextTemplate);
         setResults(defaultResults(nextTemplate.sections));
@@ -279,6 +378,7 @@ function InspectionForm({
         setVendors(nextVendors);
         setSchedules(nextSchedules);
         setReadingsByUnit(new Map(statuses.map((unit) => [unit.unitId, unit.readings])));
+        setRecords(nextRecords);
       })
       .catch((loadError) => {
         if (active) setError(errorText(loadError, "Could not load the inspection checklist."));
@@ -328,6 +428,20 @@ function InspectionForm({
     }
   };
 
+  const selectApparatus = (ref: string) => {
+    setSubjectRef(ref);
+    const unit = lookups.apparatus.find((entry) => entry.unitId === ref);
+    const oil = ref ? lastOilService(ref, records, schedules) : { mileage: null, engineHours: null, source: "" };
+    setLastServiceSource(oil.source);
+    setDetails((previous) => ({
+      ...previous,
+      vehicleMake: unit ? [unit.year, unit.make, unit.model].filter(Boolean).join(" ") : "",
+      station: unit?.station && lookups.stations.includes(unit.station) ? unit.station : previous.station,
+      lastServiceMileage: oil.mileage,
+      lastServiceEngineHours: oil.engineHours,
+    }));
+  };
+
   const setNote = (itemId: string, note: string) =>
     setResults((previous) => (previous[itemId] ? { ...previous, [itemId]: { ...previous[itemId], note } } : previous));
 
@@ -343,8 +457,17 @@ function InspectionForm({
 
   const submit = async () => {
     setError("");
-    if (!subjectRef) return setError("Pick the apparatus that was inspected.");
-    if (!completedByName.trim()) return setError("Enter the firefighter / driver.");
+    const missing = [
+      !subjectRef && "Apparatus",
+      !completedOn && "Inspection Date",
+      !completedByName.trim() && "Firefighter / Driver",
+      !details.officer && "Officer / OOR",
+      !details.station && "Station",
+      details.readings.mileage === null && "Mileage",
+      details.readings.engineHours === null && "Engine Hours",
+      details.readings.pumpHours === null && "Pump Hours",
+    ].filter(Boolean);
+    if (missing.length > 0) return setError(`Fill in the required fields: ${missing.join(", ")}.`);
     if (unanswered > 0) return setError(`${unanswered} items have no result yet. Use Mark Unchecked as OK if they are all OK.`);
     setSaving(true);
     try {
@@ -360,9 +483,10 @@ function InspectionForm({
     return error ? <p className="field-error">{error}</p> : <p className="field-hint">Loading checklist...</p>;
   }
 
-  const readingField = (key: keyof InspectionDetails["readings"], label: string) => (
+  const readingField = (key: keyof InspectionDetails["readings"], label: string, required: boolean) => (
     <label key={key}>
       {label}
+      {required ? <span className="required-mark"> *</span> : null}
       <input
         type="number"
         min={0}
@@ -384,7 +508,7 @@ function InspectionForm({
       </div>
       <header className="page-header">
         <div>
-          <h1>{template.name}</h1>
+          <h1 className="page-title-keep">{template.name}</h1>
           <InspectionLegend />
         </div>
         <div className="header-actions">
@@ -402,22 +526,22 @@ function InspectionForm({
         <h3>Inspection Information</h3>
         <div className="department-edit-grid inspection-info-grid">
           <label>
-            Apparatus
+            <span>Apparatus<span className="required-mark"> *</span></span>
             <NerisFlatSingleOptionSelect
               inputId="inspection-apparatus"
               usePortal
               value={subjectRef}
               options={apparatusOptions}
               placeholder={apparatusOptions.length ? "Select apparatus..." : "No apparatus in Department Details"}
-              onChange={setSubjectRef}
+              onChange={selectApparatus}
             />
           </label>
           <label>
-            Inspection Date
+            <span>Inspection Date<span className="required-mark"> *</span></span>
             <input type="date" value={completedOn} onChange={(event) => setCompletedOn(event.target.value)} />
           </label>
           <label>
-            Firefighter / Driver
+            <span>Firefighter / Driver<span className="required-mark"> *</span></span>
             <NerisFlatSingleOptionSelect
               inputId="inspection-driver"
               usePortal
@@ -428,7 +552,7 @@ function InspectionForm({
             />
           </label>
           <label>
-            Officer / OOR
+            <span>Officer / OOR<span className="required-mark"> *</span></span>
             <NerisFlatSingleOptionSelect
               inputId="inspection-officer"
               usePortal
@@ -440,7 +564,7 @@ function InspectionForm({
             />
           </label>
           <label>
-            Station
+            <span>Station<span className="required-mark"> *</span></span>
             <NerisFlatSingleOptionSelect
               inputId="inspection-station"
               usePortal
@@ -452,13 +576,15 @@ function InspectionForm({
             />
           </label>
           <label>
-            Vehicle Make
-            <input type="text" value={details.vehicleMake} onChange={(event) => setDetails({ ...details, vehicleMake: event.target.value })} />
+            Vehicle (Year / Make / Model)
+            <input
+              type="text"
+              placeholder={subjectRef ? "Not set in Admin Functions > Apparatus" : ""} value={details.vehicleMake} onChange={(event) => setDetails({ ...details, vehicleMake: event.target.value })} />
           </label>
-          {readingField("mileage", "Mileage")}
-          {readingField("engineHours", "Engine Hours")}
-          {readingField("pumpHours", "Pump Hours")}
-          {readingField("generatorHours", "Generator Hours")}
+          {readingField("mileage", "Mileage", true)}
+          {readingField("engineHours", "Engine Hours", true)}
+          {readingField("pumpHours", "Pump Hours", true)}
+          {readingField("generatorHours", "Generator Hours", false)}
           <label>
             Last Service Mileage
             <input
@@ -479,6 +605,13 @@ function InspectionForm({
             />
           </label>
         </div>
+        {subjectRef ? (
+          <p className="field-hint">
+            {lastServiceSource
+              ? `Last Service is the last oil change, filled from ${lastServiceSource}.`
+              : "No oil change logged for this apparatus yet. Last Service fills in from a completed Maintenance Log or PM task with \"oil\" in its category, description or name."}
+          </p>
+        ) : null}
       </article>
 
       {looseDeficiencies.length > 0 ? (
@@ -504,11 +637,17 @@ function InspectionForm({
         <button type="button" className="secondary-button compact-button maintenance-icon-button" onClick={markUncheckedOk}>
           <ClipboardCheck size={14} aria-hidden="true" /> Mark Unchecked as OK
         </button>
+        <SectionToggleAll ids={template.sections.map((section) => section.id)} sections={sections} />
       </div>
 
       {template.sections.map((section) => (
-        <article key={section.id} className="panel">
-          <h3>{section.title}</h3>
+        <InspectionSectionPanel
+          key={section.id}
+          section={section}
+          summary={sectionSummary(section, results, true)}
+          collapsed={sections.collapsed.has(section.id)}
+          onToggle={() => sections.toggle(section.id)}
+        >
           <div className="inspection-items">
             {section.items.map((item) => {
               const entry = results[item.id];
@@ -543,7 +682,7 @@ function InspectionForm({
               );
             })}
           </div>
-        </article>
+        </InspectionSectionPanel>
       ))}
 
       <article className="panel">
@@ -552,6 +691,16 @@ function InspectionForm({
           <textarea rows={4} value={details.comments} onChange={(event) => setDetails({ ...details, comments: event.target.value })} />
         </label>
       </article>
+
+      {error ? <p className="field-error">{error}</p> : null}
+      <div className="header-actions">
+        <button type="button" className="primary-button compact-button" disabled={saving} onClick={() => void submit()}>
+          {saving ? "Saving..." : "Submit Inspection"}
+        </button>
+        <button type="button" className="secondary-button compact-button" onClick={() => onClose(null)}>
+          Cancel
+        </button>
+      </div>
 
       {repairFor ? (
         <div className="schedule-notice-backdrop" role="dialog" aria-modal="true" aria-label="New maintenance">
@@ -599,6 +748,7 @@ function InspectionForm({
 function InspectionReport({ id, unitLabel, onBack }: { id: string; unitLabel: (ref: string) => string; onBack: () => void }) {
   const [inspection, setInspection] = useState<InspectionDetail | null>(null);
   const [error, setError] = useState("");
+  const sections = useCollapsedSections();
 
   useEffect(() => {
     let active = true;
@@ -633,7 +783,7 @@ function InspectionReport({ id, unitLabel, onBack }: { id: string; unitLabel: (r
     ["Firefighter / Driver", inspection.completedByName],
     ["Officer / OOR", details.officer],
     ["Station", details.station],
-    ["Vehicle Make", details.vehicleMake],
+    ["Vehicle", details.vehicleMake],
     ["Mileage", formatReading(details.readings.mileage)],
     ["Engine Hours", formatReading(details.readings.engineHours)],
     ["Pump Hours", formatReading(details.readings.pumpHours)],
@@ -652,7 +802,7 @@ function InspectionReport({ id, unitLabel, onBack }: { id: string; unitLabel: (r
       </div>
       <header className="page-header">
         <div>
-          <h1>
+          <h1 className="page-title-keep">
             {inspection.submissionNumber} · {unitLabel(inspection.subjectRef)}
           </h1>
           <p>
@@ -680,9 +830,17 @@ function InspectionReport({ id, unitLabel, onBack }: { id: string; unitLabel: (r
           ))}
         </dl>
       </article>
+      <div className="department-editor-toolbar">
+        <SectionToggleAll ids={(inspection.sections ?? []).map((section) => section.id)} sections={sections} />
+      </div>
       {(inspection.sections ?? []).map((section) => (
-        <article key={section.id} className="panel">
-          <h3>{section.title}</h3>
+        <InspectionSectionPanel
+          key={section.id}
+          section={section}
+          summary={sectionSummary(section, inspection.results, false)}
+          collapsed={sections.collapsed.has(section.id)}
+          onToggle={() => sections.toggle(section.id)}
+        >
           <div className="inspection-items">
             {section.items.map((item) => {
               const entry = inspection.results[item.id];
@@ -711,7 +869,7 @@ function InspectionReport({ id, unitLabel, onBack }: { id: string; unitLabel: (r
               );
             })}
           </div>
-        </article>
+        </InspectionSectionPanel>
       ))}
       <article className="panel">
         <h3>Additional Comments</h3>

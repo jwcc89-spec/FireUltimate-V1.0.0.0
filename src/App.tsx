@@ -3702,7 +3702,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               )}
               {breadcrumb.secondary ? (
                 <>
-                  <ChevronRight size={14} />
+                  <ChevronRight size={20} />
                   <span className="breadcrumb-secondary">{breadcrumb.secondary}</span>
                 </>
               ) : null}
@@ -5222,7 +5222,7 @@ function IncidentCallDetailPage({
       <section className="page-section">
         <header className="page-header">
           <div>
-            <h1>Incident not found</h1>
+            <h1 className="page-title-keep">Incident not found</h1>
             <p>No incident record was found for call {callNumber}.</p>
           </div>
           <div className="header-actions">
@@ -5352,7 +5352,7 @@ function IncidentCallDetailPage({
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>{detail.callNumber}</h1>
+          <h1 className="page-title-keep">{detail.callNumber}</h1>
           <p>{detail.dispatchInfo}</p>
         </div>
         <div className="header-actions">
@@ -6191,7 +6191,7 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
       <section className="page-section">
         <header className="page-header">
           <div>
-            <h1>NERIS export details not found</h1>
+            <h1 className="page-title-keep">NERIS export details not found</h1>
             <p>No matching incident exists for report ID {callNumber}.</p>
           </div>
           <div className="header-actions">
@@ -6210,7 +6210,7 @@ function NerisExportDetailsPage({ callNumber, incidentCalls, exportHistory: serv
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Export Details | {incident.callNumber}</h1>
+          <h1 className="page-title-keep">Export Details | {incident.callNumber}</h1>
           <p>
             <strong>{incident.incidentType}</strong> at {incident.address}
           </p>
@@ -14078,7 +14078,7 @@ function NotFoundPage() {
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1>Page Not Found</h1>
+          <h1 className="page-title-keep">Page Not Found</h1>
           <p>The route you entered is not connected yet.</p>
         </div>
       </header>
@@ -14118,7 +14118,7 @@ class RouteErrorBoundary extends Component<
       <section className="page-section">
         <header className="page-header">
           <div>
-            <h1>Something went wrong</h1>
+            <h1 className="page-title-keep">Something went wrong</h1>
             <p>
               This page didn’t finish loading. You can reload the app and try again.
             </p>

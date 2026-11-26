@@ -35,6 +35,7 @@
   - Migration `20261126110000_add_parts_pm_inspections` is additive only. It adds `Part`, `PartTransaction`, `ChecklistTemplate`, `ChecklistTemplateVersion` and `ChecklistSubmission`, plus five nullable or defaulted `PmSchedule` columns.
   - New server modules: `server/modules/parts.mjs`, `inspections.mjs`, `inspectionDefaults.mjs` and `moduleHelpers.mjs` (shared helpers moved out of `maintenance.mjs`).
   - Details are in the plan's "Apparatus round 3 as built" note.
+- **Round 3 follow-up done** (no schema change): the breadcrumb is the page title, and big h1s are hidden unless they have `page-title-keep`. Also: the Apparatus submenu was reordered, the dropdown scroll jump is fixed, inspection sections collapse, and inspections have required fields and fill from the apparatus and its last oil change. See the plan's "Round 3 follow-up" note.
 - **Operator still applies all three migrations to staging** (`20261126090000_add_comment`, `20261126100000_add_maintenance`, `20261126110000_add_parts_pm_inspections`):
   1. Back up Neon first.
   2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.

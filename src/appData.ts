@@ -279,10 +279,16 @@ export const MAIN_MENUS: MainMenu[] = [
     summary: "Operational readiness for units, equipment, and logs.",
     submenus: [
       {
-        label: "Units",
-        path: "/apparatus/units",
-        summary: "Unit roster with operational status and assignment views.",
-        isBuilt: false,
+        label: "Inspections",
+        path: "/apparatus/inspections",
+        summary: "Apparatus inspections with deficiencies sent to maintenance.",
+        isBuilt: true,
+      },
+      {
+        label: "Maintenance Logs",
+        path: "/apparatus/maintenance-logs",
+        summary: "Maintenance records and service history tracking.",
+        isBuilt: true,
       },
       {
         label: "Equipment List",
@@ -297,22 +303,16 @@ export const MAIN_MENUS: MainMenu[] = [
         isBuilt: true,
       },
       {
-        label: "Inspections",
-        path: "/apparatus/inspections",
-        summary: "Apparatus inspections with deficiencies sent to maintenance.",
-        isBuilt: true,
+        label: "Units",
+        path: "/apparatus/units",
+        summary: "Unit roster with operational status and assignment views.",
+        isBuilt: false,
       },
       {
         label: "Fuel Logs",
         path: "/apparatus/fuel-logs",
         summary: "Fuel usage and accountability logs.",
         isBuilt: false,
-      },
-      {
-        label: "Maintenance Logs",
-        path: "/apparatus/maintenance-logs",
-        summary: "Maintenance records and service history tracking.",
-        isBuilt: true,
       },
       {
         label: "Mileage Logs",

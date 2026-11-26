@@ -115,7 +115,7 @@ export function NerisFlatMultiOptionSelect({
     if (!isOpen || disabled) {
       return;
     }
-    searchInputRef.current?.focus();
+    searchInputRef.current?.focus({ preventScroll: true });
   }, [isOpen, disabled]);
 
   return (
@@ -453,7 +453,7 @@ export function NerisFlatSingleOptionSelect({
     if (!isOpen || disabled) {
       return;
     }
-    searchInputRef.current?.focus();
+    searchInputRef.current?.focus({ preventScroll: true });
   }, [isOpen, disabled]);
 
   return (

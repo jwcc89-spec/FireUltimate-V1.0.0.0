@@ -133,6 +133,11 @@ test("inspections seed the default checklist and stay inside the department", as
 
     const missing = await call("POST", "/api/inspections", { body: { subjectRef: "E1", completedOn: "2026-11-25" } });
     assert.equal(missing.status, 400);
+    const noReadings = await call("POST", "/api/inspections", {
+      body: { subjectRef: "E1", completedOn: "2026-11-25", completedByName: "Alice Adams", details: { officer: "Lt. Brown" } },
+    });
+    assert.equal(noReadings.status, 400);
+    assert.match(noReadings.json.message, /Station, Mileage, Engine Hours, Pump Hours/);
 
     const saved = await call("POST", "/api/inspections", {
       body: {
@@ -146,7 +151,7 @@ test("inspections seed the default checklist and stay inside the department", as
           "made-up": { result: "OK" },
           "engine-3": { result: "maybe" },
         },
-        details: { officer: "Lt. Brown", readings: { mileage: 45300, engineHours: 3370 } },
+        details: { officer: "Lt. Brown", station: "Station 1", readings: { mileage: 45300, engineHours: 3370, pumpHours: 812 } },
       },
     });
     assert.equal(saved.status, 201);
