@@ -123,6 +123,8 @@ import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
 import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage";
 import { InspectionsPage } from "./pages/maintenance/InspectionsPage";
+import { MapMarkersPage } from "./pages/maps/MapMarkersPage";
+import { MapViewPage } from "./pages/maps/MapViewPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
 import { NarrativeBuilderAdminPage } from "./pages/NarrativeBuilderAdminPage";
 import { NerisReportFormPage as NerisReportFormPageView } from "./pages/NerisReportFormPage";
@@ -14193,6 +14195,10 @@ function RouteResolver({
         onCreateIncidentCall={onCreateIncidentCall}
       />
     );
+  } else if (path === "/incidents-mapping/map-view") {
+    content = <MapViewPage />;
+  } else if (path === "/incidents-mapping/map-markers") {
+    content = <MapMarkersPage />;
   } else if (path.startsWith("/incidents-mapping/incidents/")) {
     const callNumber = decodeURIComponent(
       path.replace("/incidents-mapping/incidents/", ""),

@@ -8234,3 +8234,217 @@ button.personnel-schedule-open-token-claim {
 .oil-change-note .primary-button {
   align-self: flex-start;
 }
+
+/* Maps */
+.map-help {
+  margin: 0 0 0.85rem;
+  padding-left: 1.15rem;
+  color: #334155;
+  font-size: 0.92rem;
+}
+
+.map-help li + li {
+  margin-top: 0.2rem;
+}
+
+.map-canvas {
+  position: relative;
+  height: min(70vh, 640px);
+  border: 1px solid #dbe3ee;
+  border-radius: 12px;
+  overflow: hidden;
+  background: #e8eef5;
+}
+
+.map-canvas > div {
+  height: 100%;
+}
+
+.map-search {
+  position: absolute;
+  z-index: 2;
+  top: 10px;
+  left: 10px;
+  right: 10px;
+  display: flex;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.map-search .maintenance-search {
+  background: #ffffff;
+}
+
+.map-toolbar,
+.map-showing {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.75rem;
+  align-items: center;
+  margin-top: 0.75rem;
+}
+
+.map-toolbar {
+  justify-content: space-between;
+}
+
+.map-toolbar-group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  align-items: center;
+}
+
+.map-showing {
+  color: #64748b;
+  font-size: 0.92rem;
+}
+
+.map-showing button {
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font: inherit;
+}
+
+.map-showing button[aria-pressed="true"] {
+  color: #0f172a;
+  font-weight: 700;
+}
+
+.map-tool-active {
+  border-color: #2563eb;
+  color: #1d4ed8;
+  background: #eff6ff;
+}
+
+.map-color {
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  border: 2px solid #ffffff;
+  box-shadow: 0 0 0 1px #cbd5e1;
+  padding: 0;
+  cursor: pointer;
+}
+
+.map-pin {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: grid;
+  place-items: center;
+  color: #ffffff;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.45);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.map-pin-selected {
+  outline: 3px solid #0f172a;
+}
+
+.map-measure-label {
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 0.15rem 0.4rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.map-popup {
+  width: min(320px, 72vw);
+  color: #0f172a;
+  font-size: 0.86rem;
+}
+
+.map-popup .department-edit-grid,
+.map-form-grid {
+  grid-template-columns: 1fr;
+}
+
+.map-span {
+  grid-column: 1 / -1;
+}
+
+.map-form-grid textarea,
+.map-docs input[type="file"] {
+  width: 100%;
+  border: 1px solid #cbd5e1;
+  border-radius: 9px;
+  padding: 0.52rem 0.6rem;
+  font: inherit;
+  font-size: 0.82rem;
+  background: #ffffff;
+  color: #0f172a;
+}
+
+.map-kicker {
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.map-popup-tabs {
+  display: flex;
+  margin: 0.45rem 0;
+}
+
+.map-popup-tabs button {
+  flex: 1;
+  border: 1px solid #93c5fd;
+  background: #ffffff;
+  color: #2563eb;
+  padding: 0.35rem 0.4rem;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.8rem;
+}
+
+.map-popup-tabs button + button {
+  margin-left: -1px;
+}
+
+.map-popup-tabs button[aria-selected="true"] {
+  background: #eff6ff;
+  font-weight: 700;
+}
+
+.map-read p,
+.map-updated {
+  margin: 0.25rem 0;
+}
+
+.map-updated .field-hint {
+  display: block;
+}
+
+.map-delete {
+  margin-top: 0.55rem;
+}
+
+.map-docs ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.map-docs li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.header-actions a.primary-button {
+  display: inline-flex;
+  align-items: center;
+  text-decoration: none;
+}

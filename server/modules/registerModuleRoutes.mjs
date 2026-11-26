@@ -5,6 +5,7 @@
  */
 import { register as registerInspections } from "./inspections.mjs";
 import { register as registerMaintenance } from "./maintenance.mjs";
+import { register as registerMaps } from "./maps.mjs";
 import { register as registerParts } from "./parts.mjs";
 
 export function registerModuleRoutes(app, prisma) {
@@ -20,4 +21,5 @@ export function registerModuleRoutes(app, prisma) {
   registerMaintenance(app, prisma);
   registerParts(app, prisma);
   registerInspections(app, prisma);
+  registerMaps(app, prisma);
 }

@@ -15,14 +15,29 @@ export interface ApparatusLookup {
   station: string;
 }
 
+export interface StationLookup {
+  name: string;
+  address: string;
+  city: string;
+  state: string;
+}
+
 export interface ModuleLookups {
   apparatus: ApparatusLookup[];
   stations: string[];
+  /** Station name and address, read-only, so the map can place station pins. */
+  stationRecords: StationLookup[];
   personnel: string[];
   userFullNames: Record<string, string>;
 }
 
-const EMPTY_LOOKUPS: ModuleLookups = { apparatus: [], stations: [], personnel: [], userFullNames: {} };
+const EMPTY_LOOKUPS: ModuleLookups = {
+  apparatus: [],
+  stations: [],
+  stationRecords: [],
+  personnel: [],
+  userFullNames: {},
+};
 
 type RawRecord = Record<string, unknown>;
 
@@ -76,9 +91,20 @@ function readLookups(data: RawRecord): ModuleLookups {
     }
   }
 
+  const stationRecords = asRecords(data.stationRecords)
+    .map((record) => ({
+      name: str(record.name),
+      address: str(record.address),
+      city: str(record.city),
+      state: str(record.state),
+    }))
+    .filter((station) => station.name.length > 0)
+    .sort((a, b) => a.name.localeCompare(b.name));
+
   return {
     apparatus,
-    stations: uniqueSorted(asRecords(data.stationRecords).map((record) => str(record.name))),
+    stations: uniqueSorted(stationRecords.map((station) => station.name)),
+    stationRecords,
     personnel: uniqueSorted([
       ...asRecords(data.schedulerPersonnelRecords).map((record) => str(record.name)),
       ...Object.values(userFullNames),
