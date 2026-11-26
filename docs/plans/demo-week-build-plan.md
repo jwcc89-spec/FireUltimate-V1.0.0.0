@@ -415,6 +415,13 @@ git push -u origin feature/demo-modules
   - Picking an apparatus fills Vehicle (Year Make Model) from Admin Functions > Apparatus (`masterApparatusRecords` make/model/year, now in `ApparatusLookup`). It fills Station from the scheduler apparatus list when one is set.
   - It also fills Last Service Mileage and Last Service Engine Hours from the last oil change: the newest Completed maintenance record whose category or description matches /oil/, then any PM task named /oil/ (its last service reading for that meter).
 
+**Round 3 follow-up 2 (2026-11-25, no schema change):**
+- **Inspection categories start collapsed** on both the form and the report. The hook tracks only the sections a user opens.
+- **"Oil and Filter Change" is the dedicated oil change category.** It was already a default maintenance type.
+  - **New Maintenance:** picking it shows an **Oil Change** panel with Oil Type / Weight, Quarts and Oil Filter Part #. These are stored in `detailsJson.oilChange` (`cleanOilChange` in `maintenance.mjs`) and returned on every record. The oil change mileage and engine hours are the ticket's own readings, which completing an apparatus ticket already requires. Picking the category also checks that unit's active PM tasks in the same category under Preventive Maintenance Performed.
+  - **Preventive Maintenance:** tasks in that category show **Log Oil Change** (droplet icon) instead of + Work Order. The Add/Edit PM Task dialog shows an Oil Change note with the same button. It opens the prefilled ticket.
+  - **Inspection Last Service** now uses the newest completed Oil and Filter Change ticket first. Older tickets that only mention "oil" in the category or description are the fallback. Then PM tasks in that category (or named "oil") fill whichever meter is still missing. The helpers are `OIL_CHANGE_TYPE_NAME` and `isOilChangeType` in `maintenanceUtils.ts`.
+
 **Apparatus round 3, original proposal (approved 2026-11-25):** one additive migration.
 - **`Part`:** id, tenantId, partNumber, description, vendorId?, unitCost Decimal(12,2), reorderLevel Int, storageLocation, audit columns, deletedAt. Index on tenantId.
 - **`PartTransaction`:**

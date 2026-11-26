@@ -8224,3 +8224,13 @@ button.personnel-schedule-open-token-claim {
   padding: 24px;
   background: rgba(15, 23, 42, 0.55);
 }
+
+.oil-change-note .maintenance-field-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.oil-change-note .primary-button {
+  align-self: flex-start;
+}

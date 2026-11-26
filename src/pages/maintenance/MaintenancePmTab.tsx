@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { AlertTriangle, CalendarDays, Clock, History, Plus } from "lucide-react";
+import { AlertTriangle, CalendarDays, Clock, Droplet, History, Plus } from "lucide-react";
 import {
   MAINTENANCE_FREQUENCIES,
   PM_TRACKING_BASES,
@@ -19,7 +19,7 @@ import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
 import type { NerisValueOption } from "../../nerisMetadata";
 import { EditDialog } from "./MaintenanceSetupTabs";
 import { useDialogSave } from "./useDialogSave";
-import { formatDateKey, formatReading, pmStatus, toOptions, type PmStatusInfo } from "./maintenanceUtils";
+import { formatDateKey, formatReading, isOilChangeType, pmStatus, toOptions, type PmStatusInfo } from "./maintenanceUtils";
 
 type ScheduleDraft = Omit<PmSchedule, "id"> & { id: string | null };
 
@@ -162,7 +162,15 @@ export function MaintenancePmTab({
               className="primary-button compact-button maintenance-icon-button"
               onClick={() => onCreateWorkOrder(row.schedule)}
             >
-              <Plus size={13} aria-hidden="true" /> Work Order
+              {isOilChangeType(typeNameById.get(row.schedule.typeId)) ? (
+                <>
+                  <Droplet size={13} aria-hidden="true" /> Log Oil Change
+                </>
+              ) : (
+                <>
+                  <Plus size={13} aria-hidden="true" /> Work Order
+                </>
+              )}
             </button>
           ) : null}
         </span>
@@ -409,6 +417,31 @@ export function MaintenancePmTab({
               </div>
             </>
           )}
+          {isOilChangeType(typeNameById.get(draft.typeId)) ? (
+            <div className="maintenance-field oil-change-note">
+              <span className="maintenance-field-label">
+                <Droplet size={14} aria-hidden="true" /> Oil Change
+              </span>
+              <span className="field-hint">
+                Log Oil Change opens a new Oil and Filter Change ticket with this task checked. Completing it resets this task and
+                fills Last Service Mileage and Engine Hours on the next inspection.
+              </span>
+              {draft.id && canSubmit ? (
+                <button
+                  type="button"
+                  className="primary-button compact-button maintenance-icon-button"
+                  onClick={() => {
+                    const schedule = schedules.find((entry) => entry.id === draft.id);
+                    if (!schedule) return;
+                    setDraft(null);
+                    onCreateWorkOrder(schedule);
+                  }}
+                >
+                  <Droplet size={13} aria-hidden="true" /> Log Oil Change
+                </button>
+              ) : null}
+            </div>
+          ) : null}
           <label className="maintenance-checkbox-label">
             <span>Status</span>
             <span className="maintenance-checkbox-row">
