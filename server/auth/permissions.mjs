@@ -160,6 +160,13 @@ export function permissionForRequest(method, path, body) {
   if (verb !== "GET" && /^\/api\/maps\/marker-types(\/[^/]+)?$/.test(route)) return "maps.manage";
   if (verb !== "GET" && /^\/api\/maps\/markers(\/[^/]+)?$/.test(route)) return "maps.manage";
   if (verb !== "GET" && /^\/api\/geofences(\/[^/]+)?$/.test(route)) return "maps.manage";
+  // The call location only caches a map point on the call, so viewing calls is enough.
+  if (verb === "POST" && route === "/api/maps/incident-location") return "incidents.view";
+
+  if (verb === "GET" && /^\/api\/displays\/boards\/[^/]+\/feed$/.test(route)) return "incidents.view";
+  if (verb !== "GET" && /^\/api\/displays\/(boards|announcements|events)(\/[^/]+)?$/.test(route)) {
+    return "displays.manage";
+  }
   return null;
 }
 

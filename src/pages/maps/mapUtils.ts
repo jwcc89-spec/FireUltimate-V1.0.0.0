@@ -46,7 +46,13 @@ export function polygonPaths(geometry: GeoGeometry): LatLng[][][] {
   return polygons.map((rings) => rings.map((ring) => ring.map(([lng, lat]) => ({ lat, lng }))));
 }
 
-export function distanceLabel(from: LatLng, to: LatLng): string {
+/** Browser map key from the build. It is a public, domain-restricted key, never a server secret. */
+export function mapsApiKey(): string {
+  const env = import.meta.env as { VITE_GOOGLE_MAPS_API_KEY?: string };
+  return env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? "";
+}
+
+export function distanceFeet(from: LatLng, to: LatLng): number {
   const toRad = (degrees: number) => (degrees * Math.PI) / 180;
   const earth = 6371000;
   const dLat = toRad(to.lat - from.lat);
@@ -54,7 +60,11 @@ export function distanceLabel(from: LatLng, to: LatLng): string {
   const a =
     Math.sin(dLat / 2) ** 2 +
     Math.cos(toRad(from.lat)) * Math.cos(toRad(to.lat)) * Math.sin(dLng / 2) ** 2;
-  const feet = 2 * earth * Math.asin(Math.sqrt(a)) * 3.28084;
+  return 2 * earth * Math.asin(Math.sqrt(a)) * 3.28084;
+}
+
+export function distanceLabel(from: LatLng, to: LatLng): string {
+  const feet = distanceFeet(from, to);
   if (feet < 1000) return `${Math.round(feet)} ft`;
   return `${(feet / 5280).toFixed(2)} mi`;
 }

@@ -583,7 +583,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Displays",
         path: "/admin-functions/displays",
         summary: "Station TV display boards, announcements, and emergency call takeover.",
-        isBuilt: false,
+        isBuilt: true,
         adminOnly: true,
       },
     ],

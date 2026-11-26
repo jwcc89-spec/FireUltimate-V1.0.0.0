@@ -52,6 +52,9 @@ model Tenant {
   mapMarkerTypes              MapMarkerType[]
   mapMarkers                  MapMarker[]
   geofences                   Geofence[]
+  displayBoards               DisplayBoard[]
+  announcements               Announcement[]
+  displayEvents               DisplayEvent[]
 }
 
 /// A maintenance request or work record for an apparatus or a piece of equipment.
@@ -442,6 +445,70 @@ model Geofence {
   @@index([tenantId, kind])
 }
 
+/// A station TV board. The page is /display/:id; it reads calls, crews and apparatus status, and writes nothing.
+model DisplayBoard {
+  id                String    @id @default(cuid())
+  tenantId          String
+  name              String
+  stationName       String    @default("")
+  /// all or districts
+  callFilter        String    @default("all")
+  filterGeofenceIds String[]  @default([])
+  takeoverSeconds   Int       @default(60)
+  soundOn           Boolean   @default(true)
+  /// { panels: { apparatus, onDuty, incidents, events, messages } }
+  layoutJson        Json      @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  createdBy         String    @default("")
+  updatedBy         String    @default("")
+  deletedAt         DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// A message shown on every board of the department. Important ones scroll in the red banner.
+model Announcement {
+  id        String    @id @default(cuid())
+  tenantId  String
+  title     String
+  body      String    @default("")
+  important Boolean   @default(false)
+  startsAt  DateTime?
+  endsAt    DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String    @default("")
+  updatedBy String    @default("")
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// An upcoming event on the boards until the Calendar module replaces it.
+model DisplayEvent {
+  id          String    @id @default(cuid())
+  tenantId    String
+  title       String
+  startsAt    DateTime
+  /// location, notes
+  detailsJson Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String    @default("")
+  updatedBy   String    @default("")
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, startsAt])
+}
+
 /// One row per shift trade request. Names match Scheduler Settings → Personnel; usernames decide who may see and act on it.
 model TradeRequest {
   id                  String   @id @default(cuid())
@@ -651,6 +718,10 @@ model Incident {
   dispatchInfo   String    @default("")
   apparatusJson  Json?
   mapReference   String?
+  /// Map point for the call address. A cache, cleared after 30 days; it is never part of the NERIS report.
+  latitude       Float?
+  longitude      Float?
+  geocodedAt     DateTime?
   deletedAt      DateTime?
   deletedBy      String?
   deletedReason  String?

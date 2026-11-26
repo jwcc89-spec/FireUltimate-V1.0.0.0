@@ -123,6 +123,9 @@ import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
 import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage";
 import { InspectionsPage } from "./pages/maintenance/InspectionsPage";
+import { CallMap } from "./pages/displays/CallMap";
+import { DisplayBoardPage } from "./pages/displays/DisplayBoardPage";
+import { DisplaysAdminPage } from "./pages/displays/DisplaysAdminPage";
 import { MapMarkersPage } from "./pages/maps/MapMarkersPage";
 import { MapViewPage } from "./pages/maps/MapViewPage";
 import type { NarrativeTemplate } from "./narrativeBuilder";
@@ -5661,19 +5664,13 @@ function IncidentCallDetailPage({
         <article className="panel">
           <div className="panel-header">
             <h2>Live Map</h2>
-            <span className="panel-caption">Prepared for GIS/API integration</span>
+            <span className="panel-caption">Hydrants and markers within 1,500 ft</span>
           </div>
-          <div className="dispatch-map-placeholder map-large">
-            <p>
-              Live map surface for this incident. Future integration will stream
-              unit locations, route updates, hydrants, and map markers in real-time.
-            </p>
-            <ul>
-              <li>Current incident pin: {detail.address}</li>
-              <li>Nearest hydrants and out-of-service hydrant warnings</li>
-              <li>Map marker overlays from Incidents / Mapping settings</li>
-            </ul>
-          </div>
+          {detail.address ? (
+            <CallMap key={detail.callNumber} incidentId={detail.callNumber} address={detail.address} latitude={null} longitude={null} />
+          ) : (
+            <p className="panel-description">No address on this call yet, so there is no map.</p>
+          )}
         </article>
       </section>
 
@@ -14390,6 +14387,8 @@ function RouteResolver({
     content = <InspectionsPage username={username} />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
+  } else if (path === "/admin-functions/displays") {
+    content = <DisplaysAdminPage />;
   } else if (path === "/admin-functions/customization") {
     content = (
       <CustomizationPage
@@ -14859,6 +14858,11 @@ function App() {
               <AuthPage onLogin={handleLogin} />
             )
           }
+        />
+
+        <Route
+          path="/display/:boardId"
+          element={session.isAuthenticated ? <DisplayBoardPage /> : <Navigate to="/auth" replace />}
         />
 
         <Route
