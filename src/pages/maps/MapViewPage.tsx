@@ -19,7 +19,7 @@ export function MapViewPage() {
       <header className="page-header">
         <div>
           <h1>Map View</h1>
-          <p>Department map with hydrants, markers, stations, areas and recent calls. Call pins are looked up and are not saved.</p>
+          <p>Opens on the last call, showing hydrants and markers within 500 ft. Change the distance below the map.</p>
         </div>
         {canManage ? (
           <div className="header-actions">

@@ -1,10 +1,12 @@
 import { useEffect, useState } from "react";
-import { APIProvider, AdvancedMarker, Map, useMapsLibrary } from "@vis.gl/react-google-maps";
+import { APIProvider, Map } from "@vis.gl/react-google-maps";
 import { Flame, Navigation } from "lucide-react";
-import { directionsUrl, locateIncident } from "../../api/displays";
+import { directionsUrl } from "../../api/displays";
 import { getMarkers, type MapMarker } from "../../api/maps";
+import { CallLocator } from "../maps/CallLocator";
+import { HtmlMarker } from "../maps/HtmlMarker";
 import { MapPin } from "../maps/MapPin";
-import { distanceFeet, mapsApiKey, markerColor, type LatLng } from "../maps/mapUtils";
+import { distanceFeet, HIDE_GOOGLE_PLACES, mapsApiKey, markerColor, type LatLng } from "../maps/mapUtils";
 
 const NEARBY_FEET = 1500;
 const MARKER_CACHE_MS = 10 * 60 * 1000;
@@ -22,13 +24,7 @@ function loadMarkers(): Promise<MapMarker[]> {
   return markerRequest;
 }
 
-type Lookup = "saved" | "server" | "google" | "failed";
-
-/**
- * Map of one call with the department's markers within about 1,500 feet, and a Directions button.
- * The point comes from the call (Census, cached 30 days). If Census cannot place it, the browser asks
- * Google only to draw this map; that point is never saved or used for district checks.
- */
+/** Map of one call with the department's markers within about 1,500 feet, and a Directions button. */
 export function CallMap({
   incidentId,
   address,
@@ -42,35 +38,8 @@ export function CallMap({
 }) {
   const apiKey = mapsApiKey();
   const [point, setPoint] = useState<LatLng | null>(latitude != null && longitude != null ? { lat: latitude, lng: longitude } : null);
-  const [lookup, setLookup] = useState<Lookup>(point ? "saved" : "server");
+  const [lookup, setLookup] = useState<"pending" | "done">(point ? "done" : "pending");
   const [markers, setMarkers] = useState<MapMarker[]>([]);
-
-  useEffect(() => {
-    if (lookup !== "server") return;
-    let active = true;
-    void locateIncident(incidentId)
-      .then((found) => {
-        if (!active) return;
-        if (found.latitude != null && found.longitude != null) {
-          setPoint({ lat: found.latitude, lng: found.longitude });
-          setLookup("saved");
-        } else {
-          setLookup("google");
-        }
-      })
-      .catch(() => {
-        if (active) setLookup("google");
-      });
-    return () => {
-      active = false;
-    };
-  }, [incidentId, lookup]);
-
-  useEffect(() => {
-    if (lookup !== "google") return;
-    const timer = window.setTimeout(() => setLookup((current) => (current === "google" ? "failed" : current)), 8000);
-    return () => window.clearTimeout(timer);
-  }, [lookup]);
 
   useEffect(() => {
     if (!apiKey) return;
@@ -87,10 +56,9 @@ export function CallMap({
     ? markers.filter((marker) => distanceFeet(point, { lat: marker.latitude, lng: marker.longitude }) <= NEARBY_FEET)
     : [];
   const directions = directionsUrl({ address, latitude: point?.lat ?? null, longitude: point?.lng ?? null });
-  const waiting = lookup === "server" || (lookup === "google" && Boolean(apiKey));
   const note = !apiKey
     ? "The map needs the Google Maps browser key. Directions still work."
-    : waiting
+    : lookup === "pending"
       ? "Placing the call on the map..."
       : "This address could not be placed on the map. Directions use the address.";
 
@@ -99,33 +67,36 @@ export function CallMap({
       <div className="call-map-canvas">
         {apiKey ? (
           <APIProvider apiKey={apiKey}>
-            {lookup === "google" ? <GoogleLookup address={address} onFound={setPoint} onDone={setLookup} /> : null}
+            {lookup === "pending" ? (
+              <CallLocator
+                incidentId={incidentId}
+                address={address}
+                onDone={(found) => {
+                  setPoint(found);
+                  setLookup("done");
+                }}
+              />
+            ) : null}
             {point ? (
               <Map
                 defaultCenter={point}
                 defaultZoom={17}
-                mapId="DEMO_MAP_ID"
                 mapTypeId="hybrid"
+                styles={HIDE_GOOGLE_PLACES}
                 disableDefaultUI
                 gestureHandling="cooperative"
                 style={{ width: "100%", height: "100%" }}
               >
                 {nearby.map((marker) => (
-                  <AdvancedMarker
-                    key={marker.id}
-                    position={{ lat: marker.latitude, lng: marker.longitude }}
-                    anchorLeft="-50%"
-                    anchorTop="-50%"
-                    title={marker.label}
-                  >
+                  <HtmlMarker key={marker.id} position={{ lat: marker.latitude, lng: marker.longitude }} title={marker.label}>
                     <MapPin icon={marker.icon} color={markerColor(marker)} />
-                  </AdvancedMarker>
+                  </HtmlMarker>
                 ))}
-                <AdvancedMarker position={point} anchorLeft="-50%" anchorTop="-50%" title={address} zIndex={10}>
+                <HtmlMarker position={point} title={address} zIndex={10}>
                   <span className="call-map-pin">
                     <Flame size={18} aria-hidden="true" />
                   </span>
-                </AdvancedMarker>
+                </HtmlMarker>
               </Map>
             ) : (
               <p className="call-map-note">{note}</p>
@@ -143,39 +114,4 @@ export function CallMap({
       </div>
     </div>
   );
-}
-
-function GoogleLookup({
-  address,
-  onFound,
-  onDone,
-}: {
-  address: string;
-  onFound: (point: LatLng) => void;
-  onDone: (lookup: Lookup) => void;
-}) {
-  const geocoding = useMapsLibrary("geocoding");
-  useEffect(() => {
-    if (!geocoding) return;
-    let active = true;
-    void new geocoding.Geocoder()
-      .geocode({ address })
-      .then(({ results }: { results: { geometry: { location: { lat: () => number; lng: () => number } } }[] }) => {
-        if (!active) return;
-        const location = results[0]?.geometry.location;
-        if (location) {
-          onFound({ lat: location.lat(), lng: location.lng() });
-          onDone("saved");
-        } else {
-          onDone("failed");
-        }
-      })
-      .catch(() => {
-        if (active) onDone("failed");
-      });
-    return () => {
-      active = false;
-    };
-  }, [address, geocoding, onDone, onFound]);
-  return null;
 }

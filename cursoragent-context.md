@@ -100,6 +100,7 @@
 34. PILL behavior must support toggle-off (click selected option again to deselect).
 
 ## 7) Workflow/testing expectations
+34a. **The operator tests on staging, not locally (decided 2026-11-26).** Click-through checks are written for the staging site (`https://cifpdil.staging.fireultimate.app`) after the work is merged into the branch Render builds (`submenu/neris-golive-cifpd`) and Render has redeployed. Do **not** tell the user to run `npm run dev`, `npm run proxy`, or open `localhost` unless a local run is truly the only way, and then say why. Agents still run `npm run lint`, `npm run build` and `npm test` themselves. When a change needs a staging migration first, put the migration and merge order in the steps.
 35. Run lint/build checks after edits when possible.
 36. Provide copy/paste test checklists (with **where / click / type / expect** detail when the user runs them).
 37. If errors occur, request full (not truncated) error output.

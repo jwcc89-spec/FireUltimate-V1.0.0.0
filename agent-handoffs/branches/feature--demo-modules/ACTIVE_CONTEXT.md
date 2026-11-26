@@ -43,6 +43,13 @@
   - The incident page's Live Map panel now shows the call map and Directions.
   - Details are in the plan's "W3 as built" note.
   - **W3 is not merged into `submenu/neris-golive-cifpd` yet.** Merge it only after the migration below is applied, or staging incidents break.
+- **W2 follow-up round done** (2026-11-26, no schema change). Changes:
+  - The Incidents page has no sample cards. Reminder: the operator may want them on the Dashboard.
+  - Map View opens on the last call with a 500 ft "show only within" circle.
+  - Road view is the default, and the Google Layer is hidden by default.
+  - The search box suggests as you type, which needs Places API (New) on the key.
+  - The toolbar has a big FULL SCREEN button.
+  - See the plan's "W2 follow-up round" note.
 - **Operator still applies all five migrations to staging** (`20261126090000_add_comment`, `20261126100000_add_maintenance`, `20261126110000_add_parts_pm_inspections`, `20261126140000_add_maps`, `20261126150000_add_displays`):
   1. Back up Neon first.
   2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.
@@ -51,6 +58,7 @@
 - **Next: W4** (Inventory). Restate its scope and confirm whether it reuses the round-3 `ChecklistTemplate` tables before building it. Wait for the operator's W2 and W3 click-through first.
 
 ## Rules that matter here
+- **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
 - Demo menu items keep `isBuilt: false` until their real page lands. Only superadmins can click those items, so CIFPD users on staging never see blank pages.
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks.

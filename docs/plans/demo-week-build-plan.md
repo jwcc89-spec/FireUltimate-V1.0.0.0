@@ -492,6 +492,21 @@ git push -u origin feature/demo-modules
 - **Frontend:** `src/pages/maps/` and `src/api/maps.ts`. `useModuleLookups()` now also returns `stationRecords` (name, address, city, state). The old `stations` name list is unchanged.
 - **Deferred:** USNG, Transfer Hydrants, personnel home addresses, residential plans, editing an outline's corners, saved incident coordinates (W3), and real property or pre-plan links (W7).
 
+**W2 follow-up round (2026-11-26, from the operator's map check, no schema change).** Where this differs from the W2 text above, this wins:
+- **Incidents page:** the four sample cards at the top (Open Calls, Average Turnout, Average Travel, Calls Awaiting Closure) are removed. They held hard-coded numbers and only superadmins saw them. **Reminder: the operator may want these on the Dashboard instead, with real numbers.** The data and the Customization show/hide setting are still in `INCIDENT_QUEUE_STATS`.
+- **Map View opens on the last call** (the newest incident with an address). It uses the same lookup as the display board: the saved Census point, then Google only to draw. The call shows as a red flame pin.
+- **"Show hydrants and markers only within":** 500 ft (Map View default), 1,000 ft, 1,500 ft, 2,500 ft, 1 mile, or All (Map Markers default, so admins see what they add).
+  - The circle is centered on the last call, or on whatever was searched last (address or marker).
+  - It is drawn on the map, and the map fits to it.
+  - Filtering is in the browser. A server-side distance query is Later, if load time needs it.
+- **Road view is the default.** Satellite is one click.
+- **"Google Layer" is off by default.** Google's own places (restaurants, hospitals, bus stops) are hidden. "Google Layer" in the Showing row turns them back on.
+  - Hiding them needs a map without a Google map ID, so the department's pins now use `src/pages/maps/HtmlMarker.tsx` instead of Google's Advanced Markers.
+  - The display board's call map uses it too. Dragging a marker to move it still works.
+- **Search suggests while typing:** the department's markers and areas first, then Google address suggestions (Places API (New)). Picking an address moves the map and the circle; the Google point is never saved. Without the Places API, the list says so and plain search still works.
+  - **Operator step:** in Google Cloud, enable **Places API (New)** and allow it on the browser key.
+- **Toolbar:** USNG and Transfer Hydrants on the left, a large **FULL SCREEN** button in the center, and Measure and Road/Satellite on the right (Add marker, color and Draw area too on Map Markers).
+
 ### W3. Display Board (about 2 hours)
 - **Summary:** a full-screen board like your reference photo, with several boards per station, the 60-second emergency takeover with sound, and an "all calls" or "my district" setting.
 - **Details:**
@@ -687,6 +702,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - Run `npm run lint` and `npm run build`.
 - Run targeted checks on `/api/module-records`, confirming that another tenant's records cannot be read or written.
 - Deploy to staging, then follow a click-through checklist given in chat.
+- **The operator tests on staging only** (decided 2026-11-26). Write click checks for `https://cifpdil.staging.fireultimate.app`, not `localhost`. If a staging migration must come first, list the backup, the migration and the merge in order.
 
 ## Risks
 - **About 18 hours of estimates against 15 available.** Real tables add about 1.5 hours, and the smaller UI step saves about 0.25 hours. If time runs short:

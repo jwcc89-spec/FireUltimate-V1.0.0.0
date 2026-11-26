@@ -1,8 +1,7 @@
-import { type FormEvent, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   APIProvider,
-  AdvancedMarker,
   InfoWindow,
   Map,
   Polygon,
@@ -10,7 +9,7 @@ import {
   useMap,
   type MapMouseEvent,
 } from "@vis.gl/react-google-maps";
-import { Maximize2, Pencil, Plus, Ruler, Satellite } from "lucide-react";
+import { Flame, Maximize2, Pencil, Plus, Ruler, Satellite } from "lucide-react";
 import { getIncidentList } from "../../api/incidents";
 import {
   createGeofence,
@@ -27,17 +26,26 @@ import {
 } from "../../api/maps";
 import { useModuleLookups } from "../../moduleLookups";
 import { errorText, formatTimestamp24 } from "../maintenance/maintenanceUtils";
+import { CallLocator } from "./CallLocator";
 import { GeofenceDraw } from "./GeofenceDraw";
+import { HtmlMarker } from "./HtmlMarker";
 import { MapPin } from "./MapPin";
 import { MapRecordForm } from "./MapRecordForm";
+import { MapSearch } from "./MapSearch";
 import {
+  boundsAround,
   cachedGeocode,
+  circlePath,
   DEFAULT_CENTER,
+  distanceFeet,
   distanceLabel,
   DRAW_COLORS,
   firstPoint,
   geofenceDraftFrom,
+  HIDE_GOOGLE_PLACES,
   mapsApiKey,
+  RADIUS_OPTIONS,
+  SHOW_GOOGLE_PLACES,
   markerColor,
   markerDraftFrom,
   markerLayer,
@@ -75,12 +83,21 @@ export interface MapFocus {
 }
 
 type GoogleMap = NonNullable<ReturnType<typeof useMap>>;
+type IncidentList = Awaited<ReturnType<typeof getIncidentList>>;
 
-function fromLatLng(value: { lat: number | (() => number); lng: number | (() => number) } | null | undefined): LatLng | null {
-  if (!value) return null;
-  const lat = typeof value.lat === "function" ? value.lat() : value.lat;
-  const lng = typeof value.lng === "function" ? value.lng() : value.lng;
-  return Number.isFinite(lat) && Number.isFinite(lng) ? { lat, lng } : null;
+interface Anchor {
+  point: LatLng;
+  label: string;
+}
+
+/** Fits the map to the "show only within" circle, or a street-level view when showing everything. */
+function fitAround(map: GoogleMap, point: LatLng, feet: number | null) {
+  if (feet == null) {
+    map.panTo(point);
+    map.setZoom(17);
+    return;
+  }
+  map.fitBounds(boundsAround(point, feet), 24);
 }
 
 function blankMarker(latitude: number, longitude: number, typeId: string): MarkerDraft {
@@ -118,6 +135,15 @@ function blankGeofence(geometry: GeoGeometry, color: string): GeofenceDraft {
   };
 }
 
+function callLines(incident: IncidentList[number]): string[] {
+  const received = formatTimestamp24(incident.receivedAt) || incident.receivedAt;
+  return [incident.address, incident.stillDistrict ? `District ${incident.stillDistrict}` : "", received].filter(Boolean);
+}
+
+function incidentHref(callNumber: string): string {
+  return `/incidents-mapping/incidents/${encodeURIComponent(callNumber)}`;
+}
+
 function popupPosition(popup: MapPopup): LatLng | null {
   if (popup.kind === "place") return popup.position;
   if (popup.kind === "marker") {
@@ -153,7 +179,12 @@ export function MapCanvas({
   const skipClick = useRef(false);
   const fitted = useRef(false);
   const [map, setMap] = useState<GoogleMap | null>(null);
-  const [satellite, setSatellite] = useState(true);
+  const [satellite, setSatellite] = useState(false);
+  const [googleLayer, setGoogleLayer] = useState(false);
+  const [radius, setRadius] = useState<number | null>(mode === "view" ? 500 : null);
+  const [calls, setCalls] = useState<IncidentList | undefined>(undefined);
+  const [callPoint, setCallPoint] = useState<{ id: string; point: LatLng | null } | null>(null);
+  const [searchAnchor, setSearchAnchor] = useState<Anchor | null>(null);
   const [tool, setTool] = useState<"none" | "measure" | "draw">("none");
   const [shape, setShape] = useState<"polygon" | "rectangle" | "circle">("polygon");
   const [drawColor, setDrawColor] = useState("#dc2626");
@@ -167,7 +198,6 @@ export function MapCanvas({
     residential: false,
     incidents: mode === "view",
   });
-  const [query, setQuery] = useState("");
   const [status, setStatus] = useState("");
   const [popup, setPopup] = useState<MapPopup | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -186,12 +216,45 @@ export function MapCanvas({
     geofencesRef.current = geofences;
   }, [geofences]);
 
+  const lastCall = mode !== "view" || calls === undefined ? undefined : (calls.find((call) => call.address && call.address !== "Unknown") ?? null);
+  const callLocated = !lastCall || callPoint?.id === lastCall.callNumber;
+  const callPending = mode === "view" && Boolean(apiKey) && (lastCall === undefined || !callLocated);
+  const lastCallPoint = lastCall && callPoint?.id === lastCall.callNumber ? callPoint.point : null;
+  const anchor: Anchor | null =
+    searchAnchor ?? (lastCall && lastCallPoint ? { point: lastCallPoint, label: `the last call, ${lastCall.address}` } : null);
+  const anchorLat = anchor?.point.lat;
+  const anchorLng = anchor?.point.lng;
+
   useEffect(() => {
     map?.setMapTypeId(satellite ? "hybrid" : "roadmap");
   }, [map, satellite]);
 
+  const needCalls = mode === "view" || layers.incidents;
   useEffect(() => {
-    if (!map || fitted.current) return;
+    if (!needCalls || calls !== undefined) return;
+    let active = true;
+    void getIncidentList()
+      .then((list) => {
+        if (active) setCalls(list);
+      })
+      .catch(() => {
+        if (!active) return;
+        setCalls([]);
+        setStatus("Could not load incidents.");
+      });
+    return () => {
+      active = false;
+    };
+  }, [calls, needCalls]);
+
+  useEffect(() => {
+    if (!map || anchorLat == null || anchorLng == null) return;
+    fitted.current = true;
+    fitAround(map, { lat: anchorLat, lng: anchorLng }, radius);
+  }, [anchorLat, anchorLng, map, radius]);
+
+  useEffect(() => {
+    if (!map || fitted.current || callPending || anchorLat != null) return;
     const points: LatLng[] = markers.map((marker) => ({ lat: marker.latitude, lng: marker.longitude }));
     for (const area of geofences) {
       const point = firstPoint(area.geometry);
@@ -214,7 +277,7 @@ export function MapCanvas({
       },
       48,
     );
-  }, [geofences, map, markers]);
+  }, [anchorLat, callPending, geofences, map, markers]);
 
   useEffect(() => {
     if (!focus) return;
@@ -270,40 +333,42 @@ export function MapCanvas({
   }, [layers.apparatus, lookups.stationRecords]);
 
   useEffect(() => {
-    if (!layers.incidents) return;
+    if (!layers.incidents || !calls) return;
     let active = true;
+    const pending = calls.filter((incident) => incident.address && incident.address !== "Unknown").slice(0, 12);
+    if (pending.length === 0) return;
     setStatus("Looking up call addresses…");
-    void getIncidentList()
-      .then(async (list) => {
-        const pins: { id: string; title: string; lines: string[]; href: string; position: LatLng }[] = [];
-        const pending = list.filter((incident) => incident.address && incident.address !== "Unknown").slice(0, 12);
-        for (const incident of pending) {
-          if (!active) return;
-          const point = await cachedGeocode(incident.address, geocodeAddress);
-          if (!point) continue;
-          const received = formatTimestamp24(incident.receivedAt) || incident.receivedAt;
-          pins.push({
-            id: incident.callNumber,
-            title: incident.incidentType || "Incident",
-            lines: [incident.address, incident.stillDistrict ? `District ${incident.stillDistrict}` : "", received].filter(Boolean),
-            href: `/incidents-mapping/incidents/${encodeURIComponent(incident.callNumber)}`,
-            position: point,
-          });
-        }
+    void (async () => {
+      const pins: { id: string; title: string; lines: string[]; href: string; position: LatLng }[] = [];
+      for (const incident of pending) {
         if (!active) return;
-        setIncidentPins(pins);
-        setStatus(pins.length === 0 && pending.length > 0 ? "No call addresses could be placed. Pick a district by hand below." : "");
-      })
-      .catch(() => {
-        if (active) setStatus("Could not load incidents.");
-      });
+        const point = await cachedGeocode(incident.address, geocodeAddress);
+        if (!point) continue;
+        pins.push({
+          id: incident.callNumber,
+          title: incident.incidentType || "Incident",
+          lines: callLines(incident),
+          href: incidentHref(incident.callNumber),
+          position: point,
+        });
+      }
+      if (!active) return;
+      setIncidentPins(pins);
+      setStatus(pins.length === 0 ? "No call addresses could be placed. Pick a district by hand below." : "");
+    })();
     return () => {
       active = false;
     };
-  }, [layers.incidents]);
+  }, [calls, layers.incidents]);
 
   const defaultTypeId = types.find((type) => type.icon === "hydrant")?.id ?? types[0]?.id ?? "";
-  const visibleMarkers = markers.filter((marker) => layers[markerLayer(marker)]);
+  const visibleMarkers = markers.filter(
+    (marker) =>
+      layers[markerLayer(marker)] &&
+      (radius == null || !anchor || distanceFeet(anchor.point, { lat: marker.latitude, lng: marker.longitude }) <= radius),
+  );
+  const shownIncidentPins = lastCallPoint && lastCall ? incidentPins.filter((pin) => pin.id !== lastCall.callNumber) : incidentPins;
+  const radiusLabel = RADIUS_OPTIONS.find((option) => option.feet === radius)?.label ?? "All";
 
   const openNewMarker = (latitude: number, longitude: number) => {
     setSelectedId(null);
@@ -329,37 +394,55 @@ export function MapCanvas({
     setMeasurePoints((current) => (current.length >= 2 ? [point] : [...current, point]));
   };
 
-  const onSearch = async (event: FormEvent) => {
-    event.preventDefault();
-    const term = query.trim().toLowerCase();
+  const showMarker = (marker: MapMarker) => {
+    const point = { lat: marker.latitude, lng: marker.longitude };
+    setSearchAnchor({ point, label: marker.label });
+    if (radius == null) {
+      map?.panTo(point);
+      map?.setZoom(17);
+    }
+    setSelectedId(marker.id);
+    setPopup({ kind: "marker", tab: "info", draft: markerDraftFrom(marker) });
+    setStatus("");
+  };
+
+  const showArea = (area: Geofence) => {
+    const point = firstPoint(area.geometry);
+    if (point) {
+      map?.panTo(point);
+      map?.setZoom(16);
+    }
+    setPopup({ kind: "geofence", tab: "info", draft: geofenceDraftFrom(area) });
+    setStatus("");
+  };
+
+  const showPlace = (point: LatLng, label: string) => {
+    setSearchAnchor({ point, label });
+    if (radius == null) {
+      map?.panTo(point);
+      map?.setZoom(17);
+    }
+    setStatus(label);
+  };
+
+  const onSearch = async (text: string) => {
+    const term = text.trim().toLowerCase();
     if (!term) return;
     const marker = markers.find((item) =>
       [item.label, item.address, item.notes, item.typeName].some((value) => value.toLowerCase().includes(term)),
     );
     if (marker) {
-      map?.panTo({ lat: marker.latitude, lng: marker.longitude });
-      map?.setZoom(17);
-      setSelectedId(marker.id);
-      setPopup({ kind: "marker", tab: "info", draft: markerDraftFrom(marker) });
-      setStatus("");
+      showMarker(marker);
       return;
     }
     const area = geofences.find((item) => item.name.toLowerCase().includes(term) || item.description.toLowerCase().includes(term));
     if (area) {
-      const point = firstPoint(area.geometry);
-      if (point) {
-        map?.panTo(point);
-        map?.setZoom(16);
-      }
-      setPopup({ kind: "geofence", tab: "info", draft: geofenceDraftFrom(area) });
-      setStatus("");
+      showArea(area);
       return;
     }
     try {
-      const result = await geocodeAddress(query.trim());
-      map?.panTo({ lat: result.latitude, lng: result.longitude });
-      map?.setZoom(17);
-      setStatus(result.matchedAddress);
+      const result = await geocodeAddress(text.trim());
+      showPlace({ lat: result.latitude, lng: result.longitude }, result.matchedAddress);
     } catch (searchError) {
       setStatus(errorText(searchError, "No marker or address matched."));
     }
@@ -446,11 +529,20 @@ export function MapCanvas({
       {apiKey ? (
         <div className="map-canvas" ref={canvasRef}>
           <APIProvider apiKey={apiKey}>
+            {mode === "view" && lastCall && !callLocated ? (
+              <CallLocator
+                key={lastCall.callNumber}
+                incidentId={lastCall.callNumber}
+                address={lastCall.address}
+                onDone={(point) => setCallPoint({ id: lastCall.callNumber, point })}
+              />
+            ) : null}
             <Map
               defaultCenter={DEFAULT_CENTER}
               defaultZoom={15}
-              mapId="DEMO_MAP_ID"
               mapTypeId={satellite ? "hybrid" : "roadmap"}
+              styles={googleLayer ? SHOW_GOOGLE_PLACES : HIDE_GOOGLE_PLACES}
+              clickableIcons={googleLayer}
               gestureHandling="greedy"
               disableDoubleClickZoom={mode === "edit"}
               mapTypeControl={false}
@@ -492,17 +584,25 @@ export function MapCanvas({
                     )),
                   )
                 : null}
+              {anchor && radius != null ? (
+                <Polygon
+                  paths={[circlePath(anchor.point, radius)]}
+                  strokeColor="#dc2626"
+                  strokeOpacity={0.7}
+                  strokeWeight={2}
+                  fillColor="#dc2626"
+                  fillOpacity={0.04}
+                  clickable={false}
+                />
+              ) : null}
               {visibleMarkers.map((marker) => (
-                <AdvancedMarker
+                <HtmlMarker
                   key={marker.id}
                   position={{ lat: marker.latitude, lng: marker.longitude }}
-                  anchorLeft="-50%"
-                  anchorTop="-50%"
                   title={marker.label}
                   zIndex={selectedId === marker.id ? 5 : 1}
                   draggable={editable && selectedId === marker.id && tool === "none"}
                   onClick={() => {
-                    skipClick.current = true;
                     setFormError("");
                     if (!editable) {
                       setSelectedId(marker.id);
@@ -516,27 +616,22 @@ export function MapCanvas({
                       setPopup(null);
                     }
                   }}
-                  onDragEnd={(event) => {
-                    const point = fromLatLng(event.latLng);
-                    if (!point) return;
+                  onDragEnd={(point) => {
                     void updateMarker(marker.id, { latitude: point.lat, longitude: point.lng })
                       .then(() => onReload())
                       .catch((moveError) => setStatus(errorText(moveError, "Could not move the marker.")));
                   }}
                 >
                   <MapPin icon={marker.icon} color={markerColor(marker)} selected={selectedId === marker.id} />
-                </AdvancedMarker>
+                </HtmlMarker>
               ))}
               {layers.apparatus
                 ? stationPins.map((pin) => (
-                    <AdvancedMarker
+                    <HtmlMarker
                       key={pin.name}
                       position={pin.position}
-                      anchorLeft="-50%"
-                      anchorTop="-50%"
                       title={pin.name}
                       onClick={() => {
-                        skipClick.current = true;
                         setPopup({
                           kind: "place",
                           title: pin.name,
@@ -546,37 +641,60 @@ export function MapCanvas({
                       }}
                     >
                       <MapPin icon="firehouse" color="#b45309" />
-                    </AdvancedMarker>
+                    </HtmlMarker>
                   ))
                 : null}
               {layers.incidents
-                ? incidentPins.map((pin) => (
-                    <AdvancedMarker
+                ? shownIncidentPins.map((pin) => (
+                    <HtmlMarker
                       key={pin.id}
                       position={pin.position}
-                      anchorLeft="-50%"
-                      anchorTop="-50%"
                       title={pin.title}
                       onClick={() => {
-                        skipClick.current = true;
                         setPopup({ kind: "place", title: pin.title, lines: pin.lines, href: pin.href, hrefLabel: "Open incident", position: pin.position });
                       }}
                     >
                       <MapPin icon="hazard" color="#dc2626" />
-                    </AdvancedMarker>
+                    </HtmlMarker>
                   ))
                 : null}
+              {lastCall && lastCallPoint ? (
+                <HtmlMarker
+                  position={lastCallPoint}
+                  title={`Last call: ${lastCall.address}`}
+                  zIndex={8}
+                  onClick={() => {
+                    setPopup({
+                      kind: "place",
+                      title: `Last call: ${lastCall.incidentType || "Incident"}`,
+                      lines: callLines(lastCall),
+                      href: incidentHref(lastCall.callNumber),
+                      hrefLabel: "Open incident",
+                      position: lastCallPoint,
+                    });
+                  }}
+                >
+                  <span className="call-map-pin">
+                    <Flame size={18} aria-hidden="true" />
+                  </span>
+                </HtmlMarker>
+              ) : null}
+              {searchAnchor ? (
+                <HtmlMarker position={searchAnchor.point} title={searchAnchor.label} zIndex={7}>
+                  <span className="map-search-pin" />
+                </HtmlMarker>
+              ) : null}
               {measurePoints.length === 2 ? (
                 <>
                   <Polyline path={measurePoints} strokeColor="#0f172a" strokeWeight={3} />
-                  <AdvancedMarker
+                  <HtmlMarker
                     position={{
                       lat: (measurePoints[0].lat + measurePoints[1].lat) / 2,
                       lng: (measurePoints[0].lng + measurePoints[1].lng) / 2,
                     }}
                   >
                     <span className="map-measure-label">{distanceLabel(measurePoints[0], measurePoints[1])}</span>
-                  </AdvancedMarker>
+                  </HtmlMarker>
                 </>
               ) : null}
               {recordPopup && position ? (
@@ -606,17 +724,16 @@ export function MapCanvas({
                 </InfoWindow>
               ) : null}
             </Map>
-          </APIProvider>
-          <form className="map-search" onSubmit={(event) => void onSearch(event)}>
-            <input
-              type="text"
-              className="maintenance-search"
-              value={query}
-              placeholder="Search a marker name or an address"
-              onChange={(event) => setQuery(event.target.value)}
+            <MapSearch
+              markers={markers}
+              geofences={geofences}
+              bias={anchor?.point ?? DEFAULT_CENTER}
+              onSearch={(text) => void onSearch(text)}
+              onMarker={showMarker}
+              onArea={showArea}
+              onPlace={showPlace}
             />
-            <button type="submit" className="secondary-button compact-button">Search</button>
-          </form>
+          </APIProvider>
         </div>
       ) : (
         <p className="field-hint">
@@ -632,7 +749,19 @@ export function MapCanvas({
             Transfer Hydrants
           </button>
         </div>
-        <div className="map-toolbar-group">
+        <button
+          type="button"
+          className="primary-button map-fullscreen-button"
+          onClick={() => {
+            const node = canvasRef.current;
+            if (!node) return;
+            if (document.fullscreenElement) void document.exitFullscreen();
+            else void node.requestFullscreen();
+          }}
+        >
+          <Maximize2 size={18} aria-hidden="true" /> FULL SCREEN
+        </button>
+        <div className="map-toolbar-group map-toolbar-end">
           {editable ? (
             <button type="button" className="primary-button compact-button maintenance-icon-button" onClick={() => {
               const center = map?.getCenter();
@@ -672,14 +801,6 @@ export function MapCanvas({
           <button type="button" className="secondary-button compact-button maintenance-icon-button" onClick={() => setSatellite((current) => !current)}>
             <Satellite size={15} aria-hidden="true" /> {satellite ? "Road" : "Satellite"}
           </button>
-          <button type="button" className="secondary-button compact-button" aria-label="Full screen" onClick={() => {
-            const node = canvasRef.current;
-            if (!node) return;
-            if (document.fullscreenElement) void document.exitFullscreen();
-            else void node.requestFullscreen();
-          }}>
-            <Maximize2 size={15} aria-hidden="true" />
-          </button>
         </div>
       </div>
       {showColors && editable ? (
@@ -712,7 +833,27 @@ export function MapCanvas({
             {item.label}
           </button>
         ))}
+        <button type="button" aria-pressed={googleLayer} onClick={() => setGoogleLayer((current) => !current)}>
+          Google Layer
+        </button>
       </div>
+      <div className="map-showing">
+        <span>Show hydrants and markers only within:</span>
+        {RADIUS_OPTIONS.map((option) => (
+          <button key={option.label} type="button" aria-pressed={radius === option.feet} onClick={() => setRadius(option.feet)}>
+            {option.label}
+          </button>
+        ))}
+      </div>
+      <p className="field-hint">
+        {radius == null
+          ? `Showing all ${visibleMarkers.length} hydrants and markers.`
+          : anchor
+            ? `Showing ${visibleMarkers.length} within ${radiusLabel} of ${anchor.label}. Search an address or pick a marker to move the circle.`
+            : callPending
+              ? "Finding the last call..."
+              : "No call or search point yet, so every hydrant and marker is shown. Search an address to use the circle."}
+      </p>
       {status ? <p className="field-hint">{status}</p> : null}
       {!canManage && mode === "edit" ? <p className="field-hint">You can look at the map. Changing markers and areas needs the map permission.</p> : null}
       {!apiKey && recordPopup ? (

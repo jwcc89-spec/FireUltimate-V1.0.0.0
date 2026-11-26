@@ -52,6 +52,42 @@ export function mapsApiKey(): string {
   return env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? "";
 }
 
+/** Hides Google's own places (restaurants, hospitals, bus stops). Only works on a map without a map ID. */
+export const HIDE_GOOGLE_PLACES = [
+  { featureType: "poi", stylers: [{ visibility: "off" }] },
+  { featureType: "transit", elementType: "labels.icon", stylers: [{ visibility: "off" }] },
+];
+
+export const SHOW_GOOGLE_PLACES: typeof HIDE_GOOGLE_PLACES = [];
+
+export const RADIUS_OPTIONS: { feet: number | null; label: string }[] = [
+  { feet: 500, label: "500 ft" },
+  { feet: 1000, label: "1,000 ft" },
+  { feet: 1500, label: "1,500 ft" },
+  { feet: 2500, label: "2,500 ft" },
+  { feet: 5280, label: "1 mile" },
+  { feet: null, label: "All" },
+];
+
+const FEET_PER_DEGREE_LAT = 364000;
+
+/** Box around a point, for fitting the map to a "show only within" circle. */
+export function boundsAround(center: LatLng, feet: number) {
+  const dLat = feet / FEET_PER_DEGREE_LAT;
+  const dLng = dLat / Math.max(Math.cos((center.lat * Math.PI) / 180), 0.01);
+  return { north: center.lat + dLat, south: center.lat - dLat, east: center.lng + dLng, west: center.lng - dLng };
+}
+
+/** Outline of a circle as map points, drawn as a polygon. */
+export function circlePath(center: LatLng, feet: number, steps = 64): LatLng[] {
+  const dLat = feet / FEET_PER_DEGREE_LAT;
+  const dLng = dLat / Math.max(Math.cos((center.lat * Math.PI) / 180), 0.01);
+  return Array.from({ length: steps }, (_, index) => {
+    const angle = (index / steps) * 2 * Math.PI;
+    return { lat: center.lat + dLat * Math.sin(angle), lng: center.lng + dLng * Math.cos(angle) };
+  });
+}
+
 export function distanceFeet(from: LatLng, to: LatLng): number {
   const toRad = (degrees: number) => (degrees * Math.PI) / 180;
   const earth = 6371000;
