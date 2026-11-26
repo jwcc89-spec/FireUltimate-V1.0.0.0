@@ -42,7 +42,7 @@
   - Admin Functions > Displays is `isBuilt: true`. The TV page is `/display/:boardId`, outside the app frame.
   - The incident page's Live Map panel now shows the call map and Directions.
   - Details are in the plan's "W3 as built" note.
-  - **W3 is not merged into `submenu/neris-golive-cifpd` yet.** Merge it only after the migration below is applied, or staging incidents break.
+  - **Merged into `submenu/neris-golive-cifpd` on 2026-11-26 as `1676225`**, together with the W2 follow-up round. `prisma migrate status` on staging showed all 22 migrations applied first.
 - **W2 follow-up round done** (2026-11-26, no schema change). Changes:
   - The Incidents page has no sample cards. Reminder: the operator may want them on the Dashboard.
   - Map View opens on the last call with a 500 ft "show only within" circle.
@@ -50,11 +50,8 @@
   - The search box suggests as you type, which needs Places API (New) on the key.
   - The toolbar has a big FULL SCREEN button.
   - See the plan's "W2 follow-up round" note.
-- **Operator still applies all five migrations to staging** (`20261126090000_add_comment`, `20261126100000_add_maintenance`, `20261126110000_add_parts_pm_inspections`, `20261126140000_add_maps`, `20261126150000_add_displays`):
-  1. Back up Neon first.
-  2. Run `node --env-file=.env.server ./node_modules/.bin/prisma migrate deploy`.
-  - Until then, the maintenance, inspection, Fleet Overview, map and display pages show load errors. Nothing else is affected. Incident lists are also affected once the new Prisma client runs, because `Incident` has new columns. **Apply the migration before deploying this code to staging.**
-  - The staging build also needs `VITE_GOOGLE_MAPS_API_KEY`. Without it the map pages still open, but they show the form instead of tiles.
+- **All five demo migrations are applied on staging** (confirmed with `prisma migrate status` on 2026-11-26: 22 of 22 applied). Any future migration must be applied to staging before its code is merged into `submenu/neris-golive-cifpd`.
+  - The staging build also needs `VITE_GOOGLE_MAPS_API_KEY`, and search suggestions need Places API (New) on that key. Without it the map pages still open, but they show the form instead of tiles.
 - **Next: W4** (Inventory). Restate its scope and confirm whether it reuses the round-3 `ChecklistTemplate` tables before building it. Wait for the operator's W2 and W3 click-through first.
 
 ## Rules that matter here
