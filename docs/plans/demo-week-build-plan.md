@@ -18,8 +18,8 @@ todos:
     content: 'W2: Google MapView, Map View layers, Map Markers, geofences with Terra Draw, district auto-fill (operator still applies the maps migration to staging)'
     status: completed
   - id: w3-display
-    content: 'W3: Displays admin and the /display/:boardId page matching the reference photo, 60s takeover with sound, all-calls or district filter'
-    status: pending
+    content: 'W3: Displays admin and the /display/:boardId page matching the reference photo, 60s takeover with sound, all-calls or district filter (operator still applies the displays migration to staging)'
+    status: completed
   - id: w4-inventory
     content: 'W4: Checklist template builder and check completion with typed name plus PIN'
     status: pending
@@ -518,6 +518,32 @@ git push -u origin feature/demo-modules
     - a **Directions** button that opens Google Maps directions from the device's current location
   - **On a personal computer or phone,** the incident page has the same map and Directions button.
   - **Sound:** browsers only allow sound after one click on the screen, so the board shows a "Tap to enable sound" button once.
+
+**W3 as built (2026-11-25, branch `feature/demo-modules`).** Where this differs from the W3 text above, this wins:
+- **Migration** `20261126150000_add_displays` is additive only. It adds the `DisplayBoard`, `Announcement` and `DisplayEvent` tables, plus nullable `Incident.latitude`, `longitude` and `geocodedAt`. The operator applies it to staging after a Neon backup.
+- **Call location cache.** The incident columns hold a Census point only:
+  - It is saved without changing the incident's `updatedAt`.
+  - It is ignored when the call was edited after it was saved, and it is cleared after 30 days (at most hourly per department).
+  - It is never part of the NERIS report, because `incidentRowToApi` lists its fields explicitly.
+  - Code is in `server/modules/incidentLocation.mjs`.
+- **Google geocoding is browser-only.** When Census can't place an address, the map asks Google so it can draw. That point is never saved and never used for districts.
+- **Routes** are in `server/modules/displays.mjs`:
+  - `GET/POST /api/displays/boards`, `GET/PATCH/DELETE /api/displays/boards/:id`.
+  - `GET /api/displays/boards/:id/feed` returns apparatus, on duty, incidents, events and messages in one call.
+  - Full CRUD under `/api/displays/announcements` and `/api/displays/events`.
+  - `POST /api/maps/incident-location`.
+  - Reading a board needs any signed-in user. The feed and incident location need `incidents.view`. Every write needs `displays.manage`.
+- **Feed rules:**
+  - Apparatus status comes from the same function as Fleet Overview (`apparatusStatusFor` in `maintenance.mjs`).
+  - On Duty is the schedule seats whose time window contains the current minute. Yesterday's overnight shifts count until they end.
+  - A station board shows only that station's units and crew. If no unit matches the station, it shows every unit.
+  - A district board keeps a call when its Census point is inside a chosen geofence or its still district names one. A call it can't place is still shown, marked "District not confirmed". Each refresh looks up at most 3 calls.
+  - Up to 10 calls, newest first. Events show from 6 hours ago on, soonest first. Messages show only inside their start and end window, important ones first.
+- **Takeover.** The first load only records the calls already there. After that, a new call that is under 30 minutes old opens the takeover for the board's set seconds. `?test=1` opens a takeover with the newest call (or a sample) on load.
+- **The TV signs in with a normal account.** Device pairing is deferred. The board opens at `/display/:boardId` outside the app frame.
+- **Incident page:** the "Live Map" panel now shows the same map, nearby markers within 1,500 ft, and Directions.
+- **Messages are department-wide**, not per board.
+- **Deferred:** device pairing or kiosk accounts, per-board messages, live unit locations, routing time, and calendar events (W-later Calendar replaces `DisplayEvent`).
 
 ### W4. Inventory (about 1.5 hours)
 - **Summary:** admins build checklist templates, and users complete checks with a typed name and PIN.

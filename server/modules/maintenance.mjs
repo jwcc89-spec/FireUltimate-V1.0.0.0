@@ -294,6 +294,84 @@ async function loadCommentsFor(prisma, tenantId, recordId) {
   }));
 }
 
+/** One row per apparatus that has maintenance or inspection history. Units with no history are In Service. */
+export async function apparatusStatusFor(prisma, tenantId) {
+  const rows = await prisma.maintenanceRecord.findMany({
+    where: { tenantId, deletedAt: null, assetKind: "apparatus" },
+    include: { type: { select: { name: true } } },
+    orderBy: { createdAt: "asc" },
+  });
+  const units = new Map();
+  const unitFor = (ref) => {
+    if (!units.has(ref)) {
+      units.set(ref, {
+        unitId: ref,
+        status: "In Service",
+        outOfServiceSince: "",
+        outOfServiceRecordId: "",
+        outOfServiceRecordNumber: "",
+        outOfServiceReason: "",
+        openRecords: 0,
+        openDeficiencies: 0,
+        readings: { mileage: null, engineHours: null, pumpHours: null, recordedAt: "" },
+      });
+    }
+    return units.get(ref);
+  };
+  const applyReadings = (unit, readings, readAt) => {
+    for (const key of ["mileage", "engineHours", "pumpHours"]) {
+      const timeKey = `${key}At`;
+      if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
+        unit.readings[key] = readings[key];
+        unit.readings[timeKey] = readAt;
+        if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
+      }
+    }
+  };
+  for (const row of rows) {
+    const details = detailsOf(row);
+    const refs = (Array.isArray(details.assets) ? details.assets : []).map((asset) => text(asset?.ref, 200)).filter(Boolean);
+    const open = OPEN_STATUSES.includes(row.status);
+    const readings = readingsOf(details);
+    const readAt = text(details.completedAt, 40) || row.updatedAt.toISOString();
+    for (const ref of refs) {
+      const unit = unitFor(ref);
+      if (open) {
+        unit.openRecords += 1;
+        if (row.type?.name === "Deficiency") unit.openDeficiencies += 1;
+        if (row.outOfService) {
+          const since = text(details.outOfServiceAt, 40) || row.createdAt.toISOString();
+          if (!unit.outOfServiceSince || since < unit.outOfServiceSince) {
+            unit.status = "Out of Service";
+            unit.outOfServiceSince = since;
+            unit.outOfServiceRecordId = row.id;
+            unit.outOfServiceRecordNumber = row.recordNumber;
+            unit.outOfServiceReason = text(row.description, 200);
+          }
+        }
+      }
+      applyReadings(unit, readings, readAt);
+    }
+  }
+  const inspections = await prisma.checklistSubmission.findMany({
+    where: { tenantId, deletedAt: null, subjectKind: "apparatus" },
+    select: { subjectRef: true, detailsJson: true, createdAt: true },
+  });
+  for (const inspection of inspections) {
+    const ref = text(inspection.subjectRef, 200);
+    if (ref) applyReadings(unitFor(ref), readingsOf(detailsOf(inspection)), inspection.createdAt.toISOString());
+  }
+  return Array.from(units.values()).map((unit) => ({
+    ...unit,
+    readings: {
+      mileage: unit.readings.mileage,
+      engineHours: unit.readings.engineHours,
+      pumpHours: unit.readings.pumpHours,
+      recordedAt: unit.readings.recordedAt,
+    },
+  }));
+}
+
 function registerRecordRoutes(app, prisma) {
   app.get("/api/maintenance/records", async (request, response) => {
     const tenantId = tenantIdOf(request, response);
@@ -319,81 +397,7 @@ function registerRecordRoutes(app, prisma) {
     const tenantId = tenantIdOf(request, response);
     if (!tenantId) return;
     try {
-      const rows = await prisma.maintenanceRecord.findMany({
-        where: { tenantId, deletedAt: null, assetKind: "apparatus" },
-        include: { type: { select: { name: true } } },
-        orderBy: { createdAt: "asc" },
-      });
-      const units = new Map();
-      const unitFor = (ref) => {
-        if (!units.has(ref)) {
-          units.set(ref, {
-            unitId: ref,
-            status: "In Service",
-            outOfServiceSince: "",
-            outOfServiceRecordId: "",
-            outOfServiceRecordNumber: "",
-            outOfServiceReason: "",
-            openRecords: 0,
-            openDeficiencies: 0,
-            readings: { mileage: null, engineHours: null, pumpHours: null, recordedAt: "" },
-          });
-        }
-        return units.get(ref);
-      };
-      const applyReadings = (unit, readings, readAt) => {
-        for (const key of ["mileage", "engineHours", "pumpHours"]) {
-          const timeKey = `${key}At`;
-          if (readings[key] !== null && readAt >= (unit.readings[timeKey] ?? "")) {
-            unit.readings[key] = readings[key];
-            unit.readings[timeKey] = readAt;
-            if (readAt > unit.readings.recordedAt) unit.readings.recordedAt = readAt;
-          }
-        }
-      };
-      for (const row of rows) {
-        const details = detailsOf(row);
-        const refs = (Array.isArray(details.assets) ? details.assets : []).map((asset) => text(asset?.ref, 200)).filter(Boolean);
-        const open = OPEN_STATUSES.includes(row.status);
-        const readings = readingsOf(details);
-        const readAt = text(details.completedAt, 40) || row.updatedAt.toISOString();
-        for (const ref of refs) {
-          const unit = unitFor(ref);
-          if (open) {
-            unit.openRecords += 1;
-            if (row.type?.name === "Deficiency") unit.openDeficiencies += 1;
-            if (row.outOfService) {
-              const since = text(details.outOfServiceAt, 40) || row.createdAt.toISOString();
-              if (!unit.outOfServiceSince || since < unit.outOfServiceSince) {
-                unit.status = "Out of Service";
-                unit.outOfServiceSince = since;
-                unit.outOfServiceRecordId = row.id;
-                unit.outOfServiceRecordNumber = row.recordNumber;
-                unit.outOfServiceReason = text(row.description, 200);
-              }
-            }
-          }
-          applyReadings(unit, readings, readAt);
-        }
-      }
-      const inspections = await prisma.checklistSubmission.findMany({
-        where: { tenantId, deletedAt: null, subjectKind: "apparatus" },
-        select: { subjectRef: true, detailsJson: true, createdAt: true },
-      });
-      for (const inspection of inspections) {
-        const ref = text(inspection.subjectRef, 200);
-        if (ref) applyReadings(unitFor(ref), readingsOf(detailsOf(inspection)), inspection.createdAt.toISOString());
-      }
-      const data = Array.from(units.values()).map((unit) => ({
-        ...unit,
-        readings: {
-          mileage: unit.readings.mileage,
-          engineHours: unit.readings.engineHours,
-          pumpHours: unit.readings.pumpHours,
-          recordedAt: unit.readings.recordedAt,
-        },
-      }));
-      response.json({ ok: true, data });
+      response.json({ ok: true, data: await apparatusStatusFor(prisma, tenantId) });
     } catch (error) {
       sendError(response, error, "Could not load apparatus status.");
     }

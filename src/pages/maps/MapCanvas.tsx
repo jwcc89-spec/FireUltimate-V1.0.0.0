@@ -37,6 +37,7 @@ import {
   DRAW_COLORS,
   firstPoint,
   geofenceDraftFrom,
+  mapsApiKey,
   markerColor,
   markerDraftFrom,
   markerLayer,
@@ -71,11 +72,6 @@ export interface MapFocus {
   token: number;
   kind: "marker" | "geofence";
   id: string;
-}
-
-function mapsApiKey(): string {
-  const env = import.meta.env as { VITE_GOOGLE_MAPS_API_KEY?: string };
-  return env.VITE_GOOGLE_MAPS_API_KEY?.trim() ?? "";
 }
 
 type GoogleMap = NonNullable<ReturnType<typeof useMap>>;
