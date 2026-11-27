@@ -654,7 +654,7 @@ git push -u origin feature/demo-modules
   - **DTB's page:** shows the signed-in user's assignments with a one-click Acknowledge. Republishing makes everyone re-acknowledge by default.
 
 **W6 as built (2026-11-27, branch `feature/demo-modules`).** Where this differs from the W6 text above, this wins:
-- **Migration** `20261129100000_add_policies` (seven tables approved by the operator 2026-11-27). It adds `PolicyCategory`, `Policy`, `PolicyVersion`, `PolicyAssignment`, `PolicyAcknowledgment` (add-only), `PolicyTemplate` and `PolicyRandomRule`. It is additive only and makes **25** migrations. It must be applied to staging before the merge.
+- **Migration** `20261129100000_add_policies` (seven tables approved by the operator 2026-11-27). It adds `PolicyCategory`, `Policy`, `PolicyVersion`, `PolicyAssignment`, `PolicyAcknowledgment` (add-only), `PolicyTemplate` and `PolicyRandomRule`. It is additive only and makes **25** migrations. Applied to staging 2026-11-27; merged as `a173c43`. Operator click checks passed 2026-11-27 (some later changes expected, not yet listed).
 - **Publishing:** the first publish always asks for acknowledgment. Later publishes do too, unless "Minor edit" is ticked. Publishing **assigns the policy to everyone** (one row with `userId ""`) unless "Assign to everyone" is unticked (operator decision 2026-11-27). Edits stay in the draft (`Policy.draftJson`) until Publish. Title, number, chapter and effective date save right away.
 - **Routes** are in `server/modules/policies.mjs`, with tests in `server/modules/policies.test.mjs` (in `npm test`).
   - Members read published items and acknowledge them (`policies.acknowledge`).
@@ -776,7 +776,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-27):** W0–W5 are done and on staging (24 migrations applied; staging tip `a06595f`). Operator confirmed W5 click checks passed. **W6 Policies is built on `feature/demo-modules`** (see "W6 as built"). Its migration `20261129100000_add_policies` is written but **not applied**: apply it to staging, then merge, then run the click checks. W7 Fire Prevention is next after that.
+**Progress (2026-11-27):** W0–W6 are done and on staging. W6 Policies is done and on staging (25 migrations; staging tip `a173c43`); operator confirmed its click checks. **Next is W7 Fire Prevention**, which needs its own schema approval before any code.
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)

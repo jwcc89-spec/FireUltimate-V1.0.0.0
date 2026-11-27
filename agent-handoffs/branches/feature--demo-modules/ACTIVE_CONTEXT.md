@@ -3,7 +3,7 @@
 ## Current branch
 - `feature/demo-modules`, created 2026-11-25 from `submenu/neris-golive-cifpd` at `18a3567`.
 - Each finished step is merged into `submenu/neris-golive-cifpd` (the staging branch) after lint and build pass.
-- **Staging tip (2026-11-27):** `a06595f` — W5 Dashboard merged.
+- **Staging tip (2026-11-27):** `a173c43` — W6 Policies merged.
 
 ## Plans
 - **Demo week plan (work from this):** `docs/plans/demo-week-build-plan.md`. Read "Handoff for the next agent" first, then the step marked next. Each finished step has an "as built" note that overrides the plan text.
@@ -45,16 +45,16 @@
 - Routes: `server/modules/dashboard.mjs` (`/api/dashboard/layout`, `/layout/default` = `displays.manage`, `/summary`). Page: `src/pages/dashboard/`. Details in the plan's "W5 as built".
 - 12 widgets: Clock, Call Stats, Incidents, Last Call Map, On Duty, Apparatus Status, Open Maintenance, Checks Due, Trades - Active Requests, Calendar (DisplayEvent events), Quick Links, DTB's Due (placeholder until W6).
 
-### W6 Policies (built, migration NOT applied, not merged)
+### W6 Policies (done, on staging)
 - Operator approved the seven tables and said: publishing assigns to everyone; make `/policies` the Lexipol-style home.
-- Migration `20261129100000_add_policies` (makes **25**). **Apply to staging before merging** (backup `backup-before-w6` first).
+- Migration `20261129100000_add_policies` applied to staging (**25** migrations). Merged as `a173c43`. **Operator confirmed W6 click checks passed (2026-11-27)**; some changes will come later (not demo-blocking, not yet specified).
 - Server: `server/modules/policies.mjs` + `policies.test.mjs` (in `npm test`); permission lines in `permissionForRequest`.
 - Pages: `src/pages/policies/` (home, Manual/DTB's library, Policy Builder with TipTap editor, assignments/templates/random rules). Dashboard DTB's widget is real now. Menu items `isBuilt: true`.
 - PDF attachments capped at **2.5 MB** (4 MB request limit). Details in the plan's "W6 as built".
 
 ### Next
-1. Operator: back up, apply the W6 migration, merge into `submenu/neris-golive-cifpd`, run the W6 click checks.
-2. Then **W7 Fire Prevention** (needs its own schema approval).
+1. **W7 Fire Prevention**: propose the schema and wait for explicit approval before any code.
+2. W6 follow-up changes when the operator lists them.
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
