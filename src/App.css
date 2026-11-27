@@ -8600,6 +8600,97 @@ button.personnel-schedule-open-token-claim {
   text-decoration: none;
 }
 
+.checklist-choice-fail.inspection-result-active {
+  color: #b91c1c;
+}
+
+.checklist-number {
+  width: 110px;
+}
+
+.checklist-rule {
+  display: block;
+  font-size: 0.78rem;
+}
+
+.checklist-flag-panel {
+  border-left: 4px solid #b91c1c;
+}
+
+.checklist-flag-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.9rem;
+}
+
+.checklist-flag-row .field-hint {
+  flex: 1 1 260px;
+}
+
+.checklist-builder-section {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.checklist-builder-section-head {
+  display: flex;
+  gap: 0.6rem;
+  align-items: center;
+}
+
+.checklist-builder-section-head input {
+  flex: 1;
+  font-weight: 700;
+}
+
+.checklist-builder-item {
+  display: grid;
+  grid-template-columns: minmax(200px, 1fr) 190px auto auto;
+  gap: 0.5rem 0.75rem;
+  align-items: center;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.checklist-builder-extra {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.88rem;
+}
+
+.checklist-builder-extra input {
+  width: 110px;
+}
+
+.checklist-builder-extra textarea {
+  min-width: 260px;
+}
+
+.checklist-builder-hint {
+  grid-column: 1 / -1;
+}
+
+.checklist-builder-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.checklist-builder-actions {
+  display: inline-flex;
+  gap: 0.3rem;
+}
+
+@media (max-width: 760px) {
+  .checklist-builder-item {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .inspection-equipment-tag {
   margin-left: 0.5rem;
   font-size: 0.72rem;

@@ -123,6 +123,7 @@ import { MaintenancePage } from "./pages/maintenance/MaintenancePage";
 import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage";
 import { InspectionsPage } from "./pages/maintenance/InspectionsPage";
+import { ChecklistsPage } from "./pages/checklists/ChecklistsPage";
 import { CallMap } from "./pages/displays/CallMap";
 import { DisplayBoardPage } from "./pages/displays/DisplayBoardPage";
 import { DisplaysAdminPage } from "./pages/displays/DisplaysAdminPage";
@@ -14357,6 +14358,8 @@ function RouteResolver({
     content = <EquipmentListPage />;
   } else if (path === "/apparatus/inspections") {
     content = <InspectionsPage username={username} />;
+  } else if (path === "/file-center/checklists") {
+    content = <ChecklistsPage username={username} />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/displays") {

@@ -167,6 +167,12 @@ export function permissionForRequest(method, path, body) {
   if (verb !== "GET" && /^\/api\/displays\/(boards|announcements|events)(\/[^/]+)?$/.test(route)) {
     return "displays.manage";
   }
+
+  if (verb === "POST" && route === "/api/checklists/submissions") return "inventory.complete";
+  if (verb !== "GET" && /^\/api\/checklists\/submissions\/[^/]+(\/review)?$/.test(route)) return "inventory.manage";
+  if (verb !== "GET" && /^\/api\/checklists\/(templates|assignments|kits)(\/[^/]+)?$/.test(route)) {
+    return "inventory.manage";
+  }
   return null;
 }
 

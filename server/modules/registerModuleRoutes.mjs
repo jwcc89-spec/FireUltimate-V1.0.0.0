@@ -3,6 +3,7 @@
  * The sign-in, tenant and permission middleware in neris-proxy.mjs runs before these.
  * Every query must filter on request.tenant.id, and each route needs a line in permissionForRequest.
  */
+import { register as registerChecklists } from "./checklists.mjs";
 import { register as registerDisplays } from "./displays.mjs";
 import { register as registerInspections } from "./inspections.mjs";
 import { register as registerMaintenance } from "./maintenance.mjs";
@@ -24,4 +25,5 @@ export function registerModuleRoutes(app, prisma) {
   registerInspections(app, prisma);
   registerMaps(app, prisma);
   registerDisplays(app, prisma);
+  registerChecklists(app, prisma);
 }

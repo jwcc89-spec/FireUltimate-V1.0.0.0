@@ -52,13 +52,27 @@
   - See the plan's "W2 follow-up round" note.
 - **All five demo migrations are applied on staging** (confirmed with `prisma migrate status` on 2026-11-26: 22 of 22 applied). Any future migration must be applied to staging before its code is merged into `submenu/neris-golive-cifpd`.
   - The staging build also needs `VITE_GOOGLE_MAPS_API_KEY`, and search suggestions need Places API (New) on that key. Without it the map pages still open, but they show the form instead of tiles.
-- **Next: W4** (Inventory). Restate its scope and confirm whether it reuses the round-3 `ChecklistTemplate` tables before building it. Wait for the operator's W2 and W3 click-through first.
+- **W3 follow-up round done** (2026-11-26, no schema change, commit `fe8d559`, **merged into `submenu/neris-golive-cifpd` as `10175f5`**). It covers:
+  - the 4-second pulse for a faster takeover
+  - the 8x8 drag-and-resize layout editor (Layout button on each board)
+  - on-screen directions (needs **Routes API** on the Google key)
+  - the banner separator `   --   `
+  - the incident header showing the incident number
+  - Equipment List items on the inspected unit in inspection Section 7, where an X opens an Equipment request
+
+  See the plan's "W3 follow-up round" note.
+- **W4 built, NOT merged to staging yet** (Checklists at File Center > Checklists). Migration `20261127100000_add_checklists` adds `ChecklistAssignment` and `Kit`. It is **written but not applied**. The operator must approve it, then run `npx prisma migrate deploy` against staging, before W4 is merged into `submenu/neris-golive-cifpd`. Merging first would break the Checklists page on staging (the tables would be missing). See the plan's "W4 as built" note.
+- **Waiting on the operator (needs approval, no code yet):**
+  - Maintenance **labor** tab: a Pay rates list (person, straight/OT/comp rates) plus a `MaintenanceLabor` table, and an admin-picked "Maintenance labor" list.
+  - A general **Groups** system is out of demo scope because it touches permissions.
+  - **Units** apparatus profile (`ApparatusProfile` table: IDs, specs, fluids, tire pressures, sticker photo).
+- **Next after W4 is applied and merged:** W5 Dashboard.
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
 - Demo menu items keep `isBuilt: false` until their real page lands. Only superadmins can click those items, so CIFPD users on staging never see blank pages.
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks.
-- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other 86 pass.
+- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other 98 pass (as of W4).
 - Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.

@@ -355,7 +355,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Checklists",
         path: "/file-center/checklists",
         summary: "Checklist templates and operational checklist instances.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Daily Logs",
