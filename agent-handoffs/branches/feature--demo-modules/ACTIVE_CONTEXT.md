@@ -3,7 +3,7 @@
 ## Current branch
 - `feature/demo-modules`, created 2026-11-25 from `submenu/neris-golive-cifpd` at `18a3567`.
 - Each finished step is merged into `submenu/neris-golive-cifpd` (the staging branch) after lint and build pass.
-- **Staging tip (2026-11-26 evening):** `70781fa` — operator follow-up fixes merged after W4.
+- **Staging tip (2026-11-27):** `a06595f` — W5 Dashboard merged.
 
 ## Plans
 - **Demo week plan (work from this):** `docs/plans/demo-week-build-plan.md`. Read "Handoff for the next agent" first, then the step marked next. Each finished step has an "as built" note that overrides the plan text.
@@ -39,15 +39,14 @@
 ### Operator verification
 - **2026-11-26 (America/Chicago):** operator confirmed remaining W4 work and the evening follow-up **click checks passed**.
 
-### W5 Dashboard (2026-11-26 late, built, NOT on staging yet)
+### W5 Dashboard (done, on staging)
 - Operator approved the `DashboardLayout` table and asked for two extra widgets: **Trades - Active Requests** and **Calendar**.
-- Migration `20261128100000_add_dashboard_layout` is **written, not applied**. Staging needs it (Neon backup first) **before** merging into `submenu/neris-golive-cifpd`. After it, staging has **24** migrations.
+- Migration `20261128100000_add_dashboard_layout` applied to staging (**24** migrations). Merged as `a06595f`. **Operator confirmed all W5 click checks passed (2026-11-27).**
 - Routes: `server/modules/dashboard.mjs` (`/api/dashboard/layout`, `/layout/default` = `displays.manage`, `/summary`). Page: `src/pages/dashboard/`. Details in the plan's "W5 as built".
 - 12 widgets: Clock, Call Stats, Incidents, Last Call Map, On Duty, Apparatus Status, Open Maintenance, Checks Due, Trades - Active Requests, Calendar (DisplayEvent events), Quick Links, DTB's Due (placeholder until W6).
 
 ### Next
-1. Apply the W5 migration to staging (when the operator says so), merge `feature/demo-modules` into `submenu/neris-golive-cifpd`, operator click checks.
-2. Then **W6 Policies**: show the seven-table migration and wait for approval.
+1. **W6 Policies**: schema proposal shown 2026-11-27; waiting for approval before code.
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.

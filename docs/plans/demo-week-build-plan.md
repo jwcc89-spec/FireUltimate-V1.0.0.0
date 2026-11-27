@@ -24,8 +24,8 @@ todos:
     content: 'W4: Checklist template builder and check completion with typed name plus PIN'
     status: completed
   - id: w5-dashboard
-    content: 'W5: react-grid-layout dashboard with shared widgets and saved layouts (built; migration not yet applied to staging)'
-    status: in_progress
+    content: 'W5: react-grid-layout dashboard with shared widgets and saved layouts'
+    status: completed
   - id: w6-policies
     content: 'W6: Policies Manual, DTB''s and Policy Builder (categories, TipTap, PDF view and download, assignments, acknowledge)'
     status: pending
@@ -622,7 +622,7 @@ git push -u origin feature/demo-modules
   - **Layouts** are stored in the `DashboardLayout` table.
 
 **W5 as built (2026-11-26 late, branch `feature/demo-modules`).** Where this differs from the W5 text above, this wins:
-- **Migration** `20261128100000_add_dashboard_layout` (approved by the operator 2026-11-26) adds one table, `DashboardLayout`: tenantId, userId (`""` = department default), layoutJson `{ items: [{ i, x, y, w, h }] }`, audit columns, deletedAt. Unique on (tenantId, userId). Additive only. **Written, not applied** until the operator says so; apply it to staging before merging.
+- **Migration** `20261128100000_add_dashboard_layout` (approved by the operator 2026-11-26) adds one table, `DashboardLayout`: tenantId, userId (`""` = department default), layoutJson `{ items: [{ i, x, y, w, h }] }`, audit columns, deletedAt. Unique on (tenantId, userId). Additive only. Applied to staging 2026-11-26 (24 migrations); merged as `a06595f`. Operator click checks passed 2026-11-27.
 - **Routes** in `server/modules/dashboard.mjs`:
   - `GET /api/dashboard/layout` returns the member's own layout, else the department default, else the built-in layout, plus `source`, `hasDepartmentDefault` and `canSetDefault`.
   - `PUT` / `DELETE /api/dashboard/layout` save or reset the member's own row (any signed-in member; keyed on `request.auth.userId`).
@@ -758,7 +758,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-26 late):** W0–W4 are done and on staging (23 migrations applied; staging tip `70781fa`). **W5 Dashboard is built on `feature/demo-modules`** with migration `20261128100000_add_dashboard_layout` written but **not applied**. Next: apply that migration to staging, merge, operator click checks, then **W6 Policies** (needs its own schema approval: seven tables).
+**Progress (2026-11-27):** W0–W5 are done and on staging (24 migrations applied; staging tip `a06595f`). Operator confirmed W5 click checks passed. **Next is W6 Policies**, which needs its own schema approval before any code.
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)
