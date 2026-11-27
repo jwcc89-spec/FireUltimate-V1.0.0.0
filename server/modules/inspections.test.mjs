@@ -303,3 +303,36 @@ test("equipment on the inspected unit joins Special Equipment and keeps its own 
     await close();
   }
 });
+
+test("an inspection can be saved as a draft and submitted later without required fields on the first save", async () => {
+  const { call, close } = await startServer();
+  try {
+    const draft = await call("POST", "/api/inspections", {
+      body: { subjectRef: "E1", draft: true, results: { "engine-1": { result: "OK", note: "" } }, details: {} },
+    });
+    assert.equal(draft.status, 201);
+    assert.equal(draft.json.data.status, "Draft");
+
+    const listed = await call("GET", "/api/inspections");
+    assert.equal(listed.json.data.find((row) => row.id === draft.json.data.id).status, "Draft");
+
+    const tooSoon = await call("PATCH", `/api/inspections/${draft.json.data.id}`, {
+      body: {
+        subjectRef: "E1",
+        completedOn: "2026-11-26",
+        completedByName: "Alice",
+        draft: false,
+        details: { officer: "Lt", station: "Station 1", readings: { mileage: 1, engineHours: 1, pumpHours: 1 } },
+        results: {},
+      },
+    });
+    // Submitting with no item results is allowed if none required by the form; form requires all answered on the client.
+    assert.equal(tooSoon.status, 200);
+    assert.equal(tooSoon.json.data.status, "Submitted");
+
+    const locked = await call("PATCH", `/api/inspections/${draft.json.data.id}`, { body: { subjectRef: "E1", draft: true } });
+    assert.equal(locked.status, 400);
+  } finally {
+    await close();
+  }
+});

@@ -76,6 +76,8 @@ export interface InspectionInput {
   completedByName: string;
   results: Record<string, InspectionItemResult>;
   details: InspectionDetails;
+  /** true = Save for later (bay iPad). false/omitted = Submit when everything required is filled. */
+  draft?: boolean;
 }
 
 export interface OpenDeficiency {
@@ -91,6 +93,8 @@ export const getInspections = (unit?: string) =>
 export const getInspection = (id: string) => apiJson<InspectionDetail>(`/api/inspections/${encodeURIComponent(id)}`);
 export const createInspection = (input: InspectionInput) =>
   apiJson<InspectionDetail>("/api/inspections", send("POST", input));
+export const updateInspection = (id: string, input: InspectionInput) =>
+  apiJson<InspectionDetail>(`/api/inspections/${encodeURIComponent(id)}`, send("PATCH", input));
 export const deleteInspection = (id: string) => apiJson<void>(`/api/inspections/${encodeURIComponent(id)}`, send("DELETE"));
 export const getUnitEquipment = (unit: string) =>
   apiJson<InspectionItem[]>(`/api/inspections/unit-equipment?unit=${encodeURIComponent(unit)}`);

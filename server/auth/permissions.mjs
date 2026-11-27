@@ -153,6 +153,7 @@ export function permissionForRequest(method, path, body) {
   if (verb === "POST" && route === "/api/maintenance/parts") return "maintenance.submit";
   if (verb !== "GET" && /^\/api\/maintenance\/parts\/[^/]+(\/stock)?$/.test(route)) return "maintenance.manage";
   if (verb === "POST" && route === "/api/inspections") return "maintenance.submit";
+  if (verb === "PATCH" && /^\/api\/inspections\/[^/]+$/.test(route)) return "maintenance.submit";
   if (verb === "DELETE" && /^\/api\/inspections\/[^/]+$/.test(route)) return "maintenance.manage";
 
   // Viewing the map, looking up an address, and checking a district are open to any signed-in member.

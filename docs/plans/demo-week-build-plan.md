@@ -577,7 +577,7 @@ git push -u origin feature/demo-modules
     - Failed, short or expired items flag the check and create an in-app notice for admins.
 
 **W3 follow-up round (2026-11-26, from the operator's display board check, no schema change).** Where this differs from the W3 text above, this wins:
-- **Faster takeover.** The board asks `GET /api/displays/boards/:id/pulse` every 4 seconds; it returns the 5 newest calls and needs `incidents.view`. On an all-calls board a new call opens the takeover straight away. On a district board a new call reloads the feed at once and the feed decides. The full feed still refreshes every 20 seconds.
+- **Faster takeover.** The board asks `GET /api/displays/boards/:id/pulse` every 1 second; it returns the 5 newest calls and needs `incidents.view`. On an all-calls board a new call opens the takeover straight away. On a district board a new call reloads the feed at once and the feed decides. The full feed still refreshes every 20 seconds. Takeover length is already set per board (10–600 seconds) in Admin Functions > Display Boards. True push (SSE) is later.
 - **Layout.** Admin Functions > Display Boards > **Layout** on a board opens an 8x8 grid editor. Each panel is dragged to move and resized from its corner, at least 2x2, never overlapping. Saved in `DisplayBoard.layoutJson.grid` (no new column); the server rejects bad layouts. Panels turned on but not placed show an "Add" button.
 - **Banner separator:** three spaces, two hyphens, three spaces between messages.
 - **Directions on screen.** The incident page and the takeover draw the route on the map with a step list (Routes API with the browser key). The takeover starts from the board's station address; the incident page starts from the device location. An "Open in Google Maps" link stays as a fallback.
@@ -595,7 +595,16 @@ git push -u origin feature/demo-modules
 - **Template edits** make a new version only when items change; completed checks keep the wording they were filled with. Deleting a template removes its assignments and keeps completed checks.
 - **Numbers:** completed checks are CHK-YY-NNNN.
 - **Permissions:** completing needs `inventory.complete`; templates, kits, assignments, review and delete need `inventory.manage`.
-- **Deferred:** real PIN storage and checking, shift times from the scheduler, photos on items, a notification bell, a Dashboard "checks due" widget (W5).
+- **Deferred:** real PIN storage and checking, shift times from the scheduler, photos on items, a notification bell, a Dashboard "checks due" widget (W5), auto-assign daily apparatus checks to the crew on that unit for the day, and routing flagged checks to EMS/TRT committees (Groups).
+- **Tabs:** Templates, Assignments and Kits are admin-only (`inventory.manage`). Standard users only see the Checklists tab. Mark Reviewed is admin-only for the demo.
+
+**Operator follow-up round (2026-11-26 evening, no schema change):**
+- Incident Live Map / takeover map default is road (`roadmap`), not satellite.
+- Breadcrumb on an open incident: Incidents / Mapping > Incidents > Incident Detail (Incidents is a link).
+- Inspection **Save** stores a Draft (apparatus required only); **Submit** still needs every required field. Drafts show Continue on the list.
+- Marking equipment Out of Service on a maintenance record flips that item on the Equipment List; clearing OOS / completing the last open OOS ticket puts it back In Service.
+- Sidebar collapse on the active menu sticks (no longer snaps back open).
+- **Later / needs approval:** Units page with In Reserve status; apparatus profile; labor tab; Groups/committees for flagged checks.
 
 ### W5. Dashboard (about 1 hour)
 - **Summary:** "Edit display" becomes drag, resize, add and remove with `react-grid-layout`. Layouts are saved per user, with a department default.

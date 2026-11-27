@@ -41,7 +41,7 @@ type View =
 
 const TABS: { id: Tab; label: string; Icon: typeof ClipboardList; manageOnly: boolean }[] = [
   { id: "checklists", label: "Checklists", Icon: ClipboardList, manageOnly: false },
-  { id: "templates", label: "Templates", Icon: LayoutTemplate, manageOnly: false },
+  { id: "templates", label: "Templates", Icon: LayoutTemplate, manageOnly: true },
   { id: "assignments", label: "Assignments", Icon: CalendarClock, manageOnly: true },
   { id: "kits", label: "Kits", Icon: Boxes, manageOnly: true },
 ];
