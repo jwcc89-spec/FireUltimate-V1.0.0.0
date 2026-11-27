@@ -3,77 +3,51 @@
 ## Current branch
 - `feature/demo-modules`, created 2026-11-25 from `submenu/neris-golive-cifpd` at `18a3567`.
 - Each finished step is merged into `submenu/neris-golive-cifpd` (the staging branch) after lint and build pass.
+- **Staging tip (2026-11-26 evening):** `70781fa` — operator follow-up fixes merged after W4.
 
 ## Plans
 - **Demo week plan (work from this):** `docs/plans/demo-week-build-plan.md`. Read "Handoff for the next agent" first, then the step marked next. Each finished step has an "as built" note that overrides the plan text.
 - **Full operations plan:** `docs/plans/operations-modules-plan.md`. Section 2 has the file and line references for how the app is wired today.
 
-## Status (2026-11-25)
-- **W0 done.**
-  - `Comment` table and migration `20261126090000_add_comment`.
-  - 12 new permission keys in `server/auth/permissions.mjs`.
-  - `server/modules/registerModuleRoutes.mjs` with `GET /api/modules/health`.
-  - New menu items: Apparatus > Equipment Maintenance, the Policies menu (Manual, DTB's, Policy Builder admin-only), Admin Functions > Displays.
-- **W0b done** (`e43ebe3`): hide-sidebar button in the top bar (desktop only), saved under `fu.sidebarHidden`.
-- **W1 done** (`b4afbec`): Maintenance.
-  - Migration `20261126100000_add_maintenance` adds six tables: `MaintenanceRecord`, `MaintenanceType`, `Vendor`, `MaintenanceCost`, `PmSchedule`, `Equipment`.
-  - Pages: Apparatus > Maintenance Logs, Equipment Maintenance, and Equipment List, all now `isBuilt: true`.
-  - Details are in the plan's "W0b and W1 as built" note.
-- **Merged into `submenu/neris-golive-cifpd` and pushed** after W1.
-- **W1 polish done** (`dc7cef9`, merged as `6e7c4b8`). This round came from the operator's first click-through and needed no migration:
-  - Record numbers are now `YY-NNNN`.
-  - New status Parts Ordered.
-  - Assigned To and Taken Out of Service were added. The completion time is stamped automatically, which gives down time.
-  - The Apparatus dropdown is the first field on the form.
-  - The table has new default columns, no filter boxes, and Edit Columns on the chip row.
-  - Analytics has a Cost and Down Time page.
-  - Dropdowns open upward when there isn't room below.
-  - The top-bar breadcrumb menu name opens the sidebar menu.
-  - Details are in the plan's "W1 polish round" note.
-- **Apparatus round 2 done** (`5cdf331`, merged as `27f257e`, no schema): Fleet Overview at `/apparatus`, `GET /api/maintenance/apparatus-status`, readings needed to complete, the Deficiency type, Add Vendor from search, Preventive Maintenance wording.
-- **Apparatus round 3 done** (operator approved the migration on 2026-11-25). Commits: `1d96cf9` (migration and PM tracking), `491f427` (inspections and Fleet Overview), `7c0fb57` (parts).
-  - Migration `20261126110000_add_parts_pm_inspections` is additive only. It adds `Part`, `PartTransaction`, `ChecklistTemplate`, `ChecklistTemplateVersion` and `ChecklistSubmission`, plus five nullable or defaulted `PmSchedule` columns.
-  - New server modules: `server/modules/parts.mjs`, `inspections.mjs`, `inspectionDefaults.mjs` and `moduleHelpers.mjs` (shared helpers moved out of `maintenance.mjs`).
-  - Details are in the plan's "Apparatus round 3 as built" note.
-- **Round 3 follow-up done** (no schema change): the breadcrumb is the page title, and big h1s are hidden unless they have `page-title-keep`. Also: the Apparatus submenu was reordered, the dropdown scroll jump is fixed, inspection sections collapse, and inspections have required fields and fill from the apparatus and its last oil change. See the plan's "Round 3 follow-up" note.
-- **Round 3 follow-up 2 done** (no schema change): inspection categories start collapsed. "Oil and Filter Change" is the dedicated oil change category, with an Oil Change panel on tickets and Log Oil Change on PM tasks, and it feeds the inspection's Last Service. See the plan's "Round 3 follow-up 2" note.
-- **W2 done** (`28f2cda`). Migration `20261126140000_add_maps` adds `MapMarkerType`, `MapMarker` and `Geofence`. Map View and Map Markers are `isBuilt: true`. Google is tiles only (`VITE_GOOGLE_MAPS_API_KEY`, not in the repo). District, search, station pins and call pins use the US Census geocoder. Call pins are not saved. Incident latitude columns stay for W3. Details are in the plan's "W2 as built" note.
-- **W3 done** (Display Board). Migration `20261126150000_add_displays` adds `DisplayBoard`, `Announcement`, `DisplayEvent`, and nullable `Incident.latitude`, `longitude` and `geocodedAt` (a Census point cache, cleared after 30 days, never in NERIS).
-  - Admin Functions > Displays is `isBuilt: true`. The TV page is `/display/:boardId`, outside the app frame.
-  - The incident page's Live Map panel now shows the call map and Directions.
-  - Details are in the plan's "W3 as built" note.
-  - **Merged into `submenu/neris-golive-cifpd` on 2026-11-26 as `1676225`**, together with the W2 follow-up round. `prisma migrate status` on staging showed all 22 migrations applied first.
-- **W2 follow-up round done** (2026-11-26, no schema change). Changes:
-  - The Incidents page has no sample cards. Reminder: the operator may want them on the Dashboard.
-  - Map View opens on the last call with a 500 ft "show only within" circle.
-  - Road view is the default, and the Google Layer is hidden by default.
-  - The search box suggests as you type, which needs Places API (New) on the key.
-  - The toolbar has a big FULL SCREEN button.
-  - See the plan's "W2 follow-up round" note.
-- **All six demo migrations are applied on staging** (confirmed with `prisma migrate status` on 2026-11-26 after W4: 23 of 23 applied). Any future migration must be applied to staging before its code is merged into `submenu/neris-golive-cifpd`.
-  - The staging build also needs `VITE_GOOGLE_MAPS_API_KEY`, and search suggestions need Places API (New) on that key. Without it the map pages still open, but they show the form instead of tiles.
-- **W3 follow-up round done** (2026-11-26, no schema change, commit `fe8d559`, **merged into `submenu/neris-golive-cifpd` as `10175f5`**). It covers:
-  - the 4-second pulse for a faster takeover
-  - the 8x8 drag-and-resize layout editor (Layout button on each board)
-  - on-screen directions (needs **Routes API** on the Google key)
-  - the banner separator `   --   `
-  - the incident header showing the incident number
-  - Equipment List items on the inspected unit in inspection Section 7, where an X opens an Equipment request
+## Status (updated 2026-11-26 evening, America/Chicago)
+- **W0–W4 done and on staging.** All **23** migrations applied (`prisma migrate status` after W4).
+- **W1 Maintenance** (+ polish, apparatus rounds 2–3, parts, inspections). See plan "as built" notes.
+- **W2 Maps** (+ follow-up: road default, Google Layer off, Places autocomplete, last-call + 500' radius, FULL SCREEN). Incident list sample cards removed (Dashboard reminder parked).
+- **W3 Display board** (+ follow-up: 8×8 layout editor, pulse, on-screen directions, banner `   --   `, incident number header, Section 7 equipment).
+- **W4 Checklists** at File Center > Checklists. Migration `20261127100000_add_checklists` (`ChecklistAssignment`, `Kit`). Templates/versions/submissions reuse checklist tables with `subjectKind = "checklist"`.
+- **Operator evening follow-up (2026-11-26, no schema, merge `70781fa`):**
+  - Takeover pulse every **1 second** (not 4).
+  - Takeover length already admin-settable **10–600 seconds** per board.
+  - CallMap / takeover directions map default **roadmap** (not satellite).
+  - Breadcrumb: Incidents / Mapping > Incidents > Incident Detail.
+  - Inspection **Save** = Draft; **Submit** = full validation; Continue on list.
+  - Equipment maintenance OOS syncs Equipment List status (and clears when last open OOS ticket is gone).
+  - Sidebar collapse on the active menu sticks.
+  - Checklists: Templates, Assignments, Kits are **admin-only**; users only see Checklists. Mark Reviewed is admin-only.
 
-  See the plan's "W3 follow-up round" note.
-- **W4 done and on staging** (Checklists at File Center > Checklists). Migration `20261127100000_add_checklists` adds `ChecklistAssignment` and `Kit`. Applied on staging 2026-11-26 after the operator's "Apply the w4 migration" (status was 22 applied / 1 pending, then deploy, then 23 of 23). Merged into `submenu/neris-golive-cifpd` after that. See the plan's "W4 as built" note.
-- **Waiting on the operator (needs approval, no code yet):**
-  - Maintenance **labor** tab: a Pay rates list (person, straight/OT/comp rates) plus a `MaintenanceLabor` table, and an admin-picked "Maintenance labor" list.
-  - A general **Groups** system is out of demo scope because it touches permissions.
-  - **Units** apparatus profile (`ApparatusProfile` table: IDs, specs, fluids, tire pressures, sticker photo).
-- **Operator follow-up evening 2026-11-26 (no schema):** 1 s takeover pulse; CallMap road default; incident breadcrumb 3 levels; inspection Save draft; equipment OOS syncs to Equipment List; sidebar collapse stick; Checklists Templates tab admin-only.
-- **Next:** W5 Dashboard, or approved schema work (Units/In Reserve, labor, Groups).
+### Staging Google key (operator)
+- `VITE_GOOGLE_MAPS_API_KEY` on the Render staging build.
+- Enable **Places API (New)** for map search suggestions.
+- Enable **Routes API** for on-screen directions.
+
+### Waiting on operator approval (schema / out of pure demo rush)
+- **Units** page: In Reserve status + apparatus profile (IDs, specs, fluids, tire pressures, sticker photo, directory). Needs `ApparatusProfile` (or similar) approval.
+- **Maintenance labor** tab: pay rates + labor lines. Demo-sized "Maintenance labor" list OK; full Groups/permissions system is **out of demo rush**.
+- **Groups / committees** for routing flagged checklists (EMS, TRT, etc.) — Later; Mark Reviewed stays admin-only for now.
+- **Later (no code yet):** SSE/WebSocket for true instant takeover; auto-assign daily apparatus checks to the crew on that unit for the day; Dashboard "checks due" widget (fits W5).
+
+### Next
+1. Wait for operator click-through of the evening follow-up (and any leftover W4 checks).
+2. Default next build step: **W5 Dashboard** (unless the operator prioritizes approved Units/labor schema work).
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
 - Demo menu items keep `isBuilt: false` until their real page lands. Only superadmins can click those items, so CIFPD users on staging never see blank pages.
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
-- The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks.
-- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other 98 pass (as of W4).
+- Do **not** modify Prisma schema / migrations / auth without explicit approval. Apply migrations to staging **before** merging code that needs them.
+- The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks. Load it with `node --env-file=.env.server ./node_modules/prisma/build/index.js …` (do not `source` the file; it can fail to parse).
+- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **99** pass (as of the evening follow-up).
 - Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.
+- Match Claude W0/W1 style: page-section, panel, EditDialog, useDialogSave, ModuleTable, maintenance-tabs, lucide icons.
+- End every response with: **Agent used for this response:** Claude Opus 5.5 (unless the user named a different agent for that chat).

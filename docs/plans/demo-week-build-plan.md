@@ -22,7 +22,7 @@ todos:
     status: completed
   - id: w4-inventory
     content: 'W4: Checklist template builder and check completion with typed name plus PIN'
-    status: pending
+    status: completed
   - id: w5-dashboard
     content: 'W5: react-grid-layout dashboard with shared widgets and saved layouts'
     status: pending
@@ -743,27 +743,30 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Files stored in records for the demo are size-limited.** R2 replaces this right after the demo.
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
-## Handoff for the next agent (Grok 4.7): read this first
+## Handoff for the next agent: read this first
+**Progress (2026-11-26 evening):** W0–W4 are done and on staging (23 migrations applied). Latest staging merge for the evening follow-up is `70781fa`. **Next planned step is W5 Dashboard**, unless the operator prioritizes approved Units (In Reserve / apparatus profile) or maintenance labor schema work.
+
 1. **Before every session, read:**
-   - this file
+   - this file (especially every "**as built**" / follow-up note — those override the older step text)
+   - `agent-handoffs/branches/feature--demo-modules/ACTIVE_CONTEXT.md`
    - `cursoragent-context.md`
    - `.cursor/project-context.md`
    - `docs/agent-execution-contract.md`
 
-   Also read the full plan at `/Users/jeremywichtner/.cursor/plans/operations_modules_plan_298c9270.plan.md`, Section 2 "How the app is wired today". It has every file and line reference.
-2. **One step per session** (W0, W0b, W1 and so on). Start each one by restating the step's summary, the files you will change, and any migration. Wait for the user to say "go".
-3. **Work on `feature/demo-modules`.**
-   - After each step, run `npm run lint` and `npm run build` from `/Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0`. Fix any errors.
+   Also read the full plan at `/Users/jeremywichtner/.cursor/plans/operations_modules_plan_298c9270.plan.md`, Section 2 "How the app is wired today", or `docs/plans/operations-modules-plan.md` if that copy is current.
+2. **Ask which branch** (`feature/demo-modules` unless the user says otherwise). Restate the step, constraints, acceptance criteria, and risks. For schema work, show the migration and **wait for explicit approval** before applying or merging.
+3. **One step (or one approved follow-up batch) per session.** Wait for the user to say "go" on non-trivial work.
+4. **Work on `feature/demo-modules`.**
+   - After each batch: `npm run lint` and `npm run build` from `/Users/jeremywichtner/CursorProjects/FireUltimate-V1.0.0.0`. Fix errors before continuing.
+   - Apply any new migration to staging **before** merging code that needs it into `submenu/neris-golive-cifpd`.
    - Then commit, merge into `submenu/neris-golive-cifpd`, push, and report the commit hash.
-4. **Never:**
+5. **Never:**
    - change the NERIS export or the `NerisDraft` payload shape
    - change sign-in or session code
    - store anything new in `DepartmentDetails.payloadJson`
    - query without `tenantId`
    - use AM/PM time
-5. **Every new route needs:** a tenant check (`request.tenant?.id`, 400 if missing), a mapping in `permissionForRequest`, and a quick test with curl or the browser. A second tenant must not see the first tenant's data.
-6. **Every new page needs:** an entry in `MAIN_MENUS` ([src/appData.ts](src/appData.ts)), a branch in `RouteResolver` ([src/App.tsx](src/App.tsx) line 14072), and existing styles only.
-7. **End every session with:**
-   - numbered click-through test steps for the user (where to go, what to click, what to type, what to expect)
-   - an update to `agent-handoffs/branches/feature--demo-modules/ACTIVE_CONTEXT.md` plus a session note
-8. **If anything in the code doesn't match this plan** (renamed function, moved line), stop and tell the user. Don't guess.
+6. **Every new route needs:** a tenant check (`request.tenant?.id`, 400 if missing), a mapping in `permissionForRequest`, and tests that prove a second tenant cannot see the first tenant's data.
+7. **Every new page needs:** an entry in `MAIN_MENUS` ([src/appData.ts](src/appData.ts)), a branch in `RouteResolver` ([src/App.tsx](src/App.tsx)), existing styles only, and `isBuilt: true` only when the page works. Match Claude W0/W1 patterns (page-section, panel, EditDialog, ModuleTable, lucide).
+8. **Operator tests on staging only** (`https://cifpdil.staging.fireultimate.app`). End every session with numbered click-through steps, an ACTIVE_CONTEXT update, a session note under `agent-handoffs/branches/feature--demo-modules/sessions/`, and **Agent used for this response: …**.
+9. **If anything in the code doesn't match this plan** (renamed function, moved line), stop and tell the user. Don't guess.
