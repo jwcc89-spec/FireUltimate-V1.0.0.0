@@ -10,6 +10,7 @@ import { register as registerInspections } from "./inspections.mjs";
 import { register as registerMaintenance } from "./maintenance.mjs";
 import { register as registerMaps } from "./maps.mjs";
 import { register as registerParts } from "./parts.mjs";
+import { register as registerPolicies } from "./policies.mjs";
 
 export function registerModuleRoutes(app, prisma) {
   app.get("/api/modules/health", (request, response) => {
@@ -28,4 +29,5 @@ export function registerModuleRoutes(app, prisma) {
   registerDisplays(app, prisma);
   registerChecklists(app, prisma);
   registerDashboard(app, prisma);
+  registerPolicies(app, prisma);
 }

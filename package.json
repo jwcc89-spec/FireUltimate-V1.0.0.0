@@ -13,7 +13,7 @@
     "postinstall": "prisma generate",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
-    "test": "node --import tsx/esm --test src/cadDispatch/ruleEngine.test.ts src/cadDispatch/extractDispatchPlainText.test.ts src/cadDispatch/regexEscape.test.ts src/cadDispatch/incidentMappingPreview.test.ts src/cadDispatch/incidentLabelMap.test.ts server/cad/ingestGuard.test.mjs server/crypto/secretBox.test.mjs server/http/publicError.test.mjs server/fireRecoveryMode.test.mjs server/fireRecoveryMapping.test.mjs server/fireRecoverySubmit.test.mjs server/fireRecovery.test.mjs src/fireRecovery/billingRequirements.test.ts server/auth/sessions.test.mjs server/trades/eligibility.test.mjs server/trades/applySchedule.test.mjs server/modules/maintenance.test.mjs server/modules/inspections.test.mjs server/modules/maps.test.mjs server/modules/displays.test.mjs server/modules/checklists.test.mjs server/modules/dashboard.test.mjs",
+    "test": "node --import tsx/esm --test src/cadDispatch/ruleEngine.test.ts src/cadDispatch/extractDispatchPlainText.test.ts src/cadDispatch/regexEscape.test.ts src/cadDispatch/incidentMappingPreview.test.ts src/cadDispatch/incidentLabelMap.test.ts server/cad/ingestGuard.test.mjs server/crypto/secretBox.test.mjs server/http/publicError.test.mjs server/fireRecoveryMode.test.mjs server/fireRecoveryMapping.test.mjs server/fireRecoverySubmit.test.mjs server/fireRecovery.test.mjs src/fireRecovery/billingRequirements.test.ts server/auth/sessions.test.mjs server/trades/eligibility.test.mjs server/trades/applySchedule.test.mjs server/modules/maintenance.test.mjs server/modules/inspections.test.mjs server/modules/maps.test.mjs server/modules/displays.test.mjs server/modules/checklists.test.mjs server/modules/dashboard.test.mjs server/modules/policies.test.mjs",
     "preview": "vite preview",
     "db:seed": "node --env-file=.env.server --import tsx prisma/seed.ts",
     "tenant:create": "tsx scripts/tenant-create.ts",
@@ -22,6 +22,9 @@
   "dependencies": {
     "@prisma/adapter-pg": "^7.4.2",
     "@prisma/client": "^7.4.2",
+    "@tiptap/pm": "^3.35.0",
+    "@tiptap/react": "^3.35.0",
+    "@tiptap/starter-kit": "^3.35.0",
     "@turf/boolean-point-in-polygon": "^7.4.0",
     "@turf/helpers": "^7.4.0",
     "@vis.gl/react-google-maps": "^1.10.2",

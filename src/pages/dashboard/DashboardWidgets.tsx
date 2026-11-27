@@ -5,6 +5,7 @@ import { getAssignments, getSubmissions } from "../../api/checklists";
 import { getDashboardSummary, type DashboardWidgetId } from "../../api/dashboard";
 import { getDisplayEvents, type DisplayEvent } from "../../api/displays";
 import { getIncidentList } from "../../api/incidents";
+import { getPoliciesHome, policyLabel } from "../../api/policies";
 import { DASHBOARD_PRIORITY_LINKS, getIncidentDisplayNumber, type IncidentCallSummary } from "../../appData";
 import { CallMap } from "../displays/CallMap";
 import { errorText, formatDateKey, todayKey } from "../maintenance/maintenanceUtils";
@@ -64,6 +65,7 @@ const LOADERS = {
   trades: loadTrades,
   checks: loadChecks,
   events: getDisplayEvents,
+  policies: getPoliciesHome,
 };
 
 type LoaderKey = keyof typeof LOADERS;
@@ -382,6 +384,39 @@ function TradesWidget() {
   );
 }
 
+function DtbsWidget() {
+  const { data, error } = useShared("policies");
+  if (!data) return <Loading error={error} />;
+  const due = [...data.dtbs].sort((a, b) => (a.dueDate || "9999").localeCompare(b.dueDate || "9999"));
+  const today = todayKey();
+  return (
+    <>
+      {data.needed.length > 0 ? (
+        <p className="dashboard-widget-alert">
+          <Link to="/policies">{`${data.needed.length} polic${data.needed.length === 1 ? "y needs" : "ies need"} your acknowledgment`}</Link>
+        </p>
+      ) : null}
+      {due.length === 0 ? (
+        <Empty>No DTB's are assigned to you right now.</Empty>
+      ) : (
+        <ul className="dashboard-list">
+          {due.map((dtb) => (
+            <li key={dtb.id}>
+              <Link to={`/policies/dtbs?policy=${encodeURIComponent(dtb.id)}`}>
+                <span className="dashboard-list-main">
+                  <strong>{policyLabel(dtb)}</strong>
+                  {dtb.dueDate ? <small>{`Due ${formatDateKey(dtb.dueDate)}`}</small> : null}
+                </span>
+                {dtb.dueDate && dtb.dueDate < today ? <span className="tone tone-critical">Overdue</span> : null}
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
 const WEEKDAYS = ["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"];
 
 function CalendarWidget({ canManageEvents }: { canManageEvents: boolean }) {
@@ -523,7 +558,7 @@ export function DashboardWidgetBody({
     case "quickLinks":
       return <QuickLinksWidget />;
     case "dtbs":
-      return <Empty>Coming with Policies. Assigned Daily Training Bulletins will show here.</Empty>;
+      return <DtbsWidget />;
     default:
       return null;
   }

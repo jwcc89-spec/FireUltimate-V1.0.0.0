@@ -653,6 +653,24 @@ git push -u origin feature/demo-modules
     - a random rule (X policies per week or month)
   - **DTB's page:** shows the signed-in user's assignments with a one-click Acknowledge. Republishing makes everyone re-acknowledge by default.
 
+**W6 as built (2026-11-27, branch `feature/demo-modules`).** Where this differs from the W6 text above, this wins:
+- **Migration** `20261129100000_add_policies` (seven tables approved by the operator 2026-11-27). It adds `PolicyCategory`, `Policy`, `PolicyVersion`, `PolicyAssignment`, `PolicyAcknowledgment` (add-only), `PolicyTemplate` and `PolicyRandomRule`. It is additive only and makes **25** migrations. It must be applied to staging before the merge.
+- **Publishing:** the first publish always asks for acknowledgment. Later publishes do too, unless "Minor edit" is ticked. Publishing **assigns the policy to everyone** (one row with `userId ""`) unless "Assign to everyone" is unticked (operator decision 2026-11-27). Edits stay in the draft (`Policy.draftJson`) until Publish. Title, number, chapter and effective date save right away.
+- **Routes** are in `server/modules/policies.mjs`, with tests in `server/modules/policies.test.mjs` (in `npm test`).
+  - Members read published items and acknowledge them (`policies.acknowledge`).
+  - Writing, publishing, chapters, assignments, templates, rules, the people list and the "who acknowledged" status need `policies.manage`.
+  - Every query filters by tenant.
+- **Pages:**
+  - `/policies` is the Lexipol-style home: **User Acknowledgements** on the left (needed, then recently acknowledged) and **DTB's** on the right.
+  - `/policies/manual` and `/policies/dtbs` have a left panel with search (titles and the published text), a "Needs Your Acknowledgment" group and numbered chapters (warning icon = needed, check = done). The policy shows on the right: number badge, title, Issued date, version, effective date, sections auto-numbered 201.1, 201.2..., Print / PDF (browser print of just the policy), Open PDF (when a PDF is attached), Acknowledge, and for admins Edit and Who Acknowledged. Links use `?policy=<id>`.
+  - `/policies/builder` has six tabs: Policies, DTB's, Chapters, Assignments, Templates (reading lists with "Assign..."), and Random Rules (X per week or month, from chosen chapters, for everyone or chosen people; items not picked before come first; due at the end of the period). The editor is TipTap: bold, italic, underline, numbered Section headings, subheadings, lists and quotes.
+- **Random rules** run when anyone opens Policies home or DTB's, at most once a minute per department. There is no background job.
+- **PDFs:** one PDF per policy, **2.5 MB or smaller**, because a save must stay under the server's 4 MB request limit. A PDF opens in the browser's own viewer in a new tab, not pdf.js. Bulk upload and "convert into the editor" are deferred.
+- **Chapters** are ordered by their number; edit the number to reorder. There is no drag reorder.
+- **Dashboard:** the DTB's Due widget is now real. It lists your assigned DTB's (Overdue tag when past due) and links to policies that need acknowledgment.
+- **Menu:** Manual, DTB's and Policy Builder are now `isBuilt: true`.
+- **Deferred:** bulk PDF upload, text extraction, server-made PDFs, reminders and emails, and drag-reorder of chapters.
+
 ### W7. Fire Prevention (about 2 hours)
 - **Summary:** a properties list and map with a commercial or residential filter, the property main screen with buttons, contacts, a simple pre-plan, inspections, call history, and "Add from Properties" in NERIS.
 - **Details:**
@@ -758,7 +776,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-27):** W0–W5 are done and on staging (24 migrations applied; staging tip `a06595f`). Operator confirmed W5 click checks passed. **Next is W6 Policies**, which needs its own schema approval before any code.
+**Progress (2026-11-27):** W0–W5 are done and on staging (24 migrations applied; staging tip `a06595f`). Operator confirmed W5 click checks passed. **W6 Policies is built on `feature/demo-modules`** (see "W6 as built"). Its migration `20261129100000_add_policies` is written but **not applied**: apply it to staging, then merge, then run the click checks. W7 Fire Prevention is next after that.
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)

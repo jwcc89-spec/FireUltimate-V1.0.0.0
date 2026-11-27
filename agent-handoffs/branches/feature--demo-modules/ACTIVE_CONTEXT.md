@@ -9,7 +9,7 @@
 - **Demo week plan (work from this):** `docs/plans/demo-week-build-plan.md`. Read "Handoff for the next agent" first, then the step marked next. Each finished step has an "as built" note that overrides the plan text.
 - **Full operations plan:** `docs/plans/operations-modules-plan.md`. Section 2 has the file and line references for how the app is wired today.
 
-## Status (updated 2026-11-26 late, America/Chicago)
+## Status (updated 2026-11-27, America/Chicago)
 - **W0–W4 done and on staging.** All **23** migrations applied (`prisma migrate status` after W4).
 - **W1 Maintenance** (+ polish, apparatus rounds 2–3, parts, inspections). See plan "as built" notes.
 - **W2 Maps** (+ follow-up: road default, Google Layer off, Places autocomplete, last-call + 500' radius, FULL SCREEN). Incident list sample cards removed (Dashboard reminder parked).
@@ -45,8 +45,16 @@
 - Routes: `server/modules/dashboard.mjs` (`/api/dashboard/layout`, `/layout/default` = `displays.manage`, `/summary`). Page: `src/pages/dashboard/`. Details in the plan's "W5 as built".
 - 12 widgets: Clock, Call Stats, Incidents, Last Call Map, On Duty, Apparatus Status, Open Maintenance, Checks Due, Trades - Active Requests, Calendar (DisplayEvent events), Quick Links, DTB's Due (placeholder until W6).
 
+### W6 Policies (built, migration NOT applied, not merged)
+- Operator approved the seven tables and said: publishing assigns to everyone; make `/policies` the Lexipol-style home.
+- Migration `20261129100000_add_policies` (makes **25**). **Apply to staging before merging** (backup `backup-before-w6` first).
+- Server: `server/modules/policies.mjs` + `policies.test.mjs` (in `npm test`); permission lines in `permissionForRequest`.
+- Pages: `src/pages/policies/` (home, Manual/DTB's library, Policy Builder with TipTap editor, assignments/templates/random rules). Dashboard DTB's widget is real now. Menu items `isBuilt: true`.
+- PDF attachments capped at **2.5 MB** (4 MB request limit). Details in the plan's "W6 as built".
+
 ### Next
-1. **W6 Policies**: schema proposal shown 2026-11-27; waiting for approval before code.
+1. Operator: back up, apply the W6 migration, merge into `submenu/neris-golive-cifpd`, run the W6 click checks.
+2. Then **W7 Fire Prevention** (needs its own schema approval).
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
@@ -54,7 +62,7 @@
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - Do **not** modify Prisma schema / migrations / auth without explicit approval. Apply migrations to staging **before** merging code that needs them.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks. Load it with `node --env-file=.env.server ./node_modules/prisma/build/index.js …` (do not `source` the file; it can fail to parse).
-- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **104** pass (as of W5).
+- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **110** pass (as of W6).
 - Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.
 - Match Claude W0/W1 style: page-section, panel, EditDialog, useDialogSave, ModuleTable, maintenance-tabs, lucide icons.

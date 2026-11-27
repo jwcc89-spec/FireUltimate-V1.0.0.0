@@ -122,6 +122,9 @@ import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage
 import { InspectionsPage } from "./pages/maintenance/InspectionsPage";
 import { ChecklistsPage } from "./pages/checklists/ChecklistsPage";
 import { DashboardPage as ModuleDashboardPage } from "./pages/dashboard/DashboardPage";
+import { PoliciesHomePage } from "./pages/policies/PoliciesHomePage";
+import { PolicyBuilderPage } from "./pages/policies/PolicyBuilderPage";
+import { PolicyLibraryPage } from "./pages/policies/PolicyLibraryPage";
 import { CallMap } from "./pages/displays/CallMap";
 import { DisplayBoardPage } from "./pages/displays/DisplayBoardPage";
 import { DisplaysAdminPage } from "./pages/displays/DisplaysAdminPage";
@@ -14212,6 +14215,14 @@ function RouteResolver({
     content = <InspectionsPage username={username} />;
   } else if (path === "/file-center/checklists") {
     content = <ChecklistsPage username={username} />;
+  } else if (path === "/policies") {
+    content = <PoliciesHomePage />;
+  } else if (path === "/policies/manual") {
+    content = <PolicyLibraryPage key="policy-manual" kind="policy" />;
+  } else if (path === "/policies/dtbs") {
+    content = <PolicyLibraryPage key="policy-dtbs" kind="dtb" />;
+  } else if (path === "/policies/builder") {
+    content = <PolicyBuilderPage />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/displays") {
