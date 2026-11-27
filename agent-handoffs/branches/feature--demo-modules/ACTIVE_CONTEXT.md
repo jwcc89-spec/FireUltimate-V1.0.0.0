@@ -53,7 +53,7 @@
 - PDF attachments capped at **2.5 MB** (4 MB request limit). Details in the plan's "W6 as built".
 
 ### Next
-1. **W7 Fire Prevention**: propose the schema and wait for explicit approval before any code.
+1. **W7 Fire Prevention**: schema proposed in chat 2026-11-27 (4 new tables: `Property`, `PropertyContact`, `PrePlan`, `Inspection`; one migration `20261130100000_add_fire_prevention` → 26). **Waiting for operator approval** before any schema or code. Proposed batches: 7a properties/contacts/map, 7b import + call history + pre-plans, 7c inspections, 7d NERIS picker. See session note `2026-11-27-w7-schema-proposal.md`.
 2. W6 follow-up changes when the operator lists them.
 
 ## Rules that matter here
