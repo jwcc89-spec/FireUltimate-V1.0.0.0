@@ -776,7 +776,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-27):** W0–W6 are done and on staging. W6 Policies is done and on staging (25 migrations; staging tip `a173c43`); operator confirmed its click checks. **Next is W7 Fire Prevention**, which needs its own schema approval before any code.
+**Progress (2026-11-27):** W0–W6 are done and on staging (25 migrations; staging tip `a173c43`). Operator confirmed the W6 click checks. **Next is W7 Fire Prevention**, which needs its own schema approval before any code.
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)
