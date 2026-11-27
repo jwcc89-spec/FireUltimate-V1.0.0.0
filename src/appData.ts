@@ -430,7 +430,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Properties",
         path: "/fire-prevention/properties",
         summary: "Property profiles and hazard details.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Smoke Alarms",

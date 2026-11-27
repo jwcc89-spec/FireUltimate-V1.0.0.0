@@ -125,6 +125,7 @@ import { DashboardPage as ModuleDashboardPage } from "./pages/dashboard/Dashboar
 import { PoliciesHomePage } from "./pages/policies/PoliciesHomePage";
 import { PolicyBuilderPage } from "./pages/policies/PolicyBuilderPage";
 import { PolicyLibraryPage } from "./pages/policies/PolicyLibraryPage";
+import { PropertiesPage } from "./pages/prevention/PropertiesPage";
 import { CallMap } from "./pages/displays/CallMap";
 import { DisplayBoardPage } from "./pages/displays/DisplayBoardPage";
 import { DisplaysAdminPage } from "./pages/displays/DisplaysAdminPage";
@@ -14223,6 +14224,8 @@ function RouteResolver({
     content = <PolicyLibraryPage key="policy-dtbs" kind="dtb" />;
   } else if (path === "/policies/builder") {
     content = <PolicyBuilderPage />;
+  } else if (path === "/fire-prevention/properties") {
+    content = <PropertiesPage />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/displays") {

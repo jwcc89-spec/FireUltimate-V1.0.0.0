@@ -65,6 +65,10 @@ model Tenant {
   displayBoards               DisplayBoard[]
   announcements               Announcement[]
   displayEvents               DisplayEvent[]
+  properties                  Property[]
+  propertyContacts            PropertyContact[]
+  prePlans                    PrePlan[]
+  inspections                 Inspection[]
 }
 
 /// A maintenance request or work record for an apparatus or a piece of equipment.
@@ -301,6 +305,7 @@ model ChecklistTemplateVersion {
   tenant      Tenant                @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   template    ChecklistTemplate     @relation(fields: [templateId], references: [id], onDelete: Cascade)
   submissions ChecklistSubmission[]
+  inspections Inspection[]
 
   @@unique([templateId, version])
   @@index([tenantId])
@@ -754,6 +759,155 @@ model DisplayEvent {
 
   @@index([tenantId])
   @@index([tenantId, startsAt])
+}
+
+/// A building or address the department pre-plans and inspects. The pin is the one a member placed, not a stored Google result.
+model Property {
+  id                String    @id @default(cuid())
+  tenantId          String
+  /// Occupant or business name, for example "Meadowview Theatre". Optional.
+  name              String    @default("")
+  address           String
+  /// Suite, unit or lot.
+  unit              String    @default("")
+  city              String    @default("")
+  state             String    @default("")
+  postalCode        String    @default("")
+  /// Server-made cleaned street address ("401 MAPLE ST") for call history, the NERIS picker and duplicate warnings.
+  normalizedAddress String    @default("")
+  /// residential or commercial
+  propertyType      String    @default("residential")
+  occupancyType     String    @default("")
+  squareFeet        Int?
+  yearBuilt         Int?
+  latitude          Float?
+  longitude         Float?
+  /// Street View camera position only; the picture always loads live from Google.
+  streetViewPanoId  String    @default("")
+  streetViewHeading Float?
+  streetViewPitch   Float?
+  streetViewZoom    Float?
+  /// Department photo. A small data URL for the demo, a storage key once R2 exists. Lists never load it.
+  photoRef          String    @default("")
+  /// notes and fields that are still changing
+  detailsJson       Json      @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  createdBy         String    @default("")
+  updatedBy         String    @default("")
+  deletedAt         DateTime?
+
+  tenant      Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  contacts    PropertyContact[]
+  prePlans    PrePlan[]
+  inspections Inspection[]
+
+  @@index([tenantId])
+  @@index([tenantId, normalizedAddress])
+  @@index([tenantId, propertyType])
+}
+
+/// A person tied to a property: owner, tenant, manager and so on.
+model PropertyContact {
+  id            String    @id @default(cuid())
+  tenantId      String
+  propertyId    String
+  firstName     String    @default("")
+  lastName      String    @default("")
+  businessName  String    @default("")
+  /// Owner, Tenant, Building Maintenance, Manager, Secondary Contact, Other, or empty for no role.
+  role          String    @default("")
+  isPrimary     Boolean   @default(false)
+  phone         String    @default("")
+  email         String    @default("")
+  /// Mailing address; empty means the same as the property.
+  addressStreet String    @default("")
+  addressUnit   String    @default("")
+  addressCity   String    @default("")
+  addressState  String    @default("")
+  addressZip    String    @default("")
+  /// notes and fields that are still changing
+  detailsJson   Json      @default("{}")
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  createdBy     String    @default("")
+  updatedBy     String    @default("")
+  deletedAt     DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, propertyId])
+}
+
+/// A pre-plan for a property. Every field is optional and lives in detailsJson.
+model PrePlan {
+  id          String    @id @default(cuid())
+  tenantId    String
+  propertyId  String
+  /// basic or complex
+  template    String    @default("basic")
+  title       String    @default("Pre-Plan")
+  reviewedOn  DateTime? @db.Date
+  detailsJson Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String    @default("")
+  updatedBy   String    @default("")
+  deletedAt   DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property Property @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+  @@index([tenantId, propertyId])
+}
+
+/// A fire prevention inspection of a property. Apparatus inspections stay in ChecklistSubmission.
+model Inspection {
+  id                String    @id @default(cuid())
+  tenantId          String
+  /// Numbered per department per year, for example FPI-26-0001.
+  inspectionNumber  String
+  propertyId        String
+  inspectionType    String    @default("")
+  isReinspection    Boolean   @default(false)
+  reinspectionOfId  String?
+  receivedOn        DateTime? @db.Date
+  /// Plain date and 24-hour "HH:MM" so the calendar never shifts a day for time zones.
+  scheduledOn       DateTime? @db.Date
+  scheduledTime     String    @default("")
+  /// Scheduled, In Progress, Passed, Failed, Pending Reinspection or Cancelled
+  status            String    @default("Scheduled")
+  leadInspector     String    @default("")
+  /// ["name", ...]
+  otherInspectors   Json      @default("[]")
+  reason            String    @default("")
+  district          String    @default("")
+  division          String    @default("")
+  station           String    @default("")
+  shift             String    @default("")
+  unit              String    @default("")
+  templateVersionId String?
+  completedOn       DateTime? @db.Date
+  resultsJson       Json      @default("{}")
+  detailsJson       Json      @default("{}")
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  createdBy         String    @default("")
+  updatedBy         String    @default("")
+  deletedAt         DateTime?
+
+  tenant          Tenant                    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  property        Property                  @relation(fields: [propertyId], references: [id], onDelete: Restrict)
+  templateVersion ChecklistTemplateVersion? @relation(fields: [templateVersionId], references: [id], onDelete: SetNull)
+
+  @@unique([tenantId, inspectionNumber])
+  @@index([tenantId])
+  @@index([tenantId, propertyId])
+  @@index([tenantId, scheduledOn])
+  @@index([tenantId, status])
 }
 
 /// One row per shift trade request. Names match Scheduler Settings → Personnel; usernames decide who may see and act on it.

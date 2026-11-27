@@ -654,7 +654,7 @@ git push -u origin feature/demo-modules
   - **DTB's page:** shows the signed-in user's assignments with a one-click Acknowledge. Republishing makes everyone re-acknowledge by default.
 
 **W6 as built (2026-11-27, branch `feature/demo-modules`).** Where this differs from the W6 text above, this wins:
-- **Migration** `20261129100000_add_policies` (seven tables approved by the operator 2026-11-27). It adds `PolicyCategory`, `Policy`, `PolicyVersion`, `PolicyAssignment`, `PolicyAcknowledgment` (add-only), `PolicyTemplate` and `PolicyRandomRule`. It is additive only and makes **25** migrations. It must be applied to staging before the merge.
+- **Migration** `20261129100000_add_policies` (seven tables approved by the operator 2026-11-27). It adds `PolicyCategory`, `Policy`, `PolicyVersion`, `PolicyAssignment`, `PolicyAcknowledgment` (add-only), `PolicyTemplate` and `PolicyRandomRule`. It is additive only and makes **25** migrations. Applied to staging 2026-11-27; merged as `a173c43`. Operator click checks passed 2026-11-27 (some later changes expected, not yet listed).
 - **Publishing:** the first publish always asks for acknowledgment. Later publishes do too, unless "Minor edit" is ticked. Publishing **assigns the policy to everyone** (one row with `userId ""`) unless "Assign to everyone" is unticked (operator decision 2026-11-27). Edits stay in the draft (`Policy.draftJson`) until Publish. Title, number, chapter and effective date save right away.
 - **Routes** are in `server/modules/policies.mjs`, with tests in `server/modules/policies.test.mjs` (in `npm test`).
   - Members read published items and acknowledge them (`policies.acknowledge`).
@@ -714,6 +714,20 @@ git push -u origin feature/demo-modules
     - Under rules 42b and 42c, the filled values already print because they are existing fields. The picker itself isn't a stored field.
     - The NERIS export is unchanged.
     - Writing report contacts back to the property comes after the demo.
+
+**W7 as built (2026-11-27, branch `feature/demo-modules`; batch 7a of 4).** Where this differs from the W7 text above, this wins:
+- **Decisions (operator, 2026-11-27):** schema approved. Inspection types and occupancy types are fixed lists in code (editable in W8). The Schedules tab shows upcoming scheduled inspections; repeating schedules come later. **Anyone** can complete inspections (7c). The property name field stays. NERIS has only **Add Person** now (the old Owners list has no button), so the 7d picker always adds a Person with the contact's role as the affiliation; nothing is written back to Fire Prevention.
+- **Batches:** 7a properties, contacts and map (done). 7b CSV import, Incidents tab (call history), Basic and Complex pre-plans, Pre-Plans menu page, and a geofence link picker. 7c Inspections. 7d NERIS picker.
+- **Migration** `20261130100000_add_fire_prevention` (one migration for all of W7, additive only, makes **26**). It adds `Property`, `PropertyContact`, `PrePlan` and `Inspection`, plus Prisma-only back-links on `Tenant` and `ChecklistTemplateVersion` (no new columns on existing tables). Inspection dates are a plain date plus a 24-hour "HH:MM" text. Inspection numbers will be FPI-YY-NNNN. Not applied yet.
+- **Reused, no change:** checklist templates (inspection Templates tab, `subjectKind = "fireInspection"`), `Comment`, `Geofence.linkedPropertyId` / `linkedPrePlanId`, and `Incident` (call history matches cleaned addresses when the tab opens; no new column).
+- **Routes** in `server/modules/prevention.mjs` (tests `server/modules/prevention.test.mjs`, in `npm test`): `GET/POST /api/prevention/properties`, `GET/PATCH/DELETE /api/prevention/properties/:id`, `POST /api/prevention/properties/:id/contacts`, `PATCH/DELETE /api/prevention/contacts/:id`. Every `GET /api/prevention/...` needs `incidents.view`; changing properties or contacts needs `prevention.manage`. No new permission keys.
+- **Address cleanup** (`server/modules/addressMatch.mjs`): text after the first comma is dropped, unit words (Apt, Unit, Suite, Lot, #...) are removed, and Street/Avenue/North and so on become ST/AVE/N. Saved as `normalizedAddress`.
+- **Pins:** "Find on map" (and leaving the address fields) asks the free US Census lookup; if that misses, the member clicks the Aerial map. Dragging the pin sets the exact building. No Google geocode is ever saved. Moving the pin more than about 150 ft clears the saved Street View camera.
+- **Street View:** the live panel faces the pin; "Use this view as thumbnail" saves the panorama, heading, pitch and zoom. The overview thumbnail is the department photo if there is one, else the Street View Static picture loaded live from that camera.
+- **Photos:** Take Photo (phone camera) or Upload Photo, shrunk in the browser to a JPEG under about 650 KB and stored in `Property.photoRef` until R2. The list never loads photos.
+- **Pages:** Fire Prevention > **Properties** (`/fire-prevention/properties`, menu item now `isBuilt: true`). List with search, All / Residential / Commercial chips, sortable Address, City, State, Type, Owner and Sq Ft, and a List | Map toggle (blue residential, orange commercial pins). `?property=<id>` opens the property screen, `&edit=1` edits it, `?new=1` adds one. The screen has the overview card (thumbnail, type, occupancy, owner, View Pre-Plan, which is disabled until 7b), Details | Contacts tabs, Street View and Aerial on the right, and lower tabs Incidents, Pre-Plans, Inspections (placeholders until 7b/7c), Permits and Alarm Requests ("Coming soon"). Contacts are ESO-style cards with role (or "No Roles") and a PRIMARY badge; only one primary per property.
+- **Files:** `src/api/prevention.ts`; `src/pages/prevention/` (`PropertiesPage`, `PropertiesMap`, `PropertyForm`, `PropertyScreen`, `PropertyContactsTab`, `PropertyMapPanels`, `preventionUtils`).
+- **Deferred:** Import button (7b), optional ESO sections (W8 settings), attachments (R2).
 
 ### W8. Personnel Management (about 0.5 hours)
 - **Summary:** a new section in Admin Functions, Personnel Management for wages and pay type per person, plus one settings area per enabled module (Maintenance, Inventory, Display Boards, Policies, Fire Prevention, Timesheets).
@@ -776,7 +790,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-27):** W0–W5 are done and on staging (24 migrations applied; staging tip `a06595f`). Operator confirmed W5 click checks passed. **W6 Policies is built on `feature/demo-modules`** (see "W6 as built"). Its migration `20261129100000_add_policies` is written but **not applied**: apply it to staging, then merge, then run the click checks. W7 Fire Prevention is next after that.
+**Progress (2026-11-27):** W0–W6 are done and on staging (25 migrations; staging tip `a173c43`). Operator confirmed the W6 click checks. **W7 Fire Prevention is in progress:** the schema is approved and batch 7a (properties, contacts, map) is built on `feature/demo-modules`. Its migration `20261130100000_add_fire_prevention` is written but not applied. Next: the operator applies the migration and merges, runs the 7a click checks, then batch 7b. See "W7 as built".
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)
