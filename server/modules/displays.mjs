@@ -278,7 +278,7 @@ async function departmentInfo(prisma, request) {
   };
 }
 
-function boardDate(query, now) {
+export function boardDate(query, now) {
   const raw = String(query.date ?? "").trim();
   const date = /^\d{4}-\d{2}-\d{2}$/.test(raw) ? raw : new Date(now).toISOString().slice(0, 10);
   const minuteRaw = Number(query.minute);

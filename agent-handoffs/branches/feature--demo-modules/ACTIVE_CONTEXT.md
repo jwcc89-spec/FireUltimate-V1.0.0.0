@@ -9,7 +9,7 @@
 - **Demo week plan (work from this):** `docs/plans/demo-week-build-plan.md`. Read "Handoff for the next agent" first, then the step marked next. Each finished step has an "as built" note that overrides the plan text.
 - **Full operations plan:** `docs/plans/operations-modules-plan.md`. Section 2 has the file and line references for how the app is wired today.
 
-## Status (updated 2026-11-26 evening, America/Chicago)
+## Status (updated 2026-11-26 late, America/Chicago)
 - **W0–W4 done and on staging.** All **23** migrations applied (`prisma migrate status` after W4).
 - **W1 Maintenance** (+ polish, apparatus rounds 2–3, parts, inspections). See plan "as built" notes.
 - **W2 Maps** (+ follow-up: road default, Google Layer off, Places autocomplete, last-call + 500' radius, FULL SCREEN). Incident list sample cards removed (Dashboard reminder parked).
@@ -39,8 +39,15 @@
 ### Operator verification
 - **2026-11-26 (America/Chicago):** operator confirmed remaining W4 work and the evening follow-up **click checks passed**.
 
+### W5 Dashboard (2026-11-26 late, built, NOT on staging yet)
+- Operator approved the `DashboardLayout` table and asked for two extra widgets: **Trades - Active Requests** and **Calendar**.
+- Migration `20261128100000_add_dashboard_layout` is **written, not applied**. Staging needs it (Neon backup first) **before** merging into `submenu/neris-golive-cifpd`. After it, staging has **24** migrations.
+- Routes: `server/modules/dashboard.mjs` (`/api/dashboard/layout`, `/layout/default` = `displays.manage`, `/summary`). Page: `src/pages/dashboard/`. Details in the plan's "W5 as built".
+- 12 widgets: Clock, Call Stats, Incidents, Last Call Map, On Duty, Apparatus Status, Open Maintenance, Checks Due, Trades - Active Requests, Calendar (DisplayEvent events), Quick Links, DTB's Due (placeholder until W6).
+
 ### Next
-1. Default next build step: **W5 Dashboard** (unless the operator prioritizes approved Units/labor schema work).
+1. Apply the W5 migration to staging (when the operator says so), merge `feature/demo-modules` into `submenu/neris-golive-cifpd`, operator click checks.
+2. Then **W6 Policies**: show the seven-table migration and wait for approval.
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
@@ -48,7 +55,7 @@
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - Do **not** modify Prisma schema / migrations / auth without explicit approval. Apply migrations to staging **before** merging code that needs them.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks. Load it with `node --env-file=.env.server ./node_modules/prisma/build/index.js …` (do not `source` the file; it can fail to parse).
-- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **99** pass (as of the evening follow-up).
+- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **104** pass (as of W5).
 - Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.
 - Match Claude W0/W1 style: page-section, panel, EditDialog, useDialogSave, ModuleTable, maintenance-tabs, lucide icons.

@@ -4,6 +4,7 @@
  * Every query must filter on request.tenant.id, and each route needs a line in permissionForRequest.
  */
 import { register as registerChecklists } from "./checklists.mjs";
+import { register as registerDashboard } from "./dashboard.mjs";
 import { register as registerDisplays } from "./displays.mjs";
 import { register as registerInspections } from "./inspections.mjs";
 import { register as registerMaintenance } from "./maintenance.mjs";
@@ -26,4 +27,5 @@ export function registerModuleRoutes(app, prisma) {
   registerMaps(app, prisma);
   registerDisplays(app, prisma);
   registerChecklists(app, prisma);
+  registerDashboard(app, prisma);
 }
