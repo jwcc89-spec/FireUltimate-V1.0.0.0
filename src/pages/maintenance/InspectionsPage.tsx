@@ -7,8 +7,10 @@ import {
   getInspectionTemplate,
   getInspections,
   getOpenDeficiencies,
+  getUnitEquipment,
   type InspectionDetail,
   type InspectionDetails,
+  type InspectionItem,
   type InspectionItemResult,
   type InspectionResult,
   type InspectionSection,
@@ -36,6 +38,23 @@ import { MaintenanceRecordForm } from "./MaintenanceRecordForm";
 import { errorText, formatDateKey, formatReading, isOilChangeType, toOptions, todayKey } from "./maintenanceUtils";
 
 const MAINTENANCE_PATH = "/apparatus/maintenance-logs";
+const EQUIPMENT_MAINTENANCE_PATH = "/apparatus/equipment-maintenance";
+const EQUIPMENT_SECTION_ID = "special";
+
+function recordLink(recordId: string, equipment: boolean): string {
+  return `${equipment ? EQUIPMENT_MAINTENANCE_PATH : MAINTENANCE_PATH}?record=${encodeURIComponent(recordId)}`;
+}
+
+/** Adds the unit's Equipment List items to the Special Equipment section, as the server does on save. */
+function withEquipment(sections: InspectionSection[], equipment: InspectionItem[]): InspectionSection[] {
+  if (equipment.length === 0) return sections;
+  if (!sections.some((section) => section.id === EQUIPMENT_SECTION_ID)) {
+    return [...sections, { id: EQUIPMENT_SECTION_ID, title: "Special Equipment", items: equipment }];
+  }
+  return sections.map((section) =>
+    section.id === EQUIPMENT_SECTION_ID ? { ...section, items: [...section.items, ...equipment] } : section,
+  );
+}
 
 type View = { kind: "list" } | { kind: "new" } | { kind: "report"; id: string };
 
@@ -361,7 +380,9 @@ function InspectionForm({
   } | null>(null);
   const openByItem = openForUnit && openForUnit.unit === subjectRef ? openForUnit.byItem : {};
   const openDeficiencies = openForUnit && openForUnit.unit === subjectRef ? openForUnit.deficiencies : [];
-  const [repairFor, setRepairFor] = useState<{ itemId: string; label: string } | null>(null);
+  const [equipmentForUnit, setEquipmentForUnit] = useState<{ unit: string; items: InspectionItem[] } | null>(null);
+  const unitItems = equipmentForUnit && equipmentForUnit.unit === subjectRef ? equipmentForUnit.items : [];
+  const [repairFor, setRepairFor] = useState<{ itemId: string; label: string; equipmentId?: string } | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -401,6 +422,11 @@ function InspectionForm({
         if (active) setOpenForUnit({ unit: subjectRef, ...data });
       })
       .catch(() => undefined);
+    getUnitEquipment(subjectRef)
+      .then((items) => {
+        if (active) setEquipmentForUnit({ unit: subjectRef, items });
+      })
+      .catch(() => undefined);
     return () => {
       active = false;
     };
@@ -413,13 +439,16 @@ function InspectionForm({
   const personnelOptions = useMemo(() => toOptions(lookups.personnel), [lookups.personnel]);
   const stationOptions = useMemo(() => toOptions(lookups.stations), [lookups.stations]);
   const deficiencyTypeId = types.find((type) => type.name === "Deficiency")?.id ?? "";
-  const allItems = template?.sections.flatMap((section) => section.items) ?? [];
+  const shownSections = template ? withEquipment(template.sections, unitItems) : [];
+  const allItems = shownSections.flatMap((section) => section.items);
   const unanswered = allItems.filter((item) => !results[item.id]).length;
+  const equipmentOptions = unitItems.map((item) => ({ value: item.equipmentId ?? "", label: item.label }));
   const latest = subjectRef ? readingsByUnit.get(subjectRef) : undefined;
   const linkedDeficiencyIds = new Set(Object.values(openByItem).map((entry) => entry.recordId));
   const looseDeficiencies = openDeficiencies.filter((entry) => !linkedDeficiencyIds.has(entry.recordId));
 
-  const setResult = (itemId: string, label: string, result: InspectionResult) => {
+  const setResult = (item: InspectionItem, result: InspectionResult) => {
+    const itemId = item.id;
     setResults((previous) => ({
       ...previous,
       [itemId]: { result, note: previous[itemId]?.note ?? "", recordId: result === "X" ? (previous[itemId]?.recordId ?? "") : "" },
@@ -429,7 +458,7 @@ function InspectionForm({
         setError("Pick the apparatus first so the repair can be logged against it.");
         return;
       }
-      setRepairFor({ itemId, label });
+      setRepairFor({ itemId, label: item.label, equipmentId: item.equipmentId });
     }
   };
 
@@ -476,7 +505,9 @@ function InspectionForm({
     if (unanswered > 0) return setError(`${unanswered} items have no result yet. Use Mark Unchecked as OK if they are all OK.`);
     setSaving(true);
     try {
-      const saved = await createInspection({ subjectRef, completedOn, completedByName, results, details });
+      const shownIds = new Set(allItems.map((item) => item.id));
+      const shownResults = Object.fromEntries(Object.entries(results).filter(([itemId]) => shownIds.has(itemId)));
+      const saved = await createInspection({ subjectRef, completedOn, completedByName, results: shownResults, details });
       onClose(saved.id);
     } catch (saveError) {
       setError(errorText(saveError, "Could not save the inspection."));
@@ -625,7 +656,7 @@ function InspectionForm({
           <ul className="list-card">
             {looseDeficiencies.map((entry) => (
               <li key={entry.recordId}>
-                <a className="edit-display-link" href={`${MAINTENANCE_PATH}?record=${encodeURIComponent(entry.recordId)}`} target="_blank" rel="noreferrer">
+                <a className="edit-display-link" href={recordLink(entry.recordId, entry.assetKind === "equipment")} target="_blank" rel="noreferrer">
                   {entry.recordNumber}
                 </a>
                 <span>{entry.description}</span>
@@ -642,10 +673,10 @@ function InspectionForm({
         <button type="button" className="secondary-button compact-button maintenance-icon-button" onClick={markUncheckedOk}>
           <ClipboardCheck size={14} aria-hidden="true" /> Mark Unchecked as OK
         </button>
-        <SectionToggleAll ids={template.sections.map((section) => section.id)} sections={sections} />
+        <SectionToggleAll ids={shownSections.map((section) => section.id)} sections={sections} />
       </div>
 
-      {template.sections.map((section) => (
+      {shownSections.map((section) => (
         <InspectionSectionPanel
           key={section.id}
           section={section}
@@ -659,8 +690,11 @@ function InspectionForm({
               const open = openByItem[item.id];
               return (
                 <div key={item.id} className={`inspection-item ${entry?.result === "X" ? "inspection-item-repair" : ""}`}>
-                  <span className="inspection-item-label">{item.label}</span>
-                  <ResultButtons value={entry?.result ?? ""} onChange={(result) => setResult(item.id, item.label, result)} />
+                  <span className="inspection-item-label">
+                    {item.label}
+                    {item.equipmentId ? <span className="tone tone-neutral inspection-equipment-tag">Equipment List</span> : null}
+                  </span>
+                  <ResultButtons value={entry?.result ?? ""} onChange={(result) => setResult(item, result)} />
                   <span className="inspection-item-note">
                     {open ? (
                       <span className="tone tone-critical inspection-open-note" title={open.description}>
@@ -670,7 +704,11 @@ function InspectionForm({
                     {entry?.result === "X" && entry.recordId ? (
                       <span className="field-hint">Work order opened</span>
                     ) : entry?.result === "X" && !open ? (
-                      <button type="button" className="edit-display-link" onClick={() => setRepairFor({ itemId: item.id, label: item.label })}>
+                      <button
+                        type="button"
+                        className="edit-display-link"
+                        onClick={() => setRepairFor({ itemId: item.id, label: item.label, equipmentId: item.equipmentId })}
+                      >
                         Open work order
                       </button>
                     ) : null}
@@ -712,24 +750,32 @@ function InspectionForm({
           <div className="schedule-notice maintenance-record-modal">
             <MaintenanceRecordForm
               recordId={null}
-              prefill={{
-                assets: [{ kind: "apparatus", ref: subjectRef, label: unitLabel(subjectRef) }],
-                typeId: deficiencyTypeId,
-                description: `Inspection: ${repairFor.label}${results[repairFor.itemId]?.note ? ` - ${results[repairFor.itemId].note}` : ""}`,
-                readings: {
-                  mileage: details.readings.mileage,
-                  engineHours: details.readings.engineHours,
-                  pumpHours: details.readings.pumpHours,
-                },
-              }}
+              prefill={
+                repairFor.equipmentId
+                  ? {
+                      assets: [{ kind: "equipment", ref: repairFor.equipmentId, label: repairFor.label }],
+                      typeId: deficiencyTypeId,
+                      description: `Inspection of ${unitLabel(subjectRef)}: ${repairFor.label}${results[repairFor.itemId]?.note ? ` - ${results[repairFor.itemId].note}` : ""}`,
+                    }
+                  : {
+                      assets: [{ kind: "apparatus", ref: subjectRef, label: unitLabel(subjectRef) }],
+                      typeId: deficiencyTypeId,
+                      description: `Inspection: ${repairFor.label}${results[repairFor.itemId]?.note ? ` - ${results[repairFor.itemId].note}` : ""}`,
+                      readings: {
+                        mileage: details.readings.mileage,
+                        engineHours: details.readings.engineHours,
+                        pumpHours: details.readings.pumpHours,
+                      },
+                    }
+              }
               schedules={schedules}
               readingsByUnit={readingsByUnit}
-              assetKind="apparatus"
+              assetKind={repairFor.equipmentId ? "equipment" : "apparatus"}
               username={username}
               canManage={canManage}
               types={types}
               vendors={vendors}
-              assetOptions={apparatusOptions}
+              assetOptions={repairFor.equipmentId ? equipmentOptions : apparatusOptions}
               stations={lookups.stations}
               personnel={lookups.personnel}
               onVendorCreated={(vendor) => setVendors((previous) => [...previous, vendor])}
@@ -864,7 +910,7 @@ function InspectionReport({ id, unitLabel, onBack }: { id: string; unitLabel: (r
                   </span>
                   <span className="inspection-item-note">
                     {entry?.recordId ? (
-                      <a className="edit-display-link" href={`${MAINTENANCE_PATH}?record=${encodeURIComponent(entry.recordId)}`}>
+                      <a className="edit-display-link" href={recordLink(entry.recordId, Boolean(item.equipmentId))}>
                         View work order
                       </a>
                     ) : null}

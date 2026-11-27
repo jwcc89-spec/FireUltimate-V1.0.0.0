@@ -11,6 +11,16 @@ export const BOARD_PANELS: { value: BoardPanel; label: string }[] = [
 
 export type BoardPanel = "apparatus" | "onDuty" | "incidents" | "events" | "messages";
 
+/** Position on the board's 8 by 8 grid, in squares. */
+export interface GridBox {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export type BoardLayout = Partial<Record<BoardPanel, GridBox>>;
+
 export interface DisplayBoard {
   id: string;
   name: string;
@@ -20,6 +30,7 @@ export interface DisplayBoard {
   takeoverSeconds: number;
   soundOn: boolean;
   panels: Record<BoardPanel, boolean>;
+  layout: BoardLayout;
   updatedAt: string;
   updatedBy: string;
 }
@@ -99,7 +110,9 @@ export interface IncidentLocation {
 const boardPath = (id: string) => `/api/displays/boards/${encodeURIComponent(id)}`;
 
 export const getBoards = () => apiJson<DisplayBoard[]>("/api/displays/boards");
-export const getBoard = (id: string) => apiJson<{ board: DisplayBoard; department: BoardDepartment }>(boardPath(id));
+export const getBoard = (id: string) =>
+  apiJson<{ board: DisplayBoard; department: BoardDepartment; stationAddress: string }>(boardPath(id));
+export const getBoardPulse = (id: string) => apiJson<{ latest: BoardIncident[] }>(`${boardPath(id)}/pulse`);
 export const createBoard = (input: DisplayBoardInput) => apiJson<DisplayBoard>("/api/displays/boards", send("POST", input));
 export const updateBoard = (id: string, input: DisplayBoardInput) => apiJson<DisplayBoard>(boardPath(id), send("PATCH", input));
 export const deleteBoard = (id: string) => apiJson<void>(boardPath(id), send("DELETE"));

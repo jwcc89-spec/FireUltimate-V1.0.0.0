@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { CalendarDays, ExternalLink, Megaphone, Monitor, Plus } from "lucide-react";
+import { CalendarDays, ExternalLink, LayoutGrid, Megaphone, Monitor, Plus } from "lucide-react";
 import {
   BOARD_PANELS,
   createAnnouncement,
@@ -15,6 +15,7 @@ import {
   updateBoard,
   updateDisplayEvent,
   type Announcement,
+  type BoardLayout,
   type BoardPanel,
   type DisplayBoard,
   type DisplayEvent,
@@ -28,6 +29,7 @@ import { EditDialog } from "../maintenance/MaintenanceSetupTabs";
 import { errorText, formatTimestamp24, isoToLocalParts, localPartsToIso, normalizeTime24 } from "../maintenance/maintenanceUtils";
 import { useDialogSave } from "../maintenance/useDialogSave";
 import { kindLabel } from "../maps/mapUtils";
+import { BoardLayoutEditor } from "./BoardLayoutEditor";
 
 type PageTab = "boards" | "messages" | "events";
 
@@ -51,6 +53,7 @@ interface BoardDraft {
   takeoverSeconds: string;
   soundOn: boolean;
   panels: Record<BoardPanel, boolean>;
+  layout: BoardLayout;
 }
 
 interface MessageDraft {
@@ -133,6 +136,7 @@ export function DisplaysAdminPage() {
   const [boardDraft, setBoardDraft] = useState<BoardDraft | null>(null);
   const [messageDraft, setMessageDraft] = useState<MessageDraft | null>(null);
   const [eventDraft, setEventDraft] = useState<EventDraft | null>(null);
+  const [layoutBoard, setLayoutBoard] = useState<DisplayBoard | null>(null);
   const dialog = useDialogSave();
 
   const reload = useCallback(async () => {
@@ -194,6 +198,7 @@ export function DisplaysAdminPage() {
             takeoverSeconds: String(board.takeoverSeconds),
             soundOn: board.soundOn,
             panels: { ...ALL_PANELS, ...board.panels },
+            layout: board.layout,
           }
         : {
             id: null,
@@ -204,8 +209,29 @@ export function DisplaysAdminPage() {
             takeoverSeconds: "60",
             soundOn: true,
             panels: { ...ALL_PANELS },
+            layout: {},
           },
     );
+  };
+
+  const boardInput = (board: DisplayBoard, layout: BoardLayout) => ({
+    name: board.name,
+    stationName: board.stationName,
+    callFilter: board.callFilter,
+    filterGeofenceIds: board.filterGeofenceIds,
+    takeoverSeconds: board.takeoverSeconds,
+    soundOn: board.soundOn,
+    panels: board.panels,
+    layout,
+  });
+
+  const saveLayout = (layout: BoardLayout) => {
+    if (!layoutBoard) return;
+    void dialog.run(async () => {
+      await updateBoard(layoutBoard.id, boardInput(layoutBoard, layout));
+      setLayoutBoard(null);
+      await reload();
+    }, "Could not save the layout.");
   };
 
   const saveBoard = () => {
@@ -219,6 +245,7 @@ export function DisplaysAdminPage() {
         takeoverSeconds: Number(boardDraft.takeoverSeconds),
         soundOn: boardDraft.soundOn,
         panels: boardDraft.panels,
+        layout: boardDraft.layout,
       };
       if (!input.name) throw new Error("Enter a name for the board.");
       if (boardDraft.id) await updateBoard(boardDraft.id, input);
@@ -346,7 +373,22 @@ export function DisplaysAdminPage() {
       {error ? <p className="field-error">{error}</p> : null}
       {loading ? <p className="field-hint">Loading...</p> : null}
 
-      {!loading && tab === "boards" ? (
+      {!loading && tab === "boards" && layoutBoard ? (
+        <BoardLayoutEditor
+          key={layoutBoard.id}
+          board={layoutBoard}
+          canManage={canManage}
+          saving={dialog.saving}
+          error={dialog.error}
+          onSave={saveLayout}
+          onClose={() => {
+            dialog.setError("");
+            setLayoutBoard(null);
+          }}
+        />
+      ) : null}
+
+      {!loading && tab === "boards" && !layoutBoard ? (
         <article className="panel">
           <ModuleTable
             tableId="display-boards"
@@ -366,9 +408,20 @@ export function DisplaysAdminPage() {
               {
                 id: "open",
                 label: "Board",
-                width: 220,
+                width: 280,
                 render: (row) => (
                   <span className="display-admin-links">
+                    <button
+                      type="button"
+                      className="display-admin-link-button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        dialog.setError("");
+                        setLayoutBoard(row);
+                      }}
+                    >
+                      <LayoutGrid size={13} aria-hidden="true" /> Layout
+                    </button>
                     <a href={`/display/${row.id}`} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()}>
                       <ExternalLink size={13} aria-hidden="true" /> Open board
                     </a>

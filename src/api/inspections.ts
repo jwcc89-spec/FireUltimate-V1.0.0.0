@@ -14,7 +14,14 @@ export interface InspectionSection {
   id: string;
   title: string;
   defaultNa?: boolean;
-  items: { id: string; label: string }[];
+  items: InspectionItem[];
+}
+
+export interface InspectionItem {
+  id: string;
+  label: string;
+  /** Set on Special Equipment rows that come from the Equipment List. */
+  equipmentId?: string;
 }
 
 export interface InspectionTemplate {
@@ -75,6 +82,7 @@ export interface OpenDeficiency {
   recordId: string;
   recordNumber: string;
   description: string;
+  assetKind: "apparatus" | "equipment";
 }
 
 export const getInspectionTemplate = () => apiJson<InspectionTemplate>("/api/inspections/template");
@@ -84,6 +92,8 @@ export const getInspection = (id: string) => apiJson<InspectionDetail>(`/api/ins
 export const createInspection = (input: InspectionInput) =>
   apiJson<InspectionDetail>("/api/inspections", send("POST", input));
 export const deleteInspection = (id: string) => apiJson<void>(`/api/inspections/${encodeURIComponent(id)}`, send("DELETE"));
+export const getUnitEquipment = (unit: string) =>
+  apiJson<InspectionItem[]>(`/api/inspections/unit-equipment?unit=${encodeURIComponent(unit)}`);
 export const getOpenDeficiencies = (unit: string) =>
   apiJson<{ byItem: Record<string, OpenDeficiency>; deficiencies: OpenDeficiency[] }>(
     `/api/inspections/open-deficiencies?unit=${encodeURIComponent(unit)}`,

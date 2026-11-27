@@ -3409,7 +3409,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     if (path.startsWith("/incidents-mapping/incidents/")) {
       return {
         primary: "Incidents / Mapping",
-        secondary: decodeURIComponent(path.replace("/incidents-mapping/incidents/", "")),
+        secondary: "Incident Detail",
       };
     }
     if (!activeMenu) {
@@ -5329,7 +5329,7 @@ function IncidentCallDetailPage({
     <section className="page-section">
       <header className="page-header">
         <div>
-          <h1 className="page-title-keep">{detail.callNumber}</h1>
+          <h1 className="page-title-keep">Incident {getIncidentDisplayNumber(detail)}</h1>
           <p>{detail.dispatchInfo}</p>
         </div>
         <div className="header-actions">

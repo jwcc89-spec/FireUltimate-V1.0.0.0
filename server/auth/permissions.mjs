@@ -163,7 +163,7 @@ export function permissionForRequest(method, path, body) {
   // The call location only caches a map point on the call, so viewing calls is enough.
   if (verb === "POST" && route === "/api/maps/incident-location") return "incidents.view";
 
-  if (verb === "GET" && /^\/api\/displays\/boards\/[^/]+\/feed$/.test(route)) return "incidents.view";
+  if (verb === "GET" && /^\/api\/displays\/boards\/[^/]+\/(feed|pulse)$/.test(route)) return "incidents.view";
   if (verb !== "GET" && /^\/api\/displays\/(boards|announcements|events)(\/[^/]+)?$/.test(route)) {
     return "displays.manage";
   }

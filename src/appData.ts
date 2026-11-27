@@ -119,7 +119,8 @@ export interface IncidentCallSummary {
 /** Display incident # (internal id, or incident number, or call id). */
 export function getIncidentDisplayNumber(call: IncidentCallSummary): string {
   return (
-    String(call.incident_internal_id ?? call.incidentNumber ?? call.callNumber).trim() || call.callNumber
+    String(call.incident_internal_id || call.incidentNumber || call.dispatchNumber || call.callNumber).trim() ||
+    call.callNumber
   );
 }
 
