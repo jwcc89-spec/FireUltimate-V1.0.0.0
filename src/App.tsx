@@ -70,9 +70,6 @@ import { FireRecoveryExportPanel, FireRecoveryQuickPreview } from "./pages/FireR
 import { isFireRecoveryBillable } from "./fireRecovery/billingRequirements";
 import {
   ALL_SUBMENU_PATHS,
-  DASHBOARD_ALERTS,
-  DASHBOARD_PRIORITY_LINKS,
-  DASHBOARD_STATS,
   DEFAULT_DISPATCH_WORKFLOW_STATES,
   DEFAULT_INCIDENT_CALL_FIELD_ORDER,
   INCIDENT_CALL_FIELD_OPTIONS,
@@ -124,6 +121,7 @@ import { EquipmentListPage } from "./pages/maintenance/EquipmentListPage";
 import { ApparatusOverviewPage } from "./pages/maintenance/ApparatusOverviewPage";
 import { InspectionsPage } from "./pages/maintenance/InspectionsPage";
 import { ChecklistsPage } from "./pages/checklists/ChecklistsPage";
+import { DashboardPage as ModuleDashboardPage } from "./pages/dashboard/DashboardPage";
 import { CallMap } from "./pages/displays/CallMap";
 import { DisplayBoardPage } from "./pages/displays/DisplayBoardPage";
 import { DisplaysAdminPage } from "./pages/displays/DisplaysAdminPage";
@@ -4046,37 +4044,6 @@ function MenuDisplayCards({
   );
 }
 
-const DASHBOARD_WIDGET_OPTIONS = [
-  { id: "active-calls", label: "Active Calls" },
-  { id: "units-available", label: "Units Available" },
-  { id: "pending-reports", label: "Pending Reports" },
-  { id: "unread-messages", label: "Unread Messages" },
-  { id: "priority-shortcuts", label: "Priority Shortcuts" },
-  { id: "live-alerts", label: "Live Alerts" },
-] as const;
-
-type DashboardWidgetId = (typeof DASHBOARD_WIDGET_OPTIONS)[number]["id"];
-
-const DASHBOARD_WIDGET_IDS = new Set<string>(DASHBOARD_WIDGET_OPTIONS.map((item) => item.id));
-const DASHBOARD_HIDDEN_WIDGETS_KEY = "fire-ultimate-dashboard-hidden-widgets";
-
-function readHiddenDashboardWidgets(): DashboardWidgetId[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = window.localStorage.getItem(DASHBOARD_HIDDEN_WIDGETS_KEY);
-    const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    if (!Array.isArray(parsed)) return [];
-    return parsed.filter((id): id is DashboardWidgetId => typeof id === "string" && DASHBOARD_WIDGET_IDS.has(id));
-  } catch {
-    return [];
-  }
-}
-
-function writeHiddenDashboardWidgets(hidden: DashboardWidgetId[]): void {
-  if (typeof window === "undefined") return;
-  window.localStorage.setItem(DASHBOARD_HIDDEN_WIDGETS_KEY, JSON.stringify(hidden));
-}
-
 function formatAlertDate(value: string): string {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim());
   return match ? `${match[2]}-${match[3]}-${match[1].slice(2)}` : value;
@@ -4127,17 +4094,6 @@ function DashboardAttentionAlerts({ anchorId }: { anchorId?: string }) {
 function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
   const location = useLocation();
   const dashboardMenu = getMainMenuById("dashboard");
-  const [widgetEditorOpen, setWidgetEditorOpen] = useState(false);
-  const [hiddenWidgets, setHiddenWidgets] = useState<DashboardWidgetId[]>(() =>
-    readHiddenDashboardWidgets(),
-  );
-  const hiddenWidgetSet = useMemo(() => new Set(hiddenWidgets), [hiddenWidgets]);
-  const visibleDashboardStats = DASHBOARD_STATS.filter((stat) => {
-    const match = DASHBOARD_WIDGET_OPTIONS.find((item) => item.label === stat.label);
-    return !match || !hiddenWidgetSet.has(match.id);
-  });
-  const showPriorityShortcuts = !hiddenWidgetSet.has("priority-shortcuts");
-  const showLiveAlerts = !hiddenWidgetSet.has("live-alerts");
 
   useEffect(() => {
     const state = location.state as { focusAlerts?: boolean } | null;
@@ -4148,140 +4104,15 @@ function DashboardPage({ role, submenuVisibility }: DashboardPageProps) {
     });
   }, [location.state]);
 
-  const toggleDashboardWidget = (id: DashboardWidgetId) => {
-    setHiddenWidgets((previous) => {
-      const next = previous.includes(id)
-        ? previous.filter((item) => item !== id)
-        : [...previous, id];
-      writeHiddenDashboardWidgets(next);
-      return next;
-    });
-  };
-
   return (
-    <section className="page-section neris-report-page">
-      <header className="page-header">
-        <div>
-          <h1>Dashboard</h1>
-          <p>
-            Current status across call activity, readiness, and high-priority
-            updates.
-          </p>
-        </div>
-        <div className="header-actions">
-          <div className="edit-display-wrap">
-            <button
-              type="button"
-              className="edit-display-link"
-              onClick={() => setWidgetEditorOpen((previous) => !previous)}
-            >
-              Edit display
-            </button>
-            {widgetEditorOpen ? (
-              <div className="edit-display-dropdown">
-                <p>Choose which dashboard boxes to show.</p>
-                <ul>
-                  {DASHBOARD_WIDGET_OPTIONS.map((widget) => (
-                    <li key={widget.id}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={!hiddenWidgetSet.has(widget.id)}
-                          onChange={() => toggleDashboardWidget(widget.id)}
-                        />
-                        <span>{widget.label}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-                <small>
-                  Active Calls, Units Available, Pending Reports, Unread Messages, and Live
-                  Alerts use sample numbers. They are not connected to live incidents yet.
-                  This choice stays on this computer.
-                </small>
-              </div>
-            ) : null}
-          </div>
-          <NavLink className="secondary-button button-link" to="/calendar/events">
-            Open Calendar
-          </NavLink>
-          <NavLink className="primary-button button-link" to="/incidents-mapping/incidents">
-            Open Incidents
-          </NavLink>
-        </div>
-      </header>
-
-      {visibleDashboardStats.length > 0 ? (
-        <section className="stat-grid">
-          {visibleDashboardStats.map((stat) => (
-            <article key={stat.label} className="stat-card">
-              <p>{stat.label}</p>
-              <strong>{stat.value}</strong>
-              <span className={toToneClass(stat.tone)}>{stat.detail}</span>
-            </article>
-          ))}
-        </section>
-      ) : null}
-
-      {showPriorityShortcuts || showLiveAlerts ? (
-      <section className="panel-grid two-column">
-        {showPriorityShortcuts ? (
-        <article className="panel">
-          <div className="panel-header">
-            <h2>Priority Shortcuts</h2>
-            <span className="panel-caption">
-              {isAdminOrHigher(role)
-                ? "Admin-level links included"
-                : "Admin-only links will route to access denied"}
-            </span>
-          </div>
-          <ul className="dashboard-shortcut-list">
-            {DASHBOARD_PRIORITY_LINKS.map((link) => (
-              <li key={link.path}>
-                <div>
-                  <strong>{link.label}</strong>
-                  <p>{link.description}</p>
-                </div>
-                <NavLink className="secondary-button button-link compact" to={link.path}>
-                  Open
-                </NavLink>
-              </li>
-            ))}
-          </ul>
-        </article>
-        ) : null}
-
-        {showLiveAlerts ? (
-        <article className="panel" id="dashboard-alerts">
-          <div className="panel-header">
-            <h2>Live Alerts</h2>
-            <span className="panel-caption">Most recent operational notices</span>
-          </div>
-          <ul className="timeline-list">
-            {DASHBOARD_ALERTS.map((alert) => (
-              <li key={`${alert.title}-${alert.time}`}>
-                <div>
-                  <strong>{alert.title}</strong>
-                  <p>{alert.detail}</p>
-                </div>
-                <span className={toToneClass(alert.tone)}>{alert.time}</span>
-              </li>
-            ))}
-          </ul>
-        </article>
-        ) : null}
-      </section>
-      ) : null}
-
-      <DashboardAttentionAlerts anchorId={showLiveAlerts ? undefined : "dashboard-alerts"} />
-      {dashboardMenu ? (
-        <MenuDisplayCards
-          menu={dashboardMenu}
-          role={role}
-          submenuVisibility={submenuVisibility}
-        />
-      ) : null}
-    </section>
+    <ModuleDashboardPage
+      alerts={<DashboardAttentionAlerts anchorId="dashboard-alerts" />}
+      footer={
+        dashboardMenu ? (
+          <MenuDisplayCards menu={dashboardMenu} role={role} submenuVisibility={submenuVisibility} />
+        ) : null
+      }
+    />
   );
 }
 

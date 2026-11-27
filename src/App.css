@@ -9196,3 +9196,372 @@ button.personnel-schedule-open-token-claim {
     flex-wrap: wrap;
   }
 }
+
+/* ----- Dashboard (W5): drag-and-resize widgets ----- */
+.dashboard-grid {
+  min-width: 0;
+}
+
+.dashboard-grid .react-grid-item.react-grid-placeholder {
+  background: #bfdbfe;
+  border-radius: 12px;
+  opacity: 0.6;
+}
+
+.dashboard-widget {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding: 0.7rem 0.8rem;
+}
+
+.dashboard-grid.is-editing .dashboard-widget {
+  border-style: dashed;
+  border-color: #93c5fd;
+}
+
+.dashboard-widget-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.5rem;
+}
+
+.dashboard-grid.is-editing .dashboard-widget-header {
+  cursor: move;
+}
+
+.dashboard-widget-header h2 {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.95rem;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-widget-header h2 a {
+  color: inherit;
+  text-decoration: none;
+}
+
+.dashboard-widget-header h2 a:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.dashboard-widget-grip {
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.dashboard-widget-remove {
+  border: 1px solid #dbe2ec;
+  background: #fff;
+  border-radius: 6px;
+  color: #991b1b;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.15rem;
+}
+
+.dashboard-widget-remove:hover {
+  background: #fee2e2;
+}
+
+.dashboard-widget-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+}
+
+.dashboard-widget-body > .field-hint,
+.dashboard-widget-body > .field-error {
+  margin: 0;
+}
+
+.dashboard-widget-note {
+  margin: 0;
+  color: #64748b;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.dashboard-widget-alert {
+  margin: 0;
+  padding: 0.35rem 0.55rem;
+  border-radius: 8px;
+  background: #fee2e2;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.dashboard-widget-alert a {
+  color: #991b1b;
+}
+
+.dashboard-edit-hint {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border: 1px solid #bfdbfe;
+  border-radius: 10px;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-size: 0.84rem;
+}
+
+.dashboard-add-option {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #fff;
+  padding: 0.4rem 0.55rem;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 0.1rem;
+}
+
+.dashboard-add-option:hover {
+  background: #f1f5f9;
+}
+
+.dashboard-add-option strong {
+  font-size: 0.82rem;
+  color: #0f172a;
+}
+
+.dashboard-add-option span {
+  font-size: 0.74rem;
+  color: #64748b;
+}
+
+.dashboard-clock {
+  flex: 1;
+  display: grid;
+  place-content: center;
+  text-align: center;
+  gap: 0.2rem;
+}
+
+.dashboard-clock strong {
+  font-size: 2.2rem;
+  font-variant-numeric: tabular-nums;
+  color: #0f172a;
+  line-height: 1.1;
+}
+
+.dashboard-clock span {
+  color: #475569;
+  font-size: 0.85rem;
+}
+
+.dashboard-stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 0.5rem;
+  flex: 1;
+}
+
+.dashboard-stats.compact {
+  flex: none;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.dashboard-stat {
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  padding: 0.4rem 0.6rem;
+  display: grid;
+  align-content: center;
+  gap: 0.1rem;
+  text-decoration: none;
+  background: #f8fafc;
+}
+
+.dashboard-stat:hover {
+  background: #eff6ff;
+  border-color: #bfdbfe;
+}
+
+.dashboard-stat span {
+  color: #64748b;
+  font-size: 0.74rem;
+}
+
+.dashboard-stat strong {
+  color: #0f172a;
+  font-size: 1.25rem;
+}
+
+.dashboard-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.3rem;
+}
+
+.dashboard-list li > a,
+.dashboard-list li.dashboard-list-static {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.6rem;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  padding: 0.35rem 0.55rem;
+  text-decoration: none;
+  color: inherit;
+}
+
+.dashboard-list li > a:hover {
+  background: #f1f5f9;
+}
+
+.dashboard-list-main {
+  display: grid;
+  min-width: 0;
+}
+
+.dashboard-list-main strong {
+  font-size: 0.84rem;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-list-main small {
+  font-size: 0.75rem;
+  color: #64748b;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-list-side {
+  flex-shrink: 0;
+  font-size: 0.78rem;
+  color: #475569;
+  font-variant-numeric: tabular-nums;
+}
+
+.dashboard-list .tone {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
+.dashboard-map {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dashboard-map-caption {
+  margin: 0;
+  font-size: 0.8rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dashboard-map .call-map {
+  flex: 1;
+  min-height: 0;
+  grid-template-rows: minmax(0, 1fr) auto;
+}
+
+.dashboard-map .call-map-canvas {
+  height: auto;
+  min-height: 120px;
+}
+
+.dashboard-calendar {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.dashboard-calendar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.dashboard-calendar-header strong {
+  font-size: 0.88rem;
+  color: #0f172a;
+}
+
+.dashboard-calendar-grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.15rem;
+  text-align: center;
+}
+
+.dashboard-calendar-weekday {
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: #64748b;
+}
+
+.dashboard-calendar-day {
+  position: relative;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: transparent;
+  padding: 0.25rem 0;
+  font-size: 0.8rem;
+  color: #0f172a;
+  cursor: pointer;
+}
+
+.dashboard-calendar-day:hover {
+  background: #f1f5f9;
+}
+
+.dashboard-calendar-day.is-today {
+  font-weight: 700;
+  border-color: #93c5fd;
+}
+
+.dashboard-calendar-day.is-selected {
+  background: #1d4ed8;
+  color: #fff;
+}
+
+.dashboard-calendar-day.has-events::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 2px;
+  width: 4px;
+  height: 4px;
+  margin-left: -2px;
+  border-radius: 50%;
+  background: #dc2626;
+}
+
+.dashboard-calendar-day.is-selected.has-events::after {
+  background: #fff;
+}
+
+.dashboard-calendar-events {
+  display: grid;
+  gap: 0.3rem;
+}
+
+.dashboard-calendar-events .field-hint {
+  margin: 0;
+}

@@ -23,7 +23,7 @@ import {
 } from "./moduleHelpers.mjs";
 import { cleanPartsUsed, loadRecordParts, replaceRecordParts } from "./parts.mjs";
 
-const OPEN_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
+export const OPEN_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
 const CLOSED_STATUSES = ["Completed", "Cancelled"];
 const RECORD_STATUSES = [...OPEN_STATUSES, ...CLOSED_STATUSES];
 const PRIORITIES = ["Low", "Medium", "High", "Urgent"];

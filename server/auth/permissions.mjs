@@ -174,6 +174,9 @@ export function permissionForRequest(method, path, body) {
   if (verb !== "GET" && /^\/api\/checklists\/(templates|assignments|kits)(\/[^/]+)?$/.test(route)) {
     return "inventory.manage";
   }
+
+  // Each member saves or resets only their own dashboard layout; the department default is admin-only.
+  if (verb !== "GET" && route === "/api/dashboard/layout/default") return "displays.manage";
   return null;
 }
 

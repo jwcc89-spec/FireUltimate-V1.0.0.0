@@ -51,6 +51,7 @@ model Tenant {
   checklistSubmissions        ChecklistSubmission[]
   checklistAssignments        ChecklistAssignment[]
   kits                        Kit[]
+  dashboardLayouts            DashboardLayout[]
   mapMarkerTypes              MapMarkerType[]
   mapMarkers                  MapMarker[]
   geofences                   Geofence[]
@@ -379,6 +380,26 @@ model Kit {
 
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
+  @@index([tenantId])
+}
+
+/// Dashboard widget layout. One row per user, plus one department default (userId "").
+model DashboardLayout {
+  id         String    @id @default(cuid())
+  tenantId   String
+  /// TenantUser id, or empty for the department default.
+  userId     String    @default("")
+  /// { items: [{ i, x, y, w, h }] } on a 12-column grid.
+  layoutJson Json      @default("{}")
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  createdBy  String    @default("")
+  updatedBy  String    @default("")
+  deletedAt  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, userId])
   @@index([tenantId])
 }
 

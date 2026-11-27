@@ -24,8 +24,8 @@ todos:
     content: 'W4: Checklist template builder and check completion with typed name plus PIN'
     status: completed
   - id: w5-dashboard
-    content: 'W5: react-grid-layout dashboard with shared widgets and saved layouts'
-    status: pending
+    content: 'W5: react-grid-layout dashboard with shared widgets and saved layouts (built; migration not yet applied to staging)'
+    status: in_progress
   - id: w6-policies
     content: 'W6: Policies Manual, DTB''s and Policy Builder (categories, TipTap, PDF view and download, assignments, acknowledge)'
     status: pending
@@ -621,6 +621,20 @@ git push -u origin feature/demo-modules
     - map
   - **Layouts** are stored in the `DashboardLayout` table.
 
+**W5 as built (2026-11-26 late, branch `feature/demo-modules`).** Where this differs from the W5 text above, this wins:
+- **Migration** `20261128100000_add_dashboard_layout` (approved by the operator 2026-11-26) adds one table, `DashboardLayout`: tenantId, userId (`""` = department default), layoutJson `{ items: [{ i, x, y, w, h }] }`, audit columns, deletedAt. Unique on (tenantId, userId). Additive only. **Written, not applied** until the operator says so; apply it to staging before merging.
+- **Routes** in `server/modules/dashboard.mjs`:
+  - `GET /api/dashboard/layout` returns the member's own layout, else the department default, else the built-in layout, plus `source`, `hasDepartmentDefault` and `canSetDefault`.
+  - `PUT` / `DELETE /api/dashboard/layout` save or reset the member's own row (any signed-in member; keyed on `request.auth.userId`).
+  - `PUT` / `DELETE /api/dashboard/layout/default` need `displays.manage` (no new permission key).
+  - `GET /api/dashboard/summary` returns every unit's status (the same `apparatusStatusFor` as Fleet Overview), crew on duty now across all stations (the board's `boardOnDuty`), and open / overdue / out-of-service maintenance with the 6 newest open records. Reads only.
+  - The server rejects unknown widgets, duplicates, and boxes smaller than 2x2 or outside the 12 columns. Tests: `server/modules/dashboard.test.mjs` (in `npm test`).
+- **Library:** `react-grid-layout` 2.x, a 12-column grid with 56 px rows. Under 760 px wide the dashboard stacks into one column and Edit layout is off.
+- **Widgets (12):** Clock (24-hour), Call Stats (calls today, last 7 days, this year from the CAD received time; reports not Exported), Incidents (10 newest), Last Call Map (`CallMap`), On Duty, Apparatus Status, Open Maintenance, Checks Due (plus flagged checks for `inventory.manage`), **Trades - Active Requests** (requested / awaiting admin / cancel pending, plus pending schedule approvals for reviewers; from `/api/trades` and `/api/qualification-overrides`), **Calendar** (month grid of the `DisplayEvent` events from Admin Functions > Displays > Events, with a day list), Quick Links, DTB's Due ("Coming with Policies" until W6). Quick Links and DTB's are not in the built-in layout; add them with Add widget.
+- **Page:** Edit layout, then drag by the title bar, resize from the corner, X to remove, Add widget, Save / Cancel, Reset to department default (when the member has their own), and Save as department default (admins). The old show/hide list, the sample stat cards, the sample Live Alerts and the `fire-ultimate-dashboard-hidden-widgets` key are gone. The pending-approval Alerts card and the dashboard submenu cards stay.
+- **Files:** `src/pages/dashboard/` (`DashboardPage.tsx`, `DashboardWidgets.tsx`, `widgetCatalog.ts`), `src/api/dashboard.ts`; `App.tsx` `DashboardPage` is now a thin wrapper.
+- **Deferred:** real Calendar module (events still come from `DisplayEvent`), DTB's widget data (W6), average turnout / travel times (need CAD unit times).
+
 ### W6. Policies (about 1.5 hours)
 - **Summary:** the Manual, DTB's and Policy Builder screens with categories, a TipTap editor, PDF view and download, assignments, and one-click acknowledgment.
 - **Details:**
@@ -744,7 +758,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-26 evening):** W0–W4 are done and on staging (23 migrations applied). Latest staging merge for the evening follow-up is `70781fa`. Operator confirmed remaining W4 and evening follow-up **click checks passed**. **Next planned step is W5 Dashboard**, unless the operator prioritizes approved Units (In Reserve / apparatus profile) or maintenance labor schema work.
+**Progress (2026-11-26 late):** W0–W4 are done and on staging (23 migrations applied; staging tip `70781fa`). **W5 Dashboard is built on `feature/demo-modules`** with migration `20261128100000_add_dashboard_layout` written but **not applied**. Next: apply that migration to staging, merge, operator click checks, then **W6 Policies** (needs its own schema approval: seven tables).
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)
