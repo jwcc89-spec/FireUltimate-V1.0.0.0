@@ -14,6 +14,7 @@ import { actorOf, detailsOf, oneOf, sendError, tenantIdOf, text } from "./module
 export const BOARD_PANELS = ["apparatus", "onDuty", "incidents", "events", "messages"];
 const CALL_FILTERS = ["all", "districts"];
 const FEED_INCIDENTS = 10;
+const PULSE_INCIDENTS = 5;
 const DISTRICT_LOOKUPS_PER_FEED = 3;
 const EVENT_LOOKBACK_MS = 6 * 60 * 60 * 1000;
 
@@ -50,6 +51,56 @@ function panelsOf(layoutJson) {
   return Object.fromEntries(BOARD_PANELS.map((key) => [key, saved[key] !== false]));
 }
 
+/** The board area below the header is an 8 by 8 grid. Each panel covers at least 2 by 2 squares. */
+export const GRID_SIZE = 8;
+const MIN_SPAN = 2;
+export const DEFAULT_GRID = {
+  apparatus: { x: 0, y: 0, w: 2, h: 5 },
+  onDuty: { x: 0, y: 5, w: 2, h: 3 },
+  incidents: { x: 2, y: 0, w: 4, h: 8 },
+  events: { x: 6, y: 0, w: 2, h: 4 },
+  messages: { x: 6, y: 4, w: 2, h: 4 },
+};
+
+function overlaps(a, b) {
+  return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+/** Validates a layout sent by the layout editor. Missing means the default. */
+export function readGrid(raw) {
+  if (raw == null) return { ...DEFAULT_GRID };
+  if (typeof raw !== "object" || Array.isArray(raw)) throw new PublicError("The board layout is not valid.");
+  const grid = {};
+  for (const key of BOARD_PANELS) {
+    const cell = raw[key];
+    if (cell == null) continue;
+    const box = { x: Number(cell.x), y: Number(cell.y), w: Number(cell.w), h: Number(cell.h) };
+    if (!Object.values(box).every(Number.isInteger)) throw new PublicError("The board layout is not valid.");
+    if (box.x < 0 || box.y < 0 || box.w < MIN_SPAN || box.h < MIN_SPAN || box.x + box.w > GRID_SIZE || box.y + box.h > GRID_SIZE) {
+      throw new PublicError("Each panel must be at least 2 by 2 squares and stay inside the 8 by 8 board.");
+    }
+    for (const [other, placed] of Object.entries(grid)) {
+      if (overlaps(box, placed)) throw new PublicError(`The ${key} and ${other} panels overlap.`);
+    }
+    grid[key] = box;
+  }
+  return grid;
+}
+
+function gridOf(layoutJson) {
+  try {
+    return readGrid(layoutJson && typeof layoutJson === "object" ? layoutJson.grid : null);
+  } catch {
+    return { ...DEFAULT_GRID };
+  }
+}
+
+function stationAddress(payload, stationName) {
+  if (!stationName) return "";
+  const station = records(payload.stationRecords).find((entry) => sameText(entry.name, stationName));
+  return station ? [station.address, station.city, station.state].map((part) => text(part, 120)).filter(Boolean).join(", ") : "";
+}
+
 function serializeBoard(row) {
   return {
     id: row.id,
@@ -60,6 +111,7 @@ function serializeBoard(row) {
     takeoverSeconds: row.takeoverSeconds,
     soundOn: row.soundOn,
     panels: panelsOf(row.layoutJson),
+    layout: gridOf(row.layoutJson),
     updatedAt: iso(row.updatedAt),
     updatedBy: row.updatedBy,
   };
@@ -94,7 +146,10 @@ async function readBoard(prisma, tenantId, body) {
     filterGeofenceIds: callFilter === "districts" ? requested : [],
     takeoverSeconds: seconds,
     soundOn: body.soundOn !== false,
-    layoutJson: { panels: Object.fromEntries(BOARD_PANELS.map((key) => [key, panels[key] !== false])) },
+    layoutJson: {
+      panels: Object.fromEntries(BOARD_PANELS.map((key) => [key, panels[key] !== false])),
+      grid: readGrid(body.layout),
+    },
   };
 }
 
@@ -389,7 +444,11 @@ export function register(app, prisma, { geocode = censusGeocode } = {}) {
       const department = await departmentInfo(prisma, request);
       response.json({
         ok: true,
-        data: { board: serializeBoard(row), department: { name: department.name, logoDataUrl: department.logoDataUrl } },
+        data: {
+          board: serializeBoard(row),
+          department: { name: department.name, logoDataUrl: department.logoDataUrl },
+          stationAddress: stationAddress(department.payload, row.stationName),
+        },
       });
     } catch (error) {
       sendError(response, error, "Could not load the display board.");
@@ -440,6 +499,31 @@ export function register(app, prisma, { geocode = censusGeocode } = {}) {
       });
     } catch (error) {
       sendError(response, error, "Could not load the display board.");
+    }
+  });
+
+  /** The newest few calls only, so a board can check every few seconds and open the takeover without loading the full feed. */
+  app.get("/api/displays/boards/:id/pulse", async (request, response) => {
+    const tenantId = tenantIdOf(request, response);
+    if (!tenantId) return;
+    try {
+      const board = await prisma.displayBoard.findFirst({
+        where: { id: request.params.id, tenantId, deletedAt: null },
+        select: { id: true },
+      });
+      if (!board) {
+        response.status(404).json({ ok: false, message: "That display board was not found." });
+        return;
+      }
+      const now = Date.now();
+      const rows = await prisma.incident.findMany({
+        where: { tenantId, deletedAt: null },
+        orderBy: { createdAt: "desc" },
+        take: PULSE_INCIDENTS,
+      });
+      response.json({ ok: true, data: { latest: rows.map((row) => serializeFeedIncident(row, savedPoint(row, now), false)) } });
+    } catch (error) {
+      sendError(response, error, "Could not check for new calls.");
     }
   });
 

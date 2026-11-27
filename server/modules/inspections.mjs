@@ -21,6 +21,45 @@ import {
 
 const RESULTS = ["OK", "X", "O", "NA"];
 const OPEN_RECORD_STATUSES = ["Open", "Assigned", "In Progress", "Parts Ordered"];
+/** Equipment List items kept on the inspected unit are added as rows to this section. */
+const EQUIPMENT_SECTION_ID = "special";
+const EQUIPMENT_ITEM_PREFIX = "equipment-";
+
+/** Equipment List items on a unit, as inspection rows. Retired items are left out. */
+async function unitEquipment(prisma, tenantId, unit) {
+  const rows = await prisma.equipment.findMany({
+    where: { tenantId, deletedAt: null, locationRef: unit },
+    orderBy: { name: "asc" },
+  });
+  return rows
+    .filter((row) => row.status !== "Retired")
+    .map((row) => ({
+      id: `${EQUIPMENT_ITEM_PREFIX}${row.id}`,
+      label: row.serialNumber ? `${row.name} (${row.serialNumber})` : row.name,
+      equipmentId: row.id,
+    }));
+}
+
+/** Adds equipment rows to the Special Equipment section (or a new section if a template has none). */
+function withEquipment(sections, equipmentItems) {
+  if (equipmentItems.length === 0) return sections;
+  if (!sections.some((section) => section.id === EQUIPMENT_SECTION_ID)) {
+    return [...sections, { id: EQUIPMENT_SECTION_ID, title: "Special Equipment", defaultNa: false, items: equipmentItems }];
+  }
+  return sections.map((section) =>
+    section.id === EQUIPMENT_SECTION_ID ? { ...section, items: [...(section.items ?? []), ...equipmentItems] } : section,
+  );
+}
+
+function savedEquipmentItems(row) {
+  const saved = detailsOf(row).equipmentItems;
+  return Array.isArray(saved)
+    ? saved
+        .filter((entry) => entry && typeof entry === "object")
+        .map((entry) => ({ id: text(entry.id, 80), label: text(entry.label, 300), equipmentId: text(entry.equipmentId, 60) }))
+        .filter((entry) => entry.id.startsWith(EQUIPMENT_ITEM_PREFIX))
+    : [];
+}
 
 /** Seeds the default template (version 1) for the department the first time inspections are used. */
 async function ensureDefaultTemplate(prisma, tenantId) {
@@ -156,15 +195,18 @@ export function register(app, prisma) {
     try {
       const unit = text(request.query.unit, 200);
       if (!unit) throw new PublicError("Pick an apparatus.");
+      const equipmentIds = new Set((await unitEquipment(prisma, tenantId, unit)).map((item) => item.equipmentId));
       const openRecords = (
         await prisma.maintenanceRecord.findMany({
-          where: { tenantId, deletedAt: null, assetKind: "apparatus" },
+          where: { tenantId, deletedAt: null, assetKind: { in: ["apparatus", "equipment"] } },
           include: { type: { select: { name: true } } },
           orderBy: { createdAt: "asc" },
         })
       ).filter((record) => {
+        if (!OPEN_RECORD_STATUSES.includes(record.status)) return false;
         const refs = (Array.isArray(detailsOf(record).assets) ? detailsOf(record).assets : []).map((asset) => asset?.ref);
-        return OPEN_RECORD_STATUSES.includes(record.status) && (record.assetRef === unit || refs.includes(unit));
+        if (record.assetKind === "equipment") return [record.assetRef, ...refs].some((ref) => equipmentIds.has(ref));
+        return record.assetRef === unit || refs.includes(unit);
       });
       const openById = new Map(openRecords.map((record) => [record.id, record]));
       const submissions = await prisma.checklistSubmission.findMany({
@@ -178,16 +220,38 @@ export function register(app, prisma) {
         for (const [itemId, entry] of Object.entries(results)) {
           const record = openById.get(entry?.recordId);
           if (entry?.result === "X" && record) {
-            byItem[itemId] = { recordId: record.id, recordNumber: record.recordNumber, description: text(record.description, 200) };
+            byItem[itemId] = {
+              recordId: record.id,
+              recordNumber: record.recordNumber,
+              description: text(record.description, 200),
+              assetKind: record.assetKind,
+            };
           }
         }
       }
       const deficiencies = openRecords
         .filter((record) => record.type?.name === "Deficiency")
-        .map((record) => ({ recordId: record.id, recordNumber: record.recordNumber, description: text(record.description, 200) }));
+        .map((record) => ({
+          recordId: record.id,
+          recordNumber: record.recordNumber,
+          description: text(record.description, 200),
+          assetKind: record.assetKind,
+        }));
       response.json({ ok: true, data: { byItem, deficiencies } });
     } catch (error) {
       sendError(response, error, "Could not load open deficiencies.");
+    }
+  });
+
+  app.get("/api/inspections/unit-equipment", async (request, response) => {
+    const tenantId = tenantIdOf(request, response);
+    if (!tenantId) return;
+    try {
+      const unit = text(request.query.unit, 200);
+      if (!unit) throw new PublicError("Pick an apparatus.");
+      response.json({ ok: true, data: await unitEquipment(prisma, tenantId, unit) });
+    } catch (error) {
+      sendError(response, error, "Could not load the equipment on this unit.");
     }
   });
 
@@ -207,7 +271,10 @@ export function register(app, prisma) {
       });
       response.json({
         ok: true,
-        data: { ...serializeSubmission(row, { includeDetail: true }), sections: sectionsOf(version) },
+        data: {
+          ...serializeSubmission(row, { includeDetail: true }),
+          sections: withEquipment(sectionsOf(version), savedEquipmentItems(row)),
+        },
       });
     } catch (error) {
       sendError(response, error, "Could not load the inspection.");
@@ -228,8 +295,12 @@ export function register(app, prisma) {
       if (!completedByName) throw new PublicError("Enter the firefighter / driver who did the inspection.");
 
       const { template, version } = await ensureDefaultTemplate(prisma, tenantId);
-      const itemIds = new Set(sectionsOf(version).flatMap((section) => (section.items ?? []).map((item) => item.id)));
+      const onUnit = await unitEquipment(prisma, tenantId, subjectRef);
+      const itemIds = new Set(
+        withEquipment(sectionsOf(version), onUnit).flatMap((section) => (section.items ?? []).map((item) => item.id)),
+      );
       const results = cleanResults(body.results, itemIds);
+      const equipmentItems = onUnit.filter((item) => results[item.id]);
       const recordIds = [...new Set(Object.values(results).map((entry) => entry.recordId).filter(Boolean))];
       if (recordIds.length > 0) {
         const found = await prisma.maintenanceRecord.findMany({
@@ -268,7 +339,7 @@ export function register(app, prisma) {
               status: "Submitted",
               repairCount,
               resultsJson: results,
-              detailsJson: details,
+              detailsJson: { ...details, equipmentItems },
               createdBy: actor,
               updatedBy: actor,
             },

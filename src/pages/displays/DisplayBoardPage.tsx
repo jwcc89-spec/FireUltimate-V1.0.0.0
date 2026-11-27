@@ -1,18 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, type ReactNode, useEffect, useRef, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Maximize2, Volume2, X } from "lucide-react";
 import {
   getBoard,
   getBoardFeed,
+  getBoardPulse,
+  type BoardPanel,
   type BoardDepartment,
   type BoardFeed,
   type BoardIncident,
   type DisplayBoard,
 } from "../../api/displays";
 import { errorText, formatTimestamp24 } from "../maintenance/maintenanceUtils";
+import { placeLayout } from "./boardLayout";
 import { CallMap } from "./CallMap";
 
 const REFRESH_MS = 20_000;
+/** How often the board asks "any new call?". The answer is a few rows, so this stays light. */
+const PULSE_MS = 4_000;
+/** Three spaces, two hyphens, three spaces between banner messages. Non-breaking so the browser keeps them. */
+const BANNER_SEPARATOR = "\u00a0\u00a0\u00a0--\u00a0\u00a0\u00a0";
 /** Only a call this recent opens the takeover, so an older call that reappears on a district board stays quiet. */
 const TAKEOVER_MAX_AGE_MS = 30 * 60 * 1000;
 
@@ -75,6 +82,7 @@ export function DisplayBoardPage() {
   const testAlert = searchParams.get("test") === "1";
   const [board, setBoard] = useState<DisplayBoard | null>(null);
   const [department, setDepartment] = useState<BoardDepartment | null>(null);
+  const [stationAddress, setStationAddress] = useState("");
   const [loadError, setLoadError] = useState("");
   const [feed, setFeed] = useState<BoardFeed | null>(null);
   const [feedError, setFeedError] = useState("");
@@ -97,6 +105,7 @@ export function DisplayBoardPage() {
         if (!active) return;
         setBoard(result.board);
         setDepartment(result.department);
+        setStationAddress(result.stationAddress ?? "");
       })
       .catch((error) => {
         if (active) setLoadError(errorText(error, "This board could not be loaded."));
@@ -109,13 +118,17 @@ export function DisplayBoardPage() {
   useEffect(() => {
     if (!board) return;
     let active = true;
+    let polling = false;
     knownIds.current = null;
+    const isFresh = (incident: BoardIncident) => Date.now() - new Date(incident.createdAt).getTime() < TAKEOVER_MAX_AGE_MS;
     const startTakeover = (incident: BoardIncident) => {
       setTakeover({ incident, until: Date.now() + board.takeoverSeconds * 1000 });
       const context = audioRef.current;
       if (board.soundOn && context && context.state === "running") playAlert(context);
     };
     const poll = async () => {
+      if (polling) return;
+      polling = true;
       try {
         const next = await getBoardFeed(board.id, new Date());
         if (!active) return;
@@ -129,20 +142,42 @@ export function DisplayBoardPage() {
           return;
         }
         const known = knownIds.current;
-        const fresh = next.incidents.filter(
-          (incident) => !known.has(incident.id) && Date.now() - new Date(incident.createdAt).getTime() < TAKEOVER_MAX_AGE_MS,
-        );
+        const fresh = next.incidents.filter((incident) => !known.has(incident.id) && isFresh(incident));
         for (const id of ids) known.add(id);
         if (fresh[0]) startTakeover(fresh[0]);
       } catch (error) {
         if (active) setFeedError(errorText(error, "Could not refresh. Trying again."));
+      } finally {
+        polling = false;
+      }
+    };
+    // An all-calls board opens the takeover straight from the pulse. A district board must first place the call,
+    // so it reloads the feed at once and the feed decides.
+    const pulse = async () => {
+      const known = knownIds.current;
+      if (!known) return;
+      try {
+        const { latest } = await getBoardPulse(board.id);
+        if (!active) return;
+        const unseen = latest.filter((incident) => !known.has(incident.id));
+        if (unseen.length === 0) return;
+        if (board.callFilter === "all") {
+          for (const incident of unseen) known.add(incident.id);
+          const fresh = unseen.find(isFresh);
+          if (fresh) startTakeover(fresh);
+        }
+        void poll();
+      } catch {
+        // The full refresh reports connection problems.
       }
     };
     void poll();
-    const timer = window.setInterval(() => void poll(), REFRESH_MS);
+    const feedTimer = window.setInterval(() => void poll(), REFRESH_MS);
+    const pulseTimer = window.setInterval(() => void pulse(), PULSE_MS);
     return () => {
       active = false;
-      window.clearInterval(timer);
+      window.clearInterval(feedTimer);
+      window.clearInterval(pulseTimer);
     };
   }, [board, testAlert]);
 
@@ -169,11 +204,105 @@ export function DisplayBoardPage() {
     return <div className="display-board display-board-message">Loading the board...</div>;
   }
 
-  const panels = board.panels;
+  const { placed } = placeLayout(board.panels, board.layout);
   const banner = (feed?.announcements ?? []).filter((item) => item.important);
   const inService = (feed?.apparatus ?? []).filter((unit) => unit.status !== "Out of Service");
   const outOfService = (feed?.apparatus ?? []).filter((unit) => unit.status === "Out of Service");
   const activeTakeover = takeover && now.getTime() < takeover.until ? takeover : null;
+
+  const panelContent: Record<BoardPanel, ReactNode> = {
+    apparatus: (
+      <section className="display-panel">
+        <h2>Apparatus</h2>
+        <h3>In Service</h3>
+        {inService.length === 0 ? <p className="display-empty">None</p> : null}
+        <div className="display-units">
+          {inService.map((unit) => (
+            <span key={unit.unitId} className="display-unit display-unit-ok">{unit.unitId}</span>
+          ))}
+        </div>
+        <h3>Out of Service</h3>
+        {outOfService.length === 0 ? <p className="display-empty">None</p> : null}
+        {outOfService.map((unit) => (
+          <div key={unit.unitId} className="display-oos">
+            <span className="display-unit display-unit-down">{unit.unitId}</span>
+            <span>
+              {unit.outOfServiceReason || "Out of service"}
+              {unit.outOfServiceSince ? ` · since ${formatTimestamp24(unit.outOfServiceSince)}` : ""}
+            </span>
+          </div>
+        ))}
+      </section>
+    ),
+    onDuty: (
+      <section className="display-panel">
+        <h2>On Duty{feed?.onDuty.shifts.length ? ` · ${feed.onDuty.shifts.join(", ")}` : ""}</h2>
+        {(feed?.onDuty.units ?? []).length === 0 ? <p className="display-empty">No one is on the schedule right now.</p> : null}
+        {(feed?.onDuty.units ?? []).map((unit) => (
+          <div key={unit.unit} className="display-crew">
+            <strong>{unit.unit}</strong>
+            <span>{unit.people.join(", ")}</span>
+          </div>
+        ))}
+      </section>
+    ),
+    incidents: (
+      <section className="display-panel display-incidents">
+        <h2>Incidents</h2>
+        {(feed?.incidents ?? []).length === 0 ? <p className="display-empty">No recent calls.</p> : null}
+        {(feed?.incidents ?? []).map((incident) => (
+          <div
+            key={incident.id}
+            className={
+              now.getTime() - new Date(incident.createdAt).getTime() < 60 * 60 * 1000
+                ? "display-incident display-incident-recent"
+                : "display-incident"
+            }
+          >
+            <span className="display-incident-time">{callTime(incident, now)}</span>
+            <div>
+              <strong>
+                {incident.incidentType || "Incident"}
+                {incident.priority ? <span className="display-priority">{incident.priority}</span> : null}
+              </strong>
+              <span>{incident.address || "Address not given"}</span>
+              <span className="display-incident-units">
+                {incident.assignedUnits}
+                {incident.districtUnknown ? <span className="display-unknown">District not confirmed</span> : null}
+              </span>
+            </div>
+          </div>
+        ))}
+      </section>
+    ),
+    events: (
+      <section className="display-panel">
+        <h2>Events</h2>
+        {(feed?.events ?? []).length === 0 ? <p className="display-empty">No upcoming events.</p> : null}
+        {(feed?.events ?? []).map((event) => (
+          <div key={event.id} className="display-event">
+            <span className="display-incident-time">{formatTimestamp24(event.startsAt)}</span>
+            <div>
+              <strong>{event.title}</strong>
+              {event.location ? <span>{event.location}</span> : null}
+            </div>
+          </div>
+        ))}
+      </section>
+    ),
+    messages: (
+      <section className="display-panel">
+        <h2>Messages</h2>
+        {(feed?.announcements ?? []).length === 0 ? <p className="display-empty">No messages.</p> : null}
+        {(feed?.announcements ?? []).map((item) => (
+          <div key={item.id} className={item.important ? "display-message display-message-important" : "display-message"}>
+            <strong>{item.title}</strong>
+            {item.body ? <span>{item.body}</span> : null}
+          </div>
+        ))}
+      </section>
+    ),
+  };
 
   return (
     <div className="display-board">
@@ -193,108 +322,21 @@ export function DisplayBoardPage() {
 
       {banner.length > 0 ? (
         <div className="display-banner" role="status">
-          <span>{banner.map((item) => (item.body ? `${item.title}: ${item.body}` : item.title)).join("   •   ")}</span>
+          <span>{banner.map((item) => (item.body ? `${item.title}: ${item.body}` : item.title)).join(BANNER_SEPARATOR)}</span>
         </div>
       ) : null}
 
       <main className="display-grid">
-        <div className="display-column">
-          {panels.apparatus ? (
-            <section className="display-panel">
-              <h2>Apparatus</h2>
-              <h3>In Service</h3>
-              {inService.length === 0 ? <p className="display-empty">None</p> : null}
-              <div className="display-units">
-                {inService.map((unit) => (
-                  <span key={unit.unitId} className="display-unit display-unit-ok">{unit.unitId}</span>
-                ))}
-              </div>
-              <h3>Out of Service</h3>
-              {outOfService.length === 0 ? <p className="display-empty">None</p> : null}
-              {outOfService.map((unit) => (
-                <div key={unit.unitId} className="display-oos">
-                  <span className="display-unit display-unit-down">{unit.unitId}</span>
-                  <span>
-                    {unit.outOfServiceReason || "Out of service"}
-                    {unit.outOfServiceSince ? ` · since ${formatTimestamp24(unit.outOfServiceSince)}` : ""}
-                  </span>
-                </div>
-              ))}
-            </section>
-          ) : null}
-          {panels.onDuty ? (
-            <section className="display-panel">
-              <h2>On Duty{feed?.onDuty.shifts.length ? ` · ${feed.onDuty.shifts.join(", ")}` : ""}</h2>
-              {(feed?.onDuty.units ?? []).length === 0 ? <p className="display-empty">No one is on the schedule right now.</p> : null}
-              {(feed?.onDuty.units ?? []).map((unit) => (
-                <div key={unit.unit} className="display-crew">
-                  <strong>{unit.unit}</strong>
-                  <span>{unit.people.join(", ")}</span>
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </div>
-
-        {panels.incidents ? (
-          <section className="display-panel display-incidents">
-            <h2>Incidents</h2>
-            {(feed?.incidents ?? []).length === 0 ? <p className="display-empty">No recent calls.</p> : null}
-            {(feed?.incidents ?? []).map((incident) => (
-              <div
-                key={incident.id}
-                className={
-                  now.getTime() - new Date(incident.createdAt).getTime() < 60 * 60 * 1000
-                    ? "display-incident display-incident-recent"
-                    : "display-incident"
-                }
-              >
-                <span className="display-incident-time">{callTime(incident, now)}</span>
-                <div>
-                  <strong>
-                    {incident.incidentType || "Incident"}
-                    {incident.priority ? <span className="display-priority">{incident.priority}</span> : null}
-                  </strong>
-                  <span>{incident.address || "Address not given"}</span>
-                  <span className="display-incident-units">
-                    {incident.assignedUnits}
-                    {incident.districtUnknown ? <span className="display-unknown">District not confirmed</span> : null}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </section>
-        ) : null}
-
-        <div className="display-column">
-          {panels.events ? (
-            <section className="display-panel">
-              <h2>Events</h2>
-              {(feed?.events ?? []).length === 0 ? <p className="display-empty">No upcoming events.</p> : null}
-              {(feed?.events ?? []).map((event) => (
-                <div key={event.id} className="display-event">
-                  <span className="display-incident-time">{formatTimestamp24(event.startsAt)}</span>
-                  <div>
-                    <strong>{event.title}</strong>
-                    {event.location ? <span>{event.location}</span> : null}
-                  </div>
-                </div>
-              ))}
-            </section>
-          ) : null}
-          {panels.messages ? (
-            <section className="display-panel">
-              <h2>Messages</h2>
-              {(feed?.announcements ?? []).length === 0 ? <p className="display-empty">No messages.</p> : null}
-              {(feed?.announcements ?? []).map((item) => (
-                <div key={item.id} className={item.important ? "display-message display-message-important" : "display-message"}>
-                  <strong>{item.title}</strong>
-                  {item.body ? <span>{item.body}</span> : null}
-                </div>
-              ))}
-            </section>
-          ) : null}
-        </div>
+        {(Object.keys(placed) as BoardPanel[]).map((key) => {
+          const box = placed[key];
+          if (!box) return null;
+          const style = { "--panel-col": `${box.x + 1} / span ${box.w}`, "--panel-row": `${box.y + 1} / span ${box.h}` } as CSSProperties;
+          return (
+            <div key={key} className="display-slot" style={style}>
+              {panelContent[key]}
+            </div>
+          );
+        })}
       </main>
 
       <footer className="display-footer">
@@ -356,6 +398,8 @@ export function DisplayBoardPage() {
                 address={activeTakeover.incident.address}
                 latitude={activeTakeover.incident.latitude}
                 longitude={activeTakeover.incident.longitude}
+                originAddress={stationAddress}
+                originLabel={board.stationName}
               />
             ) : (
               <p className="call-map-note">No address on this call, so there is no map.</p>

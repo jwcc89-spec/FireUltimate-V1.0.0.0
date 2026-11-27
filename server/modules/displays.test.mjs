@@ -120,6 +120,7 @@ test("display permissions: boards are managed by admins, the feed needs incident
   assert.equal(permissionForRequest("GET", "/api/displays/boards"), null);
   assert.equal(permissionForRequest("GET", "/api/displays/boards/abc"), null);
   assert.equal(permissionForRequest("GET", "/api/displays/boards/abc/feed"), "incidents.view");
+  assert.equal(permissionForRequest("GET", "/api/displays/boards/abc/pulse"), "incidents.view");
   assert.equal(permissionForRequest("POST", "/api/displays/boards"), "displays.manage");
   assert.equal(permissionForRequest("PATCH", "/api/displays/boards/abc"), "displays.manage");
   assert.equal(permissionForRequest("DELETE", "/api/displays/announcements/abc"), "displays.manage");
@@ -198,6 +199,56 @@ test("a board shows its station's units, the crew on duty now, and current messa
     assert.equal(badSeconds.status, 400);
     const noDistrict = await call("PATCH", `/api/displays/boards/${boardId}`, { body: { name: "Station 1 TV", callFilter: "districts" } });
     assert.equal(noDistrict.status, 400);
+  } finally {
+    await close();
+  }
+});
+
+test("a board keeps a valid 8x8 layout and the pulse lists only this department's newest calls", async () => {
+  const { prisma, call, close } = await startServer(async () => {
+    throw new Error("the pulse never looks up addresses");
+  });
+  try {
+    const board = (await call("POST", "/api/displays/boards", { body: { name: "Hall", stationName: "Station 1" } })).json.data;
+    assert.deepEqual(board.layout.incidents, { x: 2, y: 0, w: 4, h: 8 });
+
+    const layout = { incidents: { x: 0, y: 0, w: 6, h: 8 }, messages: { x: 6, y: 0, w: 2, h: 4 } };
+    const saved = await call("PATCH", `/api/displays/boards/${board.id}`, { body: { name: "Hall", stationName: "Station 1", layout } });
+    assert.equal(saved.status, 200);
+    assert.deepEqual(saved.json.data.layout, layout);
+    assert.deepEqual((await call("GET", `/api/displays/boards/${board.id}`)).json.data.board.layout, layout);
+
+    const tooSmall = { incidents: { x: 0, y: 0, w: 1, h: 4 } };
+    const offGrid = { incidents: { x: 6, y: 0, w: 4, h: 4 } };
+    const stacked = { incidents: { x: 0, y: 0, w: 4, h: 4 }, events: { x: 2, y: 2, w: 2, h: 2 } };
+    for (const bad of [tooSmall, offGrid, stacked]) {
+      assert.equal((await call("PATCH", `/api/displays/boards/${board.id}`, { body: { name: "Hall", stationName: "Station 1", layout: bad } })).status, 400);
+    }
+
+    const detail = await call("GET", `/api/displays/boards/${board.id}`);
+    assert.equal(detail.json.data.stationAddress, "Kankakee, IL");
+
+    const addIncident = (id, tenantId, minutesAgo) =>
+      prisma.tables.incident.push({
+        id,
+        tenantId,
+        address: "1 Main St",
+        incidentType: "EMS",
+        deletedAt: null,
+        latitude: null,
+        longitude: null,
+        geocodedAt: null,
+        createdAt: new Date(Date.now() - minutesAgo * 60000),
+        updatedAt: new Date(),
+      });
+    addIncident("older", "tenantA", 10);
+    addIncident("newest", "tenantA", 1);
+    addIncident("other-department", "tenantB", 0);
+
+    const pulse = await call("GET", `/api/displays/boards/${board.id}/pulse`);
+    assert.equal(pulse.status, 200);
+    assert.deepEqual(pulse.json.data.latest.map((incident) => incident.id), ["newest", "older"]);
+    assert.equal((await call("GET", `/api/displays/boards/${board.id}/pulse`, { tenant: "tenantB" })).status, 404);
   } finally {
     await close();
   }

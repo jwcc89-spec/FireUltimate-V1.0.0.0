@@ -252,3 +252,54 @@ test("inspection and parts routes map to the right permissions", () => {
   assert.equal(permissionForRequest("POST", "/api/inspections"), "maintenance.submit");
   assert.equal(permissionForRequest("DELETE", "/api/inspections/abc"), "maintenance.manage");
 });
+
+test("equipment on the inspected unit joins Special Equipment and keeps its own repair records", async () => {
+  const { prisma, call, close } = await startServer();
+  try {
+    const equipment = (id, tenantId, locationRef, status = "In Service") =>
+      prisma.tables.equipment.push({ id, tenantId, name: `Saw ${id}`, serialNumber: "", locationRef, status, deletedAt: null });
+    equipment("saw1", "tenantA", "E1");
+    equipment("retired", "tenantA", "E1", "Retired");
+    equipment("onT2", "tenantA", "T2");
+    equipment("otherDept", "tenantB", "E1");
+
+    const listed = await call("GET", "/api/inspections/unit-equipment?unit=E1");
+    assert.deepEqual(listed.json.data, [{ id: "equipment-saw1", label: "Saw saw1", equipmentId: "saw1" }]);
+
+    const types = await call("GET", "/api/maintenance/types");
+    const deficiency = types.json.data.find((type) => type.name === "Deficiency");
+    const repair = await call("POST", "/api/maintenance/records", {
+      body: { assetKind: "equipment", assets: [{ kind: "equipment", ref: "saw1", label: "Saw saw1" }], typeId: deficiency.id, description: "Chain dull" },
+    });
+    assert.equal(repair.status, 201);
+
+    const saved = await call("POST", "/api/inspections", {
+      body: {
+        subjectRef: "E1",
+        completedOn: "2026-11-26",
+        completedByName: "Alice Adams",
+        details: { officer: "Lt. Brown", station: "Station 1", readings: { mileage: 1, engineHours: 1, pumpHours: 1 } },
+        results: {
+          "equipment-saw1": { result: "X", note: "", recordId: repair.json.data.id },
+          "equipment-onT2": { result: "OK", note: "" },
+        },
+      },
+    });
+    assert.equal(saved.status, 201);
+    assert.deepEqual(Object.keys(saved.json.data.results), ["equipment-saw1"]);
+
+    const report = await call("GET", `/api/inspections/${saved.json.data.id}`);
+    const special = report.json.data.sections.find((section) => section.id === "special");
+    assert.equal(special.items.at(-1).id, "equipment-saw1");
+    assert.equal(special.items.at(-1).equipmentId, "saw1");
+
+    const open = await call("GET", "/api/inspections/open-deficiencies?unit=E1");
+    assert.equal(open.json.data.byItem["equipment-saw1"].recordId, repair.json.data.id);
+    assert.equal(open.json.data.byItem["equipment-saw1"].assetKind, "equipment");
+    assert.deepEqual((await call("GET", "/api/inspections/unit-equipment?unit=E1", { tenant: "tenantB" })).json.data.map((item) => item.equipmentId), [
+      "otherDept",
+    ]);
+  } finally {
+    await close();
+  }
+});
