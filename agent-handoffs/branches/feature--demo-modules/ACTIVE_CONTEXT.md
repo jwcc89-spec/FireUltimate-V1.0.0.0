@@ -36,9 +36,11 @@
 - **Groups / committees** for routing flagged checklists (EMS, TRT, etc.) — Later; Mark Reviewed stays admin-only for now.
 - **Later (no code yet):** SSE/WebSocket for true instant takeover; auto-assign daily apparatus checks to the crew on that unit for the day; Dashboard "checks due" widget (fits W5).
 
+### Operator verification
+- **2026-11-26 (America/Chicago):** operator confirmed remaining W4 work and the evening follow-up **click checks passed**.
+
 ### Next
-1. Wait for operator click-through of the evening follow-up (and any leftover W4 checks).
-2. Default next build step: **W5 Dashboard** (unless the operator prioritizes approved Units/labor schema work).
+1. Default next build step: **W5 Dashboard** (unless the operator prioritizes approved Units/labor schema work).
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
