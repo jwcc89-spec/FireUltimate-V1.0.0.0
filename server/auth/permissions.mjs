@@ -177,6 +177,15 @@ export function permissionForRequest(method, path, body) {
 
   // Each member saves or resets only their own dashboard layout; the department default is admin-only.
   if (verb !== "GET" && route === "/api/dashboard/layout/default") return "displays.manage";
+
+  // Reading published policies is open to members; drafts are filtered in the route.
+  if (/^\/api\/policies\/(assignments|templates|rules|people)(\/.*)?$/.test(route)) return "policies.manage";
+  if (verb === "GET" && /^\/api\/policies\/[^/]+\/status$/.test(route)) return "policies.manage";
+  if (verb !== "GET" && /^\/api\/policies\/categories(\/[^/]+)?$/.test(route)) return "policies.manage";
+  if (verb === "POST" && /^\/api\/policies\/[^/]+\/acknowledge$/.test(route)) return "policies.acknowledge";
+  if (verb === "POST" && /^\/api\/policies\/[^/]+\/publish$/.test(route)) return "policies.manage";
+  if (verb === "POST" && route === "/api/policies") return "policies.manage";
+  if ((verb === "PATCH" || verb === "DELETE") && /^\/api\/policies\/[^/]+$/.test(route)) return "policies.manage";
   return null;
 }
 

@@ -52,6 +52,13 @@ model Tenant {
   checklistAssignments        ChecklistAssignment[]
   kits                        Kit[]
   dashboardLayouts            DashboardLayout[]
+  policyCategories            PolicyCategory[]
+  policies                    Policy[]
+  policyVersions              PolicyVersion[]
+  policyAssignments           PolicyAssignment[]
+  policyAcknowledgments       PolicyAcknowledgment[]
+  policyTemplates             PolicyTemplate[]
+  policyRandomRules           PolicyRandomRule[]
   mapMarkerTypes              MapMarkerType[]
   mapMarkers                  MapMarker[]
   geofences                   Geofence[]
@@ -400,6 +407,173 @@ model DashboardLayout {
   tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
 
   @@unique([tenantId, userId])
+  @@index([tenantId])
+}
+
+/// Numbered chapter of the policy manual, or a DTB category.
+model PolicyCategory {
+  id        String    @id @default(cuid())
+  tenantId  String
+  /// manual or dtb
+  kind      String    @default("manual")
+  /// Chapter number. 0 is the Preface.
+  number    Int       @default(0)
+  title     String
+  sortOrder Int       @default(0)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String    @default("")
+  updatedBy String    @default("")
+  deletedAt DateTime?
+
+  tenant   Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policies Policy[]
+
+  @@index([tenantId])
+}
+
+/// A policy or Daily Training Bulletin. Published wording lives in PolicyVersion; the unpublished draft in draftJson.
+model Policy {
+  id             String    @id @default(cuid())
+  tenantId       String
+  categoryId     String?
+  /// policy or dtb
+  kind           String    @default("policy")
+  /// Policy number as shown, for example "201".
+  number         String    @default("")
+  title          String
+  /// draft, published or archived
+  status         String    @default("draft")
+  /// { content, attachment } not yet published.
+  draftJson      Json      @default("{}")
+  currentVersion Int       @default(0)
+  /// The newest version members must acknowledge. A minor republish keeps the old number.
+  ackVersion     Int       @default(0)
+  publishedAt    DateTime?
+  effectiveDate  DateTime? @db.Date
+  requiresAck    Boolean   @default(true)
+  sortOrder      Int       @default(0)
+  detailsJson    Json      @default("{}")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  createdBy      String    @default("")
+  updatedBy      String    @default("")
+  deletedAt      DateTime?
+
+  tenant          Tenant                 @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  category        PolicyCategory?        @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  versions        PolicyVersion[]
+  assignments     PolicyAssignment[]
+  acknowledgments PolicyAcknowledgment[]
+
+  @@index([tenantId])
+  @@index([tenantId, categoryId])
+}
+
+/// One published wording of a policy. Never edited after publishing.
+model PolicyVersion {
+  id             String   @id @default(cuid())
+  tenantId       String
+  policyId       String
+  version        Int
+  /// Editor document (TipTap JSON).
+  contentJson    Json     @default("{}")
+  /// Plain text of the document, for search.
+  contentText    String   @default("")
+  /// Uploaded PDF { name, size, dataUrl } until file storage exists.
+  attachmentJson Json     @default("{}")
+  requireReack   Boolean  @default(true)
+  changeNote     String   @default("")
+  publishedAt    DateTime @default(now())
+  publishedBy    String   @default("")
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([policyId, version])
+  @@index([tenantId])
+}
+
+/// Who must acknowledge a policy. userId "" means everyone in the department.
+model PolicyAssignment {
+  id         String    @id @default(cuid())
+  tenantId   String
+  policyId   String
+  userId     String    @default("")
+  /// publish, manual, template or rule
+  source     String    @default("manual")
+  templateId String?
+  ruleId     String?
+  /// Week or month a random rule picked this for, for example 2026-W48 or 2026-11.
+  periodKey  String    @default("")
+  dueDate    DateTime? @db.Date
+  assignedBy String    @default("")
+  createdAt  DateTime  @default(now())
+  deletedAt  DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId, userId])
+  @@index([tenantId, policyId])
+}
+
+/// Add-only record that a member acknowledged a policy version.
+model PolicyAcknowledgment {
+  id             String   @id @default(cuid())
+  tenantId       String
+  policyId       String
+  version        Int
+  userId         String
+  userName       String   @default("")
+  acknowledgedAt DateTime @default(now())
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  policy Policy @relation(fields: [policyId], references: [id], onDelete: Cascade)
+
+  @@unique([tenantId, policyId, version, userId])
+  @@index([tenantId, userId])
+}
+
+/// A named bundle of policies assigned together, for example "Rookie Policies".
+model PolicyTemplate {
+  id        String    @id @default(cuid())
+  tenantId  String
+  name      String
+  policyIds Json      @default("[]")
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  createdBy String    @default("")
+  updatedBy String    @default("")
+  deletedAt DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
+}
+
+/// Assigns a number of random published policies or DTBs each week or month.
+model PolicyRandomRule {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  /// policy or dtb
+  kind        String    @default("dtb")
+  count       Int       @default(1)
+  /// week or month
+  period      String    @default("week")
+  categoryIds Json      @default("[]")
+  /// User ids. Empty means everyone.
+  userIds     Json      @default("[]")
+  active      Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String    @default("")
+  updatedBy   String    @default("")
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
   @@index([tenantId])
 }
 
