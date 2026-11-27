@@ -49,6 +49,8 @@ model Tenant {
   checklistTemplates          ChecklistTemplate[]
   checklistTemplateVersions   ChecklistTemplateVersion[]
   checklistSubmissions        ChecklistSubmission[]
+  checklistAssignments        ChecklistAssignment[]
+  kits                        Kit[]
   mapMarkerTypes              MapMarkerType[]
   mapMarkers                  MapMarker[]
   geofences                   Geofence[]
@@ -271,6 +273,7 @@ model ChecklistTemplate {
   tenant      Tenant                     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
   versions    ChecklistTemplateVersion[]
   submissions ChecklistSubmission[]
+  assignments ChecklistAssignment[]
 
   @@unique([tenantId, name])
   @@index([tenantId])
@@ -328,6 +331,55 @@ model ChecklistSubmission {
   @@unique([tenantId, submissionNumber])
   @@index([tenantId])
   @@index([tenantId, subjectKind, subjectRef])
+}
+
+/// Who checks what with a checklist template, and how often.
+model ChecklistAssignment {
+  id              String    @id @default(cuid())
+  tenantId        String
+  templateId      String
+  /// apparatus, station, kit or none
+  targetKind      String    @default("none")
+  /// Unit ID, station name or Kit id. Empty when targetKind is none.
+  targetRef       String    @default("")
+  /// Personnel name, or empty for anyone.
+  assignedTo      String    @default("")
+  /// once, shift, daily, weekly or monthly
+  frequency       String    @default("daily")
+  startsOn        DateTime  @db.Date
+  active          Boolean   @default(true)
+  lastCompletedOn DateTime? @db.Date
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  createdBy       String    @default("")
+  updatedBy       String    @default("")
+  deletedAt       DateTime?
+
+  tenant   Tenant            @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  template ChecklistTemplate @relation(fields: [templateId], references: [id], onDelete: Restrict)
+
+  @@index([tenantId])
+}
+
+/// A bag or box that is checked as a unit, for example a jump bag or an RIT pack.
+model Kit {
+  id          String    @id @default(cuid())
+  tenantId    String
+  name        String
+  kitType     String    @default("")
+  /// The unit or station the kit is kept on, as a name.
+  locationRef String    @default("")
+  /// Notes and other fields that are still changing.
+  detailsJson Json      @default("{}")
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  createdBy   String    @default("")
+  updatedBy   String    @default("")
+  deletedAt   DateTime?
+
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  @@index([tenantId])
 }
 
 /// Equipment registry (SCBA, hose, ladders, extinguishers and so on).

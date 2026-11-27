@@ -576,6 +576,27 @@ git push -u origin feature/demo-modules
     - The typed name is pre-filled with the signed-in user's name. For the demo, the PIN is only checked for being present; real PIN storage comes after the demo.
     - Failed, short or expired items flag the check and create an in-app notice for admins.
 
+**W3 follow-up round (2026-11-26, from the operator's display board check, no schema change).** Where this differs from the W3 text above, this wins:
+- **Faster takeover.** The board asks `GET /api/displays/boards/:id/pulse` every 4 seconds; it returns the 5 newest calls and needs `incidents.view`. On an all-calls board a new call opens the takeover straight away. On a district board a new call reloads the feed at once and the feed decides. The full feed still refreshes every 20 seconds.
+- **Layout.** Admin Functions > Display Boards > **Layout** on a board opens an 8x8 grid editor. Each panel is dragged to move and resized from its corner, at least 2x2, never overlapping. Saved in `DisplayBoard.layoutJson.grid` (no new column); the server rejects bad layouts. Panels turned on but not placed show an "Add" button.
+- **Banner separator:** three spaces, two hyphens, three spaces between messages.
+- **Directions on screen.** The incident page and the takeover draw the route on the map with a step list (Routes API with the browser key). The takeover starts from the board's station address; the incident page starts from the device location. An "Open in Google Maps" link stays as a fallback.
+- **Incident page header** shows "Incident" plus the incident number (falls back to dispatch number, then the call id). The top-bar breadcrumb says "Incident Detail".
+- **Inspection Section 7.** Equipment List items whose Location is the inspected unit are added to "7. Special Equipment" (tagged "Equipment List"). Retired items are left out. An X on one of them opens an **Equipment** maintenance request for that item instead of an apparatus one. The rows used are saved on the inspection so the report shows them later.
+- **Operator step:** the Google browser key needs **Routes API** turned on for on-screen directions.
+
+**W4 as built (2026-11-26, branch `feature/demo-modules`).** Where this differs from the W4 text above, this wins:
+- **Where:** File Center > **Checklists** (`/file-center/checklists`). Tabs: Checklists | Templates, plus Assignments | Kits for admins.
+- **Tables (migration `20261127100000_add_checklists`):** new `ChecklistAssignment` (templateId, targetKind, targetRef, assignedTo, frequency, startsOn, active, lastCompletedOn) and `Kit` (name, kitType, locationRef, detailsJson). Templates, versions and completed checks reuse `ChecklistTemplate`, `ChecklistTemplateVersion` and `ChecklistSubmission` with `subjectKind = "checklist"`, so apparatus inspections are untouched.
+- **Eight item types:** OK / Fail / N/A, Yes / No, Quantity (par), Number (low / high), Expiration date, Date, Pick one, Text. Each item can be required or optional.
+- **Flags:** Fail = Failed, below par = Short, outside limits = Out of range, expiration before the check date = Expired. A flagged check gets status Flagged and shows in a red **Needs review** panel for admins until one clicks **Mark Reviewed**. The notice lives on the Checklists page for the demo; no separate notification table.
+- **Due logic:** shift counts as daily for the demo. Weekly periods start Monday, monthly on the 1st. Status is Due, Overdue (the last period was missed too), Complete, Scheduled or Paused.
+- **Signing:** typed name (pre-filled) plus a PIN that must be entered. The PIN is never sent to storage.
+- **Template edits** make a new version only when items change; completed checks keep the wording they were filled with. Deleting a template removes its assignments and keeps completed checks.
+- **Numbers:** completed checks are CHK-YY-NNNN.
+- **Permissions:** completing needs `inventory.complete`; templates, kits, assignments, review and delete need `inventory.manage`.
+- **Deferred:** real PIN storage and checking, shift times from the scheduler, photos on items, a notification bell, a Dashboard "checks due" widget (W5).
+
 ### W5. Dashboard (about 1 hour)
 - **Summary:** "Edit display" becomes drag, resize, add and remove with `react-grid-layout`. Layouts are saved per user, with a department default.
 - **Details:**
