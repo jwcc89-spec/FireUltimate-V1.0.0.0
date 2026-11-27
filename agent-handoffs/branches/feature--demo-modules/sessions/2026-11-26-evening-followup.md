@@ -36,6 +36,9 @@ Agent: Claude Opus 5.5. Branch: `feature/demo-modules` → merged `submenu/neris
 - `npx tsc -b`, `npm run lint`, `npm run build` pass.
 - `npm test`: 99 pass / 2 fail (known local Postgres).
 
+## Operator verification
+- **2026-11-26 (America/Chicago):** operator confirmed remaining W4 work and evening follow-up click checks passed.
+
 ## Next for next agent
-- Default: **W5 Dashboard**, after operator finishes evening click checks.
+- Default: **W5 Dashboard**.
 - Or Units/labor if the operator approves schema in chat.

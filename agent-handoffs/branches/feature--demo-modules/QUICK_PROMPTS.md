@@ -19,11 +19,11 @@ You are continuing the FireUltimate demo-week build. Prefer the same plain-langu
 ### Current state (do not re-do)
 - W0–W4 are done and on staging. **23/23 migrations applied.** Staging tip includes evening follow-up merge `70781fa`.
 - Evening follow-up already shipped: 1s takeover pulse; takeover seconds 10–600 per board; road map default on CallMap; incident breadcrumb 3 levels; inspection Save draft; equipment OOS syncs to Equipment List; sidebar collapse fix; Checklists Templates/Assignments/Kits admin-only.
+- **Operator confirmed 2026-11-26 (America/Chicago):** remaining W4 work and the evening follow-up **click checks passed**. Do not re-test or re-open those items unless the operator reports a new bug.
 
 ### Your next work
-1. Confirm with me that evening follow-up (and any leftover W4) click checks passed, or fix what I report.
-2. Default next build step: **W5 Dashboard** from the demo plan (drag/resize widgets, saved layouts). Restate scope, files, and whether a migration is needed; **wait for me to say go**.
-3. If I prioritize instead: Units + In Reserve / apparatus profile, or maintenance labor — those need **schema approval** first. Show the migration; do not apply or merge until I approve. Full Groups/permissions is out of the demo rush; a demo-sized labor pick-list is OK if I approve.
+1. Default next build step: **W5 Dashboard** from the demo plan (drag/resize widgets, saved layouts). Restate scope, files, and whether a migration is needed; **wait for me to say go**.
+2. If I prioritize instead: Units + In Reserve / apparatus profile, or maintenance labor — those need **schema approval** first. Show the migration; do not apply or merge until I approve. Full Groups/permissions is out of the demo rush; a demo-sized labor pick-list is OK if I approve.
 
 ### Hard rules
 - Operator tests on staging only — never ask for local `npm run dev` unless there is no other way. Give numbered staging click checks.

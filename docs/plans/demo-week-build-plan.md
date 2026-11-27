@@ -744,7 +744,7 @@ All of these are saved from this chat. The order they arrived in may not match t
 - **Staging is shared with CIFPD's NERIS go-live.** Merge each step only after it passes, and never change NERIS export code.
 
 ## Handoff for the next agent: read this first
-**Progress (2026-11-26 evening):** W0–W4 are done and on staging (23 migrations applied). Latest staging merge for the evening follow-up is `70781fa`. **Next planned step is W5 Dashboard**, unless the operator prioritizes approved Units (In Reserve / apparatus profile) or maintenance labor schema work.
+**Progress (2026-11-26 evening):** W0–W4 are done and on staging (23 migrations applied). Latest staging merge for the evening follow-up is `70781fa`. Operator confirmed remaining W4 and evening follow-up **click checks passed**. **Next planned step is W5 Dashboard**, unless the operator prioritizes approved Units (In Reserve / apparatus profile) or maintenance labor schema work.
 
 1. **Before every session, read:**
    - this file (especially every "**as built**" / follow-up note — those override the older step text)
