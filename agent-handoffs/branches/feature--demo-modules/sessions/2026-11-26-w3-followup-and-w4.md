@@ -30,6 +30,6 @@ Agent: Claude Opus 5.5.
   - `npm test` is 98 of 100. The 2 failures are the known tests that need a local Postgres.
 
 ## Not done / waiting
-- W4 is not on staging until the operator approves and applies the migration.
+- W4 migration applied on staging 2026-11-26 (operator asked "Apply the w4 migration"), then merged into `submenu/neris-golive-cifpd`.
 - Labor, Groups and Units profile need schema approval. The recommended demo-sized design is in the chat answer and in ACTIVE_CONTEXT.
 - The Google key needs Routes API turned on for directions.
