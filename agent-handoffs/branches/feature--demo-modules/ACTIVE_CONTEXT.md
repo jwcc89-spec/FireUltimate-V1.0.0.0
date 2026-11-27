@@ -50,7 +50,7 @@
   - The search box suggests as you type, which needs Places API (New) on the key.
   - The toolbar has a big FULL SCREEN button.
   - See the plan's "W2 follow-up round" note.
-- **All five demo migrations are applied on staging** (confirmed with `prisma migrate status` on 2026-11-26: 22 of 22 applied). Any future migration must be applied to staging before its code is merged into `submenu/neris-golive-cifpd`.
+- **All six demo migrations are applied on staging** (confirmed with `prisma migrate status` on 2026-11-26 after W4: 23 of 23 applied). Any future migration must be applied to staging before its code is merged into `submenu/neris-golive-cifpd`.
   - The staging build also needs `VITE_GOOGLE_MAPS_API_KEY`, and search suggestions need Places API (New) on that key. Without it the map pages still open, but they show the form instead of tiles.
 - **W3 follow-up round done** (2026-11-26, no schema change, commit `fe8d559`, **merged into `submenu/neris-golive-cifpd` as `10175f5`**). It covers:
   - the 4-second pulse for a faster takeover
@@ -61,7 +61,7 @@
   - Equipment List items on the inspected unit in inspection Section 7, where an X opens an Equipment request
 
   See the plan's "W3 follow-up round" note.
-- **W4 built, NOT merged to staging yet** (Checklists at File Center > Checklists). Migration `20261127100000_add_checklists` adds `ChecklistAssignment` and `Kit`. It is **written but not applied**. The operator must approve it, then run `npx prisma migrate deploy` against staging, before W4 is merged into `submenu/neris-golive-cifpd`. Merging first would break the Checklists page on staging (the tables would be missing). See the plan's "W4 as built" note.
+- **W4 done and on staging** (Checklists at File Center > Checklists). Migration `20261127100000_add_checklists` adds `ChecklistAssignment` and `Kit`. Applied on staging 2026-11-26 after the operator's "Apply the w4 migration" (status was 22 applied / 1 pending, then deploy, then 23 of 23). Merged into `submenu/neris-golive-cifpd` after that. See the plan's "W4 as built" note.
 - **Waiting on the operator (needs approval, no code yet):**
   - Maintenance **labor** tab: a Pay rates list (person, straight/OT/comp rates) plus a `MaintenanceLabor` table, and an admin-picked "Maintenance labor" list.
   - A general **Groups** system is out of demo scope because it touches permissions.
