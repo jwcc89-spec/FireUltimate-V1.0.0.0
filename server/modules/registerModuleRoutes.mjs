@@ -12,6 +12,8 @@ import { register as registerMaps } from "./maps.mjs";
 import { register as registerParts } from "./parts.mjs";
 import { register as registerPolicies } from "./policies.mjs";
 import { register as registerPrevention } from "./prevention.mjs";
+import { register as registerPreventionImport } from "./preventionImport.mjs";
+import { register as registerPrePlans } from "./preventionPrePlans.mjs";
 
 export function registerModuleRoutes(app, prisma) {
   app.get("/api/modules/health", (request, response) => {
@@ -31,5 +33,7 @@ export function registerModuleRoutes(app, prisma) {
   registerChecklists(app, prisma);
   registerDashboard(app, prisma);
   registerPolicies(app, prisma);
+  registerPreventionImport(app, prisma);
   registerPrevention(app, prisma);
+  registerPrePlans(app, prisma);
 }

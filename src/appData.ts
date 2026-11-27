@@ -412,7 +412,7 @@ export const MAIN_MENUS: MainMenu[] = [
         label: "Pre-Plans",
         path: "/fire-prevention/pre-plans",
         summary: "Pre-plan creation, updates, and mapping references.",
-        isBuilt: false,
+        isBuilt: true,
       },
       {
         label: "Inspections",

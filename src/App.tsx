@@ -125,6 +125,7 @@ import { DashboardPage as ModuleDashboardPage } from "./pages/dashboard/Dashboar
 import { PoliciesHomePage } from "./pages/policies/PoliciesHomePage";
 import { PolicyBuilderPage } from "./pages/policies/PolicyBuilderPage";
 import { PolicyLibraryPage } from "./pages/policies/PolicyLibraryPage";
+import { PrePlansPage } from "./pages/prevention/PrePlansPage";
 import { PropertiesPage } from "./pages/prevention/PropertiesPage";
 import { CallMap } from "./pages/displays/CallMap";
 import { DisplayBoardPage } from "./pages/displays/DisplayBoardPage";
@@ -14226,6 +14227,8 @@ function RouteResolver({
     content = <PolicyBuilderPage />;
   } else if (path === "/fire-prevention/properties") {
     content = <PropertiesPage />;
+  } else if (path === "/fire-prevention/pre-plans") {
+    content = <PrePlansPage />;
   } else if (path === "/admin-functions/hydrants") {
     content = <HydrantsAdminPage />;
   } else if (path === "/admin-functions/displays") {

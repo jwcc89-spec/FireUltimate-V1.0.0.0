@@ -1,4 +1,4 @@
-/** Fire Prevention API client: properties and contacts. Lists match server/modules/preventionDefaults.mjs. */
+/** Fire Prevention API client: properties, contacts, import, call history and pre-plans. Lists match server/modules/preventionDefaults.mjs. */
 import { apiJson, send } from "./maintenance";
 
 export const PROPERTY_TYPES = [
@@ -77,6 +77,66 @@ export interface PropertyDetail extends PropertySummary {
   createdBy: string;
   updatedBy: string;
   contacts: PropertyContact[];
+  prePlans: PrePlanSummary[];
+}
+
+export type PrePlanTemplate = "basic" | "complex";
+
+export interface PrePlanSummary {
+  id: string;
+  title: string;
+  template: PrePlanTemplate;
+  reviewedOn: string;
+  updatedAt: string;
+}
+
+export interface PrePlanListItem extends PrePlanSummary {
+  propertyId: string;
+  propertyName: string;
+  propertyAddress: string;
+  propertyType: string;
+  updatedBy: string;
+}
+
+export interface PrePlan extends PrePlanListItem {
+  answers: Record<string, string>;
+}
+
+export interface PrePlanInput {
+  title: string;
+  template: PrePlanTemplate;
+  reviewedOn: string;
+  answers: Record<string, string>;
+}
+
+export interface PropertyIncident {
+  id: string;
+  incidentNumber: string;
+  dispatchNumber: string;
+  incidentType: string;
+  address: string;
+  receivedAt: string;
+  currentState: string;
+  createdAt: string;
+}
+
+export interface PropertyCallHistory {
+  incidents: PropertyIncident[];
+  countsByType: { type: string; count: number }[];
+}
+
+export interface ImportRowResult {
+  index: number;
+  ok: boolean;
+  error: string;
+  duplicate: "" | "existing" | "file";
+  address: string;
+}
+
+export interface ImportResult {
+  committed: boolean;
+  created: number;
+  rows: ImportRowResult[];
 }
 
 export interface PropertyInput {
@@ -132,3 +192,16 @@ export function fullAddress(property: Pick<PropertySummary, "address" | "unit" |
   const cityLine = [property.city, [property.state, property.postalCode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
   return [street, cityLine].filter(Boolean).join(", ");
 }
+
+export const getPropertyIncidents = (id: string) => apiJson<PropertyCallHistory>(`${propertyUrl(id)}/incidents`);
+
+export const importProperties = (rows: Record<string, string>[], commit: boolean, skipDuplicates: boolean) =>
+  apiJson<ImportResult>("/api/prevention/properties/import", send("POST", { rows, commit, skipDuplicates }));
+
+const prePlanUrl = (id: string) => `/api/prevention/preplans/${encodeURIComponent(id)}`;
+export const getPrePlans = () => apiJson<PrePlanListItem[]>("/api/prevention/preplans");
+export const getPrePlan = (id: string) => apiJson<PrePlan>(prePlanUrl(id));
+export const createPrePlan = (propertyId: string, input: PrePlanInput) =>
+  apiJson<PrePlan>(`${propertyUrl(propertyId)}/preplans`, send("POST", input));
+export const updatePrePlan = (id: string, input: Partial<PrePlanInput>) => apiJson<PrePlan>(prePlanUrl(id), send("PATCH", input));
+export const deletePrePlan = (id: string) => apiJson<void>(prePlanUrl(id), send("DELETE"));

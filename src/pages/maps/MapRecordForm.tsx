@@ -2,6 +2,7 @@ import { useState } from "react";
 import { GEOFENCE_KINDS, type Geofence, type MapDocument, type MapMarkerType } from "../../api/maps";
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
 import { formatTimestamp24, readFileAsDataUrl } from "../maintenance/maintenanceUtils";
+import { GeofenceLinkFields } from "./GeofenceLinkFields";
 import { kindLabel, type GeofenceDraft, type MapPopup, type MarkerDraft } from "./mapUtils";
 
 export function MapRecordForm({
@@ -208,6 +209,7 @@ function GeofenceFields({
         <p><strong>Geofence description</strong></p>
         <p>{draft.description || "—"}</p>
         <p>{kindLabel(draft.kind)}{draft.parentId ? ` · inside ${parents.find((area) => area.id === draft.parentId)?.name ?? "another area"}` : ""}</p>
+        <GeofenceLinkFields propertyId={draft.linkedPropertyId} prePlanId={draft.linkedPrePlanId} editable={false} onChange={set} />
       </div>
     );
   }
@@ -248,24 +250,7 @@ function GeofenceFields({
         />
       </label>
       <p className="field-hint map-span">To change the outline, delete this area and draw it again.</p>
-      <label className="map-span">
-        Linked property
-        <input
-          type="text"
-          value={draft.linkedPropertyId}
-          placeholder="Optional until Fire Prevention is built"
-          onChange={(event) => set({ linkedPropertyId: event.target.value })}
-        />
-      </label>
-      <label className="map-span">
-        Linked pre-plan
-        <input
-          type="text"
-          value={draft.linkedPrePlanId}
-          placeholder="Optional until Fire Prevention is built"
-          onChange={(event) => set({ linkedPrePlanId: event.target.value })}
-        />
-      </label>
+      <GeofenceLinkFields propertyId={draft.linkedPropertyId} prePlanId={draft.linkedPrePlanId} editable onChange={set} />
     </div>
   );
 }

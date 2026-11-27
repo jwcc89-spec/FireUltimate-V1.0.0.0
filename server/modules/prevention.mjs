@@ -1,5 +1,6 @@
 /**
- * Fire Prevention: properties and their contacts.
+ * Fire Prevention: properties, their contacts, and call history by address.
+ * Import is in preventionImport.mjs and pre-plans in preventionPrePlans.mjs.
  * Any member who can view incidents can read them (incidents.view); adding, editing and deleting
  * need prevention.manage (both mapped in permissionForRequest). Every query filters on request.tenant.id.
  *
@@ -9,7 +10,7 @@
 import { PublicError } from "../http/publicError.mjs";
 import { normalizeAddress } from "./addressMatch.mjs";
 import { parseCoordinate } from "./mapsGeometry.mjs";
-import { actorOf, detailsOf, oneOf, sendError, tenantIdOf, text } from "./moduleHelpers.mjs";
+import { actorOf, detailsOf, formatDateOnly, oneOf, sendError, tenantIdOf, text } from "./moduleHelpers.mjs";
 import { CONTACT_ROLES, OCCUPANCY_TYPES, PROPERTY_TYPES } from "./preventionDefaults.mjs";
 
 const MAX_PHOTO_CHARS = 700_000;
@@ -74,7 +75,7 @@ function cleanPhoto(value) {
   return dataUrl;
 }
 
-function contactName(contact) {
+export function contactName(contact) {
   const person = [contact.firstName, contact.lastName].filter(Boolean).join(" ");
   return person || contact.businessName;
 }
@@ -136,7 +137,17 @@ function serializeSummary(row, contacts) {
   };
 }
 
-function serializeDetail(row, contacts) {
+function serializePrePlanSummary(row) {
+  return {
+    id: row.id,
+    title: row.title,
+    template: row.template,
+    reviewedOn: formatDateOnly(row.reviewedOn),
+    updatedAt: stamp(row.updatedAt),
+  };
+}
+
+function serializeDetail(row, contacts, prePlans) {
   const details = detailsOf(row);
   return {
     ...serializeSummary(row, contacts),
@@ -150,10 +161,13 @@ function serializeDetail(row, contacts) {
     createdBy: row.createdBy,
     updatedBy: row.updatedBy,
     contacts: sortContacts(contacts).map(serializeContact),
+    prePlans: [...prePlans]
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())
+      .map(serializePrePlanSummary),
   };
 }
 
-function propertyFields(body, { partial, previousDetails }) {
+export function propertyFields(body, { partial, previousDetails }) {
   const data = {};
   const want = (key) => !partial || has(body, key);
   if (want("name")) data.name = text(body.name, 200);
@@ -182,13 +196,13 @@ function propertyFields(body, { partial, previousDetails }) {
   return data;
 }
 
-function assertCoordinatesPaired(latitude, longitude) {
+export function assertCoordinatesPaired(latitude, longitude) {
   if ((latitude == null) !== (longitude == null)) {
     throw new PublicError("Enter both latitude and longitude, or leave both blank.");
   }
 }
 
-function contactFields(body, { partial, previousDetails }) {
+export function contactFields(body, { partial, previousDetails }) {
   const data = {};
   const want = (key) => !partial || has(body, key);
   if (want("firstName")) data.firstName = text(body.firstName, 120);
@@ -218,7 +232,17 @@ async function loadDetail(prisma, tenantId, id) {
   const row = await prisma.property.findFirst({ where: { id, tenantId, deletedAt: null } });
   if (!row) return null;
   const contacts = await contactsFor(prisma, tenantId, [row.id]);
-  return serializeDetail(row, contacts);
+  const prePlans = await prisma.prePlan.findMany({
+    where: { tenantId, propertyId: row.id, deletedAt: null },
+    select: { id: true, title: true, template: true, reviewedOn: true, updatedAt: true },
+  });
+  return serializeDetail(row, contacts, prePlans);
+}
+
+/** Same building when the cleaned call address equals the property's, or starts with it (a city left on without a comma). */
+export function addressMatches(propertyAddress, callAddress) {
+  if (!propertyAddress || !callAddress) return false;
+  return callAddress === propertyAddress || callAddress.startsWith(`${propertyAddress} `);
 }
 
 /** Only one primary contact per property. */
@@ -264,6 +288,62 @@ export function register(app, prisma) {
       response.json({ ok: true, data: detail });
     } catch (error) {
       sendError(response, error, "Could not load the property.");
+    }
+  });
+
+  app.get("/api/prevention/properties/:id/incidents", async (request, response) => {
+    const tenantId = tenantIdOf(request, response);
+    if (!tenantId) return;
+    try {
+      const property = await prisma.property.findFirst({
+        where: { id: request.params.id, tenantId, deletedAt: null },
+        select: { id: true, normalizedAddress: true },
+      });
+      if (!property) {
+        response.status(404).json({ ok: false, message: "That property was not found." });
+        return;
+      }
+      const incidents = await prisma.incident.findMany({
+        where: { tenantId, deletedAt: null },
+        select: {
+          id: true,
+          incidentNumber: true,
+          dispatchNumber: true,
+          incidentType: true,
+          address: true,
+          receivedAt: true,
+          currentState: true,
+          createdAt: true,
+        },
+      });
+      const matched = incidents
+        .filter((row) => addressMatches(property.normalizedAddress, normalizeAddress(row.address)))
+        .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+      const counts = new Map();
+      for (const row of matched) {
+        const type = row.incidentType || "Unknown";
+        counts.set(type, (counts.get(type) ?? 0) + 1);
+      }
+      response.json({
+        ok: true,
+        data: {
+          incidents: matched.map((row) => ({
+            id: row.id,
+            incidentNumber: row.incidentNumber ?? "",
+            dispatchNumber: row.dispatchNumber ?? "",
+            incidentType: row.incidentType,
+            address: row.address,
+            receivedAt: row.receivedAt,
+            currentState: row.currentState,
+            createdAt: stamp(row.createdAt),
+          })),
+          countsByType: [...counts.entries()]
+            .map(([type, count]) => ({ type, count }))
+            .sort((a, b) => b.count - a.count || a.type.localeCompare(b.type)),
+        },
+      });
+    } catch (error) {
+      sendError(response, error, "Could not load the call history.");
     }
   });
 

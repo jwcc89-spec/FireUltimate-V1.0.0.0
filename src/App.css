@@ -10268,3 +10268,126 @@ button.personnel-schedule-open-token-claim {
     height: 180px;
   }
 }
+
+/* Fire Prevention: import, call history, pre-plans (W7b) */
+.property-incidents {
+  display: grid;
+  gap: 10px;
+}
+
+.property-incident-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.property-preplans {
+  display: grid;
+  gap: 10px;
+}
+
+.property-preplan-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+
+.property-preplan-list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid var(--border, #d8dee8);
+  border-radius: 8px;
+}
+
+.property-import-dialog {
+  width: min(760px, calc(100vw - 32px));
+  display: grid;
+  gap: 10px;
+}
+
+.property-import-file {
+  position: relative;
+  cursor: pointer;
+}
+
+.property-import-file input {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+
+.property-import-skip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.property-import-preview {
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border, #d8dee8);
+  border-radius: 8px;
+}
+
+.property-import-preview table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.property-import-preview th,
+.property-import-preview td {
+  text-align: left;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #e5e9f0);
+}
+
+.property-import-preview th {
+  position: sticky;
+  top: 0;
+  background: var(--panel, #fff);
+}
+
+.property-import-error td {
+  color: #b42318;
+}
+
+.preplan-screen {
+  display: grid;
+  gap: 12px;
+}
+
+.preplan-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.preplan-header h2,
+.preplan-header p {
+  margin: 0 0 6px;
+}
+
+.preplan-section h3 {
+  margin: 0 0 10px;
+}
+
+.geofence-links {
+  display: flex;
+  gap: 12px;
+}
+
+@media print {
+  .preplan-screen .header-actions,
+  .preplan-screen .maintenance-breadcrumb {
+    display: none;
+  }
+}

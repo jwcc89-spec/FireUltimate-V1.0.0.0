@@ -56,13 +56,14 @@
 - Operator approved the 4 tables (`Property`, `PropertyContact`, `PrePlan`, `Inspection`) on 2026-11-27. One migration for all of W7: `20261130100000_add_fire_prevention` (**written, NOT applied**; makes 26).
 - Decisions: fixed type lists for the demo; Schedules tab = upcoming list; **anyone** completes inspections; NERIS picker always adds a **Person** (role → affiliation); keep the property name field.
 - **7a built** (properties list + map, create/edit with Street View / Aerial / draggable pin / thumbnail / Take Photo, property screen, contacts). Routes `server/modules/prevention.mjs` (reads `incidents.view`, writes `prevention.manage`). Properties menu item `isBuilt: true`. Details in the plan's "W7 as built".
+- **Live Street View / Aerial load only while adding or editing** (operator, to save Google cost). The saved property screen shows the thumbnail and "Open in Google Maps".
+- **7b built** (no new migration): CSV Import with template and preview (`preventionImport.mjs`), Incidents tab (call history by cleaned address), Basic/Complex pre-plans (`preventionPrePlans.mjs`, fields in `src/pages/prevention/prePlanTemplates.ts`), Pre-Plans page (`isBuilt: true`), geofence property/pre-plan dropdowns (`src/pages/maps/GeofenceLinkFields.tsx`).
 
 ### Next
-1. Operator: Neon backup `backup-before-w7`, apply the migration (expect 26), merge `feature/demo-modules`, run the 7a click checks.
-2. **7b:** CSV import, Incidents tab (call history), Basic/Complex pre-plans + Pre-Plans page, geofence link picker.
-3. **7c:** Inspections. **7d:** NERIS "Add from Properties".
+1. Operator: Neon backup `backup-before-w7`, apply the migration (expect 26), merge `feature/demo-modules`, run the 7a and 7b click checks.
+2. **7c:** Inspections ("anyone" completes them; FPI-YY-NNNN; templates via ChecklistTemplate `subjectKind "fireInspection"`).
+3. **7d:** NERIS "Add from Properties" (adds a Person; role → affiliation).
 4. W6 follow-up changes when the operator lists them.
-2. W6 follow-up changes when the operator lists them.
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.
@@ -70,7 +71,7 @@
 - Never change the NERIS export or the `NerisDraft` payload. Never change sign-in or session code. Every query filters by `request.tenant.id`.
 - Do **not** modify Prisma schema / migrations / auth without explicit approval. Apply migrations to staging **before** merging code that needs them.
 - The local `.env.server` points at the Neon staging database. Do not run migrations or test writes from a local server unless the user asks. Load it with `node --env-file=.env.server ./node_modules/prisma/build/index.js …` (do not `source` the file; it can fail to parse).
-- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **113** pass (as of W7a).
+- `npm test` has two tests that need a local Postgres on 127.0.0.1:5432 (`server sign-in passes`, `fake vendor proves one bill per incident`). They fail on a Mac without it; the other **115** pass (as of W7b).
 - Never add per-column filter boxes back to `ModuleTable`; the operator doesn't want them. Pass filter chips through its `toolbarStart` prop.
 - Reuse `src/components/ModuleTable.tsx` for module lists and `useModuleLookups()` (`src/moduleLookups.ts`) for apparatus, stations and personnel.
 - Match Claude W0/W1 style: page-section, panel, EditDialog, useDialogSave, ModuleTable, maintenance-tabs, lucide icons.
