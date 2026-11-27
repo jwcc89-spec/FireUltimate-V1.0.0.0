@@ -524,7 +524,7 @@ export function DisplaysAdminPage() {
             />
           </label>
           <label>
-            Takeover seconds
+            Takeover seconds (10–600, for example 300 = 5 minutes)
             <input
               type="number"
               min={10}

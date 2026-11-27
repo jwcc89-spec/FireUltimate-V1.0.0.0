@@ -66,7 +66,8 @@
   - Maintenance **labor** tab: a Pay rates list (person, straight/OT/comp rates) plus a `MaintenanceLabor` table, and an admin-picked "Maintenance labor" list.
   - A general **Groups** system is out of demo scope because it touches permissions.
   - **Units** apparatus profile (`ApparatusProfile` table: IDs, specs, fluids, tire pressures, sticker photo).
-- **Next after W4 is applied and merged:** W5 Dashboard.
+- **Operator follow-up evening 2026-11-26 (no schema):** 1 s takeover pulse; CallMap road default; incident breadcrumb 3 levels; inspection Save draft; equipment OOS syncs to Equipment List; sidebar collapse stick; Checklists Templates tab admin-only.
+- **Next:** W5 Dashboard, or approved schema work (Units/In Reserve, labor, Groups).
 
 ## Rules that matter here
 - **The operator tests on staging, not locally.** Click checks target `https://cifpdil.staging.fireultimate.app` after a merge into `submenu/neris-golive-cifpd` and a Render redeploy. Don't ask for `npm run dev` or `localhost` unless there is no other way.

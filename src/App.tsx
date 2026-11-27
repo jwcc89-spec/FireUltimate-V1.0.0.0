@@ -3361,7 +3361,8 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
       return !previous;
     });
   };
-  const [expandedMenuId, setExpandedMenuId] = useState<MainMenuId | null>(
+  /** Which sidebar menu is open. `false` means the user closed it on purpose (do not re-open the active page's menu). */
+  const [expandedMenuId, setExpandedMenuId] = useState<MainMenuId | null | false>(
     "incidentsMapping",
   );
   const activeSidebarResize = useRef<{ startX: number; startWidth: number } | null>(
@@ -3410,16 +3411,23 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     if (path.startsWith("/incidents-mapping/incidents/")) {
       return {
         primary: "Incidents / Mapping",
-        secondary: "Incident Detail",
+        secondary: "Incidents",
+        secondaryPath: "/incidents-mapping/incidents",
+        tertiary: "Incident Detail",
       };
     }
     if (!activeMenu) {
-      return { primary: "Dashboard", secondary: null };
+      return { primary: "Dashboard", secondary: null, secondaryPath: null, tertiary: null };
     }
     if (!activeSubmenu) {
-      return { primary: activeMenu.title, secondary: null };
+      return { primary: activeMenu.title, secondary: null, secondaryPath: null, tertiary: null };
     }
-    return { primary: activeMenu.title, secondary: activeSubmenu.label };
+    return {
+      primary: activeMenu.title,
+      secondary: activeSubmenu.label,
+      secondaryPath: null,
+      tertiary: null,
+    };
   }, [activeMenu, activeSubmenu, location.pathname]);
 
   const handleNavClick = () => {
@@ -3427,7 +3435,7 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
     setSettingsOpen(false);
   };
 
-  const expandedMenuForRender = expandedMenuId ?? activeMenu?.id;
+  const expandedMenuForRender = expandedMenuId === false ? null : (expandedMenuId ?? activeMenu?.id);
 
   const revealActiveMenu = () => {
     if (!activeMenu) return;
@@ -3594,9 +3602,10 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
                       className={`module-toggle ${isExpanded ? "expanded" : ""}`}
                       aria-label={`Toggle ${menu.title} submenu`}
                       onClick={() =>
-                        setExpandedMenuId((previous) =>
-                          previous === menu.id ? null : menu.id,
-                        )
+                        setExpandedMenuId((previous) => {
+                          const showing = previous === false ? null : (previous ?? activeMenu?.id);
+                          return showing === menu.id ? false : menu.id;
+                        })
                       }
                     >
                       <ChevronDown size={16} />
@@ -3709,7 +3718,19 @@ function ShellLayout({ session, onLogout }: ShellLayoutProps) {
               {breadcrumb.secondary ? (
                 <>
                   <ChevronRight size={20} />
-                  <span className="breadcrumb-secondary">{breadcrumb.secondary}</span>
+                  {breadcrumb.secondaryPath ? (
+                    <NavLink className="breadcrumb-link breadcrumb-secondary" to={breadcrumb.secondaryPath}>
+                      {breadcrumb.secondary}
+                    </NavLink>
+                  ) : (
+                    <span className="breadcrumb-secondary">{breadcrumb.secondary}</span>
+                  )}
+                </>
+              ) : null}
+              {breadcrumb.tertiary ? (
+                <>
+                  <ChevronRight size={20} />
+                  <span className="breadcrumb-secondary">{breadcrumb.tertiary}</span>
                 </>
               ) : null}
             </div>

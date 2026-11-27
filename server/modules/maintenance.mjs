@@ -281,6 +281,40 @@ function closeRequirementsError(status, performedByKind, performedByName, vendor
   return null;
 }
 
+/**
+ * Keeps the Equipment List status in step with Out of Service on equipment maintenance records.
+ * Marking a record OOS sets the item Out of Service. Clearing OOS (or closing the last OOS ticket)
+ * puts it back In Service only when no other open OOS ticket still points at it. Retired is left alone.
+ */
+async function syncEquipmentStatus(tx, { tenantId, assetKind, assetRefs, outOfService, actor }) {
+  if (assetKind !== "equipment") return;
+  const ids = [...new Set((assetRefs ?? []).map((ref) => text(ref, 60)).filter(Boolean))];
+  if (ids.length === 0) return;
+  if (outOfService) {
+    await tx.equipment.updateMany({
+      where: { tenantId, deletedAt: null, id: { in: ids }, status: { not: "Retired" } },
+      data: { status: "Out of Service", updatedBy: actor },
+    });
+    return;
+  }
+  const openOos = await tx.maintenanceRecord.findMany({
+    where: { tenantId, deletedAt: null, assetKind: "equipment", outOfService: true, status: { in: OPEN_STATUSES } },
+    select: { assetRef: true, detailsJson: true },
+  });
+  const stillDown = new Set();
+  for (const row of openOos) {
+    if (row.assetRef) stillDown.add(row.assetRef);
+    const assets = detailsOf(row).assets;
+    if (Array.isArray(assets)) for (const asset of assets) if (asset?.ref) stillDown.add(asset.ref);
+  }
+  const clearIds = ids.filter((id) => !stillDown.has(id));
+  if (clearIds.length === 0) return;
+  await tx.equipment.updateMany({
+    where: { tenantId, deletedAt: null, id: { in: clearIds }, status: "Out of Service" },
+    data: { status: "In Service", updatedBy: actor },
+  });
+}
+
 async function loadCommentsFor(prisma, tenantId, recordId) {
   const rows = await prisma.comment.findMany({
     where: { tenantId, ownerType: COMMENT_OWNER_TYPE, ownerId: recordId, deletedAt: null },
@@ -511,6 +545,15 @@ function registerRecordRoutes(app, prisma) {
                 completedDate,
               });
             }
+            if (outOfService) {
+              await syncEquipmentStatus(tx, {
+                tenantId,
+                assetKind,
+                assetRefs: assets.map((asset) => asset.ref),
+                outOfService: OPEN_STATUSES.includes(status),
+                actor,
+              });
+            }
             return row;
           });
         } catch (error) {
@@ -645,6 +688,17 @@ function registerRecordRoutes(app, prisma) {
             completedDate: data.completedDate,
           });
         }
+        const assetRefs = [
+          data.assetRef ?? existing.assetRef,
+          ...(Array.isArray(nextDetails.assets) ? nextDetails.assets.map((asset) => asset?.ref) : []),
+        ].filter(Boolean);
+        await syncEquipmentStatus(tx, {
+          tenantId,
+          assetKind: existing.assetKind,
+          assetRefs,
+          outOfService: Boolean(outOfService) && OPEN_STATUSES.includes(status),
+          actor,
+        });
         return tx.maintenanceRecord.findFirst({ where: { id: existing.id, tenantId }, include: RECORD_INCLUDE });
       });
       const comments = await loadCommentsFor(prisma, tenantId, existing.id);

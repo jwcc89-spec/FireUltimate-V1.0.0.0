@@ -8,6 +8,7 @@ import {
   getInspections,
   getOpenDeficiencies,
   getUnitEquipment,
+  updateInspection,
   type InspectionDetail,
   type InspectionDetails,
   type InspectionItem,
@@ -56,12 +57,14 @@ function withEquipment(sections: InspectionSection[], equipment: InspectionItem[
   );
 }
 
-type View = { kind: "list" } | { kind: "new" } | { kind: "report"; id: string };
+type View = { kind: "list" } | { kind: "new" } | { kind: "edit"; id: string } | { kind: "report"; id: string };
 
 function readView(): View {
   const params = new URLSearchParams(window.location.search);
   const report = params.get("report");
   if (report) return { kind: "report", id: report };
+  const edit = params.get("edit");
+  if (edit) return { kind: "edit", id: edit };
   if (params.get("new") === "1") return { kind: "new" };
   return { kind: "list" };
 }
@@ -219,19 +222,29 @@ export function InspectionsPage({ username }: { username: string }) {
   }, [load]);
 
   const go = (next: View) => {
-    const params = next.kind === "new" ? "?new=1" : next.kind === "report" ? `?report=${encodeURIComponent(next.id)}` : "";
+    const params =
+      next.kind === "new"
+        ? "?new=1"
+        : next.kind === "edit"
+          ? `?edit=${encodeURIComponent(next.id)}`
+          : next.kind === "report"
+            ? `?report=${encodeURIComponent(next.id)}`
+            : "";
     window.history.replaceState(null, "", `${window.location.pathname}${params}`);
     setView(next);
   };
 
-  if (view.kind === "new") {
+  if (view.kind === "new" || view.kind === "edit") {
     return (
       <InspectionForm
         username={username}
         unitLabel={unitLabel}
-        onClose={(savedId) => {
+        draftId={view.kind === "edit" ? view.id : null}
+        onClose={(result) => {
           void load();
-          go(savedId ? { kind: "report", id: savedId } : { kind: "list" });
+          if (result?.kind === "submitted") go({ kind: "report", id: result.id });
+          else if (result?.kind === "draft") go({ kind: "list" });
+          else go({ kind: "list" });
         }}
       />
     );
@@ -251,6 +264,15 @@ export function InspectionsPage({ username }: { username: string }) {
     { id: "apparatus", label: "Apparatus", width: 120, value: (row) => unitLabel(row.subjectRef), render: (row) => <strong>{unitLabel(row.subjectRef)}</strong> },
     { id: "date", label: "Date", width: 100, value: (row) => row.completedOn, render: (row) => formatDateKey(row.completedOn) },
     { id: "by", label: "Firefighter / Driver", width: 160, value: (row) => row.completedByName, render: (row) => row.completedByName || "—" },
+    {
+      id: "status",
+      label: "Status",
+      width: 110,
+      value: (row) => row.status,
+      render: (row) => (
+        <span className={row.status === "Draft" ? "tone tone-warning" : "tone tone-positive"}>{row.status === "Draft" ? "Draft" : "Submitted"}</span>
+      ),
+    },
     {
       id: "repairs",
       label: "Repair Issues",
@@ -272,8 +294,12 @@ export function InspectionsPage({ username }: { username: string }) {
       label: "",
       width: 120,
       render: (row) => (
-        <button type="button" className="secondary-button compact-button" onClick={() => go({ kind: "report", id: row.id })}>
-          Open Report
+        <button
+          type="button"
+          className="secondary-button compact-button"
+          onClick={() => go(row.status === "Draft" ? { kind: "edit", id: row.id } : { kind: "report", id: row.id })}
+        >
+          {row.status === "Draft" ? "Continue" : "Open Report"}
         </button>
       ),
     },
@@ -284,7 +310,10 @@ export function InspectionsPage({ username }: { username: string }) {
       <header className="page-header">
         <div>
           <h1>Apparatus Inspections</h1>
-          <p>Completed inspections, newest first. A Repair Needed result opens a maintenance record for the unit.</p>
+          <p>
+            Completed inspections, newest first. Use Save on the bay iPad to finish later on a computer. A Repair Needed result opens a
+            maintenance record for the unit.
+          </p>
         </div>
         {canSubmit ? (
           <button type="button" className="primary-button maintenance-icon-button" onClick={() => go({ kind: "new" })}>
@@ -300,7 +329,7 @@ export function InspectionsPage({ username }: { username: string }) {
           columns={columns}
           rows={inspections}
           rowKey={(row) => row.id}
-          onRowClick={(row) => go({ kind: "report", id: row.id })}
+          onRowClick={(row) => go(row.status === "Draft" ? { kind: "edit", id: row.id } : { kind: "report", id: row.id })}
           emptyText="No inspections yet. Click New Inspection to start one."
           defaultSort={{ id: "date", direction: "desc" }}
         />
@@ -350,11 +379,13 @@ function InspectionLegend() {
 function InspectionForm({
   username,
   unitLabel,
+  draftId,
   onClose,
 }: {
   username: string;
   unitLabel: (ref: string) => string;
-  onClose: (savedId: string | null) => void;
+  draftId: string | null;
+  onClose: (result: { kind: "draft" | "submitted"; id: string } | null) => void;
 }) {
   const lookups = useModuleLookups();
   const grants = useMyPermissions();
@@ -367,6 +398,8 @@ function InspectionForm({
   const [records, setRecords] = useState<MaintenanceRecordSummary[]>([]);
   const [lastServiceSource, setLastServiceSource] = useState("");
   const [subjectRef, setSubjectRef] = useState("");
+  const [savedDraftId, setSavedDraftId] = useState<string | null>(draftId);
+  const [draftReady, setDraftReady] = useState(!draftId);
   const sections = useCollapsedSections();
   const [completedOn, setCompletedOn] = useState(todayKey());
   const [chosenDriver, setCompletedByName] = useState<string | null>(null);
@@ -395,16 +428,33 @@ function InspectionForm({
       getPmSchedules(),
       getApparatusStatus(),
       getMaintenanceRecords("apparatus"),
+      draftId ? getInspection(draftId) : Promise.resolve(null),
     ])
-      .then(([nextTemplate, nextTypes, nextVendors, nextSchedules, statuses, nextRecords]) => {
+      .then(([nextTemplate, nextTypes, nextVendors, nextSchedules, statuses, nextRecords, draft]) => {
         if (!active) return;
         setTemplate(nextTemplate);
-        setResults(defaultResults(nextTemplate.sections));
         setTypes(nextTypes);
         setVendors(nextVendors);
         setSchedules(nextSchedules);
         setReadingsByUnit(new Map(statuses.map((unit) => [unit.unitId, unit.readings])));
         setRecords(nextRecords);
+        if (draft) {
+          if (draft.status !== "Draft") {
+            setError("That inspection was already submitted.");
+            setDraftReady(false);
+            return;
+          }
+          setSubjectRef(draft.subjectRef);
+          setCompletedOn(draft.completedOn || todayKey());
+          setCompletedByName(draft.completedByName || null);
+          setDetails(draft.details);
+          setResults({ ...defaultResults(nextTemplate.sections), ...draft.results });
+          setSavedDraftId(draft.id);
+          setDraftReady(true);
+        } else {
+          setResults(defaultResults(nextTemplate.sections));
+          setDraftReady(true);
+        }
       })
       .catch((loadError) => {
         if (active) setError(errorText(loadError, "Could not load the inspection checklist."));
@@ -412,7 +462,7 @@ function InspectionForm({
     return () => {
       active = false;
     };
-  }, []);
+  }, [draftId]);
 
   useEffect(() => {
     if (!subjectRef) return;
@@ -489,6 +539,28 @@ function InspectionForm({
   const setReading = (key: keyof InspectionDetails["readings"], raw: string) =>
     setDetails((previous) => ({ ...previous, readings: { ...previous.readings, [key]: numberOrNull(raw) } }));
 
+  const payload = (draft: boolean) => {
+    const shownIds = new Set(allItems.map((item) => item.id));
+    const shownResults = Object.fromEntries(Object.entries(results).filter(([itemId]) => shownIds.has(itemId)));
+    return { subjectRef, completedOn, completedByName, results: shownResults, details, draft };
+  };
+
+  const saveDraft = async () => {
+    setError("");
+    if (!subjectRef) return setError("Pick the apparatus first so the draft can be saved against it.");
+    setSaving(true);
+    try {
+      const saved = savedDraftId
+        ? await updateInspection(savedDraftId, payload(true))
+        : await createInspection(payload(true));
+      setSavedDraftId(saved.id);
+      onClose({ kind: "draft", id: saved.id });
+    } catch (saveError) {
+      setError(errorText(saveError, "Could not save the draft."));
+      setSaving(false);
+    }
+  };
+
   const submit = async () => {
     setError("");
     const missing = [
@@ -505,17 +577,17 @@ function InspectionForm({
     if (unanswered > 0) return setError(`${unanswered} items have no result yet. Use Mark Unchecked as OK if they are all OK.`);
     setSaving(true);
     try {
-      const shownIds = new Set(allItems.map((item) => item.id));
-      const shownResults = Object.fromEntries(Object.entries(results).filter(([itemId]) => shownIds.has(itemId)));
-      const saved = await createInspection({ subjectRef, completedOn, completedByName, results: shownResults, details });
-      onClose(saved.id);
+      const saved = savedDraftId
+        ? await updateInspection(savedDraftId, payload(false))
+        : await createInspection(payload(false));
+      onClose({ kind: "submitted", id: saved.id });
     } catch (saveError) {
       setError(errorText(saveError, "Could not save the inspection."));
       setSaving(false);
     }
   };
 
-  if (!template) {
+  if (!template || !draftReady) {
     return error ? <p className="field-error">{error}</p> : <p className="field-hint">Loading checklist...</p>;
   }
 
@@ -540,14 +612,18 @@ function InspectionForm({
         <button type="button" className="edit-display-link" onClick={() => onClose(null)}>
           Inspections
         </button>
-        <span>&gt; New</span>
+        <span>&gt; {savedDraftId ? "Continue Draft" : "New"}</span>
       </div>
       <header className="page-header">
         <div>
           <h1 className="page-title-keep">{template.name}</h1>
           <InspectionLegend />
+          <p className="field-hint">Save keeps a draft for finishing later. Submit when every required field and item is done.</p>
         </div>
         <div className="header-actions">
+          <button type="button" className="secondary-button compact-button" disabled={saving} onClick={() => void saveDraft()}>
+            {saving ? "Saving..." : "Save"}
+          </button>
           <button type="button" className="primary-button compact-button" disabled={saving} onClick={() => void submit()}>
             {saving ? "Saving..." : "Submit Inspection"}
           </button>
@@ -737,6 +813,9 @@ function InspectionForm({
 
       {error ? <p className="field-error">{error}</p> : null}
       <div className="header-actions">
+        <button type="button" className="secondary-button compact-button" disabled={saving} onClick={() => void saveDraft()}>
+          {saving ? "Saving..." : "Save"}
+        </button>
         <button type="button" className="primary-button compact-button" disabled={saving} onClick={() => void submit()}>
           {saving ? "Saving..." : "Submit Inspection"}
         </button>

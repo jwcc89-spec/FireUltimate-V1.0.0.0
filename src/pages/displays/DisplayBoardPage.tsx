@@ -17,7 +17,7 @@ import { CallMap } from "./CallMap";
 
 const REFRESH_MS = 20_000;
 /** How often the board asks "any new call?". The answer is a few rows, so this stays light. */
-const PULSE_MS = 4_000;
+const PULSE_MS = 1_000;
 /** Three spaces, two hyphens, three spaces between banner messages. Non-breaking so the browser keeps them. */
 const BANNER_SEPARATOR = "\u00a0\u00a0\u00a0--\u00a0\u00a0\u00a0";
 /** Only a call this recent opens the takeover, so an older call that reappears on a district board stays quiet. */

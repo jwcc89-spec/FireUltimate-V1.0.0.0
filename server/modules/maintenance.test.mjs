@@ -23,8 +23,10 @@ function createFakePrisma() {
   const matches = (row, where = {}) =>
     Object.entries(where).every(([key, expected]) => {
       if (expected === null) return row[key] == null;
-      if (expected && typeof expected === "object" && "startsWith" in expected) {
-        return String(row[key] ?? "").startsWith(expected.startsWith);
+      if (expected && typeof expected === "object" && !(expected instanceof Date)) {
+        if ("startsWith" in expected) return String(row[key] ?? "").startsWith(expected.startsWith);
+        if (Array.isArray(expected.in)) return expected.in.includes(row[key]);
+        if ("not" in expected) return row[key] !== expected.not;
       }
       return row[key] === expected;
     });
@@ -408,6 +410,28 @@ test("vendors and equipment are scoped to the department", async () => {
     const item = await call("POST", "/api/equipment", { role: "admin", body: { name: "SCBA 12", status: "Bogus" } });
     assert.equal(item.json.data.status, "In Service");
     assert.deepEqual((await call("GET", "/api/equipment", { tenant: "tenantB" })).json.data, []);
+
+    const types = await call("GET", "/api/maintenance/types");
+    const deficiency = types.json.data.find((type) => type.name === "Deficiency");
+    const ticket = await call("POST", "/api/maintenance/records", {
+      body: {
+        assetKind: "equipment",
+        assets: [{ kind: "equipment", ref: item.json.data.id, label: "SCBA 12" }],
+        typeId: deficiency.id,
+        description: "Pack leak",
+        outOfService: true,
+      },
+    });
+    assert.equal(ticket.status, 201);
+    const listed = await call("GET", "/api/equipment");
+    assert.equal(listed.json.data.find((row) => row.id === item.json.data.id).status, "Out of Service");
+
+    await call("PATCH", `/api/maintenance/records/${ticket.json.data.id}`, {
+      role: "admin",
+      body: { outOfService: false, status: "Completed", performedByKind: "personnel", performedByName: "Alice" },
+    });
+    const cleared = await call("GET", "/api/equipment");
+    assert.equal(cleared.json.data.find((row) => row.id === item.json.data.id).status, "In Service");
   } finally {
     await close();
   }

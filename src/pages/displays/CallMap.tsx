@@ -113,7 +113,7 @@ export function CallMap({
               <Map
                 defaultCenter={point}
                 defaultZoom={17}
-                mapTypeId="hybrid"
+                mapTypeId="roadmap"
                 styles={HIDE_GOOGLE_PLACES}
                 disableDefaultUI
                 gestureHandling="cooperative"

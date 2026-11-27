@@ -281,38 +281,34 @@ export function register(app, prisma) {
     }
   });
 
-  app.post("/api/inspections", async (request, response) => {
-    const tenantId = tenantIdOf(request, response);
-    if (!tenantId) return;
-    try {
-      const body = request.body ?? {};
-      const actor = actorOf(request);
-      const subjectRef = text(body.subjectRef, 200);
-      if (!subjectRef) throw new PublicError("Pick the apparatus that was inspected.");
-      const completedOn = parseDateOnly(body.completedOn, "Inspection Date");
-      if (!completedOn) throw new PublicError("Enter the inspection date.");
-      const completedByName = text(body.completedByName, 200);
-      if (!completedByName) throw new PublicError("Enter the firefighter / driver who did the inspection.");
+  async function buildInspectionPayload(prisma, tenantId, body, { draft }) {
+    const subjectRef = text(body.subjectRef, 200);
+    if (!subjectRef) throw new PublicError("Pick the apparatus that was inspected.");
+    const completedOn = parseDateOnly(body.completedOn, "Inspection Date");
+    if (!draft && !completedOn) throw new PublicError("Enter the inspection date.");
+    const completedByName = text(body.completedByName, 200);
+    if (!draft && !completedByName) throw new PublicError("Enter the firefighter / driver who did the inspection.");
 
-      const { template, version } = await ensureDefaultTemplate(prisma, tenantId);
-      const onUnit = await unitEquipment(prisma, tenantId, subjectRef);
-      const itemIds = new Set(
-        withEquipment(sectionsOf(version), onUnit).flatMap((section) => (section.items ?? []).map((item) => item.id)),
-      );
-      const results = cleanResults(body.results, itemIds);
-      const equipmentItems = onUnit.filter((item) => results[item.id]);
-      const recordIds = [...new Set(Object.values(results).map((entry) => entry.recordId).filter(Boolean))];
-      if (recordIds.length > 0) {
-        const found = await prisma.maintenanceRecord.findMany({
-          where: { tenantId, deletedAt: null, id: { in: recordIds } },
-          select: { id: true },
-        });
-        const foundIds = new Set(found.map((row) => row.id));
-        for (const entry of Object.values(results)) {
-          if (entry.recordId && !foundIds.has(entry.recordId)) entry.recordId = "";
-        }
+    const { template, version } = await ensureDefaultTemplate(prisma, tenantId);
+    const onUnit = await unitEquipment(prisma, tenantId, subjectRef);
+    const itemIds = new Set(
+      withEquipment(sectionsOf(version), onUnit).flatMap((section) => (section.items ?? []).map((item) => item.id)),
+    );
+    const results = cleanResults(body.results, itemIds);
+    const equipmentItems = onUnit.filter((item) => results[item.id]);
+    const recordIds = [...new Set(Object.values(results).map((entry) => entry.recordId).filter(Boolean))];
+    if (recordIds.length > 0) {
+      const found = await prisma.maintenanceRecord.findMany({
+        where: { tenantId, deletedAt: null, id: { in: recordIds } },
+        select: { id: true },
+      });
+      const foundIds = new Set(found.map((row) => row.id));
+      for (const entry of Object.values(results)) {
+        if (entry.recordId && !foundIds.has(entry.recordId)) entry.recordId = "";
       }
-      const details = cleanDetails(body.details);
+    }
+    const details = cleanDetails(body.details);
+    if (!draft) {
       const missing = [
         !details.officer && "Officer / OOR",
         !details.station && "Station",
@@ -321,7 +317,28 @@ export function register(app, prisma) {
         details.readings.pumpHours === null && "Pump Hours",
       ].filter(Boolean);
       if (missing.length > 0) throw new PublicError(`Fill in the required fields: ${missing.join(", ")}.`);
-      const repairCount = Object.values(results).filter((entry) => entry.result === "X").length;
+    }
+    return {
+      template,
+      version,
+      subjectRef,
+      completedOn: completedOn ?? new Date(`${new Date().toISOString().slice(0, 10)}T00:00:00.000Z`),
+      completedByName,
+      repairCount: Object.values(results).filter((entry) => entry.result === "X").length,
+      resultsJson: results,
+      detailsJson: { ...details, equipmentItems },
+      status: draft ? "Draft" : "Submitted",
+    };
+  }
+
+  app.post("/api/inspections", async (request, response) => {
+    const tenantId = tenantIdOf(request, response);
+    if (!tenantId) return;
+    try {
+      const body = request.body ?? {};
+      const actor = actorOf(request);
+      const draft = body.draft === true;
+      const payload = await buildInspectionPayload(prisma, tenantId, body, { draft });
 
       let created = null;
       for (let attempt = 0; attempt < 3 && !created; attempt += 1) {
@@ -330,16 +347,16 @@ export function register(app, prisma) {
             data: {
               tenantId,
               submissionNumber: await nextSubmissionNumber(prisma, tenantId),
-              templateId: template.id,
-              templateVersionId: version.id,
+              templateId: payload.template.id,
+              templateVersionId: payload.version.id,
               subjectKind: "apparatus",
-              subjectRef,
-              completedOn,
-              completedByName,
-              status: "Submitted",
-              repairCount,
-              resultsJson: results,
-              detailsJson: { ...details, equipmentItems },
+              subjectRef: payload.subjectRef,
+              completedOn: payload.completedOn,
+              completedByName: payload.completedByName,
+              status: payload.status,
+              repairCount: payload.repairCount,
+              resultsJson: payload.resultsJson,
+              detailsJson: payload.detailsJson,
               createdBy: actor,
               updatedBy: actor,
             },
@@ -349,6 +366,42 @@ export function register(app, prisma) {
         }
       }
       response.status(201).json({ ok: true, data: serializeSubmission(created, { includeDetail: true }) });
+    } catch (error) {
+      sendError(response, error, "Could not save the inspection.");
+    }
+  });
+
+  app.patch("/api/inspections/:id", async (request, response) => {
+    const tenantId = tenantIdOf(request, response);
+    if (!tenantId) return;
+    try {
+      const existing = await prisma.checklistSubmission.findFirst({
+        where: { id: request.params.id, tenantId, subjectKind: "apparatus", deletedAt: null },
+      });
+      if (!existing) {
+        response.status(404).json({ ok: false, message: "That inspection was not found." });
+        return;
+      }
+      if (existing.status !== "Draft") throw new PublicError("Only a saved draft can be updated. Submitted inspections stay as they are.");
+      const body = request.body ?? {};
+      const draft = body.draft !== false;
+      const actor = actorOf(request);
+      const payload = await buildInspectionPayload(prisma, tenantId, body, { draft });
+      await prisma.checklistSubmission.updateMany({
+        where: { id: existing.id, tenantId },
+        data: {
+          subjectRef: payload.subjectRef,
+          completedOn: payload.completedOn,
+          completedByName: payload.completedByName,
+          status: payload.status,
+          repairCount: payload.repairCount,
+          resultsJson: payload.resultsJson,
+          detailsJson: payload.detailsJson,
+          updatedBy: actor,
+        },
+      });
+      const row = await prisma.checklistSubmission.findFirst({ where: { id: existing.id, tenantId } });
+      response.json({ ok: true, data: serializeSubmission(row, { includeDetail: true }) });
     } catch (error) {
       sendError(response, error, "Could not save the inspection.");
     }
