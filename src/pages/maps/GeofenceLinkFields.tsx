@@ -11,7 +11,10 @@ function propertyLabel(row: PropertySummary): string {
   return row.name ? `${address} (${row.name})` : address;
 }
 
-/** Linked property and pre-plan for a geofence: dropdowns while editing, open links when reading. */
+/**
+ * Linked property and pre-plan for a geofence: dropdowns while editing, open links when reading.
+ * Picking a property fills in its newest pre-plan.
+ */
 export function GeofenceLinkFields({
   propertyId,
   prePlanId,
@@ -78,7 +81,10 @@ export function GeofenceLinkFields({
           placeholder={properties === null ? "Loading..." : "No linked property"}
           onChange={(value) => {
             const keepPlan = prePlans.some((row) => row.id === prePlanId && row.propertyId === value);
-            onChange({ linkedPropertyId: value, linkedPrePlanId: keepPlan ? prePlanId : "" });
+            const newest = prePlans
+              .filter((row) => row.propertyId === value)
+              .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+            onChange({ linkedPropertyId: value, linkedPrePlanId: keepPlan ? prePlanId : (newest?.id ?? "") });
           }}
         />
       </label>

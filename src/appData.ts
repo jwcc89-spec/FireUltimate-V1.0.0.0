@@ -403,10 +403,10 @@ export const MAIN_MENUS: MainMenu[] = [
     summary: "Inspection, permitting, and prevention program management.",
     submenus: [
       {
-        label: "Fire Investigations",
-        path: "/fire-prevention/fire-investigations",
-        summary: "Investigation case tracking and outcomes.",
-        isBuilt: false,
+        label: "Properties",
+        path: "/fire-prevention/properties",
+        summary: "Property profiles and hazard details.",
+        isBuilt: true,
       },
       {
         label: "Pre-Plans",
@@ -421,21 +421,21 @@ export const MAIN_MENUS: MainMenu[] = [
         isBuilt: false,
       },
       {
+        label: "Smoke Alarms",
+        path: "/fire-prevention/smoke-alarms",
+        summary: "Smoke alarm requests and installation tracking.",
+        isBuilt: false,
+      },
+      {
         label: "Permits",
         path: "/fire-prevention/permits",
         summary: "Permit requests, reviews, and approvals.",
         isBuilt: false,
       },
       {
-        label: "Properties",
-        path: "/fire-prevention/properties",
-        summary: "Property profiles and hazard details.",
-        isBuilt: true,
-      },
-      {
-        label: "Smoke Alarms",
-        path: "/fire-prevention/smoke-alarms",
-        summary: "Smoke alarm requests and installation tracking.",
+        label: "Fire Investigations",
+        path: "/fire-prevention/fire-investigations",
+        summary: "Investigation case tracking and outcomes.",
         isBuilt: false,
       },
     ],

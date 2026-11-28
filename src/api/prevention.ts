@@ -20,6 +20,7 @@ export const OCCUPANCY_TYPES = [
   "Residential Board and Care",
   "Mercantile",
   "Business",
+  "Fire Department",
   "Industrial",
   "Storage",
   "Mixed Use",

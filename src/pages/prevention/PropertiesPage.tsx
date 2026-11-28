@@ -16,10 +16,12 @@ import { PropertiesMap } from "./PropertiesMap";
 import { PropertyForm } from "./PropertyForm";
 import { PrePlanScreen } from "./PrePlanScreen";
 import { PropertyImportDialog } from "./PropertyImportDialog";
-import { PropertyScreen } from "./PropertyScreen";
+import { PropertyScreen, type PropertyTab } from "./PropertyScreen";
 import { formatSquareFeet } from "./preventionUtils";
 
 type TypeFilter = "all" | "residential" | "commercial";
+
+const PROPERTY_TABS: PropertyTab[] = ["details", "contacts", "incidents", "preplans", "inspections", "permits", "alarms"];
 
 const TYPE_FILTERS: { id: TypeFilter; label: string }[] = [
   { id: "all", label: "All" },
@@ -41,6 +43,8 @@ export function PropertiesPage() {
   const creating = searchParams.get("new") === "1";
   const view = searchParams.get("view") === "map" ? "map" : "list";
   const prePlanId = searchParams.get("preplan") ?? "";
+  const tabParam = searchParams.get("tab") ?? "";
+  const initialTab: PropertyTab = PROPERTY_TABS.includes(tabParam as PropertyTab) ? (tabParam as PropertyTab) : "details";
   const prePlanTemplate = searchParams.get("template") === "complex" ? "complex" : "basic";
 
   const [rows, setRows] = useState<PropertySummary[]>([]);
@@ -153,7 +157,9 @@ export function PropertiesPage() {
           editing={editing}
           canManage={canManage}
           onBack={() =>
-            prePlanId !== "new" && editing ? go({ property: detail.id, preplan: prePlanId }) : go({ property: detail.id })
+            prePlanId !== "new" && editing
+              ? go({ property: detail.id, preplan: prePlanId })
+              : go({ property: detail.id, tab: "preplans" })
           }
           onEdit={() => go({ property: detail.id, preplan: prePlanId, edit: "1" })}
           onSaved={(plan) => {
@@ -162,7 +168,7 @@ export function PropertiesPage() {
           }}
           onDeleted={() => {
             refresh();
-            go({ property: detail.id });
+            go({ property: detail.id, tab: "preplans" });
           }}
         />
       );
@@ -184,7 +190,8 @@ export function PropertiesPage() {
     }
     return (
       <PropertyScreen
-        key={detail.id}
+        key={`${detail.id}-${initialTab}`}
+        initialTab={initialTab}
         property={detail}
         canManage={canManage}
         onEdit={() => go({ property: detail.id, edit: "1" })}

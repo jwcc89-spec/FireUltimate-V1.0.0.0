@@ -3,6 +3,7 @@ import { GEOFENCE_KINDS, type Geofence, type MapDocument, type MapMarkerType } f
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
 import { formatTimestamp24, readFileAsDataUrl } from "../maintenance/maintenanceUtils";
 import { GeofenceLinkFields } from "./GeofenceLinkFields";
+import { GeofencePrePlanTab } from "./GeofencePrePlanTab";
 import { kindLabel, type GeofenceDraft, type MapPopup, type MarkerDraft } from "./mapUtils";
 
 export function MapRecordForm({
@@ -29,8 +30,8 @@ export function MapRecordForm({
   onClose: () => void;
 }) {
   const tab = popup.tab;
-  const setTab = (next: "info" | "docs") => {
-    if (popup.kind === "marker") onPopup({ kind: "marker", tab: next, draft: popup.draft });
+  const setTab = (next: "info" | "preplan" | "docs") => {
+    if (popup.kind === "marker") onPopup({ kind: "marker", tab: next === "preplan" ? "info" : next, draft: popup.draft });
     else onPopup({ kind: "geofence", tab: next, draft: popup.draft });
   };
   const withDocuments = (documents: MapDocument[]) => {
@@ -58,8 +59,13 @@ export function MapRecordForm({
       <p className="field-hint map-kicker">{kicker}</p>
       <div className="map-popup-tabs" role="tablist">
         <button type="button" role="tab" aria-selected={tab === "info"} onClick={() => setTab("info")}>
-          Marker Information
+          {popup.kind === "geofence" ? "Information" : "Marker Information"}
         </button>
+        {popup.kind === "geofence" ? (
+          <button type="button" role="tab" aria-selected={tab === "preplan"} onClick={() => setTab("preplan")}>
+            Pre-Plan
+          </button>
+        ) : null}
         <button type="button" role="tab" aria-selected={tab === "docs"} onClick={() => setTab("docs")}>
           Documents
         </button>
@@ -70,6 +76,8 @@ export function MapRecordForm({
         ) : (
           <GeofenceFields popup={popup} geofences={geofences} editable={editable} onPopup={onPopup} />
         )
+      ) : tab === "preplan" && popup.kind === "geofence" ? (
+        <GeofencePrePlanTab prePlanId={popup.draft.linkedPrePlanId} />
       ) : (
         <DocumentFields
           documents={popup.draft.documents}

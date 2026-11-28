@@ -351,6 +351,30 @@ interface NerisFlatSingleOptionSelectProps {
   createOption?: { label: string; onCreate: (searchTerm: string) => void };
 }
 
+/** Fixed position for a portal panel: below the trigger, or above it when there is more room there. */
+function singlePanelStyle(rect: DOMRect): CSSProperties {
+  const spaceBelow = window.innerHeight - rect.bottom - 12;
+  const spaceAbove = rect.top - 12;
+  if (spaceBelow < 280 && spaceAbove > spaceBelow) {
+    return {
+      position: "fixed",
+      bottom: window.innerHeight - rect.top + 4,
+      left: rect.left,
+      width: rect.width,
+      maxHeight: `${Math.min(480, spaceAbove)}px`,
+      zIndex: 100000,
+    };
+  }
+  return {
+    position: "fixed",
+    top: rect.bottom + 4,
+    left: rect.left,
+    width: rect.width,
+    maxHeight: `${Math.min(480, Math.max(160, spaceBelow))}px`,
+    zIndex: 100000,
+  };
+}
+
 export function NerisFlatSingleOptionSelect({
   inputId,
   value,
@@ -407,30 +431,27 @@ export function NerisFlatSingleOptionSelect({
     : options;
 
   useLayoutEffect(() => {
-    if (!isOpen || !usePortal || !triggerRef.current) return;
-    const rect = triggerRef.current.getBoundingClientRect();
-    const spaceBelow = window.innerHeight - rect.bottom - 12;
-    const spaceAbove = rect.top - 12;
-    if (spaceBelow < 280 && spaceAbove > spaceBelow) {
-      setPanelStyle({
-        position: "fixed",
-        bottom: window.innerHeight - rect.top + 4,
-        left: rect.left,
-        width: rect.width,
-        maxHeight: `${Math.min(480, spaceAbove)}px`,
-        zIndex: 100000,
-      });
-      return;
-    }
-    const maxPanelHeight = Math.min(480, Math.max(280, spaceBelow));
-    setPanelStyle({
-      position: "fixed",
-      top: rect.bottom + 4,
-      left: rect.left,
-      width: rect.width,
-      maxHeight: `${maxPanelHeight}px`,
-      zIndex: 100000,
-    });
+    if (!isOpen || !usePortal) return;
+    const place = () => {
+      if (!triggerRef.current) return;
+      const rect = triggerRef.current.getBoundingClientRect();
+      if (rect.bottom < 0 || rect.top > window.innerHeight) {
+        setIsOpen(false);
+        return;
+      }
+      setPanelStyle(singlePanelStyle(rect));
+    };
+    place();
+    const onScroll = (event: Event) => {
+      if (panelRef.current && event.target instanceof Node && panelRef.current.contains(event.target)) return;
+      place();
+    };
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", place);
+    return () => {
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", place);
+    };
   }, [isOpen, usePortal]);
 
   useEffect(() => {
@@ -469,6 +490,9 @@ export function NerisFlatSingleOptionSelect({
         onClick={() => {
           if (disabled) {
             return;
+          }
+          if (!isOpen && usePortal && triggerRef.current) {
+            setPanelStyle(singlePanelStyle(triggerRef.current.getBoundingClientRect()));
           }
           setIsOpen((previous) => !previous);
           if (isOpen) {

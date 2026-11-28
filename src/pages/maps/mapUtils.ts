@@ -156,7 +156,7 @@ export interface GeofenceDraft {
 
 export type MapPopup =
   | { kind: "marker"; tab: "info" | "docs"; draft: MarkerDraft }
-  | { kind: "geofence"; tab: "info" | "docs"; draft: GeofenceDraft }
+  | { kind: "geofence"; tab: "info" | "preplan" | "docs"; draft: GeofenceDraft }
   | { kind: "place"; title: string; lines: string[]; href?: string; hrefLabel?: string; position: LatLng };
 
 export function markerDraftFrom(marker: MapMarker): MarkerDraft {

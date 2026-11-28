@@ -59,8 +59,11 @@
 - **Live Street View / Aerial load only while adding or editing** (operator, to save Google cost). The saved property screen shows the thumbnail and "Open in Google Maps".
 - **7b built** (no new migration): CSV Import with template and preview (`preventionImport.mjs`), Incidents tab (call history by cleaned address), Basic/Complex pre-plans (`preventionPrePlans.mjs`, fields in `src/pages/prevention/prePlanTemplates.ts`), Pre-Plans page (`isBuilt: true`), geofence property/pre-plan dropdowns (`src/pages/maps/GeofenceLinkFields.tsx`).
 
+- **Migration 26 applied to staging and 7a/7b merged (2026-11-28).** Operator tested on `kankdemo.staging.fireultimate.app`; the feedback round (menu order, Fire Department occupancy, address suggestions, one tab row, collapsible/pinned pre-plan, dropdown fix, geofence Pre-Plan tab) is on `feature/demo-modules`, see the plan's "Staging feedback round".
+- Parked in the plan's "What is deferred": Display Board rig iPad / clickable takeover screen; CSV import that updates existing properties (operator to pick fill-blanks vs overwrite); Prisma 8 upgrade.
+
 ### Next
-1. Operator: Neon backup `backup-before-w7`, apply the migration (expect 26), merge `feature/demo-modules`, run the 7a and 7b click checks.
+1. Operator: merge the feedback round and recheck it on staging.
 2. **7c:** Inspections ("anyone" completes them; FPI-YY-NNNN; templates via ChecklistTemplate `subjectKind "fireInspection"`).
 3. **7d:** NERIS "Add from Properties" (adds a Person; role → affiliation).
 4. W6 follow-up changes when the operator lists them.

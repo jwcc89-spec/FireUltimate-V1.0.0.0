@@ -14,6 +14,7 @@ import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
 import { distanceFeet, mapsApiKey, type LatLng } from "../maps/mapUtils";
 import { errorText, toOptions } from "../maintenance/maintenanceUtils";
 import { useDialogSave } from "../maintenance/useDialogSave";
+import { AddressSuggestInput, type PickedAddress } from "./AddressSuggestInput";
 import { AerialPanel, StreetViewPanel } from "./PropertyMapPanels";
 import { EMPTY_PROPERTY, inputFromDetail, shrinkPhoto, type StreetViewCamera } from "./preventionUtils";
 
@@ -66,17 +67,30 @@ export function PropertyForm({
       };
     });
 
-  const findOnMap = async (automatic: boolean) => {
-    if (!draft.address.trim()) return;
-    if (automatic && (point || lookup.key === searchText)) return;
-    setLookup({ state: "busy", key: searchText });
+  const findOnMap = async (automatic: boolean, text = searchText) => {
+    if (!text.trim()) return;
+    if (automatic && (point || lookup.key === text)) return;
+    setLookup({ state: "busy", key: text });
     try {
-      const found = await geocodeAddress(searchText);
+      const found = await geocodeAddress(text);
       placePin({ lat: found.latitude, lng: found.longitude });
-      setLookup({ state: "idle", key: searchText });
+      const zip = found.matchedAddress.match(/\b(\d{5})(?:-\d{4})?\s*$/)?.[1] ?? "";
+      if (zip) setDraft((previous) => (previous.postalCode.trim() ? previous : { ...previous, postalCode: zip }));
+      setLookup({ state: "idle", key: text });
     } catch {
-      setLookup({ state: "missed", key: searchText });
+      setLookup({ state: "missed", key: text });
     }
+  };
+
+  const pickAddress = (picked: PickedAddress) => {
+    const next = {
+      address: picked.street,
+      city: picked.city || draft.city,
+      state: picked.state || draft.state,
+      postalCode: picked.postalCode || draft.postalCode,
+    };
+    update(next);
+    void findOnMap(false, [next.address, next.city, next.state, next.postalCode].filter((part) => part.trim()).join(", "));
   };
 
   const pickPhoto = async (file: File | undefined) => {
@@ -123,7 +137,7 @@ export function PropertyForm({
     </label>
   );
 
-  return (
+  const content = (
     <section className="page-section">
       <div className="maintenance-breadcrumb">
         <button type="button" className="edit-display-link" onClick={onCancel}>
@@ -156,13 +170,23 @@ export function PropertyForm({
             <label className="property-form-wide">
               Address *
               <div className="property-address-row">
-                <input
-                  type="text"
-                  value={draft.address}
-                  placeholder="Street address"
-                  onChange={(event) => update({ address: event.target.value })}
-                  onBlur={() => void findOnMap(true)}
-                />
+                {apiKey ? (
+                  <AddressSuggestInput
+                    value={draft.address}
+                    bias={point ?? fallbackCenter}
+                    onChange={(address) => update({ address })}
+                    onPick={pickAddress}
+                    onBlur={() => void findOnMap(true)}
+                  />
+                ) : (
+                  <input
+                    type="text"
+                    value={draft.address}
+                    placeholder="Street address"
+                    onChange={(event) => update({ address: event.target.value })}
+                    onBlur={() => void findOnMap(true)}
+                  />
+                )}
                 <button
                   type="button"
                   className="secondary-button compact-button maintenance-icon-button"
@@ -288,7 +312,7 @@ export function PropertyForm({
 
         <aside className="property-side">
           {apiKey ? (
-            <APIProvider apiKey={apiKey}>
+            <>
               <StreetViewPanel
                 point={point}
                 saved={camera}
@@ -302,7 +326,7 @@ export function PropertyForm({
                 }
               />
               <AerialPanel point={point} address={searchText} fallbackCenter={fallbackCenter} onPlace={placePin} />
-            </APIProvider>
+            </>
           ) : (
             <p className="field-hint">The Street View and Aerial panels need the Google Maps browser key.</p>
           )}
@@ -311,4 +335,5 @@ export function PropertyForm({
       </div>
     </section>
   );
+  return apiKey ? <APIProvider apiKey={apiKey}>{content}</APIProvider> : content;
 }

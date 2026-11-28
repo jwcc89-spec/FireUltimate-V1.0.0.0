@@ -12,41 +12,19 @@ import {
   type PropertyDetail,
 } from "../../api/prevention";
 import { NerisFlatSingleOptionSelect } from "../../NerisFlatSelects";
-import { errorText, formatTimestamp24, toOptions } from "../maintenance/maintenanceUtils";
+import { errorText, formatDateKey, formatTimestamp24 } from "../maintenance/maintenanceUtils";
 import { useDialogSave } from "../maintenance/useDialogSave";
-import { sectionsFor, templateLabel, type PrePlanField } from "./prePlanTemplates";
+import { PrePlanSections } from "./PrePlanSections";
+import { templateLabel } from "./prePlanTemplates";
 
 function inputOf(plan: PrePlan | null, template: PrePlanTemplate): PrePlanInput {
   if (!plan) return { title: "Pre-Plan", template, reviewedOn: "", answers: {} };
-  return { title: plan.title, template: plan.template, reviewedOn: plan.reviewedOn, answers: { ...plan.answers } };
-}
-
-function FieldInput({
-  field,
-  value,
-  onChange,
-}: {
-  field: PrePlanField;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  if (field.kind === "textarea") {
-    return <textarea rows={3} value={value} onChange={(event) => onChange(event.target.value)} />;
-  }
-  if (field.kind === "choice") {
-    return (
-      <NerisFlatSingleOptionSelect
-        inputId={`preplan-${field.id}`}
-        value={value}
-        options={toOptions(field.options ?? [])}
-        usePortal
-        allowClear
-        placeholder="Select"
-        onChange={onChange}
-      />
-    );
-  }
-  return <input value={value} onChange={(event) => onChange(event.target.value)} />;
+  return {
+    title: plan.title,
+    template: plan.template,
+    reviewedOn: plan.reviewedOn,
+    answers: { ...plan.answers },
+  };
 }
 
 /**
@@ -79,6 +57,7 @@ export function PrePlanScreen({
   const [loadError, setLoadError] = useState("");
   const [draft, setDraft] = useState<PrePlanInput>(() => inputOf(null, template));
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [printing, setPrinting] = useState(false);
   const { saving, error, run } = useDialogSave();
 
   useEffect(() => {
@@ -125,14 +104,25 @@ export function PrePlanScreen({
   }
 
   const showForm = canManage && (isNew || editing);
-  const sections = sectionsFor(draft.template);
-  const setAnswer = (id: string, value: string) => setDraft((current) => ({ ...current, answers: { ...current.answers, [id]: value } }));
+  const setAnswer = (id: string, value: string) =>
+    setDraft((current) => ({
+      ...current,
+      answers: { ...current.answers, [id]: value },
+    }));
 
   const save = () =>
     void run(async () => {
       const saved = isNew ? await createPrePlan(property.id, draft) : await updatePrePlan(planId, draft);
       onSaved(saved);
     }, "Could not save the pre-plan.");
+
+  const print = () => {
+    setPrinting(true);
+    window.setTimeout(() => {
+      window.print();
+      setPrinting(false);
+    }, 50);
+  };
 
   const remove = () => {
     if (!confirmDelete) {
@@ -147,53 +137,55 @@ export function PrePlanScreen({
 
   return (
     <section className="page-section preplan-screen">
-      {breadcrumb}
-      <article className="panel preplan-header">
-        <div>
-          <h2>{showForm ? draft.title || "Pre-Plan" : plan?.title}</h2>
-          <p>{fullAddress(property)}</p>
-          <div className="property-tags">
-            <span className="tone tone-neutral">{templateLabel(draft.template)}</span>
-            {property.occupancyType ? <span className="tone tone-neutral">{property.occupancyType}</span> : null}
-            {!showForm && plan?.reviewedOn ? <span className="tone tone-neutral">Last reviewed {plan.reviewedOn}</span> : null}
-            {!showForm && plan?.updatedAt ? (
-              <span className="field-hint">
-                Updated {formatTimestamp24(plan.updatedAt)}
-                {plan.updatedBy ? ` by ${plan.updatedBy}` : ""}
-              </span>
-            ) : null}
+      <div className="preplan-sticky">
+        {breadcrumb}
+        <article className="panel preplan-header">
+          <div>
+            <h2>{showForm ? draft.title || "Pre-Plan" : plan?.title}</h2>
+            <p>{fullAddress(property)}</p>
+            <div className="property-tags">
+              <span className="tone tone-neutral">{templateLabel(draft.template)}</span>
+              {property.occupancyType ? <span className="tone tone-neutral">{property.occupancyType}</span> : null}
+              {!showForm && plan?.reviewedOn ? <span className="tone tone-neutral">Last reviewed {formatDateKey(plan.reviewedOn)}</span> : null}
+              {!showForm && plan?.updatedAt ? (
+                <span className="field-hint">
+                  Updated {formatTimestamp24(plan.updatedAt)}
+                  {plan.updatedBy ? ` by ${plan.updatedBy}` : ""}
+                </span>
+              ) : null}
+            </div>
           </div>
-        </div>
-        <div className="header-actions">
-          {showForm ? (
-            <>
-              <button type="button" className="primary-button compact-button" disabled={saving} onClick={save}>
-                {saving ? "Saving..." : "Save"}
-              </button>
-              <button type="button" className="secondary-button compact-button" onClick={onBack}>
-                Cancel
-              </button>
-              {!isNew ? (
-                <button type="button" className="secondary-button compact-button" disabled={saving} onClick={remove}>
-                  {confirmDelete ? "Click again to delete" : "Delete"}
+          <div className="header-actions">
+            {showForm ? (
+              <>
+                <button type="button" className="primary-button compact-button" disabled={saving} onClick={save}>
+                  {saving ? "Saving..." : "Save"}
                 </button>
-              ) : null}
-            </>
-          ) : (
-            <>
-              <button type="button" className="secondary-button compact-button maintenance-icon-button" onClick={() => window.print()}>
-                <Printer size={14} aria-hidden="true" /> Print
-              </button>
-              {canManage ? (
-                <button type="button" className="primary-button compact-button maintenance-icon-button" onClick={onEdit}>
-                  <Pencil size={14} aria-hidden="true" /> Edit
+                <button type="button" className="secondary-button compact-button" onClick={onBack}>
+                  Cancel
                 </button>
-              ) : null}
-            </>
-          )}
-        </div>
-      </article>
-      {error ? <p className="field-error">{error}</p> : null}
+                {!isNew ? (
+                  <button type="button" className="secondary-button compact-button" disabled={saving} onClick={remove}>
+                    {confirmDelete ? "Click again to delete" : "Delete"}
+                  </button>
+                ) : null}
+              </>
+            ) : (
+              <>
+                <button type="button" className="secondary-button compact-button maintenance-icon-button" onClick={print}>
+                  <Printer size={14} aria-hidden="true" /> Print
+                </button>
+                {canManage ? (
+                  <button type="button" className="primary-button compact-button maintenance-icon-button" onClick={onEdit}>
+                    <Pencil size={14} aria-hidden="true" /> Edit
+                  </button>
+                ) : null}
+              </>
+            )}
+          </div>
+        </article>
+        {error ? <p className="field-error">{error}</p> : null}
+      </div>
 
       {showForm ? (
         <article className="panel">
@@ -212,47 +204,35 @@ export function PrePlanScreen({
                   { value: "complex", label: "Complex" },
                 ]}
                 usePortal
-                onChange={(value) => setDraft({ ...draft, template: value === "complex" ? "complex" : "basic" })}
+                onChange={(value) =>
+                  setDraft({
+                    ...draft,
+                    template: value === "complex" ? "complex" : "basic",
+                  })
+                }
               />
             </label>
             <label>
               Last Reviewed
-              <input type="date" value={draft.reviewedOn} onChange={(event) => setDraft({ ...draft, reviewedOn: event.target.value })} />
+              <input
+                type="date"
+                value={draft.reviewedOn}
+                onChange={(event) => setDraft({ ...draft, reviewedOn: event.target.value })}
+              />
             </label>
           </div>
-          <p className="field-hint">Every field is optional. Switching to Basic hides the Complex sections but keeps their answers.</p>
+          <p className="field-hint">
+            Every field is optional. Switching to Basic hides the Complex sections but keeps their answers.
+          </p>
         </article>
       ) : null}
 
-      {sections.map((section) => {
-        const answered = section.fields.filter((field) => (draft.answers[field.id] ?? "").trim() !== "");
-        if (!showForm && answered.length === 0) return null;
-        return (
-          <article key={section.id} className="panel preplan-section">
-            <h3>{section.title}</h3>
-            <div className="property-form-grid">
-              {(showForm ? section.fields : answered).map((field) =>
-                showForm ? (
-                  <label key={field.id} className={field.wide ? "property-form-wide" : undefined}>
-                    {field.label}
-                    <FieldInput field={field} value={draft.answers[field.id] ?? ""} onChange={(value) => setAnswer(field.id, value)} />
-                  </label>
-                ) : (
-                  <div key={field.id} className={field.wide ? "property-readonly property-form-wide" : "property-readonly"}>
-                    <span>{field.label}</span>
-                    <div className="property-notes">{draft.answers[field.id]}</div>
-                  </div>
-                ),
-              )}
-            </div>
-          </article>
-        );
-      })}
-      {!showForm && sections.every((section) => section.fields.every((field) => !(draft.answers[field.id] ?? "").trim())) ? (
-        <article className="panel">
-          <p className="field-hint">Nothing has been filled in on this pre-plan yet.</p>
-        </article>
-      ) : null}
+      <PrePlanSections
+        template={draft.template}
+        answers={draft.answers}
+        onAnswer={showForm ? setAnswer : undefined}
+        forceOpen={printing}
+      />
     </section>
   );
 }

@@ -2,17 +2,17 @@ import { type ReactNode, useState } from "react";
 import { Building2, ClipboardList, ExternalLink, FileText, Flame, House, Pencil, Plus, ShieldCheck, Siren } from "lucide-react";
 import { deleteProperty, fullAddress, propertyTypeLabel, type PrePlanTemplate, type PropertyDetail } from "../../api/prevention";
 import { mapsApiKey, type LatLng } from "../maps/mapUtils";
-import { formatTimestamp24 } from "../maintenance/maintenanceUtils";
+import { formatDateKey } from "../maintenance/maintenanceUtils";
 import { useDialogSave } from "../maintenance/useDialogSave";
 import { PropertyContactsTab } from "./PropertyContactsTab";
 import { PropertyIncidentsTab } from "./PropertyIncidentsTab";
 import { templateLabel } from "./prePlanTemplates";
-import { formatSquareFeet, mapsLink, streetViewImageUrl, type StreetViewCamera } from "./preventionUtils";
+import { formatDayOf, formatSquareFeet, mapsLink, streetViewImageUrl, type StreetViewCamera } from "./preventionUtils";
 
-type TopTab = "details" | "contacts";
-type LowerTab = "incidents" | "preplans" | "inspections" | "permits" | "alarms";
+export type PropertyTab = "details" | "contacts" | RecordTab;
+type RecordTab = "incidents" | "preplans" | "inspections" | "permits" | "alarms";
 
-const LOWER_TABS: { id: LowerTab; label: string; Icon: typeof Flame }[] = [
+const RECORD_TABS: { id: RecordTab; label: string; Icon: typeof Flame }[] = [
   { id: "incidents", label: "Incidents", Icon: Flame },
   { id: "preplans", label: "Pre-Plans", Icon: FileText },
   { id: "inspections", label: "Inspections", Icon: ClipboardList },
@@ -30,7 +30,8 @@ function ReadOnly({ label, value, wide }: { label: string; value: ReactNode; wid
 }
 
 /**
- * Property main screen: overview card, Details | Contacts, and the lower tabs. Live Street View and Aerial
+ * Property main screen: overview card, then one tab row (Details and Contacts on the left, the property's
+ * records on the right). Live Street View and Aerial
  * load only while creating or editing; this screen shows the saved thumbnail (one Street View image at most).
  */
 export function PropertyScreen({
@@ -42,8 +43,10 @@ export function PropertyScreen({
   onDeleted,
   onOpenPrePlan,
   onNewPrePlan,
+  initialTab = "details",
 }: {
   property: PropertyDetail;
+  initialTab?: PropertyTab;
   canManage: boolean;
   onOpenPrePlan: (id: string) => void;
   onNewPrePlan: (template: PrePlanTemplate) => void;
@@ -53,8 +56,7 @@ export function PropertyScreen({
   onDeleted: () => void;
 }) {
   const apiKey = mapsApiKey();
-  const [topTab, setTopTab] = useState<TopTab>("details");
-  const [lowerTab, setLowerTab] = useState<LowerTab>("incidents");
+  const [tab, setTab] = useState<PropertyTab>(initialTab);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { saving, error, run } = useDialogSave();
 
@@ -153,21 +155,35 @@ export function PropertyScreen({
             </div>
           </article>
 
-          <nav className="department-editor-toolbar-actions maintenance-tabs" aria-label="Property sections">
-            {(["details", "contacts"] as const).map((id) => (
-              <button
+          <nav className="property-tab-row" aria-label="Property sections">
+            <div className="department-editor-toolbar-actions maintenance-tabs">
+              {(["details", "contacts"] as const).map((id) => (
+                <button
                 key={id}
                 type="button"
-                className={`secondary-button compact-button ${topTab === id ? "department-toggle-active" : ""}`}
-                onClick={() => setTopTab(id)}
+                className={`secondary-button compact-button maintenance-icon-button ${tab === id ? "department-toggle-active" : ""}`}
+                onClick={() => setTab(id)}
               >
-                {id === "details" ? "Details" : `Contacts (${property.contacts.length})`}
-              </button>
-            ))}
+                  {id === "details" ? "Details" : `Contacts (${property.contacts.length})`}
+                </button>
+              ))}
+            </div>
+            <div className="department-editor-toolbar-actions maintenance-tabs">
+              {RECORD_TABS.map(({ id, label, Icon }) => (
+                <button
+                key={id}
+                type="button"
+                className={`secondary-button compact-button maintenance-icon-button ${tab === id ? "department-toggle-active" : ""}`}
+                onClick={() => setTab(id)}
+              >
+                  <Icon size={14} aria-hidden="true" /> {label}
+                </button>
+              ))}
+            </div>
           </nav>
 
           <article className="panel">
-            {topTab === "details" ? (
+            {tab === "details" ? (
               <div className="property-form-grid">
                 <ReadOnly label="Occupant or Business Name" value={property.name} wide />
                 <ReadOnly label="Address" value={property.address} wide />
@@ -183,27 +199,11 @@ export function PropertyScreen({
                 <ReadOnly label="Longitude" value={property.longitude ?? ""} />
                 <ReadOnly label="Notes" value={property.notes ? <span className="property-notes">{property.notes}</span> : ""} wide />
               </div>
-            ) : (
+            ) : tab === "contacts" ? (
               <PropertyContactsTab property={property} canManage={canManage} onChanged={onChanged} />
-            )}
-          </article>
-
-          <nav className="department-editor-toolbar-actions maintenance-tabs property-lower-tabs" aria-label="Property records">
-            {LOWER_TABS.map(({ id, label, Icon }) => (
-              <button
-                key={id}
-                type="button"
-                className={`secondary-button compact-button ${lowerTab === id ? "department-toggle-active" : ""}`}
-                onClick={() => setLowerTab(id)}
-              >
-                <Icon size={14} aria-hidden="true" /> {label}
-              </button>
-            ))}
-          </nav>
-          <article className="panel property-lower-panel">
-            {lowerTab === "incidents" ? (
+            ) : tab === "incidents" ? (
               <PropertyIncidentsTab propertyId={property.id} />
-            ) : lowerTab === "preplans" ? (
+            ) : tab === "preplans" ? (
               <div className="property-preplans">
                 {canManage ? (
                   <div className="header-actions">
@@ -230,14 +230,14 @@ export function PropertyScreen({
                         </button>
                         <span className="tone tone-neutral">{templateLabel(plan.template)}</span>
                         <span className="field-hint">
-                          {plan.reviewedOn ? `Last reviewed ${plan.reviewedOn} · ` : ""}Updated {formatTimestamp24(plan.updatedAt)}
+                          {plan.reviewedOn ? `Last reviewed ${formatDateKey(plan.reviewedOn)} · ` : ""}Updated {formatDayOf(plan.updatedAt)}
                         </span>
                       </li>
                     ))}
                   </ul>
                 )}
               </div>
-            ) : lowerTab === "inspections" ? (
+            ) : tab === "inspections" ? (
               <p className="field-hint">Inspections for this property are added in the next update.</p>
             ) : (
               <p className="field-hint">Coming soon.</p>

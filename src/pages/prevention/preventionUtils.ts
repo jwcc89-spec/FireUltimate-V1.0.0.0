@@ -1,5 +1,6 @@
 import type { PropertyDetail, PropertyInput } from "../../api/prevention";
 import type { LatLng } from "../maps/mapUtils";
+import { formatTimestamp24 } from "../maintenance/maintenanceUtils";
 
 export interface StreetViewCamera {
   panoId: string;
@@ -111,4 +112,9 @@ export function inputFromDetail(detail: PropertyDetail): PropertyInput {
 
 export function formatSquareFeet(value: number | null): string {
   return value == null ? "" : value.toLocaleString("en-US");
+}
+
+/** ISO timestamp to MM/DD/YYYY (local date). */
+export function formatDayOf(iso: string): string {
+  return formatTimestamp24(iso).slice(0, 10);
 }
