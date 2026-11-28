@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "react-router-dom";
-import { List, Map as MapIcon, Plus } from "lucide-react";
+import { List, Map as MapIcon, Plus, Upload } from "lucide-react";
 import {
   getProperties,
   getProperty,
@@ -14,6 +14,8 @@ import type { LatLng } from "../maps/mapUtils";
 import { errorText } from "../maintenance/maintenanceUtils";
 import { PropertiesMap } from "./PropertiesMap";
 import { PropertyForm } from "./PropertyForm";
+import { PrePlanScreen } from "./PrePlanScreen";
+import { PropertyImportDialog } from "./PropertyImportDialog";
 import { PropertyScreen } from "./PropertyScreen";
 import { formatSquareFeet } from "./preventionUtils";
 
@@ -28,6 +30,7 @@ const TYPE_FILTERS: { id: TypeFilter; label: string }[] = [
 /**
  * Fire Prevention > Properties. The list (or map), and through the address bar
  * ?property=<id> for one property, &edit=1 to edit it, or ?new=1 to add one.
+ * &preplan=<id> opens a pre-plan (&edit=1 to edit it); &preplan=new&template=basic|complex starts one.
  */
 export function PropertiesPage() {
   const grants = useMyPermissions();
@@ -37,6 +40,8 @@ export function PropertiesPage() {
   const editing = searchParams.get("edit") === "1";
   const creating = searchParams.get("new") === "1";
   const view = searchParams.get("view") === "map" ? "map" : "list";
+  const prePlanId = searchParams.get("preplan") ?? "";
+  const prePlanTemplate = searchParams.get("template") === "complex" ? "complex" : "basic";
 
   const [rows, setRows] = useState<PropertySummary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -45,6 +50,8 @@ export function PropertiesPage() {
   const [typeFilter, setTypeFilter] = useState<TypeFilter>("all");
   const [detail, setDetail] = useState<PropertyDetail | null>(null);
   const [detailError, setDetailError] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [notice, setNotice] = useState("");
 
   const loadList = useCallback(
     () =>
@@ -132,6 +139,34 @@ export function PropertiesPage() {
         </section>
       );
     }
+    if (prePlanId) {
+      const refresh = () =>
+        void getProperty(detail.id)
+          .then(setDetail)
+          .catch(() => undefined);
+      return (
+        <PrePlanScreen
+          key={`${prePlanId}-${editing ? "edit" : "view"}`}
+          property={detail}
+          planId={prePlanId}
+          template={prePlanTemplate}
+          editing={editing}
+          canManage={canManage}
+          onBack={() =>
+            prePlanId !== "new" && editing ? go({ property: detail.id, preplan: prePlanId }) : go({ property: detail.id })
+          }
+          onEdit={() => go({ property: detail.id, preplan: prePlanId, edit: "1" })}
+          onSaved={(plan) => {
+            refresh();
+            go({ property: detail.id, preplan: plan.id });
+          }}
+          onDeleted={() => {
+            refresh();
+            go({ property: detail.id });
+          }}
+        />
+      );
+    }
     if (editing && canManage) {
       return (
         <PropertyForm
@@ -153,6 +188,8 @@ export function PropertiesPage() {
         property={detail}
         canManage={canManage}
         onEdit={() => go({ property: detail.id, edit: "1" })}
+        onOpenPrePlan={(id) => go({ property: detail.id, preplan: id })}
+        onNewPrePlan={(template) => go({ property: detail.id, preplan: "new", template })}
         onBack={backToList}
         onChanged={(next) => {
           setDetail(next);
@@ -246,6 +283,11 @@ export function PropertiesPage() {
             </button>
           </div>
           {canManage ? (
+            <button type="button" className="secondary-button maintenance-icon-button" onClick={() => setImporting(true)}>
+              <Upload size={15} aria-hidden="true" /> Import
+            </button>
+          ) : null}
+          {canManage ? (
             <button type="button" className="primary-button maintenance-icon-button" onClick={() => go({ new: "1" })}>
               <Plus size={15} aria-hidden="true" /> Add Property
             </button>
@@ -253,6 +295,17 @@ export function PropertiesPage() {
         </div>
       </header>
       {error ? <p className="field-error">{error}</p> : null}
+      {notice ? <p className="field-hint">{notice}</p> : null}
+      {importing ? (
+        <PropertyImportDialog
+          onClose={() => setImporting(false)}
+          onImported={(created) => {
+            setImporting(false);
+            setNotice(`${created} ${created === 1 ? "property was" : "properties were"} imported.`);
+            void loadList();
+          }}
+        />
+      ) : null}
       <article className="panel">
         {loading ? (
           <p className="field-hint">Loading...</p>

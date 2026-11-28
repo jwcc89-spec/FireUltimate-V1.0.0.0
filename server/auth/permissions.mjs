@@ -187,9 +187,10 @@ export function permissionForRequest(method, path, body) {
   if (verb === "POST" && route === "/api/policies") return "policies.manage";
   if ((verb === "PATCH" || verb === "DELETE") && /^\/api\/policies\/[^/]+$/.test(route)) return "policies.manage";
 
-  // Properties and contacts are read by anyone who can view calls; changing them needs prevention.manage.
+  // Properties, contacts, pre-plans and call history are read by anyone who can view calls;
+  // changing them (including import) needs prevention.manage.
   if (verb === "GET" && /^\/api\/prevention(\/.*)?$/.test(route)) return "incidents.view";
-  if (verb !== "GET" && /^\/api\/prevention\/(properties|contacts)(\/.*)?$/.test(route)) return "prevention.manage";
+  if (verb !== "GET" && /^\/api\/prevention\/(properties|contacts|preplans)(\/.*)?$/.test(route)) return "prevention.manage";
   return null;
 }
 

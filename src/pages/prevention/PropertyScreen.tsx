@@ -1,12 +1,13 @@
 import { type ReactNode, useState } from "react";
-import { APIProvider } from "@vis.gl/react-google-maps";
-import { Building2, ClipboardList, FileText, Flame, House, Pencil, ShieldCheck, Siren } from "lucide-react";
-import { deleteProperty, fullAddress, propertyTypeLabel, type PropertyDetail } from "../../api/prevention";
+import { Building2, ClipboardList, ExternalLink, FileText, Flame, House, Pencil, Plus, ShieldCheck, Siren } from "lucide-react";
+import { deleteProperty, fullAddress, propertyTypeLabel, type PrePlanTemplate, type PropertyDetail } from "../../api/prevention";
 import { mapsApiKey, type LatLng } from "../maps/mapUtils";
+import { formatTimestamp24 } from "../maintenance/maintenanceUtils";
 import { useDialogSave } from "../maintenance/useDialogSave";
 import { PropertyContactsTab } from "./PropertyContactsTab";
-import { AerialPanel, StreetViewPanel } from "./PropertyMapPanels";
-import { formatSquareFeet, streetViewImageUrl, type StreetViewCamera } from "./preventionUtils";
+import { PropertyIncidentsTab } from "./PropertyIncidentsTab";
+import { templateLabel } from "./prePlanTemplates";
+import { formatSquareFeet, mapsLink, streetViewImageUrl, type StreetViewCamera } from "./preventionUtils";
 
 type TopTab = "details" | "contacts";
 type LowerTab = "incidents" | "preplans" | "inspections" | "permits" | "alarms";
@@ -28,7 +29,10 @@ function ReadOnly({ label, value, wide }: { label: string; value: ReactNode; wid
   );
 }
 
-/** Property main screen: overview card, Details | Contacts, Street View and Aerial, and the lower tabs. */
+/**
+ * Property main screen: overview card, Details | Contacts, and the lower tabs. Live Street View and Aerial
+ * load only while creating or editing; this screen shows the saved thumbnail (one Street View image at most).
+ */
 export function PropertyScreen({
   property,
   canManage,
@@ -36,9 +40,13 @@ export function PropertyScreen({
   onBack,
   onChanged,
   onDeleted,
+  onOpenPrePlan,
+  onNewPrePlan,
 }: {
   property: PropertyDetail;
   canManage: boolean;
+  onOpenPrePlan: (id: string) => void;
+  onNewPrePlan: (template: PrePlanTemplate) => void;
   onEdit: () => void;
   onBack: () => void;
   onChanged: (next: PropertyDetail) => void;
@@ -61,6 +69,7 @@ export function PropertyScreen({
   const thumbnail = property.photo || streetViewImageUrl(apiKey, camera, 480, 300);
   const address = fullAddress(property);
   const TypeIcon = property.propertyType === "commercial" ? Building2 : House;
+  const latestPrePlan = property.prePlans[0] ?? null;
 
   const remove = () => {
     if (!confirmDelete) {
@@ -93,8 +102,7 @@ export function PropertyScreen({
       ) : null}
       {error ? <p className="field-error">{error}</p> : null}
 
-      <div className="property-layout">
-        <div className="property-main">
+      <div className="property-main">
           <article className="panel property-overview">
             {thumbnail ? (
               <img className="property-thumbnail" src={thumbnail} alt={`Building at ${property.address}`} />
@@ -114,11 +122,34 @@ export function PropertyScreen({
                 {property.ownerName ? <span className="tone tone-neutral">Owner: {property.ownerName}</span> : null}
               </div>
               <div className="header-actions">
-                <button type="button" className="primary-button compact-button maintenance-icon-button" disabled>
-                  <FileText size={14} aria-hidden="true" /> View Pre-Plan
-                </button>
+                {latestPrePlan ? (
+                  <button
+                    type="button"
+                    className="primary-button compact-button maintenance-icon-button"
+                    onClick={() => onOpenPrePlan(latestPrePlan.id)}
+                  >
+                    <FileText size={14} aria-hidden="true" /> View Pre-Plan
+                  </button>
+                ) : canManage ? (
+                  <button
+                    type="button"
+                    className="primary-button compact-button maintenance-icon-button"
+                    onClick={() => onNewPrePlan("basic")}
+                  >
+                    <Plus size={14} aria-hidden="true" /> Add Pre-Plan
+                  </button>
+                ) : (
+                  <span className="field-hint">No pre-plan yet.</span>
+                )}
+                <a
+                  className="secondary-button compact-button maintenance-icon-button"
+                  href={mapsLink(point, address)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  <ExternalLink size={14} aria-hidden="true" /> Open in Google Maps
+                </a>
               </div>
-              <p className="field-hint">Pre-plans and scheduled inspections are added in the next updates.</p>
             </div>
           </article>
 
@@ -170,30 +201,48 @@ export function PropertyScreen({
             ))}
           </nav>
           <article className="panel property-lower-panel">
-            {lowerTab === "permits" || lowerTab === "alarms" ? (
-              <p className="field-hint">Coming soon.</p>
+            {lowerTab === "incidents" ? (
+              <PropertyIncidentsTab propertyId={property.id} />
+            ) : lowerTab === "preplans" ? (
+              <div className="property-preplans">
+                {canManage ? (
+                  <div className="header-actions">
+                    {(["basic", "complex"] as const).map((template) => (
+                      <button
+                        key={template}
+                        type="button"
+                        className="secondary-button compact-button maintenance-icon-button"
+                        onClick={() => onNewPrePlan(template)}
+                      >
+                        <Plus size={14} aria-hidden="true" /> New {templateLabel(template)} Pre-Plan
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+                {property.prePlans.length === 0 ? (
+                  <p className="field-hint">No pre-plans for this property yet.</p>
+                ) : (
+                  <ul className="property-preplan-list">
+                    {property.prePlans.map((plan) => (
+                      <li key={plan.id}>
+                        <button type="button" className="edit-display-link" onClick={() => onOpenPrePlan(plan.id)}>
+                          {plan.title}
+                        </button>
+                        <span className="tone tone-neutral">{templateLabel(plan.template)}</span>
+                        <span className="field-hint">
+                          {plan.reviewedOn ? `Last reviewed ${plan.reviewedOn} · ` : ""}Updated {formatTimestamp24(plan.updatedAt)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            ) : lowerTab === "inspections" ? (
+              <p className="field-hint">Inspections for this property are added in the next update.</p>
             ) : (
-              <p className="field-hint">
-                {lowerTab === "incidents"
-                  ? "Call history for this address is added in the next update."
-                  : lowerTab === "preplans"
-                    ? "Basic and Complex pre-plans are added in the next update."
-                    : "Inspections for this property are added in a later update."}
-              </p>
+              <p className="field-hint">Coming soon.</p>
             )}
           </article>
-        </div>
-
-        <aside className="property-side">
-          {apiKey ? (
-            <APIProvider apiKey={apiKey}>
-              <StreetViewPanel point={point} saved={camera} />
-              <AerialPanel point={point} address={address} />
-            </APIProvider>
-          ) : (
-            <p className="field-hint">The Street View and Aerial panels need the Google Maps browser key.</p>
-          )}
-        </aside>
       </div>
     </section>
   );
